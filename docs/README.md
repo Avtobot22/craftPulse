@@ -2,16 +2,27 @@
 
 ## Продукт
 
-- [Видение](product/vision.md)
+- [Видение и ход разработки](product/vision.md)
+- [Сквозные сценарии](product/scenarios.md)
 - [Идея и гипотезы](product/idea-and-hypotheses.md)
 - [Портреты целевой аудитории](product/personas.md)
-- [Бизнес-модель](product/business-model.md)
-- [Метрики](product/metrics.md)
-- [Коннекторы](product/connectors.md)
+- [Бизнес-модель и приёмка пилота](product/business-model.md)
+- [Метрики: обзор, формулы и примеры](product/metrics.md)
+- [Коннекторы и условия данных](product/connectors.md)
+
+## Полные каталоги метрик
+
+- [Модель данных и общие правила измерения](product/metrics/model.md)
+- [Код: C01-C36](product/metrics/code.md)
+- [Безопасность: S01-S40](product/metrics/security.md)
+- [CI/CD: I01-I46](product/metrics/ci-cd.md)
+- [Активность: A01-A30](product/metrics/activity.md)
+- [Документация: D01-D34](product/metrics/documentation.md)
+- [Задачи: T01-T42](product/metrics/tasks.md)
 
 ## Требования
 
-- [Функции и приоритеты](requirements/features.md)
+- [Функции и проверка сценариев](requirements/features.md)
 - [Соответствие документов заданию первого этапа](requirements/README.md)
 
 ## Исследования
@@ -24,3 +35,4 @@
 - [Анализаторы кода и безопасности](research/market/competitors-code-quality.md)
 - [Платформы, трекеры и интеграции](research/market/platforms-and-connectors.md)
 - [Полный расчёт объёма рынка](research/market/market-sizing.md)
+- [Источники документации](research/sources.md)
