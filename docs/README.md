@@ -20,6 +20,10 @@
 - [Документация: D01-D34](product/metrics/documentation.md)
 - [Задачи: T01-T42](product/metrics/tasks.md)
 
+## Шаблоны
+
+- [Шаблоны бизнес-плана, ТЗ/SRS, User Story и Use Case](templates/README.md)
+
 ## Требования
 
 - [Функции и проверка сценариев](requirements/features.md)
