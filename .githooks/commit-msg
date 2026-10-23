@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+"""Reject a malformed commit title before the commit is created."""
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from check_repository import valid_title
+
+lines = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+if not lines or not valid_title(lines[0]):
+    print("Коммит отклонён: ожидается type(scope): описание до 100 символов.", file=sys.stderr)
+    sys.exit(1)

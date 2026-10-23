@@ -1,0 +1,77 @@
+[
+  {
+    "name": "type:feature",
+    "color": "a2eeef",
+    "description": "Новая возможность продукта"
+  },
+  {
+    "name": "type:bug",
+    "color": "d73a4a",
+    "description": "Исправление ошибки"
+  },
+  {
+    "name": "type:task",
+    "color": "0075ca",
+    "description": "Техническая работа или документация"
+  },
+  {
+    "name": "type:epic",
+    "color": "7057ff",
+    "description": "Крупный результат с дочерними задачами"
+  },
+  {
+    "name": "area:frontend",
+    "color": "1d76db",
+    "description": "React-интерфейс и ролевые дашборды"
+  },
+  {
+    "name": "area:backend",
+    "color": "0e8a16",
+    "description": "Go-сервисы, расчёты и интеграции"
+  },
+  {
+    "name": "area:api",
+    "color": "5319e7",
+    "description": "Контракты API, схемы и форматы обмена"
+  },
+  {
+    "name": "area:data",
+    "color": "5319e7",
+    "description": "Хранение, миграции и модель данных"
+  },
+  {
+    "name": "area:design",
+    "color": "d876e3",
+    "description": "Сценарии интерфейса и макеты"
+  },
+  {
+    "name": "area:infra",
+    "color": "006b75",
+    "description": "Репозиторий, CI и инструменты"
+  },
+  {
+    "name": "area:docs",
+    "color": "0075ca",
+    "description": "Документация продукта и команды"
+  },
+  {
+    "name": "priority:high",
+    "color": "b60205",
+    "description": "В первую очередь; причину указываем в задаче"
+  },
+  {
+    "name": "priority:normal",
+    "color": "fbca04",
+    "description": "Обычный порядок выполнения"
+  },
+  {
+    "name": "priority:low",
+    "color": "c2e0c6",
+    "description": "Можно отложить"
+  },
+  {
+    "name": "skip-changelog",
+    "color": "eeeeee",
+    "description": "Служебное изменение без записи в релизе"
+  }
+]

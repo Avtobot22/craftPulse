@@ -1,0 +1,28 @@
+name: Эпик
+description: Крупный результат, который нужно разделить на задачи
+labels: ["type:epic"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Результат
+      description: Какую возможность получит пользователь или команда?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Границы и ограничения
+      description: Входящие сценарии, исключения и существенные ограничения.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Приёмка эпика
+      description: Как проверить результат целиком после завершения дочерних задач?
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: "После создания добавь реальные задачи через Create sub-issue или Add existing issue. Зависимости оформи через Relationships. Эпик закрывается после приёмки результата, а не после первого PR."

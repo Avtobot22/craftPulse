@@ -1,0 +1,35 @@
+name: Ошибка
+description: Подтверждённое неправильное поведение
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Как воспроизвести
+      description: Шаги и минимальный пример входных данных. Удали секреты и личные данные.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Что происходит
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что должно происходить
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Окружение
+      description: Версия или commit, браузер и ОС; для серверной ошибки - версия сервиса и среда запуска.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Влияние и материалы
+      description: Кого затрагивает ошибка? Скриншот, очищенный лог, обходной путь, если есть.

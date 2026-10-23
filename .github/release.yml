@@ -1,0 +1,12 @@
+changelog:
+  exclude:
+    labels: ["skip-changelog"]
+  categories:
+    - title: Возможности
+      labels: ["type:feature"]
+    - title: Исправления
+      labels: ["type:bug"]
+    - title: Документация
+      labels: ["area:docs"]
+    - title: Остальные изменения
+      labels: ["*"]

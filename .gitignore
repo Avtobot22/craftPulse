@@ -1,0 +1,49 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# Dependencies, builds and caches
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+.next/
+.cache/
+.venv/
+.uv-cache/
+.hf-cache/
+__pycache__/
+*.py[cod]
+*.log
+*.tsbuildinfo
+
+# Personal toolkit and shared workspace (managed separately)
+/.agents/
+/.codex/
+/.claude/
+/.vscode/
+/shared/
+/artifacts/
+/transcripts/
+/tools/transcription/
+
+# Local meeting recordings
+/*.m4a
+/*.mp3
+/*.wav
+/*.mp4
+/*.webm
+/*.flac
+/*.ogg
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
