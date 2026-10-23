@@ -1,0 +1,36 @@
+name: Задача
+description: Функция, техническая работа или документация
+labels: ["type:task"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема и результат
+      description: Что нужно изменить, кому это нужно и что получится?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Границы работы
+      description: Что входит в задачу? Укажи существенные ограничения и ссылки на спецификацию или макет.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Критерии приёмки
+      description: Наблюдаемые условия готовности, включая важные ошибки и крайние случаи.
+      placeholder: "- [ ] Проверяемый результат"
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Как проверить
+      description: Предусловия, действия и ожидаемый результат. Для технической работы укажи команды проверки.
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: "Выбери area label и исполнителя справа. Родителя и блокирующие задачи укажи через Relationships; текстовая ссылка не создаёт эту связь."

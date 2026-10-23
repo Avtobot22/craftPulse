@@ -1,0 +1,3 @@
+# Repository owner is the fallback reviewer. Review is optional and never
+# blocks merging by policy. Assign directory owners as the team agrees.
+* @Avtobot22

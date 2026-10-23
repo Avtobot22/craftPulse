@@ -1,0 +1,81 @@
+# Ведение проекта в GitHub
+
+Issue хранит задачу, Projects показывает очередь и текущую работу, PR содержит реализацию и ревью. Документация продукта остаётся в Git рядом с кодом. Одну задачу не нужно дублировать в другом трекере.
+
+## Доска
+
+Доска [craftPulse](https://github.com/users/Avtobot22/projects/4) связана с репозиторием `Avtobot22/craftPulse`. Она закрытая; доступ к приватному репозиторию сам по себе не даёт права редактировать Projects. Участникам разработки нужен отдельный доступ Write к проекту.
+
+| Статус | Значение |
+| --- | --- |
+| Backlog | Задача зарегистрирована, но ещё не подготовлена |
+| Ready | Есть границы, приёмка и способ проверки; зависимости позволяют начать |
+| In progress | Исполнитель делает задачу |
+| In review | Результат готов и ожидает ревью или приёмки |
+| Done | Issue завершена после проверки результата |
+
+Одна карточка на задачу; PR в доску повторно не добавляем. Фильтр рабочей доски исключает `type:epic`, чтобы родитель не дублировал дочерние задачи. Эпики видны в отдельном представлении. Метки `type:*` обозначают вид работы, `area:*` - направление, `priority:*` - порядок выполнения. Размер задачи и сроки не заполняются ради полноты; отдельный срок нужен только при реальном обязательстве.
+
+## Автоматизация
+
+В Projects используются встроенные workflows:
+
+- Auto-add to project: репозиторий `Avtobot22/craftPulse`, фильтр `is:issue is:open`.
+- Item added to project: `Backlog`.
+- Item closed: `Done`.
+- Pull request linked to issue: `In progress` для связанной задачи.
+
+Auto-add подхватывает новые и изменённые задачи после включения. Уже существующие задачи нужно добавить отдельно. Дочерние задачи добавляются через Auto-add sub-issues to project. Автоматическое закрытие Issue при переносе карточки в Done выключено: готовность подтверждается закрытием самой Issue. Исполнитель переводит задачу в `In progress` в начале работы, не дожидаясь PR, и в `In review`, когда результат готов к необязательному ревью или приёмке. При повторном открытии Issue верни карточку в `Backlog` и проверь готовность заново. Блокировки отражаются через Relationships, без второго независимого списка.
+
+Встроенные workflows, вид доски и фильтры настраиваются в интерфейсе Projects. Они не создаются файлами из `.github/`. Правила защиты, настройки репозитория и labels хранятся в JSON, чтобы изменения можно было ревьюить и восстановить.
+
+## Настройки репозитория
+
+Файлы конфигурации:
+
+- `.github/repository-settings.json` - squash merge, удаление рабочих веток и формат сообщения коммита.
+- `.github/main-ruleset.json` - правила `main` без обхода для администраторов.
+- `.github/labels.json` - управляемые метки. Остальные метки скрипт сохраняет.
+- `.github/CODEOWNERS` - запрос ревью владельцу по умолчанию.
+- `.github/workflows/repository.yml` - обязательный `repository-check` на каждом PR и после merge в `main`.
+- `.github/dependabot.yml` - еженедельные PR обновлений GitHub Actions.
+- `.github/release.yml` - группировка изменений в GitHub Release.
+
+У GitHub Actions минимальные права: чтение содержимого, без автоматического одобрения PR и без сохранённых credentials в checkout. Сторонние actions закрепляются полным commit SHA; обновление проходит обычный PR. В CI не используется привилегированный `pull_request_target` и не передаются секреты коду PR.
+
+## Проверка и восстановление
+
+Нужны Python 3.9+, GitHub CLI и права администратора `Avtobot22/craftPulse`. `gh` должен быть авторизован на `github.com`. Для Projects дополнительно нужен scope `project`.
+
+Команды по умолчанию только показывают отличие или целевую конфигурацию:
+
+```sh
+python3 scripts/github_setup.py repository
+python3 scripts/github_setup.py labels
+python3 scripts/github_setup.py protection
+```
+
+Применение:
+
+```sh
+python3 scripts/github_setup.py repository --apply
+python3 scripts/github_setup.py labels --apply
+python3 scripts/github_setup.py protection --apply
+```
+
+Защита требует предварительного успешного прогона Repository CI, чтобы обязательная проверка уже существовала. При первом подключении сначала открой PR с workflow, дождись зелёного прогона, затем включи защиту и выполни обычное ревью. Скрипт обновляет только именованный ruleset `craftPulse main protection`; другие правила сохраняются. Ошибка прав, тарифа или проверки завершается ненулевым кодом, без заявления об успехе.
+
+После применения проверь в Settings → Rules → Rulesets, что правило активно для `main`, обходы отсутствуют, требуется `repository-check`, а обязательное одобрение другим участником выключено. Защита приватных репозиториев зависит от тарифа GitHub. При ошибке тарифа защита не включена; не делай репозиторий публичным ради обхода этого ограничения.
+
+## Релизы
+
+Milestone объединяет задачи ближайшего поставляемого результата. При публикации создай тег на проверенном коммите и GitHub Release с автоматически собранными заметками. Метки PR управляют категориями заметок. Пока исполняемого продукта нет, автоматическую публикацию и фиктивные версии не создаём. Первый релиз приложения должен включить воспроизводимую сборку и проверку артефакта; наличие тега само по себе этого не доказывает.
+
+## Документация GitHub
+
+- [Sub-issues](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues)
+- [Блокирующие зависимости](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-issue-dependencies)
+- [Встроенные workflows Projects](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-built-in-automations)
+- [Автоматическое добавление задач](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/adding-items-automatically)
+- [Rulesets и доступность по тарифам](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)
+- [Безопасность GitHub Actions](https://docs.github.com/en/actions/reference/security/secure-use)
