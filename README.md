@@ -29,6 +29,6 @@ git config --local core.hooksPath .githooks
 - [Метрики](docs/product/metrics.md)
 - [Работа над задачами и PR](CONTRIBUTING.md)
 - [Доска, настройки и автоматизация GitHub](docs/github-workflow.md)
-- [Автоматизация зависимостей с Copilot](docs/copilot-automation.md)
+- [Подготовка автоматизации зависимостей с Copilot](docs/copilot-automation.md)
 - [Секреты и уязвимости](SECURITY.md)
 - [Доска craftPulse](https://github.com/users/Avtobot22/projects/4)
