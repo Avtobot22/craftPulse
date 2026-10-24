@@ -5,7 +5,7 @@
 | E1-01. Идея и минимум две гипотезы | [Идея и гипотезы](../product/idea-and-hypotheses.md) |
 | E1-02. Минимум два портрета ЦА | [Портреты пользователей](../product/personas.md) |
 | E1-03. Рынок и конкурентный анализ | [Рынок и конкуренты](../research/competitors.md) |
-| E1-04. Объём рынка сверху и снизу | [Объём рынка](../research/market-size.md) |
+| E1-04. Объём рынка сверху и снизу | [Объём рынка](../business-plan/business-plan.md#33-объём-рынка) |
 | E1-05. Десять вопросов и десять интервью | [Вопросы интервью](../research/interview-questions.md), [Отчёт по интервью](../research/interview-report.md) |
 | E1-06. Бизнес-модель | [Бизнес-модель](../product/business-model.md) |
 
