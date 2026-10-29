@@ -9,6 +9,7 @@
 - [Бизнес-модель и приёмка пилота](product/business-model.md)
 - [Бизнес-план](business-plan/business-plan.md)
 - [Метрики: обзор, формулы и примеры](product/metrics.md)
+- [Основные метрики MVP и их связь с пользовательскими сценариями](product/metrics/mvp.md)
 - [Коннекторы и условия данных](product/connectors.md)
 
 ## Полные каталоги метрик
