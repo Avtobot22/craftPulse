@@ -40,6 +40,7 @@
 - [Объём рынка](business-plan/business-plan.md#33-объём-рынка)
 - [Вопросы проблемного интервью](research/interview-questions.md)
 - [Отчёт по десяти проблемным интервью](research/interview-report.md)
+- [Основания и паттерны интерфейса](research/ui-ux-patterns.md)
 - [Платформы инженерной аналитики](research/market/competitors-engineering-analytics.md)
 - [Анализаторы кода и безопасности](research/market/competitors-code-quality.md)
 - [Платформы, трекеры и интеграции](research/market/platforms-and-connectors.md)
