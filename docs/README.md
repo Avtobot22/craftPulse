@@ -29,6 +29,7 @@
 ## Требования
 
 - [Техническое задание (ТЗ/SRS)](technical-specification/technical-specification.md)
+- [Use Case: алгоритмы сценариев](requirements/use-cases.md)
 - [MVP: состав и требования](technical-specification/mvp-scope.md)
 - [Функции и проверка сценариев](requirements/features.md)
 - [Соответствие документов заданию первого этапа](requirements/README.md)
