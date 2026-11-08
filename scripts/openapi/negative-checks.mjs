@@ -14,6 +14,7 @@ try {
   const cases = [
     ['missing-action', 'spectral', doc => delete doc.paths['/me'].get['x-craftpulse-action'], 'craftpulse-action-present'],
     ['unsupported-union', 'spectral', doc => {doc.components.schemas.Problem.properties.title.type = ['string', 'number'];}, 'craftpulse-type-union'],
+    ['unbound-probe-example', 'redocly', doc => {delete doc.paths['/connections/{connection_id}/probes'].post.responses['202'].content['application/json'].example.configuration_version;}, 'no-invalid-media-type-examples'],
     ['indexed-redaction', 'redocly', doc => {doc.paths['/merge-requests/{merge_request_id}/summary'].get.responses['200'].content['application/json'].example.redactions = ['items/3'];}, 'no-invalid-media-type-examples'],
     ['invalid-example', 'redocly', doc => {doc.paths['/me'].get.responses['200'].content['application/json'].example.id = 123;}, 'no-invalid-media-type-examples'],
   ];

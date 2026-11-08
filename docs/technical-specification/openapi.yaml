@@ -1159,6 +1159,11 @@ paths:
         Пробное чтение выполняет адаптер (`Probe`) асинхронно: в ответ - ресурс-операция. Запись
         в источник при пробе не выполняется: права записи проверяются по разрешениям
         учётной записи (FR-014). Повтор во время идущей пробы возвращает её же.
+
+        Проба и задание создаются в одной транзакции; результат хранится в connect.probe
+        и доступен после перезапуска. configuration_version фиксирует row_version
+        подключения на момент запуска. Повтор возвращает идущую пробу только для той же
+        версии; при идущей пробе другой версии - 409 state_conflict.
       tags: [connections]
       x-craftpulse-action: connections.manage
       x-craftpulse-delivery: M0
@@ -1173,10 +1178,12 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ConnectionProbe'}
-              example: {id: 0193a5b0-5757-7000-8000-000000000001, status: pending, started_at: '2026-11-08T10:01:00Z', finished_at: null, edition: null, source_version: null, contract_version: null, capabilities: [], reason_code: null, retry_after_seconds: 3}
+              example: {"id":"0193a5b0-5757-7000-8000-000000000001","status":"pending","started_at":"2026-11-08T10:01:00Z","finished_at":null,"edition":null,"source_version":null,"contract_version":null,"capabilities":[],"reason_code":null,"retry_after_seconds":3,"configuration_version":1}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        "409":
+          $ref: "#/components/responses/Conflict"
   /connections/{connection_id}/probes/{probe_id}:
     get:
       operationId: getConnectionProbe
@@ -1185,6 +1192,12 @@ paths:
         Статус пробы и проверенные возможности с причинами недоступных. Пока проба идёт,
         `retry_after_seconds` подсказывает, когда спросить снова. Неверная редакция
         (Jira Cloud на адаптере DC) - исход `failed` с `edition_mismatch` (V-12).
+
+        Проба другого подключения или удалённого подключения и истёкшая проба дают одинаковый
+        404. Изменение настроек или учётных данных во время пробы делает её результат
+        непригодным для активации: failed с reason_code configuration_changed.
+        Неактивированные завершённые пробы хранятся 24 ч; проба последней активации
+        сохраняется, пока на неё ссылается подключение.
       tags: [connections]
       x-craftpulse-action: connections.manage
       x-craftpulse-delivery: M0
@@ -1212,6 +1225,7 @@ paths:
                   - {capability: write_tracker_issue, state: missing, reason_code: permission_missing, checked_at: '2026-11-08T10:01:14Z'}
                 reason_code: null
                 retry_after_seconds: null
+                configuration_version: 1
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -1220,10 +1234,19 @@ paths:
       operationId: activateConnection
       summary: Подтвердить возможности и запустить загрузку истории
       description: |
-        Администратор подтверждает результат успешной пробы (UI-17). Сохраняются только
-        проверенные возможности этой пробы; подключение становится `active` и начинает
-        загрузку истории (UC-05). Проба не последняя или неуспешная - `409 state_conflict`.
-        Повтор для уже активного подключения с той же пробой возвращает его состояние.
+        Администратор подтверждает результат успешной пробы (UI-17). Проба должна принадлежать
+        этому подключению, быть последней, иметь status succeeded и configuration_version,
+        равную текущей row_version; иначе 409 state_conflict. If-Match должен совпадать
+        с текущим ETag, иначе 412. Подтверждённые возможности копируются из connect.probe
+        в connect.capability только в транзакции активации. В той же транзакции подключение
+        становится active, row_version увеличивается, сохраняются activated_probe_id и
+        activated_row_version и ставится задание загрузки истории (UC-05).
+        Повтор той же активации после таймаута определяется по activated_probe_id и
+        activated_row_version: если подключение active и конфигурация с активации не менялась, возвращаются
+        200 и текущий ETag до сравнения прежнего If-Match. Отсутствующий If-Match всегда
+        даёт 428. После изменения настроек это уже не повтор прежней активации;
+        нужно перечитать подключение и выполнить новую пробу. Проверки прав выполняются
+        до обработки повтора; повтор не ставит второй сбор.
       tags: [connections]
       x-craftpulse-action: connections.manage
       x-craftpulse-delivery: M0
@@ -5935,7 +5958,7 @@ components:
         sync_paused: {type: boolean}
     ConnectionProbe:
       type: object
-      required: [id, status, started_at, finished_at, edition, source_version, contract_version, capabilities, reason_code, retry_after_seconds]
+      required: ["id","status","started_at","finished_at","edition","source_version","contract_version","capabilities","reason_code","retry_after_seconds","configuration_version"]
       properties:
         id: {type: string, format: uuid}
         status: {type: string, enum: [pending, running, succeeded, failed]}
@@ -5947,8 +5970,12 @@ components:
         capabilities: {type: array, items: {$ref: '#/components/schemas/Capability'}}
         reason_code:
           type: [string, 'null']
-          description: 'Причина неуспеха: `edition_mismatch`, `auth_failed`, `outside_network_scope`, `certificate_untrusted`, `timeout`, `adapter_unavailable`, `contract_unsupported`.'
+          description: "Причина неуспеха: `edition_mismatch`, `auth_failed`, `outside_network_scope`, `certificate_untrusted`, `timeout`, `adapter_unavailable`, `contract_unsupported`. Изменение конфигурации во время пробы - configuration_changed."
         retry_after_seconds: {type: [integer, 'null'], minimum: 1}
+        configuration_version:
+          type: integer
+          minimum: 1
+          description: row_version подключения, для которой выполнена проба; сверяется при активации.
     ConnectionActivation:
       type: object
       additionalProperties: false

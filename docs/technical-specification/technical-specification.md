@@ -1809,7 +1809,7 @@ npm --prefix scripts/openapi run generators
 npm --prefix scripts/openapi run docs
 ```
 
-`verify` запускает оба линтера, проверку правил craftPulse, сверку карты и отрицательные проверки. Отрицательные проверки намеренно удаляют действие, задают неподдержанное объединение типов, портят пример ответа и добавляют индекс скрытой строки в `redactions`: каждая должна завершиться отказом ожидаемого правила. Исходный контракт не меняется.
+`verify` запускает оба линтера, проверку правил craftPulse, сверку карты и отрицательные проверки. Отрицательные проверки намеренно удаляют действие, задают неподдержанное объединение типов, портят пример ответа добавляют индекс скрытой строки в `redactions` и удаляют версию настроек из пробы: каждая должна завершиться отказом ожидаемого правила. Исходный контракт не меняется.
 
 `generators` создаёт временный каталог, генерирует и собирает Go-контракт, генерирует типы TypeScript и проверяет их компилятором 6.0.3. После проверки каталог удаляется. Объединения типов, кроме пары с `null`, в контракте запрещены из-за ограничений oapi-codegen. Схемы тел запросов имеют суффиксы `Input`, `Draft` или `Create`, чтобы их имена не совпадали с именами типов полей генератора.
 
@@ -1825,7 +1825,7 @@ npm --prefix scripts/openapi run docs
 |---|---|---|---|---|
 | Подключение Jira DC | `createConnection` с адресом, учётными данными и проектом | `201`, подключение `draft`, учётные данные представлены только `credentials_set_at` | Адрес вне сетевой области - `422 outside_scope`; область уже собирает другое подключение - `409 state_conflict` | UC-04 шаги 1-3; `connections.manage` - администратор |
 | | `startConnectionProbe`, затем `getConnectionProbe` | `202` и ресурс пробы; затем `succeeded` с возможностями и причинами недоступных | Jira Cloud - `failed` с `edition_mismatch` | UC-04 шаги 4-5, A3 |
-| | `activateConnection` с `probe_id` и `If-Match` | `200`, подключение `active`, началась загрузка истории | Проба не последняя - `409 state_conflict`; форма устарела - `412` | UC-04 шаг 6, UC-05 шаг 1 |
+| | `activateConnection` с `probe_id` и `If-Match` | `200`, подключение `active`, началась загрузка истории | Проба не последняя или выполнена для другой версии настроек - `409 state_conflict`; новая форма устарела - `412`; повтор уже выполненной активации возвращает `200` до сравнения прежнего `If-Match` | UC-04 шаг 6, UC-05 шаг 1 |
 | | `getSyncStatus` | Последняя попытка, последний успех, отставание и граница истории по видам данных | Подключение недоступно субъекту - `404` | UC-10 шаги 1-3; `sync.read` - администратор |
 | Импорт | `createImport` с CSV задач и полями манифеста | `202`, `receipt_id`, `Location` на квитанцию | Неподдержанная схема - отказ пакета целиком в квитанции, прежний результат сохранён; файл больше 25 MiB - `413` | UC-06 шаги 1-3; `imports.create` - администратор, техлид |
 | | `getReceipt`, `listReceiptRecords?outcome=rejected` | `partial`: 1 принята, 1 отклонена с `missing_source_id` | Повтор того же файла - `202` со статусом `duplicate`, вклад не удваивается | UC-06 шаги 4-5, A3; FR-004, FR-016 |
@@ -3120,7 +3120,13 @@ erDiagram
   }
   connection["connect.connection"] {
     uuid id PK
+    uuid activated_probe_id FK
     uuid instance_id FK
+  }
+  probe["connect.probe"] {
+    uuid id PK
+    uuid connection_id FK
+    int configuration_version
   }
   scope["connect.connection_scope"] {
     uuid id PK
@@ -3166,6 +3172,8 @@ erDiagram
     text native_id PK
   }
   instance ||--o{ connection : ""
+  connection ||--o{ probe : "connection_id"
+  probe |o--o| connection : "activated_probe_id"
   connection ||--o{ scope : ""
   connection ||--o{ capability : ""
   connection ||--o{ webhook : ""
@@ -3590,7 +3598,8 @@ erDiagram
 | Таблица | Назначение | Поля и типы | Ключи и связи | Ограничения | Индексы и запрос |
 |---|---|---|---|---|---|
 | `connect.source_instance` | Экземпляр источника - якорь идентичности (раздел 12.4) | `id`; `provider text`; `instance_key text`; `base_url text?`; `edition text?`; `source_version text?`; `verified_at timestamptz?` | PK (`id`) | `provider IN ('jira_dc','gitlab','github','jenkins','sonarqube','confluence_dc','git','universal','client')`; `instance_key` - `text COLLATE "C"` до 512 байт | UNIQUE (`provider`, `instance_key`) - сопоставление пакета и подключения экземпляру |
-| `connect.connection` | Подключение | `id`; `instance_id uuid`; `name text`; `adapter_kind text`; `adapter_url text?`; `adapter_key_enc bytea?`; `key_version integer?`; `contract_version text`; `access_mode text`; `status text`; `paused_until timestamptz?`; `row_version integer`; `created_by uuid`; `created_at timestamptz`; `deleted_at timestamptz?` | PK (`id`); FK `instance_id` → `connect.source_instance`; UNIQUE (`id`, `instance_id`) - цель составного FK области | `adapter_kind IN ('builtin','client')`; у адаптера клиента заданы адрес и ключ, у встроенного - нет; `access_mode IN ('service_account','user_token','synced')`; `status IN ('draft','active','access_lost','deleted')`; `(status = 'deleted') = (deleted_at IS NOT NULL)` | (`instance_id`) - индекс FK. `row_version` - проверка устаревшей формы администратора. `paused_until` - пауза лимита 429 для всех вызовов (раздел 10.7) |
+| `connect.connection` | Подключение | `id`; `instance_id uuid`; `name text`; `adapter_kind text`; `adapter_url text?`; `adapter_key_enc bytea?`; `key_version integer?`; `contract_version text`; `access_mode text`; `status text`; `paused_until timestamptz?`; `row_version integer`; `activated_probe_id uuid?`; `activated_row_version integer?`; `created_by uuid`; `created_at timestamptz`; `deleted_at timestamptz?` | PK (`id`); FK `instance_id` → `connect.source_instance`; UNIQUE (`id`, `instance_id`) - цель составного FK области; FK (`id`, `activated_probe_id`) → `connect.probe` (`connection_id`, `id`) | `adapter_kind IN ('builtin','client')`; у адаптера клиента заданы адрес и ключ, у встроенного - нет; `access_mode IN ('service_account','user_token','synced')`; `status IN ('draft','active','access_lost','deleted')`; `(status = 'deleted') = (deleted_at IS NOT NULL)`; `row_version > 0`; поля последней активации заполнены вместе, `activated_row_version <= row_version` | (`instance_id`) - индекс FK. `row_version` - проверка устаревшей формы администратора. `paused_until` - пауза лимита 429 для всех вызовов (раздел 10.7) |
+| `connect.probe` | Сохранённая проба конфигурации до подтверждения | `id`; `connection_id uuid`; `configuration_version integer`; `status text`; `started_at timestamptz`; `finished_at timestamptz?`; `edition`, `source_version`, `contract_version text?`; `capabilities jsonb`; `reason_code text?` | PK (`id`); FK `connection_id` → `connect.connection`; UNIQUE (`connection_id`, `id`) - активация только своей пробы | `configuration_version > 0`; `status IN ('pending','running','succeeded','failed')`; время завершения заполнено только у конечного статуса; при ошибке задан `reason_code`; capabilities - массив результатов проверки без учётных данных и ответов источника | Частичный UNIQUE (`connection_id`) WHERE `status IN ('pending','running')` - одна идущая проба; (`connection_id`, `started_at` DESC, `id` DESC) - последняя проба; (`finished_at`) WHERE `finished_at IS NOT NULL` - очистка |
 | `connect.connection_scope` | Область подключения в источнике | `id`; `connection_id uuid`; `instance_id uuid`; `scope_kind text`; `native_scope_id ntext`; `display_name text`; `history_from timestamptz?`; `status text`; `added_at timestamptz`; `removed_at timestamptz?` | PK (`id`); FK (`connection_id`, `instance_id`) → `connect.connection` (`id`, `instance_id`) | `scope_kind IN ('tracker_project','repository','wiki_space','ci_project','analysis_project')`; `status IN ('active','removed')` | UNIQUE (`instance_id`, `scope_kind`, `native_scope_id`) WHERE `status = 'active'` - одну область экземпляра собирает одно подключение; (`connection_id`) - области подключения и индекс FK |
 | `connect.capability` | Проверенная возможность подключения (FR-014) | `connection_id uuid`; `capability text`; `state text`; `reason_code text?`; `checked_at timestamptz`; `source_version text?` | PK (`connection_id`, `capability`); FK `connection_id` → `connect.connection` | `capability IN ('read_current','read_status_history','read_field_history','read_resolution_history','read_sprint_history','read_links','read_permissions','read_deletions','write_mr_comment','write_tracker_issue','webhook')`; `state IN ('verified','partial','missing')` | PK |
 | `connect.webhook_route` | Адрес webhook подключения. Вне RLS | `id uuid DEFAULT gen_random_uuid()`; `organization_id uuid`; `connection_id uuid`; `created_at timestamptz`; `revoked_at timestamptz?` | PK (`id`); FK (`organization_id`, `connection_id`) → `connect.connection` | - | PK - приём webhook по адресу; (`organization_id`, `connection_id`) - индекс FK |
@@ -3598,6 +3607,8 @@ erDiagram
 | `sync.lease` | Одна активная попытка сбора на подключение (NFR-006) | `connection_id uuid`; `holder text`; `lease_until timestamptz` | PK (`connection_id`); ссылка → `connect.connection` | - | PK. Захват: `INSERT ... ON CONFLICT (organization_id, connection_id) DO UPDATE ... WHERE sync.lease.lease_until < $now OR sync.lease.holder = $me RETURNING`; пустой ответ - аренда занята |
 | `sync.dirty_key` | Набор объектов «перечитать» | `connection_id uuid`; `key_hash hash`; `object_kind text`; `native_ref ptext`; `added_at timestamptz` | PK (`connection_id`, `key_hash`); ссылка → `connect.connection` | - | PK. Добавление: `ON CONFLICT DO UPDATE SET added_at = EXCLUDED.added_at`; после перечитывания `DELETE ... WHERE added_at <= $read_started_at`, поэтому ключ, пришедший во время чтения, не теряется |
 | `sync.reconcile_run` | Результат сверки с манифестом источника | `id`; `connection_id uuid`; `data_kind text`; `as_of`, `started_at timestamptz`; `finished_at timestamptz?`; `expected_count`, `observed_count`, `missing_count`, `changed_count integer?`; `outcome text`; `reason_code text?` | PK (`id`); ссылка → `connect.connection` | `outcome IN ('running','complete','incomplete','failed')` | (`connection_id`, `data_kind`, `started_at DESC`) - последняя сверка в диагностике (FR-020) |
+
+Проба и её начальное задание River создаются одной транзакцией. Worker при фиксации результата под блокировкой подключения повторно сверяет `configuration_version` с настройками; если они изменились, завершает пробу с `configuration_changed`. Любое изменение адреса, областей, адаптера или учётных данных увеличивает `connect.connection.row_version`. До подтверждения `connect.capability` не меняется. Активация под блокировкой подключения проверяет, что последняя проба успешна и её версия настроек актуальна, копирует её возможности, увеличивает `row_version`, запоминает ID пробы и новую версию в полях активации, пишет аудит и ставит сбор одной транзакцией. Повтор с тем же `probe_id` при `status = active` и `row_version = activated_row_version` возвращает результат до сравнения устаревшего `If-Match`; без заголовка ответ 428. После изменения настроек этот повтор не применяется. Права проверяются каждый раз.
 
 ##### 12.5.4. Приём
 
@@ -4130,6 +4141,7 @@ WHERE organization_id = $org AND id = $series
 | `sync.dirty_key` | После перечитывания |
 | `normalize.area_change` | Через 30 дней. Если `consumed_seq` ряда старше самой старой оставшейся строки, `calc` пересчитывает окно целиком |
 | `view.operation` | Через 24 ч после `completed_at`; активная операция не удаляется. Отзыв доступа закрывает чтение немедленно, независимо от срока |
+| `connect.probe` | Через 24 ч после завершения, если проба не указана в `connect.connection.activated_probe_id`; текущая активированная проба сохраняется. Удаление подключения закрывает чтение проб сразу; при его окончательном удалении сначала очищаются ссылка активации и пробы |
 | Задания River | Завершённые и отменённые через 24 ч, отброшенные после исчерпания попыток через 7 дней. Это заданные значения очистки River |
 
 **Удаление по запросу (FR-010).**
@@ -4223,7 +4235,7 @@ ID учётной записи в источнике остаётся техни
 
 | DR | Таблицы |
 |---|---|
-| DR-001 | `connect.source_instance`, `connect.connection`, `connect.connection_scope`, `connect.capability`, `normalize.source_object`, `org.*`, `platform.tenant`, `access.source_permission` |
+| DR-001 | `connect.source_instance`, `connect.connection`, `connect.connection_scope`, `connect.capability`, `connect.probe`, `normalize.source_object`, `org.*`, `platform.tenant`, `access.source_permission` |
 | DR-002 | `normalize.task_version`, `normalize.task_event`, `normalize.sprint_version`, `normalize.sprint_event` |
 | DR-003 | `ingest.receipt`, `ingest.record`, `ingest.conflict`, `sync.state`, `sync.reconcile_run` |
 | DR-004 | `process.mapping_version`, `process.mapping_rule`, `process.calendar_version`, `process.target_version`, `process.dod_version`, `process.dod_obligation`, `org.account_assignment` |

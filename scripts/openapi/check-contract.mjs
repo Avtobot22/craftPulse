@@ -101,3 +101,12 @@ const summarySchema = contract.components.schemas.MergeRequestSummary;
 assert(summarySchema.required.includes('access_limited') && summarySchema.required.includes('access_notes'));
 assert.equal(contract.components.schemas.Redactions.items.pattern, '^[a-z][a-z0-9_]*$');
 console.log('Access, polling and metric examples passed.');
+
+const probeSchema = contract.components.schemas.ConnectionProbe;
+assert(probeSchema.required.includes('configuration_version'), 'Probe must identify its configuration');
+for (const id of ['startConnectionProbe', 'getConnectionProbe']) {
+  const response = byId[id].responses[id === 'startConnectionProbe' ? '202' : '200'];
+  const probe = response.content['application/json'].example;
+  assert(Number.isInteger(probe.configuration_version) && probe.configuration_version > 0, 'Probe example needs a configuration version');
+}
+assert(byId.startConnectionProbe.responses['409'], 'A concurrent probe for another configuration must be rejected');
