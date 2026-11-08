@@ -243,7 +243,7 @@ paths:
       tags: [credentials]
       x-craftpulse-action: profile.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-001, UC-03, UI-04]
+      x-craftpulse-trace: [FR-001, UC-03, UI-04, UI-73]
       responses:
         '200':
           description: Подключения и состояние связи.
@@ -262,7 +262,7 @@ paths:
       tags: [credentials]
       x-craftpulse-action: profile.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-001, UC-03, UI-04]
+      x-craftpulse-trace: [FR-001, UC-03, UI-04, UI-73]
       parameters:
         - $ref: '#/components/parameters/ConnectionId'
       responses:
@@ -283,7 +283,7 @@ paths:
       tags: [credentials]
       x-craftpulse-action: profile.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-001, UC-03]
+      x-craftpulse-trace: [FR-001, UC-03, UI-73]
       parameters:
         - $ref: '#/components/parameters/ConnectionId'
       responses:
@@ -299,7 +299,7 @@ paths:
       tags: [credentials]
       x-craftpulse-action: profile.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-001, UC-03]
+      x-craftpulse-trace: [FR-001, UC-03, UI-73]
       parameters:
         - {name: code, in: query, schema: {type: string, maxLength: 4096}}
         - {name: state, in: query, required: true, schema: {type: string, maxLength: 512}}
@@ -1993,9 +1993,9 @@ paths:
       x-craftpulse-delivery: M0
       x-craftpulse-trace: [FR-019, UC-09, UI-16]
       parameters:
-        - $ref: "#/components/parameters/TeamId"
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Cursor"
+        - $ref: '#/components/parameters/TeamId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
         - name: task_type
           in: query
           schema:
@@ -3825,7 +3825,7 @@ paths:
     get:
       operationId: listDodVersions
       summary: Версии Definition of Done команды
-      description: Обязательства DoD по типам задач с видом основания (FR-063). `ETag` - номер последней версии.
+      description: "Обязательства DoD по типам задач (FR-063). Без task_type возвращается общий список без ETag. Для формы одного типа передайте task_type: ETag содержит последнюю версию именно этого типа, включая \"0\" при отсутствии версий. Курсор не меняет версию выбранного типа."
       tags: [m1]
       x-craftpulse-action: process.manage
       x-craftpulse-delivery: M1
@@ -3834,11 +3834,18 @@ paths:
         - $ref: '#/components/parameters/TeamId'
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
+        - name: task_type
+          in: query
+          description: Тип задачи для редактирования своей версии DoD.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
       responses:
         '200':
           description: Страница версий.
           headers:
-            ETag: {$ref: '#/components/headers/ETag'}
+            ETag: {"description":"Возвращается только при task_type: версия данного типа или \"0\", если версий нет.","schema":{"type":"string","pattern":"^\"[0-9]+\"$"},"example":"\"1\""}
           content:
             application/json:
               schema: {$ref: '#/components/schemas/DodVersionPage'}
@@ -3857,6 +3864,9 @@ paths:
         Обязательство без способа подтверждения не объявляется машинно проверенным (FR-063). Правила версии как у `createMappingVersion`.
         Если содержимое равно действующей версии, возвращается 200 без создания версии.
         Повтор Idempotency-Key возвращает исходный статус и ответ до проверки If-Match.
+
+        If-Match берётся из listDodVersions с тем же task_type, что и в теле; версия
+        одного типа не служит предусловием другого. Для нового типа передаётся "0".
 
       tags: [m1]
       x-craftpulse-action: process.manage
@@ -6206,18 +6216,44 @@ components:
     MappingRule:
       type: object
       additionalProperties: false
-      description: Правило сопоставления (раздел 12.5.6). Значение без правила остаётся неизвестным и не даёт начала или завершения.
+      description: |
+        Правило сопоставления (раздел 12.5.6). Значение без правила остаётся неизвестным и не даёт начала или завершения.
+        Правила acceptance_gate, epic_field и business_epic_value доступны с M1; на M0
+        их передача даёт 422 с not_allowed_value у rule_kind. acceptance_gate отмечает
+        ID статуса приёмки отдельно от основного смысла этого статуса; native_value пуст.
+        epic_field задаёт ID поля связи с эпиком; native_value пуст. business_epic_value
+        задаёт ID поля и его исходное значение, подтверждающее признак бизнес-эпика.
+
       required: [rule_kind, instance_id, native_ref, native_value, meaning, rank]
       properties:
-        rule_kind: {type: string, enum: [status, resolution, issue_type, size_field, size_value, team_field, team_value]}
+        rule_kind: {type: string, enum: [status, resolution, issue_type, size_field, size_value, team_field, team_value, acceptance_gate, epic_field, business_epic_value]}
         instance_id: {type: string, format: uuid}
         native_ref: {type: string, minLength: 1, maxLength: 255}
         native_value: {type: string, maxLength: 255, description: Пустая строка для правил без значения.}
         meaning:
           type: string
           maxLength: 200
-          description: 'Для `status` - `intake`, `active`, `wait`, `blocked`, `done`, `cancelled`, `duplicate`, `ignored`; для `resolution` - `accepted`, `cancelled`, `duplicate`, `ignored`; для `size_value` и `issue_type` - метка; для `team_value` - ID команды.'
+          description: "Для `status` - `intake`, `active`, `wait`, `blocked`, `done`, `cancelled`, `duplicate`, `ignored`; для `resolution` - `accepted`, `cancelled`, `duplicate`, `ignored`; для `size_value` и `issue_type` - метка; для `team_value` - ID команды. С M1: acceptance_gate - acceptance, epic_field - parent_epic, business_epic_value - business_epic. Эти правила не заменяют обычное правило status."
         rank: {type: [integer, 'null'], description: Порядок размера; обязателен для `size_value`.}
+      examples:
+        - rule_kind: acceptance_gate
+          instance_id: 0193a5b0-aaaa-7000-8000-000000000001
+          native_ref: "51"
+          native_value: ""
+          meaning: acceptance
+          rank: null
+        - rule_kind: epic_field
+          instance_id: 0193a5b0-aaaa-7000-8000-000000000001
+          native_ref: customfield_10014
+          native_value: ""
+          meaning: parent_epic
+          rank: null
+        - rule_kind: business_epic_value
+          instance_id: 0193a5b0-aaaa-7000-8000-000000000001
+          native_ref: customfield_10028
+          native_value: yes
+          meaning: business_epic
+          rank: null
     MappingDraft:
       type: object
       additionalProperties: false
