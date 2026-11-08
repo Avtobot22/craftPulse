@@ -1,0 +1,17 @@
+# Проверка openapi.yaml: структура OpenAPI 3.1, примеры против схем, ссылки.
+extends:
+  - recommended
+rules:
+  no-invalid-media-type-examples:
+    severity: error
+    allowAdditionalProperties: false
+  no-invalid-parameter-examples: error
+  no-invalid-schema-examples: error
+  no-unused-components: error
+  operation-4xx-response: error
+  operation-operationId-unique: error
+  operation-summary: error
+  operation-description: error
+  tag-description: error
+  info-license: error
+  no-server-example.com: off

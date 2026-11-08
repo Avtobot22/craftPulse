@@ -1,0 +1,94 @@
+# Правила стиля API craftPulse поверх рекомендованного набора Spectral (раздел 5 ТЗ).
+extends: ["spectral:oas"]
+rules:
+  craftpulse-action:
+    description: У каждой операции есть действие, которое проверяет access (раздел 13.4 ТЗ).
+    severity: error
+    given: "$.paths[*][get,put,post,delete,patch]"
+    then:
+      field: x-craftpulse-action
+      function: pattern
+      functionOptions:
+        match: "^(public|[a-z_]+\\.[a-z_]+)$"
+  craftpulse-action-present:
+    description: Расширение x-craftpulse-action обязательно.
+    severity: error
+    given: "$.paths[*][get,put,post,delete,patch]"
+    then:
+      field: x-craftpulse-action
+      function: truthy
+  craftpulse-delivery:
+    description: Поставка, с которой доступна операция.
+    severity: error
+    given: "$.paths[*][get,put,post,delete,patch]"
+    then:
+      field: x-craftpulse-delivery
+      function: enumeration
+      functionOptions:
+        values: [M0, M1, M2]
+  craftpulse-trace:
+    description: Операция связана с FR, UC или UI.
+    severity: error
+    given: "$.paths[*][get,put,post,delete,patch]"
+    then:
+      field: x-craftpulse-trace
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          minItems: 1
+          items: {type: string, pattern: "^(FR-[0-9]{3}|UC-[0-9]{2}|UI-[0-9]{2}|SEC-[0-9]{2})$"}
+  craftpulse-operation-id-camel:
+    description: operationId в camelCase.
+    severity: error
+    given: "$.paths[*][get,put,post,delete,patch].operationId"
+    then:
+      function: casing
+      functionOptions: {type: camel}
+  craftpulse-path-kebab:
+    description: Сегменты пути в нижнем регистре через дефис, параметры в snake_case.
+    severity: error
+    given: "$.paths"
+    then:
+      field: "@key"
+      function: pattern
+      functionOptions:
+        match: "^(/([a-z0-9]+(-[a-z0-9]+)*|\\{[a-z]+(_[a-z]+)*\\}))+$"
+  craftpulse-property-snake:
+    description: Поля схем в snake_case.
+    severity: error
+    given: "$.components.schemas..properties"
+    then:
+      field: "@key"
+      function: casing
+      functionOptions: {type: snake}
+  craftpulse-errors-problem-json:
+    description: Ошибки отдаются как application/problem+json (RFC 9457).
+    severity: error
+    given: "$.components.responses[?(@property.match(/^(BadRequest|Unauthorized|Forbidden|NotFound|Conflict|PreconditionFailed|PreconditionRequired|ContentTooLarge|UnsupportedMediaType|ValidationFailed|TooManyRequests|ServiceUnavailable)$/))].content"
+    then:
+      field: application/problem+json
+      function: truthy
+  craftpulse-error-refs:
+    description: Ответы 4xx и 5xx операций ссылаются на общие ответы components/responses.
+    severity: error
+    resolved: false
+    given: "$.paths[*][get,put,post,delete,patch].responses[?(@property.match(/^[45]/))]"
+    then:
+      field: $ref
+      function: truthy
+  craftpulse-type-union:
+    description: Массив в type допускается только как пара «тип и null» - другие объединения не поддерживает генератор сервера oapi-codegen.
+    severity: error
+    given: "$..type"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          anyOf:
+            - type: string
+            - type: object
+            - type: array
+              minItems: 2
+              maxItems: 2
+              contains: {const: "null"}
