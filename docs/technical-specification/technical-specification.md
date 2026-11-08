@@ -1469,14 +1469,14 @@ API craftPulse и API провайдеров разделены: браузер,
 - **Организация.** Берётся из сессии, ключа или токена и в адресе не передаётся (раздел 13.2).
 - **Ресурсы и имена.** Пути - существительные во множественном числе в `kebab-case`, не глубже двух уровней вложенности. Поля - `snake_case`, ссылки - `*_id`, время - `*_at`. Действие с параметрами или побочным эффектом оформляется подресурсом: `/activation`, `/decisions`, `/confirmation`.
 - **Данные.** Время - RFC 3339 в UTC. Длительности - целые `*_seconds` или `*_ms`. Деньги - строка-decimal и валюта ISO 4217. Перечисления - стабильные строки: клиент принимает неизвестное значение и показывает его как неизвестное. Значение показателя - объект `MetricValue` с состоянием данных (раздел 4.3): у `UNKNOWN`, `NOT_EVALUATED` и `NOT_APPLICABLE` значения нет, и оно не заменяется нулём.
-- **`null` и отсутствие поля.** `null` - значения нет. Поле отсутствует только тогда, когда его закрыли права, и его имя есть в `redactions`. Пустая коллекция - пустой массив.
+- **`null` и отсутствие поля.** `null` - значения нет. Обязательность поля задаётся `required` его схемы. Поле, закрытое правами, отсутствует и перечислено в `redactions`; остальные необязательные поля можно не передавать по условиям схемы. Пустая коллекция - пустой массив.
 - **Неполные и ограниченные данные.** Ответ, построенный по части области, имеет `access_limited: true` и `access_notes` без числа и названий скрытых объектов (FR-001). Недоступная проверка прав источника даёт отметку `access_check_unavailable`, а не ошибку всего ответа.
 - **Коллекции.** `{data, next_cursor}`, курсор непрозрачен и действует 24 ч. `limit` по умолчанию 50, максимум 200. Сортировка - только по полям из операции, вторым ключом всегда идёт `id`. Точного общего количества коллекции не отдают.
 - **Строгость запроса.** Неизвестный параметр запроса даёт `400 unknown_parameter`, неизвестное поле тела - `422` с причиной `unknown_field`. Клиент обязан игнорировать неизвестные поля ответа.
 - **Частичное обновление.** JSON Merge Patch (`application/merge-patch+json`): `null` очищает поле, отсутствующее поле не меняется.
 - **Конкурентные изменения.** Версионируемый ресурс отдаёт `ETag`, изменение требует `If-Match`. Устаревшая версия даёт `412 version_conflict`, отсутствие заголовка - `428 precondition_required`, первая версия ресурса - `If-Match: "0"`. Это реализует FR-008 и уникальный номер версии из раздела 12.8.
-- **Повтор подтверждения.** Операция, которая создаёт версию настройки, решение или внешнюю запись, требует `Idempotency-Key` (UUID на одну попытку пользователя). Повтор возвращает сохранённый результат, тот же ключ с другим телом - `422 idempotency_key_reused`. Ключ хранится как `confirmation_id` вместе с созданной записью (раздел 12.5) и живёт по её сроку хранения. Выпуск ключа API и токена загрузки ключа повтора не имеет: значение показывается один раз, и слепой повтор выпустил бы второй ключ. Поэтому клиент после таймаута сверяется со списком.
-- **Долгие операции.** Пробное чтение, загрузка пакета, импорт, выгрузка, пересчёт, повторная проверка документации, прогноз и запись в трекер отвечают `202` с адресом ресурса-операции в `Location`. Пока операция идёт, её ресурс содержит `retry_after_seconds`.
+- **Повтор подтверждения.** Операция, которая создаёт версию настройки, решение или внешнюю запись, требует `Idempotency-Key` (UUID на одну попытку пользователя). Повтор возвращает сохранённый результат, тот же ключ с другим телом - `422 idempotency_key_reused`. Сохранённый повтор проверяется до `If-Match`, поэтому уже созданная версия не приводит к `412` при повторе. Область ключа включает организацию, субъекта, операцию и целевой ресурс; другое тело с тем же ключом отклоняется. Ключ хранится как `confirmation_id` вместе с созданной записью (раздел 12.5) и живёт по её сроку хранения. Выпуск ключа API и токена загрузки ключа повтора не имеет: значение показывается один раз, и слепой повтор выпустил бы второй ключ. Поэтому клиент после таймаута сверяется со списком.
+- **Долгие операции.** Пробное чтение, загрузка пакета, импорт, выгрузка, пересчёт, повторная проверка документации, прогноз и запись в трекер отвечают `202` с адресом ресурса-операции в `Location`. Пока операция идёт, её ресурс содержит `retry_after_seconds`. Сбор, пересчёт ряда и повторная проверка документации возвращают `BackgroundOperation`; `getBackgroundOperation` различает очередь, выполнение, успех и ошибку. Ресурс доступен инициатору с действующими правами исходного действия и хранится 24 ч после завершения. Для других долгих запросов состояние находится в их собственном ресурсе: квитанции, пробе, выгрузке, прогнозе или черновике.
 - **Лимиты.** Пределы пакета - NFR-015. Частоту на адресах входа и webhook ограничивает nginx (раздел 13.4): `429` с `Retry-After`. Недоступное хранилище объектов даёт `503` с `Retry-After`.
 - **Ограничение генератора.** Тип-массив в схеме допускается только как пара «тип и `null`»: другие объединения генератор сервера `oapi-codegen` не поддерживает. Это проверяет правило Spectral `craftpulse-type-union`.
 
@@ -1512,7 +1512,7 @@ API craftPulse и API провайдеров разделены: браузер,
 | Действие | Кто | Область |
 |---|---|---|
 | `public` | Без входа: начало входа, возврат провайдера, webhook | Маршрут организации или подключения |
-| `session.read`, `session.manage`, `profile.manage` | Любой вошедший пользователь | Своя сессия и свои настройки |
+| `session.read`, `session.manage`, `profile.manage` | Любой вошедший пользователь | Своя сессия, настройки и фоновые операции; для операции также проверяются исходное действие и область |
 | `org.read`, `report.read`, `tasks.read`, `mr.read`, `ci.read`, `findings.read`, `docs.read` | Любая роль; ключ API - только `org.read` и `report.read` | Назначенные команды, проекты и сервисы. Находки безопасности требуют `security_access`, wiki - `wiki_access` и доступа пользователя к Confluence |
 | `export.create` | Любая роль; ключ API | Текущая область, файл - только запросившему |
 | `org.manage`, `users.manage`, `accounts.manage`, `api_keys.manage`, `connections.manage`, `sync.read`, `installation.read`, `audit.read`, `ci_rates.manage` | `administrator` | Организация; содержимое закрытого кода, безопасности и wiki администратор не получает (SEC-15) |
@@ -1538,236 +1538,242 @@ API craftPulse и API провайдеров разделены: браузер,
 
 Карта построена из `openapi.yaml`: по `operationId` находится полное описание операции, её параметры, ответы и примеры. Ссылка - JSON Pointer операции в файле контракта. Поставка - с какой поставки операция доступна; раньше неё операция отвечает `404 not_found`.
 
+<!-- OPERATION-MAP:START -->
+<!-- Карта генерируется: npm --prefix scripts/openapi run map -->
+
 **session** - Вход, сессия и текущий пользователь (UC-03, раздел 13).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `startLogin` | `GET /o/{org_slug}/login` | Начать вход через провайдера организации. FR-013, UC-03; UI-02 | `public`; без входа | M0 | `#/paths/~1o~1{org_slug}~1login/get` |
-| `completeLogin` | `GET /o/{org_slug}/callback` | Завершить вход по ответу провайдера. FR-013, FR-064, UC-03, UC-01; UI-02, UI-03, UI-06 | `public`; без входа | M0 | `#/paths/~1o~1{org_slug}~1callback/get` |
-| `logout` | `POST /api/v1/session/logout` | Выйти из текущей сессии. FR-002, UC-03; UI-01 | `session.manage`; сессия | M0 | `#/paths/~1session~1logout/post` |
-| `getCurrentUser` | `GET /api/v1/me` | Получить текущего пользователя, организацию, роли и доступные действия. FR-001, FR-013, UC-03; UI-01 | `session.read`; сессия | M0 | `#/paths/~1me/get` |
+| `startLogin` | `GET /o/{org_slug}/login` | Начать вход через провайдера организации. FR-013, UC-03; UI-02 | `public`; без входа | M0 | [контракт](openapi.yaml#/paths/~1o~1{org_slug}~1login/get) |
+| `completeLogin` | `GET /o/{org_slug}/callback` | Завершить вход по ответу провайдера. FR-013, FR-064, UC-03, UC-01; UI-02, UI-03, UI-06 | `public`; без входа | M0 | [контракт](openapi.yaml#/paths/~1o~1{org_slug}~1callback/get) |
+| `logout` | `POST /api/v1/session/logout` | Выйти из текущей сессии. FR-002, UC-03; UI-01 | `session.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1session~1logout/post) |
+| `getCurrentUser` | `GET /api/v1/me` | Получить текущего пользователя, организацию, роли и доступные действия. FR-001, FR-013, UC-03; UI-01 | `session.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1me/get) |
+| `getBackgroundOperation` | `GET /api/v1/operations/{operation_id}` | Получить состояние фоновой операции. FR-001, FR-006, FR-023, FR-047, UC-05, UC-10, UC-13, UC-37 | `session.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1operations~1{operation_id}/get) |
 
 **organization** - Структура организации, пользователи, роли и учётные записи источников (UC-02, UC-03, UC-08).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `getOrganizationStructure` | `GET /api/v1/organization/structure` | Получить структуру организации. FR-012, UC-02; UI-07 | `org.manage`; сессия | M0 | `#/paths/~1organization~1structure/get` |
-| `replaceOrganizationStructure` | `PUT /api/v1/organization/structure` | Подтвердить новую структуру организации. FR-012, FR-007, FR-008, UC-02; UI-07, UI-17 | `org.manage`; сессия | M0 | `#/paths/~1organization~1structure/put` |
-| `listTeams` | `GET /api/v1/teams` | Список доступных команд. FR-001, FR-024, UC-14; UI-01 | `org.read`; сессия, ключ API | M0 | `#/paths/~1teams/get` |
-| `listProjects` | `GET /api/v1/projects` | Список доступных проектов. FR-001, UC-14; UI-01, UI-22 | `org.read`; сессия, ключ API | M0 | `#/paths/~1projects/get` |
-| `listServices` | `GET /api/v1/services` | Список доступных сервисов. FR-001, FR-042, UC-32; UI-44 | `org.read`; сессия | M0 | `#/paths/~1services/get` |
-| `listAreas` | `GET /api/v1/areas` | Список областей источников. FR-012, FR-046, UC-02, UC-36; UI-07, UI-64 | `org.manage`; сессия | M0 | `#/paths/~1areas/get` |
-| `listUsers` | `GET /api/v1/users` | Список пользователей организации. FR-013, UC-03; UI-08 | `users.manage`; сессия | M0 | `#/paths/~1users/get` |
-| `listUserRoles` | `GET /api/v1/users/{user_id}/roles` | Роли пользователя. FR-001, FR-013, UC-03; UI-08 | `users.manage`; сессия | M0 | `#/paths/~1users~1{user_id}~1roles/get` |
-| `replaceUserRoles` | `PUT /api/v1/users/{user_id}/roles` | Заменить роли пользователя. FR-001, FR-013, UC-03; UI-08, UI-17 | `users.manage`; сессия | M0 | `#/paths/~1users~1{user_id}~1roles/put` |
-| `blockUser` | `POST /api/v1/users/{user_id}/block` | Заблокировать пользователя. FR-002, UC-03, SEC-08; UI-08 | `users.manage`; сессия | M0 | `#/paths/~1users~1{user_id}~1block/post` |
-| `unblockUser` | `POST /api/v1/users/{user_id}/unblock` | Разблокировать пользователя. UC-03; UI-08 | `users.manage`; сессия | M0 | `#/paths/~1users~1{user_id}~1unblock/post` |
-| `endUserSessions` | `DELETE /api/v1/users/{user_id}/sessions` | Завершить все сессии пользователя. FR-002, UC-03, SEC-08; UI-08 | `users.manage`; сессия | M0 | `#/paths/~1users~1{user_id}~1sessions/delete` |
-| `listPersons` | `GET /api/v1/persons` | Список людей и ботов. FR-018, UC-08; UI-15 | `accounts.manage`; сессия | M0 | `#/paths/~1persons/get` |
-| `listSourceAccounts` | `GET /api/v1/source-accounts` | Учётные записи источников и кандидаты сопоставления. FR-018, UC-08; UI-15 | `accounts.manage`; сессия | M0 | `#/paths/~1source-accounts/get` |
-| `createAccountAssignments` | `POST /api/v1/account-assignments` | Подтвердить привязки учётных записей и вид участника. FR-018, FR-007, FR-008, UC-08; UI-15, UI-17 | `accounts.manage`; сессия | M0 | `#/paths/~1account-assignments/post` |
+| `getOrganizationStructure` | `GET /api/v1/organization/structure` | Получить структуру организации. FR-012, UC-02; UI-07 | `org.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1organization~1structure/get) |
+| `replaceOrganizationStructure` | `PUT /api/v1/organization/structure` | Подтвердить новую структуру организации. FR-012, FR-007, FR-008, UC-02; UI-07, UI-17 | `org.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1organization~1structure/put) |
+| `listTeams` | `GET /api/v1/teams` | Список доступных команд. FR-001, FR-024, UC-14; UI-01 | `org.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1teams/get) |
+| `listProjects` | `GET /api/v1/projects` | Список доступных проектов. FR-001, UC-14; UI-01, UI-22 | `org.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1projects/get) |
+| `listServices` | `GET /api/v1/services` | Список доступных сервисов. FR-001, FR-042, UC-32; UI-44 | `org.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1services/get) |
+| `listAreas` | `GET /api/v1/areas` | Список областей источников. FR-012, FR-046, UC-02, UC-36; UI-07, UI-64 | `org.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1areas/get) |
+| `listUsers` | `GET /api/v1/users` | Список пользователей организации. FR-013, UC-03; UI-08 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users/get) |
+| `listUserRoles` | `GET /api/v1/users/{user_id}/roles` | Роли пользователя. FR-001, FR-013, UC-03; UI-08 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users~1{user_id}~1roles/get) |
+| `replaceUserRoles` | `PUT /api/v1/users/{user_id}/roles` | Заменить роли пользователя. FR-001, FR-013, UC-03; UI-08, UI-17 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users~1{user_id}~1roles/put) |
+| `blockUser` | `POST /api/v1/users/{user_id}/block` | Заблокировать пользователя. FR-002, UC-03, SEC-08; UI-08 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users~1{user_id}~1block/post) |
+| `unblockUser` | `POST /api/v1/users/{user_id}/unblock` | Разблокировать пользователя. UC-03; UI-08 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users~1{user_id}~1unblock/post) |
+| `endUserSessions` | `DELETE /api/v1/users/{user_id}/sessions` | Завершить все сессии пользователя. FR-002, UC-03, SEC-08; UI-08 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users~1{user_id}~1sessions/delete) |
+| `listPersons` | `GET /api/v1/persons` | Список людей и ботов. FR-018, UC-08; UI-15 | `accounts.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1persons/get) |
+| `listSourceAccounts` | `GET /api/v1/source-accounts` | Учётные записи источников и кандидаты сопоставления. FR-018, UC-08; UI-15 | `accounts.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1source-accounts/get) |
+| `createAccountAssignments` | `POST /api/v1/account-assignments` | Подтвердить привязки учётных записей и вид участника. FR-018, FR-007, FR-008, UC-08; UI-15, UI-17 | `accounts.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1account-assignments/post) |
 
 **credentials** - Ключи API, токены загрузки CI и доступ пользователя к источникам (разделы 7.2, 13.3, 13.6).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `listSourceLinks` | `GET /api/v1/me/source-links` | Список подключений, которым нужен доступ пользователя. FR-001, UC-03; UI-04 | `profile.manage`; сессия | M0 | `#/paths/~1me~1source-links/get` |
-| `startSourceLink` | `POST /api/v1/me/source-links/{connection_id}/authorization` | Начать разрешение доступа к источнику через OAuth 2.0. FR-001, UC-03; UI-04 | `profile.manage`; сессия | M0 | `#/paths/~1me~1source-links~1{connection_id}~1authorization/post` |
-| `deleteSourceLink` | `DELETE /api/v1/me/source-links/{connection_id}/authorization` | Отозвать доступ craftPulse к источнику от имени пользователя. FR-001, UC-03 | `profile.manage`; сессия | M0 | `#/paths/~1me~1source-links~1{connection_id}~1authorization/delete` |
-| `completeSourceLink` | `GET /api/v1/source-links/callback` | Принять код авторизации источника. FR-001, UC-03 | `profile.manage`; сессия | M0 | `#/paths/~1source-links~1callback/get` |
-| `listApiKeys` | `GET /api/v1/api-keys` | Ключи API организации. FR-022, UC-12; UI-08 | `api_keys.manage`; сессия | M0 | `#/paths/~1api-keys/get` |
-| `createApiKey` | `POST /api/v1/api-keys` | Выпустить ключ API. FR-022, UC-12, SEC-17; UI-08 | `api_keys.manage`; сессия | M0 | `#/paths/~1api-keys/post` |
-| `revokeApiKey` | `DELETE /api/v1/api-keys/{api_key_id}` | Отозвать ключ API. FR-002, UC-12, SEC-17; UI-08 | `api_keys.manage`; сессия | M0 | `#/paths/~1api-keys~1{api_key_id}/delete` |
-| `listUploadTokens` | `GET /api/v1/upload-tokens` | Токены загрузки CI. FR-035, UC-25; UI-50 | `upload_tokens.manage`; сессия | M0 | `#/paths/~1upload-tokens/get` |
-| `createUploadToken` | `POST /api/v1/upload-tokens` | Выпустить токен загрузки CI. FR-035, UC-25; UI-50 | `upload_tokens.manage`; сессия | M0 | `#/paths/~1upload-tokens/post` |
-| `revokeUploadToken` | `DELETE /api/v1/upload-tokens/{upload_token_id}` | Отозвать токен загрузки CI. UC-25, SEC-17; UI-50 | `upload_tokens.manage`; сессия | M0 | `#/paths/~1upload-tokens~1{upload_token_id}/delete` |
+| `listSourceLinks` | `GET /api/v1/me/source-links` | Список подключений, которым нужен доступ пользователя. FR-001, UC-03; UI-04 | `profile.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1me~1source-links/get) |
+| `startSourceLink` | `POST /api/v1/me/source-links/{connection_id}/authorization` | Начать разрешение доступа к источнику через OAuth 2.0. FR-001, UC-03; UI-04 | `profile.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1me~1source-links~1{connection_id}~1authorization/post) |
+| `deleteSourceLink` | `DELETE /api/v1/me/source-links/{connection_id}/authorization` | Отозвать доступ craftPulse к источнику от имени пользователя. FR-001, UC-03 | `profile.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1me~1source-links~1{connection_id}~1authorization/delete) |
+| `completeSourceLink` | `GET /api/v1/source-links/callback` | Принять код авторизации источника. FR-001, UC-03 | `profile.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1source-links~1callback/get) |
+| `listApiKeys` | `GET /api/v1/api-keys` | Ключи API организации. FR-022, UC-12; UI-08 | `api_keys.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1api-keys/get) |
+| `createApiKey` | `POST /api/v1/api-keys` | Выпустить ключ API. FR-022, UC-12, SEC-17; UI-08 | `api_keys.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1api-keys/post) |
+| `revokeApiKey` | `DELETE /api/v1/api-keys/{api_key_id}` | Отозвать ключ API. FR-002, UC-12, SEC-17; UI-08 | `api_keys.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1api-keys~1{api_key_id}/delete) |
+| `listUploadTokens` | `GET /api/v1/upload-tokens` | Токены загрузки CI. FR-035, UC-25; UI-50 | `upload_tokens.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1upload-tokens/get) |
+| `createUploadToken` | `POST /api/v1/upload-tokens` | Выпустить токен загрузки CI. FR-035, UC-25; UI-50 | `upload_tokens.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1upload-tokens/post) |
+| `revokeUploadToken` | `DELETE /api/v1/upload-tokens/{upload_token_id}` | Отозвать токен загрузки CI. UC-25, SEC-17; UI-50 | `upload_tokens.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1upload-tokens~1{upload_token_id}/delete) |
 
 **connections** - Подключения источников, пробное чтение и состояние сбора (UC-04, UC-05, UC-10).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `listAdapters` | `GET /api/v1/adapters` | Список поддержанных адаптеров. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | `#/paths/~1adapters/get` |
-| `listConnections` | `GET /api/v1/connections` | Подключения и сводное состояние сбора. FR-014, FR-020, UC-04, UC-10; UI-09 | `connections.manage`; сессия | M0 | `#/paths/~1connections/get` |
-| `createConnection` | `POST /api/v1/connections` | Создать подключение в состоянии черновика. FR-014, UC-04, SEC-18, SEC-20; UI-10 | `connections.manage`; сессия | M0 | `#/paths/~1connections/post` |
-| `getConnection` | `GET /api/v1/connections/{connection_id}` | Получить подключение. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | `#/paths/~1connections~1{connection_id}/get` |
-| `updateConnection` | `PATCH /api/v1/connections/{connection_id}` | Изменить подключение. FR-014, FR-020, UC-04, UC-10; UI-10, UI-11 | `connections.manage`; сессия | M0 | `#/paths/~1connections~1{connection_id}/patch` |
-| `deleteConnection` | `DELETE /api/v1/connections/{connection_id}` | Удалить подключение. FR-010, FR-020, UC-10; UI-11, UI-17 | `connections.manage`; сессия | M0 | `#/paths/~1connections~1{connection_id}/delete` |
-| `startConnectionProbe` | `POST /api/v1/connections/{connection_id}/probes` | Запустить пробное чтение. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | `#/paths/~1connections~1{connection_id}~1probes/post` |
-| `getConnectionProbe` | `GET /api/v1/connections/{connection_id}/probes/{probe_id}` | Результат пробного чтения. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | `#/paths/~1connections~1{connection_id}~1probes~1{probe_id}/get` |
-| `activateConnection` | `POST /api/v1/connections/{connection_id}/activation` | Подтвердить возможности и запустить загрузку истории. FR-014, FR-015, FR-007, UC-04, UC-05; UI-10, UI-17 | `connections.manage`; сессия | M0 | `#/paths/~1connections~1{connection_id}~1activation/post` |
-| `getSyncStatus` | `GET /api/v1/connections/{connection_id}/sync-status` | Состояние сбора подключения. FR-006, FR-015, FR-020, UC-05, UC-10; UI-11 | `sync.read`; сессия | M0 | `#/paths/~1connections~1{connection_id}~1sync-status/get` |
-| `requestSyncRun` | `POST /api/v1/connections/{connection_id}/sync-runs` | Запросить повтор сбора или сверку. FR-006, FR-015, UC-05, UC-10; UI-11 | `connections.manage`; сессия | M0 | `#/paths/~1connections~1{connection_id}~1sync-runs/post` |
+| `listAdapters` | `GET /api/v1/adapters` | Список поддержанных адаптеров. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1adapters/get) |
+| `listConnections` | `GET /api/v1/connections` | Подключения и сводное состояние сбора. FR-014, FR-020, UC-04, UC-10; UI-09 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections/get) |
+| `createConnection` | `POST /api/v1/connections` | Создать подключение в состоянии черновика. FR-014, UC-04, SEC-18, SEC-20; UI-10 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections/post) |
+| `getConnection` | `GET /api/v1/connections/{connection_id}` | Получить подключение. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}/get) |
+| `updateConnection` | `PATCH /api/v1/connections/{connection_id}` | Изменить подключение. FR-014, FR-020, UC-04, UC-10; UI-10, UI-11 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}/patch) |
+| `deleteConnection` | `DELETE /api/v1/connections/{connection_id}` | Удалить подключение. FR-010, FR-020, UC-10; UI-11, UI-17 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}/delete) |
+| `startConnectionProbe` | `POST /api/v1/connections/{connection_id}/probes` | Запустить пробное чтение. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}~1probes/post) |
+| `getConnectionProbe` | `GET /api/v1/connections/{connection_id}/probes/{probe_id}` | Результат пробного чтения. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}~1probes~1{probe_id}/get) |
+| `activateConnection` | `POST /api/v1/connections/{connection_id}/activation` | Подтвердить возможности и запустить загрузку истории. FR-014, FR-015, FR-007, UC-04, UC-05; UI-10, UI-17 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}~1activation/post) |
+| `getSyncStatus` | `GET /api/v1/connections/{connection_id}/sync-status` | Состояние сбора подключения. FR-006, FR-015, FR-020, UC-05, UC-10; UI-11 | `sync.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}~1sync-status/get) |
+| `requestSyncRun` | `POST /api/v1/connections/{connection_id}/sync-runs` | Запросить повтор сбора или сверку. FR-006, FR-015, UC-05, UC-10; UI-11 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}~1sync-runs/post) |
 
 **ingest** - Приём пакетов из CI и универсального импорта, квитанции и конфликты (UC-06, UC-25).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `getCiCheckProfile` | `GET /api/v1/ci/check-profile` | Профиль проверок проекта для шага CI. FR-035, UC-25; UI-51 | `ingest.upload`; токен загрузки | M0 | `#/paths/~1ci~1check-profile/get` |
-| `uploadPackage` | `POST /api/v1/ingest/packages` | Загрузить пакет отчётов из CI. FR-004, FR-016, FR-036, UC-25, UC-26; UI-51 | `ingest.upload`; токен загрузки | M0 | `#/paths/~1ingest~1packages/post` |
-| `createImport` | `POST /api/v1/imports` | Передать файл универсального импорта. FR-016, FR-004, UC-06; UI-12, UI-13 | `imports.create`; сессия | M0 | `#/paths/~1imports/post` |
-| `listReceipts` | `GET /api/v1/receipts` | Журнал приёма пакетов. FR-016, FR-020, UC-06, UC-10; UI-13 | `sync.read`; сессия | M0 | `#/paths/~1receipts/get` |
-| `getReceipt` | `GET /api/v1/receipts/{receipt_id}` | Квитанция приёма. FR-016, FR-004, UC-06, UC-25; UI-13, UI-51 | `receipts.read`; сессия, токен загрузки | M0 | `#/paths/~1receipts~1{receipt_id}/get` |
-| `listReceiptRecords` | `GET /api/v1/receipts/{receipt_id}/records` | Записи пакета и их исходы. FR-016, UC-06; UI-13 | `receipts.read`; сессия, токен загрузки | M0 | `#/paths/~1receipts~1{receipt_id}~1records/get` |
-| `listIngestConflicts` | `GET /api/v1/ingest-conflicts` | Конфликты приёма. FR-004, UC-06; UI-11 | `sync.read`; сессия | M0 | `#/paths/~1ingest-conflicts/get` |
-| `resolveIngestConflict` | `POST /api/v1/ingest-conflicts/{conflict_id}/resolution` | Решить конфликт приёма. FR-004, FR-005, UC-06; UI-11, UI-17 | `connections.manage`; сессия | M0 | `#/paths/~1ingest-conflicts~1{conflict_id}~1resolution/post` |
+| `getCiCheckProfile` | `GET /api/v1/ci/check-profile` | Профиль проверок проекта для шага CI. FR-035, UC-25; UI-51 | `ingest.upload`; токен загрузки | M0 | [контракт](openapi.yaml#/paths/~1ci~1check-profile/get) |
+| `uploadPackage` | `POST /api/v1/ingest/packages` | Загрузить пакет отчётов из CI. FR-004, FR-016, FR-036, UC-25, UC-26; UI-51 | `ingest.upload`; токен загрузки | M0 | [контракт](openapi.yaml#/paths/~1ingest~1packages/post) |
+| `createImport` | `POST /api/v1/imports` | Передать файл универсального импорта. FR-016, FR-004, UC-06; UI-12, UI-13 | `imports.create`; сессия | M0 | [контракт](openapi.yaml#/paths/~1imports/post) |
+| `listReceipts` | `GET /api/v1/receipts` | Журнал приёма пакетов. FR-016, FR-020, UC-06, UC-10; UI-13 | `sync.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1receipts/get) |
+| `getReceipt` | `GET /api/v1/receipts/{receipt_id}` | Квитанция приёма. FR-016, FR-004, UC-06, UC-25; UI-13, UI-51 | `receipts.read`; сессия, токен загрузки | M0 | [контракт](openapi.yaml#/paths/~1receipts~1{receipt_id}/get) |
+| `listReceiptRecords` | `GET /api/v1/receipts/{receipt_id}/records` | Записи пакета и их исходы. FR-016, UC-06; UI-13 | `receipts.read`; сессия, токен загрузки | M0 | [контракт](openapi.yaml#/paths/~1receipts~1{receipt_id}~1records/get) |
+| `listIngestConflicts` | `GET /api/v1/ingest-conflicts` | Конфликты приёма. FR-004, UC-06; UI-11 | `sync.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1ingest-conflicts/get) |
+| `resolveIngestConflict` | `POST /api/v1/ingest-conflicts/{conflict_id}/resolution` | Решить конфликт приёма. FR-004, FR-005, UC-06; UI-11, UI-17 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1ingest-conflicts~1{conflict_id}~1resolution/post) |
 
 **process** - Сопоставление workflow, календарь, целевые сроки и DoD (UC-07, UC-09, UC-16).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `getWorkflowCatalog` | `GET /api/v1/teams/{team_id}/workflow-catalog` | Справочники источников для сопоставления команды. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | `#/paths/~1teams~1{team_id}~1workflow-catalog/get` |
-| `previewMapping` | `POST /api/v1/teams/{team_id}/mapping-previews` | Предпросмотр сопоставления на задачах. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | `#/paths/~1teams~1{team_id}~1mapping-previews/post` |
-| `listMappingVersions` | `GET /api/v1/teams/{team_id}/mapping-versions` | Версии сопоставления команды. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | `#/paths/~1teams~1{team_id}~1mapping-versions/get` |
-| `createMappingVersion` | `POST /api/v1/teams/{team_id}/mapping-versions` | Подтвердить новую версию сопоставления. FR-017, FR-007, FR-008, UC-07; UI-14, UI-17 | `process.manage`; сессия | M0 | `#/paths/~1teams~1{team_id}~1mapping-versions/post` |
-| `listCalendarVersions` | `GET /api/v1/teams/{team_id}/calendar-versions` | Версии рабочего календаря команды. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | `#/paths/~1teams~1{team_id}~1calendar-versions/get` |
-| `createCalendarVersion` | `POST /api/v1/teams/{team_id}/calendar-versions` | Подтвердить новую версию календаря. FR-017, FR-007, FR-008, UC-07; UI-14, UI-17 | `process.manage`; сессия | M0 | `#/paths/~1teams~1{team_id}~1calendar-versions/post` |
-| `getTargetBaselines` | `GET /api/v1/teams/{team_id}/target-baselines` | Исторический p85 как ориентир целевого срока. FR-019, UC-09; UI-16 | `process.manage`; сессия | M0 | `#/paths/~1teams~1{team_id}~1target-baselines/get` |
-| `listTargetVersions` | `GET /api/v1/teams/{team_id}/target-versions` | Версии целевых сроков команды. FR-019, UC-09; UI-16 | `process.manage`; сессия | M0 | `#/paths/~1teams~1{team_id}~1target-versions/get` |
-| `createTargetVersion` | `POST /api/v1/teams/{team_id}/target-versions` | Подтвердить целевой срок группы. FR-019, FR-007, FR-008, UC-09; UI-16, UI-17 | `process.manage`; сессия | M0 | `#/paths/~1teams~1{team_id}~1target-versions/post` |
+| `getWorkflowCatalog` | `GET /api/v1/teams/{team_id}/workflow-catalog` | Справочники источников для сопоставления команды. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1workflow-catalog/get) |
+| `previewMapping` | `POST /api/v1/teams/{team_id}/mapping-previews` | Предпросмотр сопоставления на задачах. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1mapping-previews/post) |
+| `listMappingVersions` | `GET /api/v1/teams/{team_id}/mapping-versions` | Версии сопоставления команды. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1mapping-versions/get) |
+| `createMappingVersion` | `POST /api/v1/teams/{team_id}/mapping-versions` | Подтвердить новую версию сопоставления. FR-017, FR-007, FR-008, UC-07; UI-14, UI-17 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1mapping-versions/post) |
+| `listCalendarVersions` | `GET /api/v1/teams/{team_id}/calendar-versions` | Версии рабочего календаря команды. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1calendar-versions/get) |
+| `createCalendarVersion` | `POST /api/v1/teams/{team_id}/calendar-versions` | Подтвердить новую версию календаря. FR-017, FR-007, FR-008, UC-07; UI-14, UI-17 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1calendar-versions/post) |
+| `getTargetBaselines` | `GET /api/v1/teams/{team_id}/target-baselines` | Исторический p85 как ориентир целевого срока. FR-019, UC-09; UI-16 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1target-baselines/get) |
+| `listTargetVersions` | `GET /api/v1/teams/{team_id}/target-versions` | Версии целевых сроков команды. FR-019, UC-09; UI-16 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1target-versions/get) |
+| `createTargetVersion` | `POST /api/v1/teams/{team_id}/target-versions` | Подтвердить целевой срок группы. FR-019, FR-007, FR-008, UC-09; UI-16, UI-17 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1target-versions/post) |
 
 **reports** - Отчёты, ряды показателей, паспорт и когорта раскрытия, сохранённые срезы (UC-11, UC-13).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `getTeamReport` | `GET /api/v1/teams/{team_id}/report` | Ежедневный отчёт команды. FR-023, FR-003, FR-009, UC-13; UI-20 | `report.read`; сессия, ключ API | M0 | `#/paths/~1teams~1{team_id}~1report/get` |
-| `listMetricDefinitions` | `GET /api/v1/metric-definitions` | Определения показателей. FR-021, FR-022, UC-11, UC-12; UI-23 | `report.read`; сессия, ключ API | M0 | `#/paths/~1metric-definitions/get` |
-| `refreshSeries` | `POST /api/v1/series/{series_id}/refreshes` | Пересчитать ряд вручную. FR-023, FR-005, UC-13; UI-20 | `report.read`; сессия | M0 | `#/paths/~1series~1{series_id}~1refreshes/post` |
-| `getRevision` | `GET /api/v1/revisions/{revision_id}` | Паспорт ревизии расчёта. FR-021, FR-005, FR-009, UC-11; UI-23 | `report.read`; сессия, ключ API | M0 | `#/paths/~1revisions~1{revision_id}/get` |
-| `listRevisionCohort` | `GET /api/v1/revisions/{revision_id}/cohort` | Когорта точки показателя. FR-021, FR-001, FR-024, UC-11, UC-14; UI-24 | `report.read`; сессия, ключ API | M0 | `#/paths/~1revisions~1{revision_id}~1cohort/get` |
-| `listSavedViews` | `GET /api/v1/saved-views` | Сохранённые срезы пользователя. FR-023, UC-13; UI-37 | `report.read`; сессия | M0 | `#/paths/~1saved-views/get` |
-| `createSavedView` | `POST /api/v1/saved-views` | Сохранить срез. FR-023, FR-009, UC-13; UI-37 | `report.read`; сессия | M0 | `#/paths/~1saved-views/post` |
-| `getSavedView` | `GET /api/v1/saved-views/{saved_view_id}` | Открыть сохранённый срез. FR-001, FR-009, UC-13; UI-37 | `report.read`; сессия | M0 | `#/paths/~1saved-views~1{saved_view_id}/get` |
-| `deleteSavedView` | `DELETE /api/v1/saved-views/{saved_view_id}` | Удалить сохранённый срез. UC-13; UI-37 | `report.read`; сессия | M0 | `#/paths/~1saved-views~1{saved_view_id}/delete` |
+| `getTeamReport` | `GET /api/v1/teams/{team_id}/report` | Ежедневный отчёт команды. FR-023, FR-003, FR-009, UC-13, FR-025, UC-15; UI-20 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1report/get) |
+| `listMetricDefinitions` | `GET /api/v1/metric-definitions` | Определения показателей. FR-021, FR-022, UC-11, UC-12; UI-23 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1metric-definitions/get) |
+| `refreshSeries` | `POST /api/v1/series/{series_id}/refreshes` | Пересчитать ряд вручную. FR-023, FR-005, UC-13; UI-20 | `report.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1series~1{series_id}~1refreshes/post) |
+| `getRevision` | `GET /api/v1/revisions/{revision_id}` | Паспорт ревизии расчёта. FR-021, FR-005, FR-009, UC-11; UI-23 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1revisions~1{revision_id}/get) |
+| `listRevisionCohort` | `GET /api/v1/revisions/{revision_id}/cohort` | Когорта точки показателя. FR-021, FR-001, FR-024, UC-11, UC-14, FR-025, UC-15; UI-24 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1revisions~1{revision_id}~1cohort/get) |
+| `listSavedViews` | `GET /api/v1/saved-views` | Сохранённые срезы пользователя. FR-023, UC-13; UI-37 | `report.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1saved-views/get) |
+| `createSavedView` | `POST /api/v1/saved-views` | Сохранить срез. FR-023, FR-009, UC-13; UI-37 | `report.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1saved-views/post) |
+| `getSavedView` | `GET /api/v1/saved-views/{saved_view_id}` | Открыть сохранённый срез. FR-001, FR-009, UC-13; UI-37 | `report.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1saved-views~1{saved_view_id}/get) |
+| `deleteSavedView` | `DELETE /api/v1/saved-views/{saved_view_id}` | Удалить сохранённый срез. UC-13; UI-37 | `report.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1saved-views~1{saved_view_id}/delete) |
 
 **exports** - Выгрузки и машинное чтение для BI (UC-12).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `listSeries` | `GET /api/v1/series` | Ряды показателей в доступной области. FR-022, UC-12; UI-36 | `report.read`; сессия, ключ API | M0 | `#/paths/~1series/get` |
-| `getSeriesData` | `GET /api/v1/series/{series_id}/data` | Значения ряда. FR-009, FR-022, UC-12; UI-36 | `report.read`; сессия, ключ API | M0 | `#/paths/~1series~1{series_id}~1data/get` |
-| `createExport` | `POST /api/v1/exports` | Запросить выгрузку. FR-022, FR-009, UC-12; UI-34 | `export.create`; сессия, ключ API | M0 | `#/paths/~1exports/post` |
-| `getExport` | `GET /api/v1/exports/{export_id}` | Состояние выгрузки. FR-022, UC-12; UI-34 | `export.create`; сессия, ключ API | M0 | `#/paths/~1exports~1{export_id}/get` |
-| `downloadExport` | `GET /api/v1/exports/{export_id}/file` | Скачать файл выгрузки. FR-022, FR-001, UC-12; UI-35 | `export.create`; сессия, ключ API | M0 | `#/paths/~1exports~1{export_id}~1file/get` |
+| `listSeries` | `GET /api/v1/series` | Ряды показателей в доступной области. FR-022, UC-12; UI-36 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1series/get) |
+| `getSeriesData` | `GET /api/v1/series/{series_id}/data` | Значения ряда. FR-009, FR-022, UC-12; UI-36 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1series~1{series_id}~1data/get) |
+| `createExport` | `POST /api/v1/exports` | Запросить выгрузку. FR-022, FR-009, UC-12; UI-34 | `export.create`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1exports/post) |
+| `getExport` | `GET /api/v1/exports/{export_id}` | Состояние выгрузки. FR-022, UC-12; UI-34 | `export.create`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1exports~1{export_id}/get) |
+| `downloadExport` | `GET /api/v1/exports/{export_id}/file` | Скачать файл выгрузки. FR-022, FR-001, UC-12; UI-35 | `export.create`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1exports~1{export_id}~1file/get) |
 
 **tasks** - Задачи, история, таймлайн проекта, связи и очередь ревью (UC-14, UC-19-UC-21).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `getProjectOverview` | `GET /api/v1/projects/{project_id}/overview` | Обзор проекта. FR-024, FR-029, UC-14, UC-19; UI-22 | `tasks.read`; сессия | M0 | `#/paths/~1projects~1{project_id}~1overview/get` |
-| `listProjectTimeline` | `GET /api/v1/projects/{project_id}/timeline` | События проекта на дату. FR-030, UC-20; UI-26 | `tasks.read`; сессия | M0 | `#/paths/~1projects~1{project_id}~1timeline/get` |
-| `listTasks` | `GET /api/v1/tasks` | Задачи в доступной области. FR-024, FR-029, UC-14, UC-19; UI-22 | `tasks.read`; сессия, ключ API | M0 | `#/paths/~1tasks/get` |
-| `getTask` | `GET /api/v1/tasks/{task_id}` | Карточка задачи с наблюдением о задержке. FR-029, FR-024, UC-19, UC-14; UI-25 | `tasks.read`; сессия | M0 | `#/paths/~1tasks~1{task_id}/get` |
-| `listTaskEvents` | `GET /api/v1/tasks/{task_id}/events` | История задачи. FR-029, FR-030, UC-19, UC-20; UI-25 | `tasks.read`; сессия | M0 | `#/paths/~1tasks~1{task_id}~1events/get` |
-| `decideLink` | `POST /api/v1/links/{link_id}/decisions` | Подтвердить или отклонить связь-кандидат. FR-024, FR-029, FR-007, UC-19; UI-25, UI-17 | `links.decide`; сессия | M0 | `#/paths/~1links~1{link_id}~1decisions/post` |
+| `getProjectOverview` | `GET /api/v1/projects/{project_id}/overview` | Обзор проекта. FR-024, FR-029, UC-14, UC-19; UI-22 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1overview/get) |
+| `listProjectTimeline` | `GET /api/v1/projects/{project_id}/timeline` | События проекта на дату. FR-030, UC-20; UI-26 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1timeline/get) |
+| `listTasks` | `GET /api/v1/tasks` | Задачи в доступной области. FR-024, FR-029, UC-14, UC-19; UI-22 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1tasks/get) |
+| `getTask` | `GET /api/v1/tasks/{task_id}` | Карточка задачи с наблюдением о задержке. FR-029, FR-024, UC-19, UC-14; UI-25 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1tasks~1{task_id}/get) |
+| `listTaskEvents` | `GET /api/v1/tasks/{task_id}/events` | История задачи. FR-029, FR-030, UC-19, UC-20; UI-25 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1tasks~1{task_id}~1events/get) |
+| `decideLink` | `POST /api/v1/links/{link_id}/decisions` | Подтвердить или отклонить связь-кандидат. FR-024, FR-029, FR-007, UC-19; UI-25, UI-17 | `links.decide`; сессия | M0 | [контракт](openapi.yaml#/paths/~1links~1{link_id}~1decisions/post) |
 
 **changes** - MR, сводка head, pipeline, попытки, тесты, матрица проверок и базовые линии (UC-25, UC-26, UC-29).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `listMergeRequests` | `GET /api/v1/merge-requests` | MR в доступной области и очередь ревью. FR-031, UC-21; UI-27 | `mr.read`; сессия | M0 | `#/paths/~1merge-requests/get` |
-| `getMergeRequest` | `GET /api/v1/merge-requests/{merge_request_id}` | MR. FR-031, FR-036, UC-21, UC-26; UI-53 | `mr.read`; сессия | M0 | `#/paths/~1merge-requests~1{merge_request_id}/get` |
-| `getMergeRequestSummary` | `GET /api/v1/merge-requests/{merge_request_id}/summary` | Сводка MR по точному head. FR-036, FR-059, FR-060, FR-062, UC-26; UI-53, UI-54 | `mr.read`; сессия | M0 | `#/paths/~1merge-requests~1{merge_request_id}~1summary/get` |
-| `getPipeline` | `GET /api/v1/pipelines/{pipeline_id}` | Pipeline с оговорками. FR-039, FR-062, UC-29, UC-26; UI-55 | `ci.read`; сессия | M0 | `#/paths/~1pipelines~1{pipeline_id}/get` |
-| `listPipelineAttempts` | `GET /api/v1/pipelines/{pipeline_id}/attempts` | Jobs и все известные попытки. FR-039, UC-29; UI-56 | `ci.read`; сессия | M0 | `#/paths/~1pipelines~1{pipeline_id}~1attempts/get` |
-| `listTestExecutions` | `GET /api/v1/pipelines/{pipeline_id}/test-executions` | Выполнения тестов pipeline. FR-062, UC-26; UI-55 | `ci.read`; сессия | M0 | `#/paths/~1pipelines~1{pipeline_id}~1test-executions/get` |
-| `getCheckProfile` | `GET /api/v1/projects/{project_id}/check-profiles` | Действующая матрица проверок проекта. FR-035, UC-25; UI-49 | `check_profiles.manage`; сессия | M0 | `#/paths/~1projects~1{project_id}~1check-profiles/get` |
-| `createCheckProfileVersion` | `POST /api/v1/projects/{project_id}/check-profiles` | Подтвердить новую матрицу проверок. FR-035, FR-007, FR-008, UC-25; UI-49, UI-17 | `check_profiles.manage`; сессия | M0 | `#/paths/~1projects~1{project_id}~1check-profiles/post` |
-| `getCiConfiguration` | `GET /api/v1/projects/{project_id}/ci-configuration` | Фрагмент конфигурации CI. FR-035, UC-25; UI-50 | `check_profiles.manage`; сессия | M0 | `#/paths/~1projects~1{project_id}~1ci-configuration/get` |
-| `listBaselines` | `GET /api/v1/projects/{project_id}/baselines` | Базовые линии проекта. FR-035, FR-036, UC-25, UC-26; UI-52 | `ci.read`; сессия | M0 | `#/paths/~1projects~1{project_id}~1baselines/get` |
+| `listMergeRequests` | `GET /api/v1/merge-requests` | MR в доступной области и очередь ревью. FR-031, UC-21; UI-27 | `mr.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1merge-requests/get) |
+| `getMergeRequest` | `GET /api/v1/merge-requests/{merge_request_id}` | MR. FR-031, FR-036, UC-21, UC-26; UI-53 | `mr.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1merge-requests~1{merge_request_id}/get) |
+| `getMergeRequestSummary` | `GET /api/v1/merge-requests/{merge_request_id}/summary` | Сводка MR по точному head. FR-036, FR-059, FR-060, FR-062, UC-26; UI-53, UI-54 | `mr.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1merge-requests~1{merge_request_id}~1summary/get) |
+| `getPipeline` | `GET /api/v1/pipelines/{pipeline_id}` | Pipeline с оговорками. FR-039, FR-062, UC-29, UC-26; UI-55 | `ci.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1pipelines~1{pipeline_id}/get) |
+| `listPipelineAttempts` | `GET /api/v1/pipelines/{pipeline_id}/attempts` | Jobs и все известные попытки. FR-039, UC-29; UI-56 | `ci.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1pipelines~1{pipeline_id}~1attempts/get) |
+| `listTestExecutions` | `GET /api/v1/pipelines/{pipeline_id}/test-executions` | Выполнения тестов pipeline. FR-062, UC-26; UI-55 | `ci.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1pipelines~1{pipeline_id}~1test-executions/get) |
+| `getCheckProfile` | `GET /api/v1/projects/{project_id}/check-profiles` | Действующая матрица проверок проекта. FR-035, UC-25; UI-49 | `check_profiles.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1check-profiles/get) |
+| `createCheckProfileVersion` | `POST /api/v1/projects/{project_id}/check-profiles` | Подтвердить новую матрицу проверок. FR-035, FR-007, FR-008, UC-25; UI-49, UI-17 | `check_profiles.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1check-profiles/post) |
+| `getCiConfiguration` | `GET /api/v1/projects/{project_id}/ci-configuration` | Фрагмент конфигурации CI. FR-035, UC-25; UI-50 | `check_profiles.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1ci-configuration/get) |
+| `listBaselines` | `GET /api/v1/projects/{project_id}/baselines` | Базовые линии проекта. FR-035, FR-036, UC-25, UC-26; UI-52 | `ci.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1baselines/get) |
 
 **findings** - Находки, обзор компонента, причины изменения результата и исключения (UC-27, UC-28, UC-30, UC-32).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `getComponentOverview` | `GET /api/v1/components/{component_id}/overview` | Технический обзор компонента. FR-042, UC-32; UI-44 | `findings.read`; сессия | M0 | `#/paths/~1components~1{component_id}~1overview/get` |
-| `listFindings` | `GET /api/v1/findings` | Находки кода, безопасности и документации. FR-037, FR-042, FR-047, UC-27, UC-32, UC-37; UI-45, UI-65 | `findings.read`; сессия | M0 | `#/paths/~1findings/get` |
-| `getFinding` | `GET /api/v1/findings/{finding_id}` | Карточка находки. FR-037, FR-038, UC-27; UI-46 | `findings.read`; сессия | M0 | `#/paths/~1findings~1{finding_id}/get` |
-| `compareTechnicalResults` | `GET /api/v1/technical-comparisons` | Причины изменения технического результата. FR-040, UC-30; UI-57 | `findings.read`; сессия | M0 | `#/paths/~1technical-comparisons/get` |
-| `listExceptions` | `GET /api/v1/exceptions` | Исключения и ожидающие подтверждения решения. FR-038, FR-061, UC-28; UI-48 | `findings.read`; сессия | M0 | `#/paths/~1exceptions/get` |
-| `createException` | `POST /api/v1/exceptions` | Оформить исключение для находки. FR-038, FR-061, FR-007, UC-28; UI-47, UI-17 | `exceptions.manage`; сессия | M0 | `#/paths/~1exceptions/post` |
-| `getException` | `GET /api/v1/exceptions/{exception_id}` | Решение с версиями и переходами. FR-038, FR-061, UC-28; UI-48 | `findings.read`; сессия | M0 | `#/paths/~1exceptions~1{exception_id}/get` |
-| `createExceptionVersion` | `POST /api/v1/exceptions/{exception_id}/versions` | Продлить или изменить решение новой версией. FR-038, FR-061, FR-008, UC-28; UI-47, UI-17 | `exceptions.manage`; сессия | M0 | `#/paths/~1exceptions~1{exception_id}~1versions/post` |
-| `decideException` | `POST /api/v1/exceptions/{exception_id}/decisions` | Подтвердить, отклонить или отозвать версию решения. FR-038, FR-061, UC-28; UI-48, UI-17 | `exceptions.review`; сессия | M0 | `#/paths/~1exceptions~1{exception_id}~1decisions/post` |
+| `getComponentOverview` | `GET /api/v1/components/{component_id}/overview` | Технический обзор компонента. FR-042, UC-32; UI-44 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1components~1{component_id}~1overview/get) |
+| `listFindings` | `GET /api/v1/findings` | Находки кода, безопасности и документации. FR-037, FR-042, FR-047, UC-27, UC-32, UC-37; UI-45, UI-65 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1findings/get) |
+| `getFinding` | `GET /api/v1/findings/{finding_id}` | Карточка находки. FR-037, FR-038, UC-27; UI-46 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1findings~1{finding_id}/get) |
+| `compareTechnicalResults` | `GET /api/v1/technical-comparisons` | Причины изменения технического результата. FR-040, UC-30; UI-57 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1technical-comparisons/get) |
+| `listExceptions` | `GET /api/v1/exceptions` | Исключения и ожидающие подтверждения решения. FR-038, FR-061, UC-28; UI-48 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1exceptions/get) |
+| `createException` | `POST /api/v1/exceptions` | Оформить исключение для находки. FR-038, FR-061, FR-007, UC-28; UI-47, UI-17 | `exceptions.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1exceptions/post) |
+| `getException` | `GET /api/v1/exceptions/{exception_id}` | Решение с версиями и переходами. FR-038, FR-061, UC-28; UI-48 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1exceptions~1{exception_id}/get) |
+| `createExceptionVersion` | `POST /api/v1/exceptions/{exception_id}/versions` | Продлить или изменить решение новой версией. FR-038, FR-061, FR-008, UC-28; UI-47, UI-17 | `exceptions.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1exceptions~1{exception_id}~1versions/post) |
+| `decideException` | `POST /api/v1/exceptions/{exception_id}/decisions` | Подтвердить или отклонить ожидающую версию решения. FR-038, FR-061, UC-28; UI-48, UI-17 | `exceptions.review`; сессия | M0 | [контракт](openapi.yaml#/paths/~1exceptions~1{exception_id}~1decisions/post) |
 
 **documentation** - Корни документации, документы и повторная проверка (UC-36, UC-37).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `listDocumentationRoots` | `GET /api/v1/services/{service_id}/documentation-roots` | Корни документации сервиса. FR-046, UC-36; UI-64 | `docs.read`; сессия | M0 | `#/paths/~1services~1{service_id}~1documentation-roots/get` |
-| `replaceDocumentationRoots` | `PUT /api/v1/services/{service_id}/documentation-roots` | Подтвердить корни документации сервиса. FR-046, FR-007, FR-008, UC-36; UI-64, UI-17 | `docs.manage`; сессия | M0 | `#/paths/~1services~1{service_id}~1documentation-roots/put` |
-| `listServiceDocuments` | `GET /api/v1/services/{service_id}/documents` | Корпус документации сервиса. FR-046, FR-047, UC-36, UC-37; UI-65 | `docs.read`; сессия | M0 | `#/paths/~1services~1{service_id}~1documents/get` |
-| `requestDocumentationCheck` | `POST /api/v1/services/{service_id}/documentation-checks` | Запросить повторную проверку документации. FR-047, UC-37; UI-66 | `docs.manage`; сессия | M0 | `#/paths/~1services~1{service_id}~1documentation-checks/post` |
+| `listDocumentationRoots` | `GET /api/v1/services/{service_id}/documentation-roots` | Корни документации сервиса. FR-046, UC-36; UI-64 | `docs.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1services~1{service_id}~1documentation-roots/get) |
+| `replaceDocumentationRoots` | `PUT /api/v1/services/{service_id}/documentation-roots` | Подтвердить корни документации сервиса. FR-046, FR-007, FR-008, UC-36; UI-64, UI-17 | `docs.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1services~1{service_id}~1documentation-roots/put) |
+| `listServiceDocuments` | `GET /api/v1/services/{service_id}/documents` | Корпус документации сервиса. FR-046, FR-047, UC-36, UC-37; UI-65 | `docs.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1services~1{service_id}~1documents/get) |
+| `requestDocumentationCheck` | `POST /api/v1/services/{service_id}/documentation-checks` | Запросить повторную проверку документации. FR-047, UC-37; UI-66 | `docs.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1services~1{service_id}~1documentation-checks/post) |
 
 **webhooks** - Приём webhook источников (раздел 10.6).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `receiveWebhook` | `POST /api/v1/webhooks/{route_id}` | Принять webhook источника. FR-015, UC-05 | `public`; без входа | M0 | `#/paths/~1webhooks~1{route_id}/post` |
+| `receiveWebhook` | `POST /api/v1/webhooks/{route_id}` | Принять webhook источника. FR-015, UC-05 | `public`; без входа | M0 | [контракт](openapi.yaml#/paths/~1webhooks~1{route_id}/post) |
 
 **installation** - Протокол проверки установки и аудит (UC-01, раздел 13.8).
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `getLatestInstallationProtocol` | `GET /api/v1/installation/protocols/latest` | Последний протокол проверки установки. FR-011, UC-01; UI-05 | `installation.read`; сессия | M0 | `#/paths/~1installation~1protocols~1latest/get` |
-| `listAuditEvents` | `GET /api/v1/audit-events` | Журнал аудита организации. FR-010, SEC-22; UI-09 | `audit.read`; сессия | M0 | `#/paths/~1audit-events/get` |
+| `getLatestInstallationProtocol` | `GET /api/v1/installation/protocols/latest` | Последний протокол проверки установки. FR-011, UC-01; UI-05 | `installation.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1installation~1protocols~1latest/get) |
+| `listAuditEvents` | `GET /api/v1/audit-events` | Журнал аудита организации. FR-010, SEC-22; UI-09 | `audit.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1audit-events/get) |
 
 **m1** - Операции поставки M1 - зеркала, спринты, DoD, инициативы, бизнес-цепочка, политика, выпуск, техдолг, обязательства документации, передача проекта.
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `getOrganizationReport` | `GET /api/v1/organization/report` | Срез организации по командам. FR-024, UC-14; UI-21 | `report.read`; сессия | M1 | `#/paths/~1organization~1report/get` |
-| `listMirrorCandidates` | `GET /api/v1/projects/{project_id}/mirror-candidates` | Кандидаты зеркал задач двух трекеров. FR-033, UC-23; UI-19 | `mirrors.manage`; сессия | M1 | `#/paths/~1projects~1{project_id}~1mirror-candidates/get` |
-| `listMirrorGroups` | `GET /api/v1/mirror-groups` | Подтверждённые группы зеркал. FR-033, UC-23; UI-19, UI-22 | `tasks.read`; сессия | M1 | `#/paths/~1mirror-groups/get` |
-| `createMirrorGroup` | `POST /api/v1/mirror-groups` | Подтвердить группу зеркал. FR-033, FR-007, UC-23; UI-19, UI-17 | `mirrors.manage`; сессия | M1 | `#/paths/~1mirror-groups/post` |
-| `deleteMirrorGroup` | `DELETE /api/v1/mirror-groups/{mirror_group_id}` | Снять подтверждение группы зеркал. FR-033, UC-23; UI-19 | `mirrors.manage`; сессия | M1 | `#/paths/~1mirror-groups~1{mirror_group_id}/delete` |
-| `listSprints` | `GET /api/v1/projects/{project_id}/sprints` | Спринты проекта. FR-032, UC-22; UI-32 | `tasks.read`; сессия | M1 | `#/paths/~1projects~1{project_id}~1sprints/get` |
-| `getSprint` | `GET /api/v1/sprints/{sprint_id}` | План спринта и результат. FR-032, UC-22; UI-32 | `tasks.read`; сессия | M1 | `#/paths/~1sprints~1{sprint_id}/get` |
-| `listDodVersions` | `GET /api/v1/teams/{team_id}/dod-versions` | Версии Definition of Done команды. FR-063, UC-07, UC-16; UI-14 | `process.manage`; сессия | M1 | `#/paths/~1teams~1{team_id}~1dod-versions/get` |
-| `createDodVersion` | `POST /api/v1/teams/{team_id}/dod-versions` | Подтвердить версию DoD. FR-063, FR-007, FR-008, UC-07; UI-14, UI-17 | `process.manage`; сессия | M1 | `#/paths/~1teams~1{team_id}~1dod-versions/post` |
-| `getTaskDod` | `GET /api/v1/tasks/{task_id}/dod` | Выполнение DoD задачи. FR-026, UC-16; UI-29 | `tasks.read`; сессия | M1 | `#/paths/~1tasks~1{task_id}~1dod/get` |
-| `listInitiatives` | `GET /api/v1/initiatives` | Инициативы. FR-027, UC-17; UI-30 | `report.read`; сессия | M1 | `#/paths/~1initiatives/get` |
-| `createInitiative` | `POST /api/v1/initiatives` | Сохранить инициативу. FR-027, FR-007, UC-17; UI-30, UI-17 | `initiatives.manage`; сессия | M1 | `#/paths/~1initiatives/post` |
-| `getInitiativeComparison` | `GET /api/v1/initiatives/{initiative_id}/comparison` | Сравнение периодов до и после инициативы. FR-027, UC-17; UI-30 | `report.read`; сессия | M1 | `#/paths/~1initiatives~1{initiative_id}~1comparison/get` |
-| `getDeliveryChain` | `GET /api/v1/tasks/{task_id}/delivery-chain` | Цепочка бизнес-обязательства до поставки. FR-028, UC-18; UI-31 | `tasks.read`; сессия | M1 | `#/paths/~1tasks~1{task_id}~1delivery-chain/get` |
-| `listCheckPolicyVersions` | `GET /api/v1/projects/{project_id}/check-policies` | Версии политики обязательных проверок. FR-041, UC-31; UI-58 | `findings.read`; сессия | M1 | `#/paths/~1projects~1{project_id}~1check-policies/get` |
-| `createCheckPolicyVersion` | `POST /api/v1/projects/{project_id}/check-policies` | Подтвердить версию политики проверок. FR-041, FR-007, FR-008, UC-31; UI-58, UI-17 | `policy.manage`; сессия | M1 | `#/paths/~1projects~1{project_id}~1check-policies/post` |
-| `createPolicyBypass` | `POST /api/v1/policy-bypasses` | Оформить разрешённый обход политики. FR-041, FR-007, UC-31; UI-59, UI-17 | `policy.bypass`; сессия | M1 | `#/paths/~1policy-bypasses/post` |
-| `listPolicyEvaluations` | `GET /api/v1/policy-evaluations` | Вердикты политики и история обходов. FR-041, UC-31; UI-60 | `findings.read`; сессия | M1 | `#/paths/~1policy-evaluations/get` |
-| `createTechDebtDraft` | `POST /api/v1/tech-debt-drafts` | Создать черновик задачи техдолга. FR-043, UC-33; UI-61 | `tech_debt.draft`; сессия | M1 | `#/paths/~1tech-debt-drafts/post` |
-| `getTechDebtDraft` | `GET /api/v1/tech-debt-drafts/{draft_id}` | Черновик и исход записи в трекер. FR-043, UC-33; UI-61 | `findings.read`; сессия | M1 | `#/paths/~1tech-debt-drafts~1{draft_id}/get` |
-| `confirmTechDebtDraft` | `POST /api/v1/tech-debt-drafts/{draft_id}/confirmation` | Подтвердить запись задачи в трекер. FR-043, FR-007, UC-33; UI-61, UI-17 | `tracker.write`; сессия | M1 | `#/paths/~1tech-debt-drafts~1{draft_id}~1confirmation/post` |
-| `listArtifacts` | `GET /api/v1/artifacts` | Выпущенные артефакты. FR-044, FR-045, FR-057, UC-34, UC-35, UC-47; UI-63 | `findings.read`; сессия | M1 | `#/paths/~1artifacts/get` |
-| `getArtifactPassport` | `GET /api/v1/artifacts/{artifact_id}` | Паспорт артефакта по digest. FR-044, FR-045, FR-057, UC-34, UC-35, UC-47; UI-62 | `findings.read`; сессия | M1 | `#/paths/~1artifacts~1{artifact_id}/get` |
-| `listDocumentationObligations` | `GET /api/v1/documentation-obligations` | Обязательства документации по версии контракта. FR-048, UC-38; UI-67 | `docs.read`; сессия | M1 | `#/paths/~1documentation-obligations/get` |
-| `decideDocumentationObligation` | `POST /api/v1/documentation-obligations/{obligation_id}/decisions` | Подтвердить или отклонить кандидат изменения контракта. FR-048, FR-007, UC-38; UI-67, UI-17 | `docs.manage`; сессия | M1 | `#/paths/~1documentation-obligations~1{obligation_id}~1decisions/post` |
-| `getHandoverPackage` | `GET /api/v1/projects/{project_id}/handover` | Комплект передачи проекта. FR-034, UC-24; UI-33 | `docs.read`; сессия | M1 | `#/paths/~1projects~1{project_id}~1handover/get` |
-| `decideHandover` | `POST /api/v1/projects/{project_id}/handover/decisions` | Принять комплект или запросить дополнение. FR-034, FR-007, UC-24; UI-33, UI-17 | `docs.manage`; сессия | M1 | `#/paths/~1projects~1{project_id}~1handover~1decisions/post` |
+| `getOrganizationReport` | `GET /api/v1/organization/report` | Срез организации по командам. FR-024, UC-14; UI-21 | `report.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1organization~1report/get) |
+| `listMirrorCandidates` | `GET /api/v1/projects/{project_id}/mirror-candidates` | Кандидаты зеркал задач двух трекеров. FR-033, UC-23; UI-19 | `mirrors.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1mirror-candidates/get) |
+| `listMirrorGroups` | `GET /api/v1/mirror-groups` | Подтверждённые группы зеркал. FR-033, UC-23; UI-19, UI-22 | `tasks.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1mirror-groups/get) |
+| `createMirrorGroup` | `POST /api/v1/mirror-groups` | Подтвердить группу зеркал. FR-033, FR-007, UC-23; UI-19, UI-17 | `mirrors.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1mirror-groups/post) |
+| `deleteMirrorGroup` | `DELETE /api/v1/mirror-groups/{mirror_group_id}` | Снять подтверждение группы зеркал. FR-033, UC-23; UI-19 | `mirrors.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1mirror-groups~1{mirror_group_id}/delete) |
+| `listSprints` | `GET /api/v1/projects/{project_id}/sprints` | Спринты проекта. FR-032, UC-22; UI-32 | `tasks.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1sprints/get) |
+| `getSprint` | `GET /api/v1/sprints/{sprint_id}` | План спринта и результат. FR-032, UC-22; UI-32 | `tasks.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1sprints~1{sprint_id}/get) |
+| `listDodVersions` | `GET /api/v1/teams/{team_id}/dod-versions` | Версии Definition of Done команды. FR-063, UC-07, UC-16; UI-14 | `process.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1dod-versions/get) |
+| `createDodVersion` | `POST /api/v1/teams/{team_id}/dod-versions` | Подтвердить версию DoD. FR-063, FR-007, FR-008, UC-07; UI-14, UI-17 | `process.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1dod-versions/post) |
+| `getTaskDod` | `GET /api/v1/tasks/{task_id}/dod` | Выполнение DoD задачи. FR-026, UC-16; UI-29 | `tasks.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1tasks~1{task_id}~1dod/get) |
+| `listInitiatives` | `GET /api/v1/initiatives` | Инициативы. FR-027, UC-17; UI-30 | `report.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1initiatives/get) |
+| `createInitiative` | `POST /api/v1/initiatives` | Сохранить инициативу. FR-027, FR-007, UC-17; UI-30, UI-17 | `initiatives.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1initiatives/post) |
+| `getInitiativeComparison` | `GET /api/v1/initiatives/{initiative_id}/comparison` | Сравнение периодов до и после инициативы. FR-027, UC-17; UI-30 | `report.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1initiatives~1{initiative_id}~1comparison/get) |
+| `getDeliveryChain` | `GET /api/v1/tasks/{task_id}/delivery-chain` | Цепочка бизнес-обязательства до поставки. FR-028, UC-18; UI-31 | `tasks.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1tasks~1{task_id}~1delivery-chain/get) |
+| `listCheckPolicyVersions` | `GET /api/v1/projects/{project_id}/check-policies` | Версии политики обязательных проверок. FR-041, UC-31; UI-58 | `findings.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1check-policies/get) |
+| `createCheckPolicyVersion` | `POST /api/v1/projects/{project_id}/check-policies` | Подтвердить версию политики проверок. FR-041, FR-007, FR-008, UC-31; UI-58, UI-17 | `policy.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1check-policies/post) |
+| `createPolicyBypass` | `POST /api/v1/policy-bypasses` | Оформить разрешённый обход политики. FR-041, FR-007, UC-31; UI-59, UI-17 | `policy.bypass`; сессия | M1 | [контракт](openapi.yaml#/paths/~1policy-bypasses/post) |
+| `listPolicyEvaluations` | `GET /api/v1/policy-evaluations` | Вердикты политики и история обходов. FR-041, UC-31; UI-60 | `findings.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1policy-evaluations/get) |
+| `createTechDebtDraft` | `POST /api/v1/tech-debt-drafts` | Создать черновик задачи техдолга. FR-043, UC-33; UI-61 | `tech_debt.draft`; сессия | M1 | [контракт](openapi.yaml#/paths/~1tech-debt-drafts/post) |
+| `getTechDebtDraft` | `GET /api/v1/tech-debt-drafts/{draft_id}` | Черновик и исход записи в трекер. FR-043, UC-33; UI-61 | `findings.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1tech-debt-drafts~1{draft_id}/get) |
+| `confirmTechDebtDraft` | `POST /api/v1/tech-debt-drafts/{draft_id}/confirmation` | Подтвердить запись задачи в трекер. FR-043, FR-007, UC-33; UI-61, UI-17 | `tracker.write`; сессия | M1 | [контракт](openapi.yaml#/paths/~1tech-debt-drafts~1{draft_id}~1confirmation/post) |
+| `listArtifacts` | `GET /api/v1/artifacts` | Выпущенные артефакты. FR-044, FR-045, FR-057, UC-34, UC-35, UC-47; UI-63 | `findings.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1artifacts/get) |
+| `getArtifactPassport` | `GET /api/v1/artifacts/{artifact_id}` | Паспорт артефакта по digest. FR-044, FR-045, FR-057, UC-34, UC-35, UC-47; UI-62 | `findings.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1artifacts~1{artifact_id}/get) |
+| `listDocumentationObligations` | `GET /api/v1/documentation-obligations` | Обязательства документации по версии контракта. FR-048, UC-38; UI-67 | `docs.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1documentation-obligations/get) |
+| `decideDocumentationObligation` | `POST /api/v1/documentation-obligations/{obligation_id}/decisions` | Подтвердить или отклонить кандидат изменения контракта. FR-048, FR-007, UC-38; UI-67, UI-17 | `docs.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1documentation-obligations~1{obligation_id}~1decisions/post) |
+| `getHandoverPackage` | `GET /api/v1/projects/{project_id}/handover` | Комплект передачи проекта. FR-034, UC-24; UI-33 | `docs.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1handover/get) |
+| `decideHandover` | `POST /api/v1/projects/{project_id}/handover/decisions` | Принять комплект или запросить дополнение. FR-034, FR-007, UC-24; UI-33, UI-17 | `docs.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1handover~1decisions/post) |
 
 **m2** - Операции поставки M2 - прогноз, маршрут ревью, отбор тестов, учения, поиск, опрос, стабильность поставки, стоимость CI, передачи между командами.
 
 | operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
 |---|---|---|---|---|---|
-| `setReviewParticipation` | `PUT /api/v1/me/review-participation` | Включить или выключить участие в рекомендациях ревью. FR-050, UC-40; UI-69 | `profile.manage`; сессия | M1 | `#/paths/~1me~1review-participation/put` |
-| `getReviewRoute` | `GET /api/v1/merge-requests/{merge_request_id}/review-route` | Маршрут ревью MR. FR-050, UC-40; UI-68 | `mr.read`; сессия | M1 | `#/paths/~1merge-requests~1{merge_request_id}~1review-route/get` |
-| `createReviewRouteFeedback` | `POST /api/v1/merge-requests/{merge_request_id}/review-route/feedback` | Отметить рекомендацию маршрута. FR-050, UC-40; UI-68 | `mr.read`; сессия | M1 | `#/paths/~1merge-requests~1{merge_request_id}~1review-route~1feedback/post` |
-| `createForecast` | `POST /api/v1/forecasts` | Запросить прогноз срока или объёма. FR-049, UC-39; UI-38 | `report.read`; сессия | M2 | `#/paths/~1forecasts/post` |
-| `getForecast` | `GET /api/v1/forecasts/{forecast_id}` | Результат прогноза. FR-049, UC-39; UI-38 | `report.read`; сессия | M2 | `#/paths/~1forecasts~1{forecast_id}/get` |
-| `createTestSelectionExperiment` | `POST /api/v1/projects/{project_id}/test-selection-experiments` | Включить теневой эксперимент отбора тестов. FR-051, FR-007, UC-41; UI-70, UI-17 | `experiments.manage`; сессия | M2 | `#/paths/~1projects~1{project_id}~1test-selection-experiments/post` |
-| `getTestSelectionExperiment` | `GET /api/v1/test-selection-experiments/{experiment_id}` | Оценка теневого отбора тестов. FR-051, UC-41; UI-70 | `ci.read`; сессия | M2 | `#/paths/~1test-selection-experiments~1{experiment_id}/get` |
-| `listRunbookDrills` | `GET /api/v1/documents/{document_id}/drills` | Учения по runbook. FR-052, UC-42; UI-71 | `docs.read`; сессия | M2 | `#/paths/~1documents~1{document_id}~1drills/get` |
-| `createRunbookDrill` | `POST /api/v1/documents/{document_id}/drills` | Записать учение по версии runbook. FR-052, FR-007, UC-42; UI-71, UI-17 | `docs.manage`; сессия | M2 | `#/paths/~1documents~1{document_id}~1drills/post` |
-| `searchDocuments` | `GET /api/v1/document-search` | Поиск по разрешённой документации. FR-053, UC-43; UI-72 | `docs.read`; сессия | M2 | `#/paths/~1document-search/get` |
-| `createSearchFeedback` | `POST /api/v1/document-search/{query_id}/feedback` | Отметить, помог ли найденный документ. FR-053, UC-43; UI-72 | `docs.read`; сессия | M2 | `#/paths/~1document-search~1{query_id}~1feedback/post` |
-| `createSurvey` | `POST /api/v1/surveys` | Провести pulse-опрос. FR-054, FR-007, UC-44; UI-40, UI-17 | `surveys.manage`; сессия | M2 | `#/paths/~1surveys/post` |
-| `getSurvey` | `GET /api/v1/surveys/{survey_id}` | Опрос и групповая сводка. FR-054, UC-44; UI-40 | `surveys.manage`; сессия | M2 | `#/paths/~1surveys~1{survey_id}/get` |
-| `getSurveyForm` | `GET /api/v1/survey-invitations/current` | Форма опроса по приглашению. FR-054, UC-44; UI-39 | `survey.respond`; приглашение | M2 | `#/paths/~1survey-invitations~1current/get` |
-| `submitSurveyResponse` | `POST /api/v1/survey-responses` | Отправить ответ на опрос. FR-054, UC-44; UI-39 | `survey.respond`; приглашение | M2 | `#/paths/~1survey-responses/post` |
-| `getDeliveryStability` | `GET /api/v1/services/{service_id}/delivery-stability` | Стабильность поставки сервиса. FR-055, UC-45; UI-41 | `report.read`; сессия | M2 | `#/paths/~1services~1{service_id}~1delivery-stability/get` |
-| `getCiCost` | `GET /api/v1/ci-cost` | Расход и расчётная стоимость CI. FR-056, UC-46; UI-42 | `report.read`; сессия | M2 | `#/paths/~1ci-cost/get` |
-| `listCiRates` | `GET /api/v1/ci-rates` | Версии ставок стоимости CI. FR-056, UC-46; UI-42 | `ci_rates.manage`; сессия | M2 | `#/paths/~1ci-rates/get` |
-| `createCiRateVersion` | `POST /api/v1/ci-rates` | Задать версию ставки. FR-056, FR-007, UC-46; UI-42, UI-17 | `ci_rates.manage`; сессия | M2 | `#/paths/~1ci-rates/post` |
-| `listTeamTransfers` | `GET /api/v1/teams/{team_id}/transfers` | Межкомандные передачи и ожидания. FR-058, UC-48; UI-43 | `report.read`; сессия | M2 | `#/paths/~1teams~1{team_id}~1transfers/get` |
-| `createCiInvoice` | `POST /api/v1/ci-invoices` | Записать фактический счёт поставщика CI. FR-056, FR-007, UC-46; UI-42 | `ci_rates.manage`; сессия | M2 | `#/paths/~1ci-invoices/post` |
+| `setReviewParticipation` | `PUT /api/v1/me/review-participation` | Включить или выключить участие в рекомендациях ревью. FR-050, UC-40; UI-69 | `profile.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1me~1review-participation/put) |
+| `getReviewRoute` | `GET /api/v1/merge-requests/{merge_request_id}/review-route` | Маршрут ревью MR. FR-050, UC-40; UI-68 | `mr.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1merge-requests~1{merge_request_id}~1review-route/get) |
+| `createReviewRouteFeedback` | `POST /api/v1/merge-requests/{merge_request_id}/review-route/feedback` | Отметить рекомендацию маршрута. FR-050, UC-40; UI-68 | `mr.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1merge-requests~1{merge_request_id}~1review-route~1feedback/post) |
+| `createForecast` | `POST /api/v1/forecasts` | Запросить прогноз срока или объёма. FR-049, UC-39; UI-38 | `report.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1forecasts/post) |
+| `getForecast` | `GET /api/v1/forecasts/{forecast_id}` | Результат прогноза. FR-049, UC-39; UI-38 | `report.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1forecasts~1{forecast_id}/get) |
+| `createTestSelectionExperiment` | `POST /api/v1/projects/{project_id}/test-selection-experiments` | Включить теневой эксперимент отбора тестов. FR-051, FR-007, UC-41; UI-70, UI-17 | `experiments.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1test-selection-experiments/post) |
+| `getTestSelectionExperiment` | `GET /api/v1/test-selection-experiments/{experiment_id}` | Оценка теневого отбора тестов. FR-051, UC-41; UI-70 | `ci.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1test-selection-experiments~1{experiment_id}/get) |
+| `listRunbookDrills` | `GET /api/v1/documents/{document_id}/drills` | Учения по runbook. FR-052, UC-42; UI-71 | `docs.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1documents~1{document_id}~1drills/get) |
+| `createRunbookDrill` | `POST /api/v1/documents/{document_id}/drills` | Записать учение по версии runbook. FR-052, FR-007, UC-42; UI-71, UI-17 | `docs.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1documents~1{document_id}~1drills/post) |
+| `searchDocuments` | `GET /api/v1/document-search` | Поиск по разрешённой документации. FR-053, UC-43; UI-72 | `docs.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1document-search/get) |
+| `createSearchFeedback` | `POST /api/v1/document-search/{query_id}/feedback` | Отметить, помог ли найденный документ. FR-053, UC-43; UI-72 | `docs.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1document-search~1{query_id}~1feedback/post) |
+| `createSurvey` | `POST /api/v1/surveys` | Провести pulse-опрос. FR-054, FR-007, UC-44; UI-40, UI-17 | `surveys.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1surveys/post) |
+| `getSurvey` | `GET /api/v1/surveys/{survey_id}` | Опрос и групповая сводка. FR-054, UC-44; UI-40 | `surveys.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1surveys~1{survey_id}/get) |
+| `getSurveyForm` | `GET /api/v1/survey-invitations/current` | Форма опроса по приглашению. FR-054, UC-44; UI-39 | `survey.respond`; приглашение опроса | M2 | [контракт](openapi.yaml#/paths/~1survey-invitations~1current/get) |
+| `submitSurveyResponse` | `POST /api/v1/survey-responses` | Отправить ответ на опрос. FR-054, UC-44; UI-39 | `survey.respond`; приглашение опроса | M2 | [контракт](openapi.yaml#/paths/~1survey-responses/post) |
+| `getDeliveryStability` | `GET /api/v1/services/{service_id}/delivery-stability` | Стабильность поставки сервиса. FR-055, UC-45; UI-41 | `report.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1services~1{service_id}~1delivery-stability/get) |
+| `getCiCost` | `GET /api/v1/ci-cost` | Расход и расчётная стоимость CI. FR-056, UC-46; UI-42 | `report.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1ci-cost/get) |
+| `listCiRates` | `GET /api/v1/ci-rates` | Версии ставок стоимости CI. FR-056, UC-46; UI-42 | `ci_rates.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1ci-rates/get) |
+| `createCiRateVersion` | `POST /api/v1/ci-rates` | Задать версию ставки. FR-056, FR-007, UC-46; UI-42, UI-17 | `ci_rates.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1ci-rates/post) |
+| `listTeamTransfers` | `GET /api/v1/teams/{team_id}/transfers` | Межкомандные передачи и ожидания. FR-058, UC-48; UI-43 | `report.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1transfers/get) |
+| `createCiInvoice` | `POST /api/v1/ci-invoices` | Записать фактический счёт поставщика CI. FR-056, FR-007, UC-46; UI-42 | `ci_rates.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1ci-invoices/post) |
+
+<!-- OPERATION-MAP:END -->
 
 #### 5.5. Адаптеры и API провайдеров
 
@@ -1786,27 +1792,30 @@ API craftPulse и API провайдеров разделены: браузер,
 
 #### 5.6. Проверка контракта и документация
 
-Контракт проверяют два линтера, а генераторы раздела 11 подтверждают, что по нему собирается код. Все версии закреплены, команды выполняются из каталога `docs/technical-specification`.
+Проверки запускаются из корня репозитория. Нужны Node.js 26.3.0, npm и Go 1.27.0. Зависимости инструментов закреплены в `scripts/openapi/package-lock.json`; сервер и frontend для проверки не создаются.
 
 | Инструмент | Роль | Конфигурация |
 |---|---|---|
-| Redocly CLI 2.76.0 | Валидация структуры OpenAPI 3.1, проверка каждого примера по схеме без лишних полей, сборка читаемой документации (Redoc) | [redocly.yaml](redocly.yaml), исключения правила `operation-2xx-response` для трёх операций-перенаправлений в [.redocly.lint-ignore.yaml](.redocly.lint-ignore.yaml) |
-| Spectral CLI 6.17.1 | Правила стиля craftPulse: обязательные `x-craftpulse-action`, `x-craftpulse-delivery`, `x-craftpulse-trace`, `camelCase` у `operationId`, `snake_case` у полей, пути в `kebab-case`, ошибки только `application/problem+json` через общие ответы, запрет объединений типов | [openapi.spectral.yaml](openapi.spectral.yaml) |
-| oapi-codegen v2.8.2 | Генерация интерфейса сервера gin в строгом режиме и моделей Go | Конфигурация генератора добавляется вместе с модулем сервера |
-| openapi-typescript 7.13.0 | Генерация типов frontend | То же для frontend |
+| Redocly CLI 2.76.0 | Структура OpenAPI 3.1, примеры по схемам без лишних полей, читаемая документация Redoc 3 | [redocly.yaml](redocly.yaml); [.redocly.lint-ignore.yaml](.redocly.lint-ignore.yaml) отключает только требование 2xx у трёх операций-перенаправлений |
+| Spectral CLI 6.17.1 | Действие, поставка, связи FR/UC/UI, имена операций, полей и путей, общие ошибки, допустимые объединения типов | [openapi.spectral.yaml](openapi.spectral.yaml) |
+| oapi-codegen v2.8.2 | Модели Go и строгий интерфейс Gin; сборка с Gin 1.12.0 и oapi-codegen/runtime 1.8.0 | `scripts/openapi/go-codegen.yaml`, `check-generators.sh` |
+| openapi-typescript 7.13.0 | Типы клиента; результат проверяется TypeScript 6.0.3 в строгом режиме | `scripts/openapi/check-generators.sh`; компилятор запускается отдельно от генератора, чей peer - TypeScript 5.x |
+| Проверки craftPulse | Полнота связей с 48 UC и 64 FR, ограничения ключа BI, `ETag` целевого срока, повторы версий, опрос фоновых операций, безопасный `return_to`, соответствие карты SRS | `scripts/openapi/check-contract.mjs`, `operation-map.mjs` |
 
 ```sh
-npx -y @redocly/cli@2.76.0 lint openapi.yaml --config redocly.yaml
-npx -y @stoplight/spectral-cli@6.17.1 lint openapi.yaml --ruleset openapi.spectral.yaml --fail-severity=warn
-npx -y @redocly/cli@2.76.0 build-docs openapi.yaml --config redocly.yaml -o openapi.html
+npm --prefix scripts/openapi ci --ignore-scripts --no-audit --no-fund
+npm --prefix scripts/openapi run verify
+npm --prefix scripts/openapi run generators
+npm --prefix scripts/openapi run docs
 ```
 
-На этом файле оба линтера проходят без ошибок и предупреждений. Отрицательные проверки срабатывают: операция без `x-craftpulse-action` и тип `[string, number]` отклоняются. `oapi-codegen v2.8.2` сгенерировал интерфейс из 151 метода, код собирается `go build`. Типы `openapi-typescript 7.13.0` проходят `tsc` 6.0.3 в строгом режиме. Документация собирается в один HTML-файл без ошибок страницы. Генерация выявила два ограничения, которые закреплены в правилах контракта:
+`verify` запускает оба линтера, проверку правил craftPulse, сверку карты и отрицательные проверки. Отрицательные проверки намеренно удаляют действие, задают неподдержанное объединение типов и портят пример ответа: каждая должна завершиться отказом ожидаемого правила. Исходный контракт не меняется.
 
-- генератор сервера не поддерживает объединения типов, кроме пары с `null`;
-- имя типа поля генератор строит как «схема и поле», поэтому схемы тел запросов имеют суффиксы `Input`, `Draft` или `Create` и не совпадают с такими именами.
+`generators` создаёт временный каталог, генерирует и собирает Go-контракт, генерирует типы TypeScript и проверяет их компилятором 6.0.3. После проверки каталог удаляется. Объединения типов, кроме пары с `null`, в контракте запрещены из-за ограничений oapi-codegen. Схемы тел запросов имеют суффиксы `Input`, `Draft` или `Create`, чтобы их имена не совпадали с именами типов полей генератора.
 
-Сгенерированный код и HTML в репозиторий не входят. Код генерируется в модулях сервера и frontend при сборке (раздел 14.3), документация публикуется вместе со стендом.
+Карта раздела 5.4 строится из того же файла командой `npm --prefix scripts/openapi run map`; `verify` отклоняет устаревшую карту. UC-15/FR-025 используют `getTeamReport` и `listRevisionCohort`: отдельного вызова для каждого графика возвратов нет. UC-01/FR-011 запускается конфигурацией и командой вне HTTP; `getLatestInstallationProtocol` показывает его результат. Отмена неподтверждённой формы HTTP-запроса не создаёт. Решение ревьюера выполняет `decideException` с правом `exceptions.review`; автор оформляет и продлевает исключение через операции с правом `exceptions.manage`.
+
+Линтеры и проверки проходят для 152 операций. Генераторы проверяют возможность собрать интерфейсы; они не подтверждают реализацию сервера. При запуске генератора типов без конфигурации три предупреждения о 2xx относятся к тем же перенаправлениям. Документация собирается в `build/openapi.html`; сгенерированные код и HTML в Git не входят. Эти команды входят в обязательный `repository-check`.
 
 #### 5.7. Проверка контракта на сценариях
 
@@ -1828,7 +1837,7 @@ npx -y @redocly/cli@2.76.0 build-docs openapi.yaml --config redocly.yaml -o open
 | | `decideException` с `approve` и `If-Match` | `200`, решение `active` с переходом `approved` | Автор подтверждает своё при требовании ревьюера - `403`; решение уже отклонено - `409` | UC-28 A3; `exceptions.review` - техлид |
 | Отказ в доступе | `getTask` задачи проекта B пользователем u1 из проекта A | - | `404 not_found` без названия; в аудите отказ с ID и причиной «вне области» | UC-03 A4, ST-02; раздел 13.10 |
 | | `downloadExport` после отзыва права в Jira | - | `404 not_found`, файл не выдаётся | UC-12 A1, ST-03 |
-| | `createException` для находки вне области автора | - | `422` с `outside_scope` у `/scope` | UC-28 A5, раздел 7.4 |
+| | `createException` для закрытой находки; расширение области доступной находки | - | Закрытая находка - одинаковый `404`; недопустимое расширение доступной области - `422 outside_scope` у `/scope` | UC-28 A5, раздел 7.4 |
 | | Любая операция с истёкшей сессией | - | `401 auth_required`, SPA возвращается на тот же экран после входа без повторной отправки формы | UC-03 ОВ-7, FR-002 |
 
 ### 6. Интерфейс пользователя: полное текстовое описание
@@ -3424,6 +3433,14 @@ erDiagram
 
 ```mermaid
 erDiagram
+  requester["org.app_user"] {
+    uuid id PK
+  }
+  operation["view.operation"] {
+    uuid id PK
+    uuid requested_by
+    uuid resource_id
+  }
   summary["change.summary_revision"] {
     uuid id PK
     int revision_no UK
@@ -3458,6 +3475,7 @@ erDiagram
   revision["calc.revision"] {
     uuid id PK
   }
+  requester ||..o{ operation : "requested_by"
   profile ||--o{ summary : ""
   summary ||--o{ sinput : ""
   summary ||--o{ item : ""
@@ -3666,6 +3684,9 @@ erDiagram
 | `calc.revision_pin` | Кто удерживает ревизию от удаления | `revision_id uuid`; `holder_kind text`; `holder_id uuid` | PK (`revision_id`, `holder_kind`, `holder_id`); FK `revision_id` → `calc.revision` | `holder_kind IN ('saved_view','export','mr_summary')` | PK - проверка перед удалением вытесненной ревизии |
 | `calc.saved_view` | Сохранённый срез | `id`; `owner_user_id uuid`; `name text`; `series_id uuid`; `filters jsonb`; `pinned_revision_id uuid?`; `created_at timestamptz` | PK (`id`); FK `series_id` → `calc.series`; FK `pinned_revision_id` → `calc.revision`; ссылка → `org.app_user` | Без `pinned_revision_id` срез показывает актуальную ревизию | (`owner_user_id`) - срезы пользователя; (`series_id`), (`pinned_revision_id`) WHERE `IS NOT NULL` - индексы FK |
 | `view.export_job` | Задание и файл выгрузки | `id`; `requested_by uuid`; `revision_id uuid`; `allowed_scope_hash hash`; `format text`; `status text`; `object_key text?`; `requested_at timestamptz`; `completed_at`, `expires_at timestamptz?` | PK (`id`); ссылки на `org.app_user`, `calc.revision` | `status IN ('pending','ready','failed','expired')`; у готовой есть объект | (`requested_by`, `requested_at`) - выгрузки пользователя; скачивание проверяет сессию того же пользователя (раздел 13.4) |
+| `view.operation` | Публичное состояние запуска сбора, пересчёта или проверки документации | `id`; `requested_by uuid`; `kind text`; `resource_kind text`; `resource_id uuid`; `action text`; `request_hash hash`; `status text`; `created_at`, `updated_at timestamptz`; `completed_at timestamptz?`; `result_uri ptext?`; `error_code text?`; `correlation_id uuid?` | PK (`id`); ссылка на `org.app_user`; область и ресурс проверяются через владельца модуля | `kind IN ('sync_run','series_refresh','documentation_check')`; `status IN ('queued','running','succeeded','failed')`; время завершения заполнено только у конечных статусов; `result_uri` только у успеха, код ошибки и correlation ID только у ошибки | Частичный `UNIQUE (requested_by, kind, resource_kind, resource_id) WHERE status IN ('queued','running')` - повтор активного запроса; (`completed_at`) - очистка; (`requested_by`, `created_at`) - собственные операции |
+
+Дескриптор `view.operation` и начальное задание River создаются в одной транзакции; состояние и ссылка на результат обновляются вместе с публикацией результата. Повтор с тем же `request_hash` возвращает существующий дескриптор; иные параметры активного запуска для этого ресурса дают `409 state_conflict`. Для сохранённого запуска worker при повторе использует тот же ID и не создаёт второй результат. Сбор одного подключения и пересчёт одного ряда сохраняют существующую сериализацию; разные инициаторы получают собственные дескрипторы, которые могут ссылаться на один общий запуск. Чтение повторно проверяет исходное действие и область; внутренний ID задания очереди наружу не передаётся. `retry_after_seconds` задаётся API при опросе и в таблице не хранится.
 
 Поля ревизии и точки покрывают состав DR-011: определение, версии входов, область, окно, as_of, срез знания, часовой пояс, значение, единица, числитель, знаменатель, n, исключения, пропуски, состояние, границы и происхождение.
 
@@ -4108,6 +4129,7 @@ WHERE organization_id = $org AND id = $series
 | Карантин хранилища | Через сутки (`objstore.gc`) |
 | `sync.dirty_key` | После перечитывания |
 | `normalize.area_change` | Через 30 дней. Если `consumed_seq` ряда старше самой старой оставшейся строки, `calc` пересчитывает окно целиком |
+| `view.operation` | Через 24 ч после `completed_at`; активная операция не удаляется. Отзыв доступа закрывает чтение немедленно, независимо от срока |
 | Задания River | Завершённые и отменённые через 24 ч, отброшенные после исчерпания попыток через 7 дней. Это заданные значения очистки River |
 
 **Удаление по запросу (FR-010).**
@@ -4191,7 +4213,7 @@ ID учётной записи в источнике остаётся техни
 | Инкремент | Таблицы |
 |---|---|
 | И0. Каркас | `platform.tenant`, `platform.org_clock`; `org.organization`, `org.team`, `org.project`, `org.service`, `org.person`, `org.app_user`, `org.role_assignment`, `org.team_member`, `org.team_project`; все таблицы `auth`, `audit`, `install`; таблицы River; база тестового адаптера |
-| И1. Jira DC → отчёт команды | `connect.*`, `sync.*`, `ingest.*`; `normalize.source_object`, `normalize.area`, `normalize.area_change`, `normalize.task_version`, `normalize.task_event`; `org.source_account`, `org.account_assignment`, `org.project_area`; `process.*`; `calc.*`; `view.export_job` |
+| И1. Jira DC → отчёт команды | `connect.*`, `sync.*`, `ingest.*`; `normalize.source_object`, `normalize.area`, `normalize.area_change`, `normalize.task_version`, `normalize.task_event`; `org.source_account`, `org.account_assignment`, `org.project_area`; `process.*`; `calc.*`; `view.export_job`, `view.operation` |
 | И2. GitLab и GitLab CI → разбор задачи | `normalize.mr_version`, `normalize.mr_event`, `normalize.ci_run_version`, `normalize.ci_attempt_version`; `link.edge` |
 | И3. Проверки → сводка MR | `normalize.report`, `normalize.report_pin`, `normalize.finding_occurrence`, `normalize.test_case`, `normalize.test_execution`, `normalize.coverage_fact`; `org.component`; `change.*` M0; `decision.decision`, `decision.decision_version`, `decision.decision_transition`; `outbound.*`; `docs.root`, `normalize.document_version` |
 | И4. Остальной состав стенда | Новых таблиц нет: Confluence DC, GitHub, Jenkins и SonarQube пишут в те же таблицы; базы своих адаптеров |
@@ -4211,7 +4233,7 @@ ID учётной записи в источнике остаётся техни
 | DR-008 | `normalize.coverage_fact` |
 | DR-009 | `normalize.report`, `normalize.finding_occurrence`, `change.finding_identity`, `change.occurrence_identity`, `change.profile_version`, `change.profile_entry`, `change.baseline` |
 | DR-010 | `decision.decision`, `decision.decision_version`, `decision.decision_transition`, `decision.policy_version`, `decision.policy_rule`, `decision.bypass`, `docs.handover_decision` |
-| DR-011 | `calc.series`, `calc.revision`, `calc.revision_input`, `calc.part`, `calc.revision_part`, `calc.point`, `calc.contribution`, `calc.revision_pin`, `calc.saved_view`, `view.export_job` |
+| DR-011 | `calc.series`, `calc.revision`, `calc.revision_input`, `calc.part`, `calc.revision_part`, `calc.point`, `calc.contribution`, `calc.revision_pin`, `calc.saved_view`, `view.export_job`, `view.operation` |
 | DR-012 | `normalize.document_version`, `docs.root`, `docs.obligation`, `docs.review`, `docs.drill` |
 | DR-013 | `change.artifact`, `change.deployment_version`, `change.sbom_component`, `change.vulnerability_db`, `change.reassessment` |
 | DR-014 | `calc.method_run`, `calc.recommendation_feedback`, `calc.initiative`, `org.review_opt_out` |

@@ -28,7 +28,9 @@ info:
     - Поле, закрытое правами, в ответе отсутствует, а его имя перечислено в `redactions`.
       Объекты вне разрешённой области не дают ни строк, ни количества; ответ помечается
       `access_limited: true` без числа скрытых объектов.
-    - `null` означает, что значения нет. Отсутствие поля означает только закрытие правами.
+    - `null` означает, что значения нет. Обязательность поля задаётся `required` его схемы.
+      Поле, закрытое правами, отсутствует и перечислено в `redactions`; остальные
+      необязательные поля можно не передавать по условиям схемы.
       Частичное обновление - JSON Merge Patch (RFC 7396): `null` очищает поле, отсутствующее
       поле не меняется.
     - Коллекции возвращают `{data, next_cursor}`. Курсор непрозрачен, `limit` по умолчанию
@@ -46,6 +48,12 @@ info:
     - У каждой операции есть `x-craftpulse-action` - действие, которое проверяет `access`
       (раздел 13.4 ТЗ); `x-craftpulse-delivery` - поставка, с которой операция доступна;
       `x-craftpulse-trace` - связанные FR, UC и UI.
+
+    Долгие запросы requestSyncRun, refreshSeries и requestDocumentationCheck возвращают
+    BackgroundOperation и Location на getBackgroundOperation. Другие долгие запросы
+    используют собственные ресурсы: квитанцию, пробу, выгрузку, прогноз или черновик.
+    Запись ключа идемпотентности включает организацию, субъекта, operationId, целевой ресурс
+    и хэш тела; сохранённый ответ возвращается до проверки уже изменившегося If-Match.
   contact:
     name: Команда craftPulse
     url: https://github.com/Avtobot22/craftPulse
@@ -108,11 +116,19 @@ paths:
       x-craftpulse-delivery: M0
       x-craftpulse-trace: [FR-013, UC-03, UI-02]
       parameters:
-        - {name: org_slug, in: path, required: true, schema: {type: string, pattern: '^[a-z0-9-]{2,40}$'}}
+        - name: org_slug
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-z0-9-]{2,40}$
         - name: return_to
           in: query
-          description: Относительный путь экрана, на который вернуться после входа.
-          schema: {type: string, pattern: '^/[^/].*$|^/$', maxLength: 2048}
+          description: Относительный путь сайта. После декодирования и нормализации запрещены //, обратная косая черта и управляющие символы; итоговый origin должен совпадать с origin установки.
+          schema:
+            type: string
+            pattern: ^/(?:[^/\\\u0000-\u0020][^\\\u0000-\u0020]*)?$
+            maxLength: 2048
       responses:
         '302':
           description: Переход к провайдеру. Устанавливается cookie `__Host-cp_login`.
@@ -1302,6 +1318,12 @@ paths:
         (UI-11). Одна активная попытка на подключение: повтор во время идущей попытки ничего не
         добавляет (NFR-006). Подключение без доступа (`access_lost`) - `409 state_conflict`
         до замены учётных данных.
+
+        Ответ содержит дескриптор запуска; GET по Location возвращает queued/running/succeeded/failed,
+        задержку опроса и безопасную ошибку. Ссылка result_uri появляется после успеха.
+        Повтор с теми же параметрами во время активного запуска возвращает тот же id.
+        Иные параметры для этого ресурса во время запуска дают 409 state_conflict;
+        после завершения новый запрос создаёт новый запуск.
       tags: [connections]
       x-craftpulse-action: connections.manage
       x-craftpulse-delivery: M0
@@ -1316,9 +1338,22 @@ paths:
             example: {kind: resume, data_kind: tasks}
       responses:
         '202':
-          description: Запрос принят; ход виден в `getSyncStatus`.
+          description: "Операция принята. Location указывает на getBackgroundOperation; её статус и ошибка относятся к этому запуску."
           headers:
-            Location: {$ref: '#/components/headers/Location'}
+            Location: {"description":"Адрес ресурса принятой операции.","schema":{"type":"string","format":"uri-reference"},"example":"/api/v1/operations/0193a5b0-a0a0-7000-8000-000000000001"}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackgroundOperation"
+              example:
+                id: 0193a5b0-a0a0-7000-8000-000000000001
+                kind: sync_run
+                status: queued
+                created_at: 2026-11-08T12:00:00Z
+                updated_at: 2026-11-08T12:00:00Z
+                result_uri: null
+                error: null
+                retry_after_seconds: 3
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -1831,7 +1866,11 @@ paths:
     post:
       operationId: createCalendarVersion
       summary: Подтвердить новую версию календаря
-      description: Правила версии как у `createMappingVersion`. Часовой пояс - имя IANA; неизвестное имя - `422`.
+      description: |
+        Правила версии как у `createMappingVersion`. Часовой пояс - имя IANA; неизвестное имя - `422`.
+        Если содержимое равно действующей версии, возвращается 200 без создания версии.
+        Повтор Idempotency-Key возвращает исходный статус и ответ до проверки If-Match.
+
       tags: [process]
       x-craftpulse-action: process.manage
       x-craftpulse-delivery: M0
@@ -1863,6 +1902,32 @@ paths:
         '412': {$ref: '#/components/responses/PreconditionFailed'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
         '428': {$ref: '#/components/responses/PreconditionRequired'}
+        "200":
+          description: Содержимое совпало с действующей версией; новая версия не создана.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarVersion"
+              example:
+                version_no: 2
+                base_version_no: 1
+                timezone: Europe/Moscow
+                workdays:
+                  - mon
+                  - tue
+                  - wed
+                  - thu
+                  - fri
+                work_start: 10:00
+                work_end: 19:00
+                holidays:
+                  - 2026-11-04
+                  - 2026-12-31
+                confirmed_by: 0193a5b0-1111-7000-8000-000000000003
+                confirmed_at: 2026-11-08T11:00:00Z
   /teams/{team_id}/target-baselines:
     get:
       operationId: getTargetBaselines
@@ -1898,16 +1963,27 @@ paths:
     get:
       operationId: listTargetVersions
       summary: Версии целевых сроков команды
-      description: Действующие и прежние версии по группам «тип, размер».
+      description: "Действующие и прежние версии по группам «тип, размер». Для редактирования одной группы передайте одновременно task_type и size_label. Только такой запрос возвращает ETag последней версии этой группы, в том числе \"0\" при отсутствии версий; для общего списка ETag отсутствует. Курсор не меняет версию группы."
       tags: [process]
       x-craftpulse-action: process.manage
       x-craftpulse-delivery: M0
       x-craftpulse-trace: [FR-019, UC-09, UI-16]
       parameters:
-        - $ref: '#/components/parameters/TeamId'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
-        - {name: task_type, in: query, schema: {type: string, maxLength: 200}}
+        - $ref: "#/components/parameters/TeamId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: task_type
+          in: query
+          schema:
+            type: string
+            maxLength: 200
+        - name: size_label
+          in: query
+          description: Размер группы; вместе с task_type выбирает группу для If-Match.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
       responses:
         '200':
           description: Страница версий новыми первыми.
@@ -1917,6 +1993,13 @@ paths:
               example:
                 data: [{task_type: Bug, size_label: S, version_no: 1, base_version_no: null, duration_seconds: 172800, basis: manual, basis_revision_id: null, basis_value_seconds: null, basis_n: null, confirmed_by: 0193a5b0-1111-7000-8000-000000000003, confirmed_at: '2026-10-02T12:00:00Z'}]
                 next_cursor: null
+          headers:
+            ETag:
+              description: 'Только при обоих фильтрах: версия группы, например "3"; "0", если версия ещё не создана.'
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+              example: '"1"'
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -1928,6 +2011,13 @@ paths:
         Новая версия срока для группы «тип, размер» (FR-019). Срок больше нуля, размер обязателен:
         без размера срок не применяется. Номер версии считается по группе; форма на основе
         заменённой версии - `412`. Прежние нарушения сохраняют свою версию срока (V-16).
+
+        If-Match берётся из listTargetVersions с теми же task_type и size_label;
+        для группы без версий передаётся "0". Идемпотентный повтор проверяется до If-Match:
+        возвращается сохранённый результат, даже если текущая версия уже изменилась.
+
+        Если содержимое равно действующей версии, возвращается 200 без создания версии.
+        Повтор Idempotency-Key возвращает исходный статус и ответ до проверки If-Match.
       tags: [process]
       x-craftpulse-action: process.manage
       x-craftpulse-delivery: M0
@@ -1958,6 +2048,27 @@ paths:
         '412': {$ref: '#/components/responses/PreconditionFailed'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
         '428': {$ref: '#/components/responses/PreconditionRequired'}
+        "200":
+          description: Содержимое совпало с действующей версией; новая версия не создана.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetVersion"
+              example:
+                task_type: Bug
+                size_label: S
+                version_no: 2
+                base_version_no: 1
+                duration_seconds: 345600
+                basis: historical_p85
+                basis_revision_id: 0193a5b0-a1a1-7000-8000-000000000001
+                basis_value_seconds: 259200
+                basis_n: 9
+                confirmed_by: 0193a5b0-1111-7000-8000-000000000003
+                confirmed_at: 2026-11-08T11:30:00Z
   /teams/{team_id}/report:
     get:
       operationId: getTeamReport
@@ -1968,11 +2079,15 @@ paths:
         через `revision_id` и `listRevisionCohort`. Без подтверждённого сопоставления отчёт
         отдаёт `NOT_EVALUATED` с причиной `mapping_missing`. Когорта ограничена правами:
         значения строятся по разрешённой части, `access_limited` без числа скрытых (FR-001).
+
+        UC-15 использует этот отчёт и listRevisionCohort: T23 - переоткрытия в M0; T24 и T25
+        выдаются отдельно с M1, только при заданном этапе приёмки и подтверждённом production origin.
+        Для T23 видны зрелая когорта, окно наблюдения и незрелые задачи; виды возвратов не суммируются.
       tags: [reports]
       security: [{cookieSession: []}, {apiKey: []}]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-023, FR-003, FR-009, UC-13, UI-20]
+      x-craftpulse-trace: ["FR-023","FR-003","FR-009","UC-13","UI-20","FR-025","UC-15"]
       parameters:
         - $ref: '#/components/parameters/TeamId'
         - $ref: '#/components/parameters/From'
@@ -2095,7 +2210,13 @@ paths:
     post:
       operationId: refreshSeries
       summary: Пересчитать ряд вручную
-      description: Ставит расчёт новой ревизии на текущих фактах (FR-023). Если расчёт ряда уже идёт, новый не ставится; ответ тот же. Действующая ревизия остаётся актуальной до публикации новой.
+      description: |
+        Ставит расчёт новой ревизии на текущих фактах (FR-023). Если расчёт ряда уже идёт, новый не ставится; ответ тот же. Действующая ревизия остаётся актуальной до публикации новой.
+        Ответ содержит дескриптор запуска; GET по Location возвращает queued/running/succeeded/failed,
+        задержку опроса и безопасную ошибку. Ссылка result_uri появляется после успеха.
+        Повтор с теми же параметрами во время активного запуска возвращает тот же id.
+        после завершения новый запрос создаёт новый запуск.
+
       tags: [reports]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M0
@@ -2104,9 +2225,22 @@ paths:
         - $ref: '#/components/parameters/SeriesId'
       responses:
         '202':
-          description: Пересчёт поставлен; новая ревизия появится в `getSeriesData`.
+          description: "Операция принята. Location указывает на getBackgroundOperation; её статус и ошибка относятся к этому запуску."
           headers:
-            Location: {$ref: '#/components/headers/Location'}
+            Location: {"description":"Адрес ресурса принятой операции.","schema":{"type":"string","format":"uri-reference"},"example":"/api/v1/operations/0193a5b0-a0a0-7000-8000-000000000001"}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackgroundOperation"
+              example:
+                id: 0193a5b0-a0a0-7000-8000-000000000001
+                kind: series_refresh
+                status: queued
+                created_at: 2026-11-08T12:00:00Z
+                updated_at: 2026-11-08T12:00:00Z
+                result_uri: null
+                error: null
+                retry_after_seconds: 3
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -2159,11 +2293,14 @@ paths:
         по ним независимо получаются числитель, знаменатель и исключения. Объекты вне прав не
         возвращаются и не считаются; ответ `access_limited` без их числа. Удалённые основания
         помечаются `basis_deleted` без содержимого (V-09).
+
+        Для T23-T25 роли вклада отделяют числитель, знаменатель и незрелое наблюдение;
+        клиент передаёт metric_id выбранного вида возврата (UC-15), не объединяя их.
       tags: [reports]
       security: [{cookieSession: []}, {apiKey: []}]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-021, FR-001, FR-024, UC-11, UC-14, UI-24]
+      x-craftpulse-trace: ["FR-021","FR-001","FR-024","UC-11","UC-14","UI-24","FR-025","UC-15"]
       parameters:
         - $ref: '#/components/parameters/RevisionId'
         - {name: metric_id, in: query, required: true, schema: {type: string, maxLength: 64}}
@@ -2439,7 +2576,7 @@ paths:
       summary: Задачи в доступной области
       description: Общий список задач проекта или команды UI-22 со смыслом статуса по действующему сопоставлению.
       tags: [tasks]
-      security: [{cookieSession: []}, {apiKey: []}]
+      security: [{"cookieSession":[]}]
       x-craftpulse-action: tasks.read
       x-craftpulse-delivery: M0
       x-craftpulse-trace: [FR-024, FR-029, UC-14, UC-19, UI-22]
@@ -2817,6 +2954,9 @@ paths:
         Новая версия матрицы (FR-035). Законченный внешний отчёт заменяет только совпадающую
         область; внешний анализатор не выключает проверку секретов и зависимостей (FR-035 A1).
         Неподдержанный язык или вид анализа - `422`. Правила версии как у `createMappingVersion`.
+
+        Если содержимое равно действующей версии, возвращается 200 без создания версии.
+        Повтор Idempotency-Key возвращает исходный статус и ответ до проверки If-Match.
       tags: [changes]
       x-craftpulse-action: check_profiles.manage
       x-craftpulse-delivery: M0
@@ -2858,6 +2998,35 @@ paths:
         '412': {$ref: '#/components/responses/PreconditionFailed'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
         '428': {$ref: '#/components/responses/PreconditionRequired'}
+        "200":
+          description: Содержимое совпало с действующей версией; новая версия не создана.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckProfileVersion"
+              example:
+                version_no: 4
+                base_version_no: 3
+                entries:
+                  - component_id: 0193a5b0-7777-7000-8000-000000000001
+                    language: go
+                    analysis_kind: code
+                    mode: import
+                    profile_id: sonar-import
+                    tool_versions: {}
+                  - component_id: 0193a5b0-7777-7000-8000-000000000001
+                    language: ""
+                    analysis_kind: secrets
+                    mode: builtin
+                    profile_id: gitleaks-default
+                    tool_versions:
+                      gitleaks: 8.28.0
+                uncovered: []
+                confirmed_by: 0193a5b0-1111-7000-8000-000000000004
+                confirmed_at: 2026-11-08T12:00:00Z
   /projects/{project_id}/ci-configuration:
     get:
       operationId: getCiConfiguration
@@ -3094,6 +3263,10 @@ paths:
         автора и прав на находку; чужая область, пустая причина или срок не позже начала -
         `422`. Если политика требует подтверждения, решение ждёт его со статусом `pending` и не
         действует (FR-061). Принятый риск находку не закрывает.
+
+        Сначала проверяется видимость находки и исходной области: закрытая или чужая находка
+        даёт 404 без сведений о ней. 422 outside_scope применяется только к расширению
+        области исключения для уже доступной находки.
       tags: [findings]
       x-craftpulse-action: exceptions.manage
       x-craftpulse-delivery: M0
@@ -3211,9 +3384,9 @@ paths:
   /exceptions/{exception_id}/decisions:
     post:
       operationId: decideException
-      summary: Подтвердить, отклонить или отозвать версию решения
+      summary: Подтвердить или отклонить ожидающую версию решения
       description: |
-        Ревьюер подтверждает или отклоняет ожидающую версию; автор может отозвать (UI-48).
+        Ревьюер подтверждает или отклоняет ожидающую версию (UC-28 A3, UI-48).
         Решение относится к версии из `If-Match`. Переход из конечного статуса - `409
         state_conflict`. Автор не подтверждает своё решение, если политика требует ревьюера
         (`403`).
@@ -3355,6 +3528,12 @@ paths:
         Для Git-корней проверку выполняет шаг CI клиента; запрос ставит её для источников,
         которые читает адаптер (wiki), и перечитывание Git-корня. Ответ - `202`; итог виден в
         находках.
+
+        Ответ содержит дескриптор запуска; GET по Location возвращает queued/running/succeeded/failed,
+        задержку опроса и безопасную ошибку. Ссылка result_uri появляется после успеха.
+        Повтор с теми же параметрами во время активного запуска возвращает тот же id.
+        Иные параметры для этого ресурса во время запуска дают 409 state_conflict;
+        после завершения новый запрос создаёт новый запуск.
       tags: [documentation]
       x-craftpulse-action: docs.manage
       x-craftpulse-delivery: M0
@@ -3369,13 +3548,27 @@ paths:
             example: {root_id: 0193a5b0-e4e4-7000-8000-000000000001}
       responses:
         '202':
-          description: Проверка поставлена.
+          description: "Операция принята. Location указывает на getBackgroundOperation; её статус и ошибка относятся к этому запуску."
           headers:
-            Location: {$ref: '#/components/headers/Location'}
+            Location: {"description":"Адрес ресурса принятой операции.","schema":{"type":"string","format":"uri-reference"},"example":"/api/v1/operations/0193a5b0-a0a0-7000-8000-000000000001"}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackgroundOperation"
+              example:
+                id: 0193a5b0-a0a0-7000-8000-000000000001
+                kind: documentation_check
+                status: queued
+                created_at: 2026-11-08T12:00:00Z
+                updated_at: 2026-11-08T12:00:00Z
+                result_uri: null
+                error: null
+                retry_after_seconds: 3
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /organization/report:
     get:
@@ -3591,7 +3784,11 @@ paths:
     post:
       operationId: createDodVersion
       summary: Подтвердить версию DoD
-      description: Обязательство без способа подтверждения не объявляется машинно проверенным (FR-063). Правила версии как у `createMappingVersion`.
+      description: |
+        Обязательство без способа подтверждения не объявляется машинно проверенным (FR-063). Правила версии как у `createMappingVersion`.
+        Если содержимое равно действующей версии, возвращается 200 без создания версии.
+        Повтор Idempotency-Key возвращает исходный статус и ответ до проверки If-Match.
+
       tags: [m1]
       x-craftpulse-action: process.manage
       x-craftpulse-delivery: M1
@@ -3622,6 +3819,28 @@ paths:
         '412': {$ref: '#/components/responses/PreconditionFailed'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
         '428': {$ref: '#/components/responses/PreconditionRequired'}
+        "200":
+          description: Содержимое совпало с действующей версией; новая версия не создана.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DodVersion"
+              example:
+                version_no: 2
+                base_version_no: 1
+                task_type: Story
+                mapping_version_no: 2
+                obligations:
+                  - obligation_no: 1
+                    evidence_kind: check
+                    source_rule:
+                      analysis_kind: junit
+                    required: true
+                confirmed_by: 0193a5b0-1111-7000-8000-000000000003
+                confirmed_at: 2026-11-09T12:00:00Z
   /tasks/{task_id}/dod:
     get:
       operationId: getTaskDod
@@ -3783,7 +4002,11 @@ paths:
     post:
       operationId: createCheckPolicyVersion
       summary: Подтвердить версию политики проверок
-      description: Явное включение обязательных проверок (BR-018). Реальный запрет merge зависит от настройки Git-хостинга, которую клиент включает сам. Правила версии как у `createMappingVersion`.
+      description: |
+        Явное включение обязательных проверок (BR-018). Реальный запрет merge зависит от настройки Git-хостинга, которую клиент включает сам. Правила версии как у `createMappingVersion`.
+        Если содержимое равно действующей версии, возвращается 200 без создания версии.
+        Повтор Idempotency-Key возвращает исходный статус и ответ до проверки If-Match.
+
       tags: [m1]
       x-craftpulse-action: policy.manage
       x-craftpulse-delivery: M1
@@ -3814,6 +4037,26 @@ paths:
         '412': {$ref: '#/components/responses/PreconditionFailed'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
         '428': {$ref: '#/components/responses/PreconditionRequired'}
+        "200":
+          description: Содержимое совпало с действующей версией; новая версия не создана.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckPolicyVersion"
+              example:
+                version_no: 2
+                base_version_no: 1
+                unknown_behavior: fail
+                bypass_authority: tech_lead
+                rules:
+                  - rule_no: 1
+                    category: new_verified_secret
+                    condition: {}
+                confirmed_by: 0193a5b0-1111-7000-8000-000000000004
+                confirmed_at: 2026-11-09T12:00:00Z
   /policy-bypasses:
     post:
       operationId: createPolicyBypass
@@ -4628,6 +4871,77 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /operations/{operation_id}:
+    get:
+      operationId: getBackgroundOperation
+      summary: Получить состояние фоновой операции
+      description: "Доступна только инициатору в той же организации, с повторной проверкой исходного действия и области: connections.manage для sync_run, report.read для series_refresh, docs.manage для documentation_check. Чужая или истёкшая операция и отзыв доступа к исходному ресурсу дают одинаковый 404. Состояние и безопасная ошибка сохраняются 24 часа после завершения; очистка задания River не удаляет дескриптор раньше этого срока. Внутренние ID и сообщения очереди не выдаются."
+      tags:
+        - session
+      x-craftpulse-action: session.read
+      x-craftpulse-delivery: M0
+      x-craftpulse-trace:
+        - FR-001
+        - FR-006
+        - FR-023
+        - FR-047
+        - UC-05
+        - UC-10
+        - UC-13
+        - UC-37
+      parameters:
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Текущее состояние именно запрошенного запуска.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackgroundOperation"
+              examples:
+                queued:
+                  value:
+                    id: 0193a5b0-a0a0-7000-8000-000000000001
+                    kind: series_refresh
+                    status: queued
+                    created_at: 2026-11-08T12:00:00Z
+                    updated_at: 2026-11-08T12:00:00Z
+                    result_uri: null
+                    error: null
+                    retry_after_seconds: 3
+                succeeded:
+                  value:
+                    id: 0193a5b0-a0a0-7000-8000-000000000001
+                    kind: series_refresh
+                    status: succeeded
+                    created_at: 2026-11-08T12:00:00Z
+                    updated_at: 2026-11-08T12:00:10Z
+                    result_uri: /api/v1/revisions/0193a5b0-cccc-7000-8000-000000000003
+                    error: null
+                    retry_after_seconds: null
+                failed:
+                  value:
+                    id: 0193a5b0-a0a0-7000-8000-000000000001
+                    kind: series_refresh
+                    status: failed
+                    created_at: 2026-11-08T12:00:00Z
+                    updated_at: 2026-11-08T12:00:10Z
+                    result_uri: null
+                    error:
+                      code: source_unavailable
+                      correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b11
+                    retry_after_seconds: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     cookieSession:
@@ -6784,7 +7098,7 @@ components:
       additionalProperties: false
       required: [decision]
       properties:
-        decision: {type: string, enum: [approve, reject, withdraw]}
+        decision: {type: string, enum: [approve, reject]}
         comment: {type: string, maxLength: 2000}
     DocumentationRoot:
       type: object
@@ -7590,3 +7904,62 @@ components:
         next_cursor: {type: [string, 'null']}
         access_limited: {type: boolean}
         access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}
+    BackgroundOperation:
+      type: object
+      description: "Публичный дескриптор запуска, отдельный от задания очереди. queued/running: retry_after_seconds >= 1, result_uri и error равны null. succeeded: result_uri указывает на зафиксированный результат, error и retry_after_seconds равны null. failed: error заполнена, result_uri и retry_after_seconds равны null. Для sync_run результат - sync-status исходного подключения, для series_refresh - точная новая ревизия, для documentation_check - документы проверенного сервиса; пустые findings сами по себе не означают успешную проверку."
+      required:
+        - id
+        - kind
+        - status
+        - created_at
+        - updated_at
+        - result_uri
+        - error
+        - retry_after_seconds
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - sync_run
+            - series_refresh
+            - documentation_check
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - succeeded
+            - failed
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        result_uri:
+          type:
+            - string
+            - "null"
+          format: uri-reference
+        error:
+          type:
+            - object
+            - "null"
+          required:
+            - code
+            - correlation_id
+          properties:
+            code:
+              type: string
+              description: "Безопасный класс причины: source_unavailable, access_lost, calculation_failed или check_failed; неизвестный код клиент показывает как ошибку операции."
+            correlation_id:
+              type: string
+              format: uuid
+        retry_after_seconds:
+          type:
+            - integer
+            - "null"
+          minimum: 1
