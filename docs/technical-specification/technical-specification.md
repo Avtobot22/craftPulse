@@ -2128,7 +2128,7 @@ flowchart TB
 1. У модуля свои таблицы в своей схеме PostgreSQL. Другой модуль не читает и не пишет их напрямую, а вызывает публичный интерфейс владельца. Физическая модель - раздел 12.
 2. Границей транзакции владеет сценарий модуля, вызванного транспортом. Сценарий может передать транзакцию вызываемому модулю, чтобы факты, checkpoint, следующее задание и завершение текущего сохранились вместе. Сетевой вызов внутри открытой транзакции запрещён: обращение к адаптеру идёт до неё, результат записывается короткой транзакцией.
 3. Адаптер не обращается к базе ядра, не знает модулей ядра и не хранит состояние сбора. Своя у него только база учётных данных подключений. В Go-коде адаптер зависит от пакетов `envelope` (канонический пакет фактов) и `adaptersdk` (сервер контракта, хранилище учётных данных, классификация ошибок).
-4. Каждая строка данных принадлежит организации. Модули получают организацию из сессии или из аргументов задания, а не из тела запроса; PostgreSQL дополнительно ограничивает строки политикой row-level security (раздел 12.2). `api` и `worker` работают под ролью, которая не владеет таблицами, а политика включена с `FORCE ROW LEVEL SECURITY`; миграции выполняет отдельная роль-владелец. Фоновая работа по всем организациям (удаление по срокам, сборка мусора хранилища, ежедневное продление окон) ставится отдельным заданием на каждую организацию и выполняется под ней. Исключение - таблицы, по которым запрос узнаёт свою организацию: адреса входа организаций, сессии, записи предвхода, хэши ключей API и токенов загрузки, адреса webhook подключений. Их ищут до того, как организация известна, поэтому они вне row-level security; читает их только модуль-владелец по хэшу или ID, и в строке нет других данных организации.
+4. Каждая строка данных принадлежит организации. Модули получают организацию из сессии или из аргументов задания, а не из тела запроса; PostgreSQL дополнительно ограничивает строки политикой row-level security (раздел 12.2). `api` и `worker` работают под ролью, которая не владеет таблицами и не имеет `BYPASSRLS`, поэтому политика действует на каждый их запрос; миграции и копирование выполняет роль-владелец (раздел 12.2). Фоновая работа по всем организациям (удаление по срокам, сборка мусора хранилища, ежедневное продление окон) ставится отдельным заданием на каждую организацию и выполняется под ней. Исключение - реестр организаций, по которому планировщик ставит задания каждой организации, и таблицы, по которым запрос узнаёт свою организацию: адреса входа организаций, сессии, записи предвхода, хэши ключей API и токенов загрузки, адреса webhook подключений. Их ищут до того, как организация известна, поэтому они вне row-level security; читает их только модуль-владелец по хэшу или ID, и в строке нет других данных организации.
 5. Формулы показателей каталога живут только в `calc`. `change` строит сводку head из нормализованных отчётов и для показателей сводки (покрытие изменённых строк, попытки CI) вызывает определения `calc`. Результат каждого из них сохраняется ревизией: ревизия расчёта в `calc`, ревизия сводки head в `change`. `view`, комментарий MR, выгрузка и API показывают сохранённые ревизии и не содержат своих формул (FR-009).
 6. Задание другого модуля ставится через пакет `jobs`. В нём только виды заданий и их аргументы, без логики; обработчики подключаются при сборке `worker`. Поэтому `normalize` ставит пересчёт области, не завися от `calc`, а `decision` ставит пересчёт после истечения исключения, не завися от `calc` и `change`. Данные для решения, есть ли новая работа, задание запрашивает само у модулей, от которых зависит (раздел 10.6).
 7. Направление зависимостей проверяет depguard в golangci-lint в CI репозитория; нарушение блокирует слияние.
@@ -2204,7 +2204,7 @@ flowchart TB
 | 7. Ответ API, страница, MR, выгрузка | `view`, `outbound` | ID ревизии, разрешённая часть когорты, отметка ограничения доступом | Ревизия 6а или 6б и решение `access` со временем проверки |
 | 8. Исходный объект | ссылка источника | URL объекта в Git, трекере, CI или wiki | Исходный ID факта |
 
-Проверка доступа стоит на звене 7 и повторяется для каждого перехода по раскрытию. Если пользователю доступна только часть когорты ревизии, `view` вызывает в `calc` то же определение показателя на разрешённом подмножестве уже сохранённой когорты: агрегат строится по сохранённым вкладам объектов. Факты повторно не читаются ни из базы, ни из источника, результат кэшируется по ревизии и набору разрешённых областей на время жизни решения доступа (60 с). Ответ помечается как ограниченный доступом и не содержит числа и названий скрытых объектов (FR-001). Формула при этом одна, поэтому FR-009 сохраняется: разница между двумя пользователями объясняется только разными правами.
+Проверка доступа стоит на звене 7 и повторяется для каждого перехода по раскрытию. Если пользователю доступна только часть когорты ревизии, `view` вызывает в `calc` то же определение показателя на разрешённом подмножестве уже сохранённой когорты: агрегат строится по сохранённым вкладам объектов, а текущую область и ограничение каждого объекта `calc` получает у `normalize` одним запросом по ключам объектов (раздел 12.7). Факты повторно не читаются ни из базы, ни из источника, результат кэшируется по ревизии и набору разрешённых областей на время жизни решения доступа (60 с). Ответ помечается как ограниченный доступом и не содержит числа и названий скрытых объектов (FR-001). Формула при этом одна, поэтому FR-009 сохраняется: разница между двумя пользователями объясняется только разными правами.
 
 Удаление по запросу (FR-010) обрывает цепочку осознанно. Запрос принимает модуль-владелец объекта: документ - `docs`, задачу и её события - `normalize`. Он записывает удаление в журнал удалений `audit` и через пакет `jobs` ставит задание удаления каждому модулю, у которого есть данные об объекте; каждое такое задание идемпотентно. `ingest` при этом отмечает записи объекта в журнале приёма удалёнными и ставит `ingest.repack`. Задание записывает в хранилище новый пакет без удалённых записей, переводит журнал на новый ключ и хэш с пометкой «перепакован по удалению» и удаляет прежний объект. `normalize` пропускает отмеченные записи при любом переразборе, поэтому удалённое не возвращается ни после обновления парсера, ни после восстановления из копии. Ревизии, которые опирались на удалённый объект, помечаются невоспроизводимыми с причиной.
 
@@ -2476,7 +2476,7 @@ PostgreSQL и S3-хранилище в облаке - управляемые с�
 |---|---|---|
 | Повтор доставки распознаётся атомарно, без гонки «проверил - вставил» | `INSERT ... ON CONFLICT DO NOTHING` по частичному уникальному индексу журнала приёма (раздел 12.6) | FR-004, NFR-007 |
 | Журнал приёма, checkpoint, следующее задание и завершение текущего сохраняются вместе | Одна транзакция: очередь River живёт в той же базе (раздел 11) | FR-006, NFR-009 |
-| Строки одной организации недоступны другой даже при ошибке в запросе | Row-level security с `FORCE`, составные внешние ключи с `organization_id` | NFR-010, SEC-11 |
+| Строки одной организации недоступны другой даже при ошибке в запросе | Row-level security для роли приложения, составные внешние ключи с `organization_id` | NFR-010, SEC-11 |
 | Интервалы состава команд и проектов не перекрываются | Ограничение `EXCLUDE` по `tstzrange` | FR-012, BR-007 |
 | Срез воспроизводится на номер знания | B-tree по объекту, фильтр по `known_seq`; ревизии расчёта неизменяемы | FR-005, FR-009, BR-024 |
 | Раскрытие показателя до объектов когорты | Чтение вкладов по первичному ключу точки ряда | FR-021 |
@@ -2495,21 +2495,23 @@ PostgreSQL и S3-хранилище в облаке - управляемые с�
 
 | Роль | Кто использует | Права | Почему так |
 |---|---|---|---|
-| `craftpulse_owner` | `api migrate` | Владеет схемами и таблицами, выполняет DDL | Только миграции меняют схему; процессы приложения работают без прав владельца |
-| `craftpulse_app` | `api`, `worker` | `SELECT`, `INSERT`, `UPDATE`, `DELETE` на таблицы модулей и River; в `audit.event` без `UPDATE`; `NOBYPASSRLS` | Права `TRUNCATE`, `REFERENCES` и DDL не выдаются: `TRUNCATE` очищает таблицу целиком в обход row-level security, это проверено на PostgreSQL 18.6 |
-| `craftpulse_backup` | Задание копирования (раздел 14.8) | Только `SELECT` в базе ядра и базах адаптеров, `BYPASSRLS` | `pg_dump` под ролью, на которую действует `FORCE ROW LEVEL SECURITY`, завершается ошибкой «query would be affected by row-level security policy». Владелец таблиц тоже под неё попадает, поэтому для копии нужна отдельная роль только на чтение |
-| `adapter_<имя>` | Адаптер источника | Владелец своей базы | Учётные данные источника доступны только его адаптеру (NFR-014) |
+| `craftpulse_owner` | `api migrate`, восстановление (раздел 14.8) | Владеет схемами и таблицами: DDL, миграции, `pg_restore` | Процессы приложения работают без прав владельца. На владельца политика RLS не действует, потому что `FORCE ROW LEVEL SECURITY` не включается, поэтому миграция видит строки всех организаций |
+| `craftpulse_backup` | Задание копирования (раздел 14.8) | Только `SELECT`; на каждой таблице с RLS политика `FOR SELECT TO craftpulse_backup USING (true)` | `pg_dump --enable-row-security` под этой ролью снимает строки всех организаций, а записать или изменить схему роль не может. `BYPASSRLS` не нужен (проверено на PostgreSQL 18.6) |
+| `craftpulse_app` | `api`, `worker` | `SELECT`, `INSERT`, `UPDATE`, `DELETE` на таблицы модулей и River; в `audit.event` без `UPDATE`; `NOBYPASSRLS`; владельцем таблиц не является | Права `TRUNCATE`, `REFERENCES` и DDL не выдаются: `TRUNCATE` очищает таблицу целиком в обход row-level security, это проверено на PostgreSQL 18.6 |
+| `adapter_<имя>_owner` и `adapter_<имя>` | Миграции базы адаптера; работающий адаптер. Копию базы адаптера снимает `craftpulse_backup` по той же политике | Владелец базы адаптера; роль процесса адаптера с DML и `NOBYPASSRLS` | Учётные данные источника доступны только его адаптеру (NFR-014), а RLS базы адаптера действует на процесс адаптера |
 
-Пароли ролей хранятся в секретах установки (раздел 14.2). Восстановление выполняет `craftpulse_owner`: `pg_restore` загружает данные в таблицы до включения политик.
+`FORCE ROW LEVEL SECURITY` не используется осознанно. С ним политика действует и на владельца: на проверочной базе `UPDATE` под владельцем, как в миграции данных, молча изменил 0 строк из 2, а `pg_dump` завершился ошибкой «query would be affected by row-level security policy». Роль копирования с `BYPASSRLS` тоже не подходит: администратор управляемой БД без прав суперпользователя не может её создать («Only roles with the BYPASSRLS attribute may create roles with the BYPASSRLS attribute», проверено). Поэтому роль копирования получает отдельную политику только на чтение. Защиту от ошибки в коде даёт то, что приложение не владеет таблицами и не имеет `BYPASSRLS`, а политика копирования относится только к роли `craftpulse_backup`. Пароли ролей хранятся в секретах установки (раздел 14.2).
 
-**Изоляция организаций.** В каждой таблице организации есть `organization_id uuid NOT NULL`. На таблице включены `ENABLE` и `FORCE ROW LEVEL SECURITY` с одной политикой для всех команд:
+**Изоляция организаций.** В каждой таблице организации есть `organization_id uuid NOT NULL`. На таблице включён `ENABLE ROW LEVEL SECURITY` и две политики. Политика изоляции действует для `craftpulse_app` на все команды:
 
 ```sql
 USING (organization_id = NULLIF(current_setting('craftpulse.org_id', true), '')::uuid)
 WITH CHECK (organization_id = NULLIF(current_setting('craftpulse.org_id', true), '')::uuid)
 ```
 
-Пакет `db` открывает транзакцию и первым оператором выполняет `set_config('craftpulse.org_id', $1, true)`. Значение живёт до конца транзакции, поэтому соединение из пула не переносит организацию в следующую. `NULLIF` нужен потому, что после завершения такой транзакции параметр в том же соединении равен пустой строке, а не NULL, и приведение `''::uuid` даёт ошибку. С `NULLIF` запрос без установленной организации получает пустой результат. Условие политики использует индекс по `organization_id`: проверено через `EXPLAIN` на PostgreSQL 18.6.
+Пакет `db` открывает транзакцию и первым оператором выполняет `set_config('craftpulse.org_id', $1, true)`. Значение живёт до конца транзакции, поэтому соединение из пула не переносит организацию в следующую. `NULLIF` нужен потому, что после завершения такой транзакции параметр в том же соединении равен пустой строке, а не NULL, и приведение `''::uuid` даёт ошибку. С `NULLIF` запрос без установленной организации получает пустой результат. Вторая политика - `FOR SELECT TO craftpulse_backup USING (true)` для копирования. Условие политики использует индекс по `organization_id`: проверено через `EXPLAIN` на PostgreSQL 18.6.
+
+Под RLS условием индекса становится только оператор, помеченный `LEAKPROOF`: иначе PostgreSQL не проверяет его раньше условия политики. Равенство и сравнения `uuid`, `text`, `bigint`, `timestamptz` и `bytea` такими являются, а операторы диапазонов (`@>`, `&&`) нет. На проверочной базе запрос `valid @> now()` под ролью приложения использовал GiST-индекс только по равенствам, а дату проверял фильтром. Поэтому запросы по диапазону времени в модели сначала сужаются равенством по ключу (команда, проект, объект), а индексы по времени - B-tree по `timestamptz`.
 
 Обходов RLS в модели нет:
 
@@ -2517,13 +2519,28 @@ WITH CHECK (organization_id = NULLIF(current_setting('craftpulse.org_id', true),
 - Функции `SECURITY DEFINER` не используются.
 - Уникальные ограничения на таблицах организаций всегда включают `organization_id`. Иначе ошибка уникальности при вставке выдала бы существование строки в другой организации.
 
-Вне row-level security лежат только таблицы, по которым запрос узнаёт свою организацию (раздел 10.3): `auth.login_route`, `auth.login_attempt`, `auth.session`, `auth.api_key`, `auth.upload_token` и `connect.webhook_route`. К ним добавляются таблицы уровня установки без `organization_id`: `install.protocol`, `install.check_result`, `calc.definition` и таблицы River. В аргументах заданий River лежат только ID и организация, без данных источников.
+Вне row-level security лежат только таблицы, по которым запрос узнаёт свою организацию, и реестр организаций (раздел 10.3): `platform.tenant`, `auth.login_route`, `auth.login_attempt`, `auth.session`, `auth.api_key`, `auth.upload_token` и `connect.webhook_route`. К ним добавляются таблицы уровня установки без `organization_id`: `install.protocol`, `install.check_result`, `calc.definition` и таблицы River. В аргументах заданий River лежат только ID и организация, без данных источников. Планировщик ежедневных заданий читает список организаций из `platform.tenant`: без него он работал бы без установленной организации и под RLS получил бы пустой список, и задания не ставились бы ни одной организации.
 
 **Ключи.** Первичный ключ таблицы организации - `(organization_id, id)`, где `id uuid DEFAULT uuidv7()`. UUID версии 7 упорядочен по времени создания, поэтому вставка идёт в конец B-tree. Поиск по одному `id` использует тот же индекс: условие RLS даёт первую колонку. Внешний ключ внутри модуля составной `(organization_id, <поле>_id)`, поэтому строка не может сослаться на строку другой организации; это проверено вставкой. ID, которые работают как часть секретного адреса (`connect.webhook_route`), создаются `gen_random_uuid()`: UUID v7 раскрывает время создания и частично предсказуем.
 
 Между модулями внешних ключей нет: поле `<сущность>_id` хранит ID, а модуль-владелец удаляет свои данные заданием (раздел 10.4). Внешний ключ между схемами связал бы порядок удаления и миграций разных модулей и мешал бы удалять данные по запросу. Ссылки между модулями помечены в словаре словом «ссылка». На ER-диаграммах они пунктирные и показаны там, где на диаграмме есть оба конца.
 
 Каждый внешний ключ обеспечен индексом, который начинается с его колонок. Без такого индекса удаление родительской строки просматривает дочернюю таблицу целиком, потому что PostgreSQL не создаёт индекс на ссылающейся стороне сам.
+
+Поведение при удалении по умолчанию - `ON DELETE RESTRICT`: строку с зависимыми удалить нельзя, и ошибка в порядке удаления видна сразу. `CASCADE` стоит только от владельца к подчинённым строкам, которые без него не имеют смысла:
+
+- записи и конфликты приёма - от приёма;
+- находки, выполнения тестов и покрытие - от отчёта;
+- точки, вклады и интервалы - от части ряда;
+- входы и части ревизии - от ревизии;
+- правила - от версии сопоставления;
+- строки матрицы - от версии профиля;
+- входы и строки сводки - от её ревизии;
+- переходы - от версии решения;
+- области ключа API - от ключа;
+- результаты проверок - от протокола установки.
+
+Где ссылку нужно обнулить, пишется `ON DELETE SET NULL (<колонка>)` со списком колонок. Обычный `SET NULL` у составного ключа обнуляет и `organization_id`, и удаление падает на `NOT NULL`: это проверено на PostgreSQL 18.6. Так устроена `calc.revision.previous_revision_id`.
 
 **Типы и ограничения.**
 
@@ -2667,12 +2684,6 @@ erDiagram
   app_user["org.app_user"] {
     uuid id PK
   }
-  cache["access.decision_cache"] {
-    uuid user_id PK
-    uuid connection_id PK
-    text target_kind PK
-    uuid target_id PK
-  }
   audit_event["audit.event"] {
     uuid id PK
   }
@@ -2680,6 +2691,9 @@ erDiagram
     uuid id PK
   }
   clock["platform.org_clock"] {
+    uuid organization_id PK
+  }
+  tenant["platform.tenant"] {
     uuid organization_id PK
   }
   protocol["install.protocol"] {
@@ -2693,7 +2707,6 @@ erDiagram
   protocol ||--o{ check_result : ""
   app_user ||..o{ session : "user_id"
   app_user ||..o{ api_key : "owner_user_id"
-  app_user ||..o{ cache : "user_id"
 ```
 
 **ER-3. Подключения, сбор и приём**
@@ -2737,7 +2750,7 @@ erDiagram
   }
   receipt["ingest.receipt"] {
     uuid id PK
-    uuid duplicate_of FK
+    uuid duplicate_of
   }
   record["ingest.record"] {
     uuid receipt_id PK
@@ -2761,10 +2774,11 @@ erDiagram
   connection ||..o{ reconcile : ""
   connection |o..o{ receipt : "sync"
   instance |o..o{ receipt : "source_instance_id"
-  receipt |o--o{ receipt : "duplicate_of"
+  receipt |o..o{ receipt : "duplicate_of"
   receipt ||--o{ record : ""
-  record |o--o{ record : "first_receipt_id"
-  record ||--o{ conflict : "новая и прежняя"
+  record |o..o{ record : "first_receipt_id"
+  record ||--o{ conflict : "receipt_id"
+  record ||..o{ conflict : "existing_receipt_id"
 ```
 
 **ER-4. Канонические факты: объекты, задачи, MR и связи**
@@ -2804,7 +2818,8 @@ erDiagram
   edge["link.edge"] {
     uuid id PK
   }
-  object ||--o| area : ""
+  object ||--o| area : "area_id"
+  area |o--o{ object : "current_area_id"
   area ||--o{ area_change : ""
   object ||--o{ task_version : "task_id, parent_task_id"
   area ||--o{ task_version : ""
@@ -2851,6 +2866,10 @@ erDiagram
     uuid report_id FK
     uuid test_case_id FK
   }
+  rpin["normalize.report_pin"] {
+    uuid report_id PK
+    uuid holder_id PK
+  }
   coverage["normalize.coverage_fact"] {
     uuid id PK
     uuid report_id FK
@@ -2869,6 +2888,7 @@ erDiagram
   report ||--o{ execution : ""
   test_case ||--o{ execution : ""
   object |o--o{ execution : "attempt_id"
+  report ||--o{ rpin : ""
   report ||--o{ coverage : ""
   object ||--o{ document : ""
   area ||--o{ document : ""
@@ -2979,6 +2999,7 @@ erDiagram
     text metric_id PK
     timestamptz point_start PK
     uuid object_id PK
+    smallint item_no PK
   }
   interval["calc.interval"] {
     uuid part_id PK
@@ -3118,13 +3139,14 @@ erDiagram
 
 | Таблица | Назначение | Поля и типы | Ключи и связи | Ограничения | Индексы и запрос |
 |---|---|---|---|---|---|
+| `platform.tenant` | Реестр организаций для планировщика. Вне RLS | `organization_id uuid`; `status text`; `created_at timestamptz` | PK (`organization_id`) | `status IN ('active','blocked','deleting')`; строка создаётся и удаляется в одной транзакции с `org.organization` | PK. Планировщик ставит ежедневные задания каждой организации и повторно применяет журнал удалений после восстановления. Строка не содержит других данных организации |
 | `platform.org_clock` | Номер знания организации (раздел 12.6) | `organization_id uuid`; `last_seq bigint`; `reproducible_from_seq bigint` | PK (`organization_id`) | `last_seq >= 0`; `reproducible_from_seq <= last_seq`; `fillfactor = 50` | Только PK: `UPDATE ... SET last_seq = last_seq + 1 RETURNING last_seq`. Свободное место на странице даёт HOT-обновления без роста индекса |
 | `org.organization` | Организация (tenant) | `organization_id uuid`; `name text`; `status text`; `first_admin_issuer text`; `first_admin_subject ntext`; `first_admin_user_id uuid?`; `structure_version bigint`; `created_at timestamptz` | PK (`organization_id`) | `status IN ('setup','active','blocked','deleting')`; `structure_version >= 0` | Только PK. `structure_version` - оптимистическая проверка при сохранении структуры (FR-008) |
 | `org.team` | Команда | `id`; `name text`; `status text`; `created_at timestamptz` | PK (`id`) | `status IN ('active','archived')`; длина `name` 1-200 | Только PK |
 | `org.project` | Проект | Как `org.team` | PK (`id`) | Как `org.team` | Только PK |
 | `org.service` | Сервис | Как `org.team` | PK (`id`) | Как `org.team` | Только PK |
 | `org.component` | Компонент: путь в репозитории внутри сервиса | `id`; `service_id uuid`; `repository_area_id uuid`; `path_prefix ptext`; `status text`; `origin text`; `[знание]`; `confirmed_by uuid?`; `confirmed_at timestamptz?` | PK (`id`); FK `service_id` → `org.service`; ссылка `repository_area_id` → `normalize.area` | `status IN ('proposed','confirmed','rejected')`; `origin IN ('manifest','manual')`; подтверждённый имеет автора; `path_prefix` до 1 024 байт, пусто - весь репозиторий | UNIQUE (`service_id`, `repository_area_id`, `path_prefix`) WHERE `superseded_seq IS NULL` - один действующий компонент на путь, он же индекс FK; (`repository_area_id`) WHERE `superseded_seq IS NULL AND status = 'confirmed'` - какие компоненты покрывают репозиторий отчёта |
-| `org.team_project` | Проекты команды во времени | `id`; `team_id uuid`; `project_id uuid`; `valid tstzrange`; `[знание]` | PK (`id`); FK `team_id` → `org.team`; FK `project_id` → `org.project` | `EXCLUDE USING gist (organization_id WITH =, team_id WITH =, project_id WITH =, valid WITH &&) WHERE (superseded_seq IS NULL)`; `valid` вида `[from,to)` с непустой нижней границей | GiST ограничения: проекты команды на дату (`valid @> t`); (`project_id`) - индекс FK и команды проекта |
+| `org.team_project` | Проекты команды во времени | `id`; `team_id uuid`; `project_id uuid`; `valid tstzrange`; `[знание]` | PK (`id`); FK `team_id` → `org.team`; FK `project_id` → `org.project` | `EXCLUDE USING gist (organization_id WITH =, team_id WITH =, project_id WITH =, valid WITH &&) WHERE (superseded_seq IS NULL)`; `valid` вида `[from,to)` с непустой нижней границей | GiST ограничения: проекты команды по `team_id`, дата проверяется фильтром по немногим строкам команды; (`project_id`) - индекс FK и команды проекта |
 | `org.project_area` | Области источников проекта: проект трекера, репозиторий, пространство wiki | `id`; `project_id uuid`; `area_id uuid`; `valid tstzrange`; `[знание]` | PK (`id`); FK `project_id` → `org.project`; ссылка `area_id` → `normalize.area` | `EXCLUDE` по (`project_id`, `area_id`, `valid`) как у `org.team_project` | GiST ограничения: области проекта; (`area_id`) WHERE `superseded_seq IS NULL` - каким проектам принадлежит область при проверке доступа |
 | `org.team_member` | Состав команды во времени | `id`; `team_id uuid`; `person_id uuid`; `valid tstzrange`; `[знание]` | PK (`id`); FK `team_id` → `org.team`; FK `person_id` → `org.person` | `EXCLUDE` по (`team_id`, `person_id`, `valid`) | GiST ограничения: состав команды; (`person_id`) WHERE `superseded_seq IS NULL` - базовая область пользователя по составу команд (раздел 7.1) |
 | `org.person` | Человек, бот или служебный участник | `id`; `display_name text?`; `kind text`; `anonymized_at timestamptz?`; `created_at timestamptz` | PK (`id`) | `kind IN ('human','bot','system','unknown')`; после обезличивания `display_name IS NULL` | Только PK |
@@ -3146,13 +3168,12 @@ erDiagram
 | `auth.api_key` | Ключ API. Вне RLS | `id`; `token_hash hash`; `organization_id uuid`; `owner_user_id uuid`; `created_by uuid`; `created_at`, `expires_at timestamptz`; `revoked_at timestamptz?` | PK (`organization_id`, `id`); UNIQUE (`token_hash`); ссылка `owner_user_id` → `org.app_user` | `expires_at > created_at`; срок не больше 365 дней проверяет `auth` | UNIQUE (`token_hash`) - проверка запроса; (`organization_id`, `owner_user_id`) WHERE `revoked_at IS NULL` - отключение ключей при блокировке владельца |
 | `auth.api_key_grant` | Область ключа API | `id`; `api_key_id uuid`; `team_id uuid?`; `project_id uuid?`; `service_id uuid?` | PK (`id`); FK `api_key_id` → `auth.api_key`; ссылки на `org.team`, `org.project`, `org.service` | `num_nonnulls(team_id, project_id, service_id) = 1` | UNIQUE NULLS NOT DISTINCT (`api_key_id`, `team_id`, `project_id`, `service_id`) - область ключа, индекс FK |
 | `auth.upload_token` | Токен загрузки CI проекта. Вне RLS | `id`; `token_hash hash`; `organization_id uuid`; `project_id uuid`; `slot smallint`; `created_by uuid`; `created_at timestamptz`; `revoked_at timestamptz?` | PK (`organization_id`, `id`); UNIQUE (`token_hash`); ссылка `project_id` → `org.project` | `slot IN (1, 2)` | UNIQUE (`organization_id`, `project_id`, `slot`) WHERE `revoked_at IS NULL` - не больше двух действующих токенов проекта на уровне базы (раздел 13.3) |
-| `access.decision_cache` | Решения `CheckAccess` не старше 60 с. `UNLOGGED` | `user_id uuid`; `connection_id uuid`; `target_kind text`; `target_id uuid`; `decision text`; `mode text`; `checked_at`, `expires_at timestamptz` | PK (`user_id`, `connection_id`, `target_kind`, `target_id`); ссылки на `org.app_user`, `connect.connection`, `normalize.source_object` | `target_kind IN ('area','object')`; `decision IN ('allow','deny','unknown')`; `mode IN ('service_account','user_token','synced')`; `expires_at <= checked_at + interval '60 seconds'` | PK - решение по паре «пользователь, область»; запись через `ON CONFLICT DO UPDATE`; (`expires_at`) - удаление истёкших |
 | `audit.event` | Журнал значимых действий (раздел 13.8) | `id`; `occurred_at timestamptz`; `actor_kind text`; `actor_id uuid?`; `operation text`; `object_kind text?`; `object_id uuid?`; `area_id uuid?`; `outcome text`; `reason_code text?`; `base_version text?`; `new_version text?`; `correlation_id uuid`; `details jsonb?` | PK (`id`) | `actor_kind IN ('user','api_key','upload_token','system','source')`; `outcome IN ('succeeded','denied','failed')`; `pg_column_size(details) <= 4096`; `UPDATE` роли приложения не выдан | (`occurred_at`) - просмотр журнала и сроки хранения; (`actor_id`, `occurred_at`) WHERE `actor_id IS NOT NULL` - действия субъекта и алерт на рост отказов |
 | `audit.deletion` | Журнал удалений (раздел 12.9) | `id`; `requested_at timestamptz`; `requested_by uuid?`; `basis text`; `scope_kind text`; `object_kind text?`; `object_id uuid?`; `retention_class text?`; `cutoff_at timestamptz?`; `status text`; `backup_object_key text?`; `recorded_at`, `applied_at timestamptz?` | PK (`id`) | `basis IN ('user_request','connection_deleted','organization_deleted','retention')`; `scope_kind IN ('object','area','connection','class','organization')`; `status IN ('pending','recorded','applied')`; удаление по запросу после `pending` имеет `backup_object_key` | (`status`, `requested_at`) WHERE `status <> 'applied'` - незавершённые удаления для заданий и восстановления |
 | `install.protocol` | Протокол проверки установки, уровень установки | `id`; `started_at timestamptz`; `finished_at timestamptz?`; `release_sha sha`; `manifest jsonb`; `outcome text` | PK (`id`) | `outcome IN ('running','passed','failed')` | (`started_at`) - последний протокол |
 | `install.check_result` | Исход одной проверки установки | `protocol_id uuid`; `check_kind text`; `outcome text`; `reason_code text?`; `detail text?` | PK (`protocol_id`, `check_kind`); FK `protocol_id` → `install.protocol` | `check_kind IN ('site','adapter','adapter_store','identity_provider','update_source','database','object_store','runner_network')`; `outcome IN ('passed','failed','skipped')` | PK |
 
-`access.decision_cache` сделан `UNLOGGED`: запись не идёт в WAL, после аварийного перезапуска таблица очищается, и это правильное поведение для кэша. В копию её данные не попадают (`pg_dump --exclude-table-data`): после восстановления права подтверждаются заново (раздел 14.8).
+Решения `CheckAccess` хранит кэш в памяти каждого процесса `api` и `worker`, не дольше 60 с. Таблица для них не нужна: у каждого экземпляра свой кэш с тем же сроком, поэтому NFR-011 выполняется. После перезапуска и восстановления решения запрашиваются заново (раздел 14.8).
 
 ##### 12.5.3. Подключения и сбор
 
@@ -3165,27 +3186,27 @@ erDiagram
 | `connect.webhook_route` | Адрес webhook подключения. Вне RLS | `id uuid DEFAULT gen_random_uuid()`; `organization_id uuid`; `connection_id uuid`; `created_at timestamptz`; `revoked_at timestamptz?` | PK (`id`); FK (`organization_id`, `connection_id`) → `connect.connection` | - | PK - приём webhook по адресу; (`organization_id`, `connection_id`) - индекс FK |
 | `sync.state` | Состояние сбора по подключению и виду данных | `connection_id uuid`; `data_kind text`; `phase text`; `cursor text?`; `checkpoint_at timestamptz?`; `failed_cursor text?`; `last_attempt_at timestamptz?`; `last_outcome text?`; `last_error_code text?`; `last_success_at timestamptz?`; `watermark timestamptz?`; `history_from timestamptz?`; `completeness text` | PK (`connection_id`, `data_kind`); ссылка → `connect.connection` | `data_kind IN ('tasks','merge_requests','ci','reports','documents','accounts','permissions')`; `phase IN ('backfill','incremental','paused','stopped')`; `completeness IN ('complete','partial','unknown')`; `watermark` только при `last_success_at`; курсор до 4 096 байт; `fillfactor = 80` | Только PK: состояние читается по подключению, подключений десятки |
 | `sync.lease` | Одна активная попытка сбора на подключение (NFR-006) | `connection_id uuid`; `holder text`; `lease_until timestamptz` | PK (`connection_id`); ссылка → `connect.connection` | - | PK. Захват: `INSERT ... ON CONFLICT (organization_id, connection_id) DO UPDATE ... WHERE sync.lease.lease_until < $now OR sync.lease.holder = $me RETURNING`; пустой ответ - аренда занята |
-| `sync.dirty_key` | Набор объектов «перечитать» | `connection_id uuid`; `key_hash hash`; `object_kind text`; `native_ref ptext`; `added_at timestamptz` | PK (`connection_id`, `key_hash`); ссылка → `connect.connection` | - | PK: повтор ключа схлопывается через `ON CONFLICT DO NOTHING`; строки удаляются после перечитывания |
+| `sync.dirty_key` | Набор объектов «перечитать» | `connection_id uuid`; `key_hash hash`; `object_kind text`; `native_ref ptext`; `added_at timestamptz` | PK (`connection_id`, `key_hash`); ссылка → `connect.connection` | - | PK. Добавление: `ON CONFLICT DO UPDATE SET added_at = EXCLUDED.added_at`; после перечитывания `DELETE ... WHERE added_at <= $read_started_at`, поэтому ключ, пришедший во время чтения, не теряется |
 | `sync.reconcile_run` | Результат сверки с манифестом источника | `id`; `connection_id uuid`; `data_kind text`; `as_of`, `started_at timestamptz`; `finished_at timestamptz?`; `expected_count`, `observed_count`, `missing_count`, `changed_count integer?`; `outcome text`; `reason_code text?` | PK (`id`); ссылка → `connect.connection` | `outcome IN ('running','complete','incomplete','failed')` | (`connection_id`, `data_kind`, `started_at DESC`) - последняя сверка в диагностике (FR-020) |
 
 ##### 12.5.4. Приём
 
 | Таблица | Назначение | Поля и типы | Ключи и связи | Ограничения | Индексы и запрос |
 |---|---|---|---|---|---|
-| `ingest.receipt` | Приём пакета (DR-003) | `id`; `channel text`; `connection_id uuid?`; `project_id uuid?`; `upload_token_id uuid?`; `requested_by uuid?`; `source_instance_id uuid?`; `received_at timestamptz`; `status text`; `duplicate_of uuid?`; `schema_id`, `schema_version text`; `package_hash hash?`; `object_key text?`; `quarantine_key text?`; `record_count`, `accepted_count`, `rejected_count integer`; `reason_code text?`; `repacked_at timestamptz?`; `manifest jsonb` | PK (`id`); FK `duplicate_of` → `ingest.receipt`; ссылки на `connect.connection`, `org.project`, `auth.upload_token`, `connect.source_instance` | `channel IN ('sync','ci','import')`; `sync` требует `connection_id`, `ci` - `project_id` и `upload_token_id`, `import` - `requested_by`; `status IN ('quarantined','accepted','partial','rejected','duplicate')`; `duplicate` требует `duplicate_of`; принятый пакет имеет `object_key` и `package_hash` | (`package_hash`) WHERE `package_hash IS NOT NULL` - повтор того же пакета, в том числе при восстановлении (раздел 14.8); (`received_at`) - диагностика и сроки хранения; (`duplicate_of`) WHERE `duplicate_of IS NOT NULL` - индекс FK |
-| `ingest.record` | Запись пакета с исходной идентичностью и исходом | `receipt_id uuid`; `record_no integer`; `record_class text`; `record_kind text`; `instance_id uuid?`; `native_ns text?`; `native_id ntext?`; `source_revision ntext?`; `content_hash hash?`; `outcome text`; `reason_code text?`; `first_receipt_id uuid?`; `first_record_no integer?`; `deleted_at timestamptz?` | PK (`receipt_id`, `record_no`); FK `receipt_id` → `ingest.receipt`; FK (`first_receipt_id`, `first_record_no`) → `ingest.record` | `record_class IN ('event','object','snapshot','file')`; `outcome IN ('accepted','replay','conflict','rejected','suppressed')`; кроме `rejected` идентичность, ревизия и хэш заданы; `replay` и `conflict` ссылаются на принятую запись; `native_ns` до 255 байт, пустая строка допустима | UNIQUE (`instance_id`, `record_kind`, `native_ns`, `native_id`, `source_revision`) WHERE `outcome = 'accepted'` - атомарное различение нового факта, повтора и конфликта; (`instance_id`, `record_kind`, `native_ns`, `native_id`) - все записи объекта при удалении по запросу; (`first_receipt_id`, `first_record_no`) WHERE `first_receipt_id IS NOT NULL` - индекс FK |
-| `ingest.conflict` | Тот же `source_revision` с другим содержимым (BR-002) | `id`; `receipt_id uuid`; `record_no integer`; `existing_receipt_id uuid`; `existing_record_no integer`; `detected_at timestamptz`; `status text`; `resolution text?`; `resolved_by uuid?`; `resolved_at timestamptz?` | PK (`id`); FK (`receipt_id`, `record_no`) и FK (`existing_receipt_id`, `existing_record_no`) → `ingest.record` | `status IN ('open','resolved')`; `resolution IN ('source_corrected','kept_existing','accepted_new')`; `(status = 'open') = (resolution IS NULL)` | UNIQUE (`receipt_id`, `record_no`) - один конфликт на запись, индекс FK; (`existing_receipt_id`, `existing_record_no`) - индекс FK; (`detected_at`) WHERE `status = 'open'` - открытые конфликты в диагностике |
-| `ingest.suppression` | Объекты, удалённые по запросу: их новые записи не принимаются | `instance_id uuid`; `record_kind text`; `native_ns text`; `native_id ntext`; `deletion_id uuid`; `suppressed_at timestamptz` | PK (`instance_id`, `record_kind`, `native_ns`, `native_id`); ссылка `deletion_id` → `audit.deletion` | - | PK - проверка каждой записи при очистке пакета |
+| `ingest.receipt` | Приём пакета (DR-003) | `id`; `channel text`; `connection_id uuid?`; `project_id uuid?`; `upload_token_id uuid?`; `requested_by uuid?`; `source_instance_id uuid?`; `received_at timestamptz`; `status text`; `duplicate_of uuid?`; `schema_id`, `schema_version text`; `package_hash hash?`; `object_key text?`; `quarantine_key text?`; `record_count`, `accepted_count`, `rejected_count integer`; `reason_code text?`; `repacked_at timestamptz?`; `manifest jsonb` | PK (`id`); ссылка `duplicate_of` → `ingest.receipt` без FK: дубль переживает исходный приём, удалённый по сроку; ссылки на `connect.connection`, `org.project`, `auth.upload_token`, `connect.source_instance` | `channel IN ('sync','ci','import')`; `sync` требует `connection_id`, `ci` - `project_id` и `upload_token_id`, `import` - `requested_by`; `status IN ('quarantined','accepted','partial','rejected','duplicate')`; `duplicate` требует `duplicate_of`; принятый пакет имеет `object_key` и `package_hash` | (`package_hash`) WHERE `package_hash IS NOT NULL` - повтор того же пакета, в том числе при восстановлении (раздел 14.8); (`received_at`) - диагностика и сроки хранения |
+| `ingest.record` | Запись пакета с исходной идентичностью и исходом | `receipt_id uuid`; `record_no integer`; `record_class text`; `record_kind text`; `payload_schema ntext`; `instance_id uuid?`; `native_ns text`; `native_id ntext?`; `source_revision ntext?`; `content_hash hash?`; `outcome text`; `reason_code text?`; `first_receipt_id uuid?`; `first_record_no integer?`; `deleted_at timestamptz?` | PK (`receipt_id`, `record_no`); FK `receipt_id` → `ingest.receipt` ON DELETE CASCADE; ссылка (`first_receipt_id`, `first_record_no`) → `ingest.record` без FK: запись повтора переживает принятую запись, удалённую по сроку | `record_class IN ('event','object','snapshot','file')`; `outcome IN ('accepted','replay','conflict','rejected','suppressed')`; кроме `rejected` заданы `instance_id`, `native_id`, `source_revision` и `content_hash`; `replay` и `conflict` ссылаются на принятую запись; `native_ns` и `payload_schema` `NOT NULL`, пустое пространство имён - пустая строка до 255 байт: NULL в колонке уникального ключа сделал бы каждую запись уникальной, и повтор не распознался бы | UNIQUE (`instance_id`, `record_kind`, `native_ns`, `native_id`, `source_revision`, `payload_schema`) WHERE `outcome = 'accepted'` - атомарное различение нового факта, повтора и конфликта; (`instance_id`, `record_kind`, `native_ns`, `native_id`) - все записи объекта при удалении по запросу |
+| `ingest.conflict` | Тот же `source_revision` с другим содержимым (BR-002) | `id`; `receipt_id uuid`; `record_no integer`; `existing_receipt_id uuid`; `existing_record_no integer`; `detected_at timestamptz`; `status text`; `resolution text?`; `resolved_by uuid?`; `resolved_at timestamptz?` | PK (`id`); FK (`receipt_id`, `record_no`) → `ingest.record` ON DELETE CASCADE; ссылка (`existing_receipt_id`, `existing_record_no`) → `ingest.record` без FK | `status IN ('open','resolved')`; `resolution IN ('source_corrected','kept_existing','accepted_new')`; `(status = 'open') = (resolution IS NULL)` | UNIQUE (`receipt_id`, `record_no`) - один конфликт на запись, индекс FK; (`detected_at`) WHERE `status = 'open'` - открытые конфликты в диагностике |
+| `ingest.suppression` | Объекты, удалённые по запросу: их новые записи и записи их дочерних объектов не принимаются | `instance_id uuid`; `record_kind text`; `native_ns text`; `native_id ntext`; `deletion_id uuid`; `suppressed_at timestamptz` | PK (`instance_id`, `record_kind`, `native_ns`, `native_id`); ссылка `deletion_id` → `audit.deletion` | - | PK - проверка каждой записи при очистке пакета: по ключу самой записи и по ключу родителя, например задачи для события, у которого `native_ns` - ID задачи |
 
 Исходное содержимое записей лежит только в очищенном объекте хранилища (раздел 10.4). В базе остаются координаты, хэш и исход, поэтому журнал приёма компактен, а удаление по запросу перепаковывает объект, не трогая структуру журнала.
 
 ##### 12.5.5. Канонические факты
 
-Все изменяемые факты хранятся версиями знания (раздел 12.6). Колонка `area_id` есть у каждого факта: это область источника (проект трекера, репозиторий, пространство wiki), по которой `access` принимает решение о доступе.
+Все изменяемые факты хранятся версиями знания (раздел 12.6). Область источника (проект трекера, репозиторий, пространство wiki) хранят строки верхнего уровня: версии задач, MR, запусков, отчётов и документов. Строки нижнего уровня - события MR, попытки, находки, выполнения тестов, покрытие - получают область через свою родительскую строку. Решение о доступе принимается по текущей области объекта в `normalize.source_object.current_area_id` (раздел 12.7).
 
 | Таблица | Назначение | Поля и типы | Ключи и связи | Ограничения | Индексы и запрос |
 |---|---|---|---|---|---|
-| `normalize.source_object` | Идентичность внешнего объекта (раздел 12.4) | `id`; `instance_id uuid`; `object_kind text`; `native_ns text`; `native_id ntext`; `identity_quality text`; `first_known_seq bigint`; `deleted_at timestamptz?` | PK (`id`); ссылка `instance_id` → `connect.source_instance` | `object_kind IN ('tracker_project','repository','wiki_space','ci_project','analysis_project','task','merge_request','ci_run','ci_attempt','document','sprint','deployment','artifact','incident')`; `identity_quality IN ('stable','derived','uncertain')` | UNIQUE (`instance_id`, `object_kind`, `native_ns`, `native_id`) - идентичность при нормализации. Удалённый по запросу объект остаётся строкой-отметкой без атрибутов |
+| `normalize.source_object` | Идентичность внешнего объекта (раздел 12.4) и его текущая принадлежность области | `id`; `instance_id uuid`; `object_kind text`; `native_ns text`; `native_id ntext`; `identity_quality text`; `first_known_seq bigint`; `current_area_id uuid?`; `restricted boolean`; `deleted_at timestamptz?` | PK (`id`); FK `current_area_id` → `normalize.area`; ссылка `instance_id` → `connect.source_instance` | `object_kind IN ('tracker_project','repository','wiki_space','ci_project','analysis_project','task','merge_request','ci_run','ci_attempt','document','sprint','deployment','artifact','incident')`; `identity_quality IN ('stable','derived','uncertain')`; `native_ns NOT NULL`, пусто - пустая строка | UNIQUE (`instance_id`, `object_kind`, `native_ns`, `native_id`) - идентичность при нормализации; (`current_area_id`) WHERE `current_area_id IS NOT NULL` - индекс FK. `current_area_id` и `restricted` меняются вместе с текущей версией объекта и служат для проверки доступа. Удалённый по запросу объект остаётся строкой-отметкой без атрибутов |
 | `normalize.area` | Область источника и её состояние | `area_id uuid`; `area_kind text`; `last_change_seq bigint`; `retained_from timestamptz?` | PK (`area_id`); FK `area_id` → `normalize.source_object` | `area_kind IN ('tracker_project','repository','wiki_space','ci_project','analysis_project')` | Только PK. `retained_from` - граница истории после удаления по сроку хранения (раздел 12.9) |
 | `normalize.area_change` | Журнал изменений фактов области для пересчёта | `area_id uuid`; `known_seq bigint`; `earliest_event_time timestamptz?`; `fact_kinds text[]`; `recorded_at timestamptz` | PK (`area_id`, `known_seq`); FK `area_id` → `normalize.area` | - | PK: `calc` читает изменения области после своего `consumed_seq` и пересчитывает окна начиная с `earliest_event_time` |
 | `normalize.task_version` | Состояние задачи | `id`; `task_id uuid`; `area_id uuid`; `[знание]`; `[запись]`; `source_revision ntext`; `source_updated_at timestamptz?`; `task_key ntext?`; `title text?`; `type_native_id ntext`; `status_native_id ntext`; `resolution_native_id ntext?`; `created_src_at timestamptz`; `size_native text?`; `team_native text?`; `assignee_account_id uuid?`; `parent_task_id uuid?`; `restriction_native ntext?`; `raw_fields jsonb?` | PK (`id`); FK `task_id` → `normalize.source_object`; FK `area_id` → `normalize.area`; FK `parent_task_id` → `normalize.source_object`; ссылка `assignee_account_id` → `org.source_account` | Общие ограничения `[знание]`; `raw_fields` без описания задачи и вложений | UNIQUE (`task_id`, `source_revision`) - повторная нормализация не создаёт копию; текущая версия по `task_id`; (`area_id`) - задачи области для расчёта, отчёта и проверки доступа, включая версии, заменённые после среза; (`parent_task_id`) WHERE `parent_task_id IS NOT NULL` - индекс FK |
@@ -3195,6 +3216,7 @@ erDiagram
 | `normalize.ci_run_version` | Состояние pipeline | `id`; `run_id uuid`; `area_id uuid`; `mr_id uuid?`; `[знание]`; `[запись]`; `source_revision ntext`; `ref_name ntext`; `sha sha`; `definition_version text?`; `native_status ntext`; `outcome text`; `started_at`, `finished_at timestamptz?` | PK (`id`); FK `run_id`, `mr_id` → `normalize.source_object`; FK `area_id` → `normalize.area` | `outcome IN ('running','success','failed','canceled','skipped','unknown')`; `finished_at >= started_at` | UNIQUE (`run_id`, `source_revision`); текущая версия по `run_id`; (`mr_id`) WHERE `mr_id IS NOT NULL AND superseded_seq IS NULL` - запуски MR; (`area_id`, `started_at`) - запуски за окно |
 | `normalize.ci_attempt_version` | Попытка job (DR-006) | `id`; `attempt_id uuid`; `run_id uuid`; `[знание]`; `[запись]`; `source_revision ntext`; `job_key ntext`; `config_fingerprint hash`; `attempt_no integer`; `native_status ntext`; `outcome text`; `allow_failure boolean`; `failure_kind text?`; `runner_class text?`; `started_at`, `finished_at timestamptz?`; `duration_s bigint?` | PK (`id`); FK `attempt_id`, `run_id` → `normalize.source_object` | `attempt_no >= 1`; `duration_s >= 0`; `outcome` как у запуска | UNIQUE (`attempt_id`, `source_revision`); текущая версия по `attempt_id`; (`run_id`) - все попытки запуска (FR-039) |
 | `normalize.report` | Отчёт анализа, тестов или покрытия (DR-009) | `id`; `[запись]`; `known_seq bigint`; `area_id uuid`; `component_id uuid?`; `report_kind text`; `mode text`; `producer`, `producer_version`, `schema_version`, `parser_version text`; `profile_id text?`; `rules_hash`, `config_hash hash?`; `db_version text?`; `scope_hash hash`; `sha sha?`; `artifact_digest text?`; `run_id`, `attempt_id uuid?`; `started_at`, `finished_at timestamptz?`; `exit_class text`; `completeness text`; `scanned_count`, `skipped_count integer?` | PK (`id`); FK `area_id` → `normalize.area`; FK `run_id`, `attempt_id` → `normalize.source_object`; ссылка `component_id` → `org.component` | `report_kind IN ('code','sast','sca','secrets','iac','image','junit','coverage','docs','openapi','sonar')`; `mode IN ('import','builtin')`; `exit_class IN ('success','findings','partial','failed','timeout','unknown')`; `completeness IN ('complete','partial','unknown')`; задан SHA или digest | (`area_id`, `sha`, `report_kind`) - отчёты head и base (BR-011); (`attempt_id`) WHERE `attempt_id IS NOT NULL` - ожидаемые отчёты попытки; (`run_id`) WHERE `run_id IS NOT NULL` - индекс FK |
+| `normalize.report_pin` | Кто удерживает отчёт от удаления по сроку | `report_id uuid`; `holder_kind text`; `holder_id uuid` | PK (`report_id`, `holder_kind`, `holder_id`); FK `report_id` → `normalize.report` | `holder_kind IN ('baseline','mr_summary')`. Записывает `change` через интерфейс `normalize` | PK - проверка перед удалением отчёта |
 | `normalize.finding_occurrence` | Находка в конкретном отчёте | `id`; `report_id uuid`; `known_seq bigint`; `native_id text?`; `rule_id ntext`; `finding_kind text`; `path ptext?`; `line_start`, `line_end integer?`; `package_purl text?`; `native_severity`, `native_confidence text?`; `mapped_severity text?`; `severity_mapping_version integer?`; `fingerprint hash`; `evidence jsonb?` | PK (`id`); FK `report_id` → `normalize.report` ON DELETE CASCADE | `finding_kind IN ('code','security','secret','dependency','iac','docs','openapi')`; `line_end >= line_start`; `mapped_severity` задана вместе с версией сопоставления; `evidence` без значений секретов (BR-017) | (`report_id`) - находки отчёта для сводки и индекс FK. По `path` индекса нет: находки ищутся через отчёт и идентичность |
 | `normalize.test_case` | Тестовый случай | `id`; `area_id uuid`; `case_key text`; `case_key_hash hash` | PK (`id`); FK `area_id` → `normalize.area` | `case_key` до 2 048 байт | UNIQUE (`area_id`, `case_key_hash`) - идентичность теста |
 | `normalize.test_execution` | Выполнение теста в отчёте | `id`; `report_id uuid`; `test_case_id uuid`; `attempt_id uuid?`; `config_fingerprint hash`; `ordinal smallint`; `outcome text`; `duration_ms bigint?`; `run_started_at timestamptz`; `known_seq bigint` | PK (`id`); FK `report_id` → `normalize.report` ON DELETE CASCADE; FK `test_case_id` → `normalize.test_case`; FK `attempt_id` → `normalize.source_object` | `outcome IN ('passed','failed','error','skipped')`; `duration_ms >= 0` | UNIQUE (`report_id`, `test_case_id`, `config_fingerprint`, `ordinal`) - повтор отчёта и индекс FK; (`test_case_id`, `run_started_at`) - история теста (FR-062); (`attempt_id`) WHERE `attempt_id IS NOT NULL` - индекс FK |
@@ -3211,11 +3233,13 @@ erDiagram
 | `process.mapping_version` | Версия сопоставления статусов, исходов и полей команды (DR-004) | `id`; `team_id uuid`; `version_no integer`; `base_version_no integer?`; `content_hash hash`; `timezone text`; `calendar_version_id uuid?`; `known_seq bigint`; `[подтверждение]` | PK (`id`); FK `calendar_version_id` → `process.calendar_version`; ссылка `team_id` → `org.team` | Первая версия без базы, иначе `base_version_no = version_no - 1`; `timezone` проверяется по `pg_timezone_names` при подтверждении | UNIQUE (`team_id`, `version_no`) - устаревшая форма даёт конфликт (FR-008), последняя версия команды; UNIQUE (`confirmation_id`) - повтор подтверждения (FR-007); (`calendar_version_id`) WHERE `calendar_version_id IS NOT NULL` - индекс FK |
 | `process.mapping_rule` | Правило сопоставления в версии | `mapping_version_id uuid`; `rule_kind text`; `instance_id uuid`; `native_ref ntext`; `native_value text`; `meaning text`; `rank smallint?` | PK (`mapping_version_id`, `rule_kind`, `instance_id`, `native_ref`, `native_value`); FK `mapping_version_id` → `process.mapping_version` | `rule_kind IN ('status','resolution','issue_type','size_field','size_value','team_field','team_value')`; для `status` - `meaning IN ('intake','active','wait','blocked','done','cancelled','duplicate','ignored')`, для `resolution` - `('accepted','cancelled','duplicate','ignored')`; `size_value` требует `rank`; `native_value` пустая строка для правил без значения | PK - правила версии. Статус без правила остаётся неизвестным и не даёт начала или завершения (FR-017 A3) |
 | `process.calendar_version` | Версия рабочего календаря | `id`; `team_id uuid`; `version_no integer`; `base_version_no integer?`; `timezone text`; `workdays smallint`; `work_start`, `work_end time?`; `holidays date[]`; `known_seq bigint`; `[подтверждение]` | PK (`id`); ссылка `team_id` → `org.team` | `workdays BETWEEN 0 AND 127` - битовая маска дней недели; `cardinality(holidays) <= 400`; база как у сопоставления | UNIQUE (`team_id`, `version_no`); UNIQUE (`confirmation_id`) |
-| `process.target_version` | Версия целевого срока (FR-019) | `id`; `team_id uuid`; `task_type text`; `size_label text`; `version_no integer`; `base_version_no integer?`; `duration_s bigint`; `basis text`; `basis_revision_id uuid?`; `known_seq bigint`; `[подтверждение]` | PK (`id`); ссылки на `org.team`, `calc.revision` | `duration_s > 0`; `basis IN ('manual','historical_p85')`; ориентир p85 ссылается на ревизию | UNIQUE (`team_id`, `task_type`, `size_label`, `version_no`) - конфликт устаревшей формы и действующий срок группы; UNIQUE (`confirmation_id`) |
+| `process.target_version` | Версия целевого срока (FR-019) | `id`; `team_id uuid`; `task_type text`; `size_label text`; `version_no integer`; `base_version_no integer?`; `duration_s bigint`; `basis text`; `basis_revision_id uuid?`; `basis_value_s bigint?`; `basis_n integer?`; `basis_window tstzrange?`; `known_seq bigint`; `[подтверждение]` | PK (`id`); ссылки на `org.team`, `calc.revision` | `duration_s > 0`; `basis IN ('manual','historical_p85')`; ориентир p85 хранит ревизию, значение, n и окно: значение основания остаётся, даже когда ревизия удалена по сроку | UNIQUE (`team_id`, `task_type`, `size_label`, `version_no`) - конфликт устаревшей формы и действующий срок группы; UNIQUE (`confirmation_id`) |
 | `decision.decision` | Решение по находке или обход политики | `id`; `kind text`; `created_by uuid`; `created_at timestamptz` | PK (`id`) | `kind IN ('exception','bypass')` | Только PK |
 | `decision.decision_version` | Версия решения: продление и изменение - новая версия (BR-012) | `id`; `decision_id uuid`; `version_no integer`; `base_version_no integer?`; `decision_type text`; `reason text`; `area_id uuid`; `component_id uuid?`; `finding_identity_id uuid?`; `rule_id ntext?`; `path_prefix ptext?`; `package_purl text?`; `effective_from`, `expires_at timestamptz`; `approval_required boolean`; `external_authority`, `external_ref text?`; `author_user_id uuid`; `known_seq bigint`; `confirmation_id uuid` | PK (`id`); FK `decision_id` → `decision.decision`; ссылки на `normalize.area`, `org.component`, `change.finding_identity` | `decision_type IN ('false_positive','accepted_risk','not_applicable','bypass')`; `length(btrim(reason)) BETWEEN 1 AND 4000`; `expires_at > effective_from`; задана находка или правило | UNIQUE (`decision_id`, `version_no`) - конфликт устаревшей формы, индекс FK; UNIQUE (`confirmation_id`); (`area_id`, `finding_identity_id`) - решения для находок области при сводке и расчёте |
 | `decision.decision_transition` | Переход статуса версии решения | `id`; `decision_version_id uuid`; `status text`; `actor_user_id uuid`; `occurred_at timestamptz`; `known_seq bigint` | PK (`id`); FK `decision_version_id` → `decision.decision_version` | `status IN ('pending','approved','rejected','withdrawn')` | (`decision_version_id`, `occurred_at`) - статус версии на дату и индекс FK |
 | `docs.root` | Корень документации сервиса (FR-046) | `id`; `service_id uuid`; `area_id uuid`; `path_prefix ptext`; `profile_id text`; `owner_person_id uuid?`; `audience text`; `[знание]`; `[подтверждение]` | PK (`id`); ссылки на `org.service`, `normalize.area`, `org.person` | `audience IN ('team','organization','external')`; `path_prefix` до 1 024 байт | UNIQUE (`service_id`, `area_id`, `path_prefix`) WHERE `superseded_seq IS NULL`; (`area_id`) WHERE `superseded_seq IS NULL` - корни, к которым относится документ области |
+
+Задача относится к команде так. Сопоставления команд, которым принадлежит проект задачи (`org.team_project`), применяются к её полю команды. Задача относится к той команде, чьё правило `team_value` совпало. Если проект у команды один, а правила поля команды нет, задача относится к этой команде. Если совпало несколько правил или ни одного, команда неизвестна и задача выделяется отдельно (BR-007). Статусы задачи толкуются по сопоставлению её команды, поэтому команды с общим проектом не конфликтуют.
 
 Решение по находке действует на момент `t`, если среди его версий с `known_seq` не больше среза есть версия, у которой последний переход до `t` - `approved` (или подтверждение не требуется и версия не отозвана), и `effective_from <= t < expires_at`. Если версий несколько, действует последняя по номеру. Пока продление ждёт подтверждения, действует прежняя версия до своего срока (V-27).
 
@@ -3227,7 +3251,7 @@ erDiagram
 | `change.profile_entry` | Строка матрицы: компонент, язык, вид анализа, режим | `profile_version_id uuid`; `component_id uuid`; `language text`; `analysis_kind text`; `mode text`; `profile_id text`; `tool_versions jsonb`; `rules_hash hash?` | PK (`profile_version_id`, `component_id`, `language`, `analysis_kind`); FK `profile_version_id` → `change.profile_version`; ссылка `component_id` → `org.component` | `mode IN ('import','builtin')`; `language` пустой для проверок без языка | PK - матрица версии и выдача профиля `craftpulse-ci` |
 | `change.baseline` | Базовая линия после полного прогона основной ветки | `id`; `component_id uuid`; `language`, `analysis_kind text`; `profile_version_id uuid`; `report_id uuid`; `established_at timestamptz`; `superseded_at timestamptz?` | PK (`id`); FK `profile_version_id` → `change.profile_version`; ссылки на `org.component`, `normalize.report` | - | UNIQUE (`component_id`, `language`, `analysis_kind`) WHERE `superseded_at IS NULL` - действующая база; (`profile_version_id`) - индекс FK |
 | `change.finding_identity` | Каноническая находка между отчётами | `id`; `area_id uuid`; `method_version integer`; `fingerprint hash`; `rule_id ntext`; `first_report_id uuid`; `first_seen_at timestamptz` | PK (`id`); ссылки на `normalize.area`, `normalize.report` | - | UNIQUE (`area_id`, `method_version`, `fingerprint`) - сопоставление новой находки с известной |
-| `change.occurrence_identity` | Какой канонической находке соответствует находка отчёта | `occurrence_id uuid`; `finding_identity_id uuid`; `match_kind text`; `known_seq bigint` | PK (`occurrence_id`); FK `finding_identity_id` → `change.finding_identity`; ссылка `occurrence_id` → `normalize.finding_occurrence` | `match_kind IN ('exact','moved','uncertain')`: при `uncertain` нет одновременно new и resolved (BR-011) | (`finding_identity_id`) - все находки отчётов одной канонической |
+| `change.occurrence_identity` | Какой канонической находке соответствует находка отчёта | `occurrence_id uuid`; `finding_identity_id uuid`; `match_kind text`; `reported_at timestamptz`; `known_seq bigint` | PK (`occurrence_id`); FK `finding_identity_id` → `change.finding_identity`; ссылка `occurrence_id` → `normalize.finding_occurrence` | `match_kind IN ('exact','moved','uncertain')`: при `uncertain` нет одновременно new и resolved (BR-011) | (`finding_identity_id`) - все находки отчётов одной канонической |
 | `change.summary_revision` | Ревизия сводки MR для head (DR-005, FR-036) | `id`; `mr_id uuid`; `revision_no integer`; `head_sha sha`; `base_sha sha?`; `profile_version_id uuid`; `status text`; `pipeline_state text`; `input_hash hash`; `knowledge_seq bigint`; `built_at timestamptz?`; `stale_reason text?` | PK (`id`); FK `profile_version_id` → `change.profile_version`; ссылка `mr_id` → `normalize.source_object` | `status IN ('building','ready','stale','superseded')`; `pipeline_state IN ('running','complete','reports_missing')` | UNIQUE (`mr_id`, `revision_no`) - история сводок MR; UNIQUE (`mr_id`) WHERE `status = 'ready'` - одна действующая сводка на MR; (`profile_version_id`) - индекс FK |
 | `change.summary_input` | Отчёты, ревизии `calc`, решения и база, по которым построена сводка | `summary_revision_id uuid`; `input_kind text`; `input_id uuid` | PK (`summary_revision_id`, `input_kind`, `input_id`); FK → `change.summary_revision` | `input_kind IN ('report','calc_revision','decision_version','baseline')` | PK |
 | `change.summary_item` | Строка сводки | `summary_revision_id uuid`; `item_no integer`; `item_kind text`; `finding_identity_id uuid?`; `occurrence_id uuid?`; `required_right text`; `rank smallint?` | PK (`summary_revision_id`, `item_no`); FK `summary_revision_id` → `change.summary_revision`; FK `finding_identity_id` → `change.finding_identity` | `item_kind IN ('new','resolved','newly_observed','unchanged','not_evaluated','ci_attempts','coverage','tests')`; `required_right IN ('none','security')`: такие строки не попадают в комментарий для аудитории MR (SEC-16) | PK - сводка на сайте и в MR; (`finding_identity_id`) WHERE `finding_identity_id IS NOT NULL` - индекс FK |
@@ -3240,12 +3264,12 @@ erDiagram
 |---|---|---|---|---|---|
 | `calc.definition` | Определение показателя, уровень установки | `metric_id ntext`; `definition_version integer`; `unit text`; `catalog_ref text` | PK (`metric_id`, `definition_version`) | Строки добавляет миграция выпуска, приложение их не меняет | PK |
 | `calc.series` | Ряд: область, набор показателей и шаг | `id`; `scope_hash hash`; `scope jsonb`; `metric_set ntext`; `step text`; `current_revision_id uuid?`; `consumed_seq bigint` | PK (`id`); FK `current_revision_id` → `calc.revision` | `step IN ('day','week','month')` | UNIQUE (`scope_hash`, `metric_set`, `step`) - поиск ряда для отчёта и сохранённого среза; (`current_revision_id`) WHERE `current_revision_id IS NOT NULL` - индекс FK |
-| `calc.revision` | Ревизия ряда (DR-011) | `id`; `series_id uuid`; `revision_no integer`; `status text`; `window_range tstzrange`; `as_of timestamptz`; `knowledge_seq bigint`; `timezone text`; `input_hash hash`; `loading boolean`; `started_at timestamptz`; `published_at`, `superseded_at timestamptz?`; `irreproducible_reason text?`; `previous_revision_id uuid?` | PK (`id`); FK `series_id` → `calc.series`; FK `previous_revision_id` → `calc.revision` | `status IN ('building','published','superseded')`; у опубликованной есть `published_at`, у вытесненной - `superseded_at`; `irreproducible_reason IN ('basis_deleted','basis_expired','definition_retired')`; `loading` - загрузка истории не завершена, состояние PROVISIONAL | UNIQUE (`series_id`, `revision_no`) - история ряда, индекс FK; UNIQUE (`series_id`) WHERE `status = 'building'` - по ряду идёт одна цепочка расчёта (раздел 10.6); (`superseded_at`) WHERE `status = 'superseded'` - сроки хранения; (`previous_revision_id`) WHERE `previous_revision_id IS NOT NULL` - индекс FK |
-| `calc.revision_input` | Версии входов ревизии | `revision_id uuid`; `input_kind text`; `input_id text`; `version text?`; `watermark timestamptz?`; `completeness text?` | PK (`revision_id`, `input_kind`, `input_id`); FK `revision_id` → `calc.revision` | `input_kind IN ('definition','mapping','calendar','target','decision','structure','accounts','links','source_watermark')` | PK - паспорт показателя |
-| `calc.part` | Часть ряда, переиспользуемая по хэшу входа | `id`; `input_hash hash`; `metric_set ntext`; `part_range tstzrange`; `created_at timestamptz` | PK (`id`) | - | UNIQUE (`input_hash`) - часть с тем же входом не пересчитывается (раздел 10.6) |
+| `calc.revision` | Ревизия ряда (DR-011) | `id`; `series_id uuid`; `revision_no integer`; `status text`; `progress_at timestamptz`; `window_range tstzrange`; `as_of timestamptz`; `knowledge_seq bigint`; `timezone text`; `input_hash hash`; `loading boolean`; `started_at timestamptz`; `published_at`, `superseded_at timestamptz?`; `irreproducible_reason text?`; `previous_revision_id uuid?` | PK (`id`); FK `series_id` → `calc.series`; FK `previous_revision_id` → `calc.revision` с `ON DELETE SET NULL (previous_revision_id)` | `status IN ('building','published','superseded','failed')`; у опубликованной есть `published_at`, у вытесненной - `superseded_at`; `irreproducible_reason IN ('basis_deleted','basis_expired','definition_retired')`; `loading` - загрузка истории не завершена, состояние PROVISIONAL | UNIQUE (`series_id`, `revision_no`) - история ряда, индекс FK; UNIQUE (`series_id`) WHERE `status = 'building'` - по ряду идёт одна цепочка расчёта (раздел 10.6); (`superseded_at`) WHERE `status = 'superseded'` - сроки хранения; (`previous_revision_id`) WHERE `previous_revision_id IS NOT NULL` - индекс FK |
+| `calc.revision_input` | Версии входов ревизии | `revision_id uuid`; `input_kind text`; `input_id text`; `version text?`; `watermark timestamptz?`; `completeness text?` | PK (`revision_id`, `input_kind`, `input_id`); FK `revision_id` → `calc.revision` ON DELETE CASCADE | `input_kind IN ('definition','mapping','calendar','target','decision','structure','accounts','links','source_watermark')` | PK - паспорт показателя; (`input_kind`, `input_id`) - удерживают ли хранимые ревизии версию настройки перед её удалением по сроку |
+| `calc.part` | Часть ряда, переиспользуемая по хэшу входа | `id`; `input_hash hash`; `metric_set ntext`; `part_range tstzrange`; `created_at timestamptz` | PK (`id`) | - | UNIQUE (`input_hash`) - часть с тем же входом не пересчитывается (раздел 10.6). Вставка `ON CONFLICT (organization_id, input_hash) DO UPDATE SET input_hash = EXCLUDED.input_hash RETURNING id` возвращает ID и существующей части и блокирует её строку до коммита, поэтому сборка мусора не удалит её между поиском и ссылкой. Сборка удаляет только части без ссылок старше суток |
 | `calc.revision_part` | Части ревизии | `revision_id uuid`; `part_no integer`; `part_id uuid` | PK (`revision_id`, `part_no`); FK `revision_id` → `calc.revision`; FK `part_id` → `calc.part` | - | PK; (`part_id`) - сборка неиспользуемых частей и индекс FK |
 | `calc.point` | Точка ряда | `part_id uuid`; `metric_id ntext`; `point_start timestamptz`; `value numeric?`; `unit text`; `numerator`, `denominator numeric?`; `n integer?`; `state text`; `reason_code text?`; `bound_kind text?`; `bound_value numeric?`; `estimator text?`; `excluded_count`, `missing_count integer`; `low_sample boolean` | PK (`part_id`, `metric_id`, `point_start`); FK `part_id` → `calc.part` ON DELETE CASCADE | `state IN ('ASSESSED','PROVISIONAL','BOUNDED','UNKNOWN','NOT_EVALUATED','NOT_APPLICABLE')`; значение есть только у ASSESSED и PROVISIONAL, граница - только у BOUNDED, у остальных нет ни того ни другого; `denominator >= 0`, у ASSESSED со знаменателем он больше нуля | PK - ряд части для графика |
-| `calc.contribution` | Вклад объекта в точку: когорта раскрытия | `part_id uuid`; `metric_id ntext`; `point_start timestamptz`; `object_id uuid`; `object_kind text`; `area_id uuid`; `restricted boolean`; `role text`; `value numeric?`; `reason_code text?` | PK (`part_id`, `metric_id`, `point_start`, `object_id`); FK (`part_id`, `metric_id`, `point_start`) → `calc.point` ON DELETE CASCADE; ссылки на `normalize.source_object`, `normalize.area` | `role IN ('numerator','denominator','excluded','missing')` | PK - раскрытие точки (FR-021); (`object_id`) - части, в которые вошёл объект, для пометки при удалении (FR-010). `area_id` и `restricted` позволяют пересчитать агрегат на разрешённой части без чтения фактов (раздел 10.4) |
+| `calc.contribution` | Вклад объекта в точку: когорта раскрытия | `part_id uuid`; `metric_id ntext`; `point_start timestamptz`; `object_id uuid`; `item_no smallint`; `object_kind text`; `role text`; `value numeric?`; `reason_code text?` | PK (`part_id`, `metric_id`, `point_start`, `object_id`, `item_no`); FK (`part_id`, `metric_id`, `point_start`) → `calc.point` ON DELETE CASCADE; ссылка `object_id` → `normalize.source_object` | `role IN ('numerator','denominator','excluded','missing')`; `item_no` различает несколько вкладов одного объекта, например эпизоды доработки одной задачи (T36) | PK - раскрытие точки (FR-021); (`object_id`) - части, в которые вошёл объект, для пометки при удалении (FR-010). Область и ограничение объекта во вкладе не хранятся: они берутся из текущей строки `normalize.source_object` (раздел 12.7) |
 | `calc.interval` | Интервалы workflow задачи в части (DR-007) | `part_id uuid`; `task_id uuid`; `episode_no integer`; `interval_no integer`; `class text`; `during tstzrange`; `source_event_ids uuid[]` | PK (`part_id`, `task_id`, `episode_no`, `interval_no`); FK `part_id` → `calc.part` ON DELETE CASCADE | `class IN ('active','wait','blocked')`; интервал непустой и вида `[from,to)` | PK - интервалы задачи в раскрытии |
 | `calc.revision_pin` | Кто удерживает ревизию от удаления | `revision_id uuid`; `holder_kind text`; `holder_id uuid` | PK (`revision_id`, `holder_kind`, `holder_id`); FK `revision_id` → `calc.revision` | `holder_kind IN ('saved_view','export','mr_summary')` | PK - проверка перед удалением вытесненной ревизии |
 | `calc.saved_view` | Сохранённый срез | `id`; `owner_user_id uuid`; `name text`; `series_id uuid`; `filters jsonb`; `pinned_revision_id uuid?`; `created_at timestamptz` | PK (`id`); FK `series_id` → `calc.series`; FK `pinned_revision_id` → `calc.revision`; ссылка → `org.app_user` | Без `pinned_revision_id` срез показывает актуальную ревизию | (`owner_user_id`) - срезы пользователя; (`series_id`), (`pinned_revision_id`) WHERE `IS NOT NULL` - индексы FK |
@@ -3255,7 +3279,7 @@ erDiagram
 
 ##### 12.5.9. База адаптера
 
-У каждого адаптера своя база с одинаковой схемой из `adaptersdk`, RLS по `organization_id` и ролью адаптера. Ядро к ней доступа не имеет.
+У каждого адаптера своя база с одинаковой схемой из `adaptersdk` и RLS по `organization_id`; процесс адаптера работает под ролью без владения таблицами (раздел 12.2). Ядро к базе доступа не имеет.
 
 | Таблица | Назначение | Поля и типы | Ключи и связи | Ограничения | Индексы и запрос |
 |---|---|---|---|---|---|
@@ -3480,36 +3504,52 @@ WHERE organization_id = $1 RETURNING last_seq;
 
 Последовательность (`sequence`) для этого не годится: номер выдаётся при вставке, а не при коммите. На проверочной базе транзакция с номером 1 оставалась открытой, а читатель уже видел номер 2. Ревизия со срезом 2 потеряла бы факт 1 навсегда. Идентификатор транзакции (`xid8`) тоже не подходит: после восстановления из `pg_dump` новый кластер выдаёт номера заново, и сохранённые значения потеряли бы порядок.
 
-Блокировка сериализует запись знания внутри организации. Поэтому всё, что можно подготовить без базы (разбор, сопоставление, расчёт строк), выполняется до транзакции, а под блокировкой идут только вставки. Транзакция нормализации обрабатывает не больше 1 000 записей.
+Блокировка сериализует запись знания внутри организации. Поэтому разбор пакета, канонизация и расчёт строк выполняются до транзакции. Под блокировкой транзакция читает текущие версии затронутых объектов, решает, какая версия становится текущей, и выполняет вставки. Читать текущие версии до блокировки нельзя: между чтением и блокировкой их могла заменить другая нормализация. Транзакция нормализации обрабатывает не больше 200 записей, поэтому блокировка держится доли секунды, и нормализация отчёта CI из очереди `interactive` ждёт загрузку истории не дольше одной такой транзакции.
+
+Ожидание счётчика подчиняется `lock_timeout`. Ошибку `55P03` пакет `db` повторяет так же, как взаимоблокировку (раздел 12.8), поэтому краткое ожидание за длинной транзакцией не тратит попытку задания.
 
 **Версии знания.** Изменяемый факт хранится строками с `[знание]`. Новая версия объекта в одной транзакции:
 
-1. ставит прежней текущей версии `superseded_seq = K` и `superseded_at`;
+1. ставит прежней текущей версии `superseded_seq = K` и `superseded_at`, а если изменились область или ограничение объекта - обновляет `current_area_id` и `restricted` в `normalize.source_object`;
 2. вставляет новую с `known_seq = K`;
-3. дописывает `normalize.area_change` с самым ранним `event_time` изменения и обновляет `normalize.area.last_change_seq`;
+3. дописывает `normalize.area_change` через `INSERT ... ON CONFLICT DO UPDATE SET earliest_event_time = LEAST(...)`, если транзакция трогает область несколько раз, и обновляет `normalize.area.last_change_seq`;
 4. ставит задания `calc` и `change`.
 
-Порядок шагов 1 и 2 важен: частичный уникальный индекс текущей версии проверяется сразу. Версия, действующая на срез `K`, - строка с `known_seq <= K AND (superseded_seq IS NULL OR superseded_seq > K)`. Строк на объект немного, поэтому условие проверяется после поиска по индексу объекта.
+Порядок шагов 1 и 2 важен: частичный уникальный индекс текущей версии проверяется сразу. Если в одной транзакции у объекта или события несколько новых версий, записывается только последняя по порядку источника: промежуточная получила бы `superseded_seq = known_seq`, нарушила бы ограничение и не была бы видна ни одному срезу. Версия, действующая на срез `K`, - строка с `known_seq <= K AND (superseded_seq IS NULL OR superseded_seq > K)`. Строк на объект немного, поэтому условие проверяется после поиска по индексу объекта.
 
 **Путь записи и повтор.**
 
 | Класс записи | Что такое ревизия | Повтор того же содержимого | То же `source_revision`, другое содержимое | Новая ревизия |
 |---|---|---|---|---|
-| `event` - событие истории | Ревизия события у источника | `replay`, ссылка на принятую запись; факт не создаётся | `conflict`: строка `ingest.conflict`, принятый факт не меняется (BR-002) | Новая версия того же события (исправление) |
-| `object` - состояние объекта | Версия объекта у источника и `source_updated_at` | `replay` | `conflict` | Становится текущей, если не старше текущей по `source_updated_at`. Более старое состояние сохраняется как принятое в журнале, но текущую версию не заменяет. Равное время при разном содержимом - конфликт |
-| `snapshot` - снимок без версий источника | SHA-256 содержимого, вычисленный адаптером | `replay` | Невозможно: ревизия - хэш содержимого | Новая версия по порядку получения: снимок описывает состояние на момент чтения. История из снимков не восстанавливается (BR-022) |
-| `file` - файл отчёта | SHA-256 содержимого | `replay` | Невозможно | Новый отчёт |
+| `event` - событие истории | Версия события у источника, например ID changelog или ревизия из манифеста импорта | `replay`, ссылка на принятую запись; факт не создаётся | `conflict`: строка `ingest.conflict`, принятый факт не меняется (BR-002) | Новая версия того же события (исправление) |
+| `object` - состояние объекта | SHA-256 канонического содержимого вместе с `source_updated_at`, если источник не даёт номера версии (Jira, GitLab); иначе номер версии. Время изменения входит в хэш, поэтому возврат к прежнему состоянию A после B с новым временем - новая ревизия, а не повтор | `replay` | Для хэша невозможно; для номера версии - `conflict` | Становится текущей, если не старше текущей по паре (`source_updated_at`, время получения). Более старое состояние остаётся принятой записью журнала, но текущую версию не заменяет. Тот же `source_updated_at` с другим содержимым - более позднее чтение: источник изменил поля без обновления времени |
+| `snapshot` - снимок без времени изменения | SHA-256 канонического содержимого вместе с ID чтения из манифеста | `replay` | Невозможно | Новая версия по времени получения, если содержимое отличается от текущей версии; совпадающее содержимое новой версии не создаёт. Снимок описывает состояние на момент чтения, история из снимков не восстанавливается (BR-022) |
+| `file` - файл отчёта | SHA-256 содержимого. Идентичность файла: `native_ns` - попытка CI, а без неё SHA или digest; `native_id` - вид отчёта и путь файла в пакете | `replay` | Невозможно | Новый отчёт. Одинаковые побайтно файлы разных попыток или SHA - разные записи: их идентичность различается |
 
 Приём записи идёт одной вставкой, без отдельной проверки, так что гонки «проверил - вставил» нет:
 
 ```sql
 INSERT INTO ingest.record (...) VALUES (..., 'accepted')
-ON CONFLICT (organization_id, instance_id, record_kind, native_ns, native_id, source_revision)
+ON CONFLICT (organization_id, instance_id, record_kind, native_ns, native_id, source_revision, payload_schema)
   WHERE outcome = 'accepted' DO NOTHING
 RETURNING record_no;
 ```
 
 Если строка не вставилась, приём читает принятую запись. Совпал хэш - вставляется запись `replay`, не совпал - `conflict`. При одновременной доставке одной записи двумя заданиями второе ждёт коммита первого на уникальном индексе и получает конфликт вставки. `normalize` дополнительно защищён уникальностью (`<объект>`, `source_revision`) в таблицах версий: повторная нормализация того же входа ничего не добавляет.
+
+Условие частичного индекса повторяется в запросе дословно: и в `ON CONFLICT ... WHERE`, и в чтении текущих версий (`WHERE superseded_seq IS NULL`). Иначе PostgreSQL не выберет частичный индекс, а `ON CONFLICT` без условия не найдёт уникальный индекс и завершится ошибкой.
+
+**Версия схемы записи.** Хэш считается по каноническому содержимому записи (поля в объявленном порядке, без служебных полей конверта) и сравнивается только внутри одной версии схемы `payload_schema`. Обновление адаптера, которое меняет состав полей, повышает версию схемы. Тогда событие с прежней ревизией в новой схеме не конфликтует с принятым: ключ включает схему, а `normalize` не создаёт второй версии факта благодаря уникальности (`<объект>`, `source_revision`). Состояние объекта с ревизией-хэшем получает одну новую версию с прежним смыслом. Без версии схемы первый сбор после обновления адаптера превратил бы все известные события в конфликты.
+
+**Что принимает канал.** Канал приёма ограничивает, какие записи допустимы, до сравнения ключей:
+
+- токен загрузки CI принимает только записи CI, отчёты и файлы отчётов для репозиториев своего проекта (`org.project_area`);
+- универсальный импорт принимает записи только тех областей, где у пользователя есть право импорта;
+- сбор принимает только области своего подключения.
+
+Запись вне разрешённого принимается как `rejected` с причиной. Иначе токен одного проекта мог бы записать «события» задач чужой области того же экземпляра. Экземпляр, объявленный в пакете CI или импорта, `ingest` получает у `connect`. Если такого экземпляра ещё нет, `connect` создаёт его запись без подключения.
+
+**Удалённое не возвращается.** `ingest` отбрасывает при очистке записи, ключ которых или ключ их родителя есть в `ingest.suppression`. `normalize` в своей транзакции дополнительно пропускает запись, если у объекта или его родителя стоит `source_object.deleted_at`. Это закрывает гонку: задание нормализации, поставленное до удаления, могло выполниться раньше, чем `ingest` отметит записи. Так же `normalize` пропускает события раньше `normalize.area.retained_from` и закрытые объекты, у которых последнее событие раньше этой границы. Иначе загрузка истории после удаления по сроку вернула бы удалённое, а на следующий день оно удалилось бы снова.
 
 **Позднее событие и исправление.** Позднее событие - новая строка со своим `known_seq` и ранним `event_time`. `area_change` запоминает самое раннее время, и `calc` пересчитывает только окна начиная с него (раздел 10.6). Исправление события источником - новая версия того же `event_key` с заменой прежней. Прежняя версия остаётся для ревизий со старым срезом.
 
@@ -3517,7 +3557,7 @@ RETURNING record_no;
 
 1. Страница фиксируется вместе с checkpoint в `sync.state` одной транзакцией. Отказ следующей страницы оставляет курсор и `last_success_at` без изменений и записывает `failed_cursor` и код причины (FR-006).
 2. Повтор начинается с сохранённого курсора. Курсор приращения перекрывает окно назад (раздел 10.3), поэтому часть записей приходит повторно и получает `replay`.
-3. Сверка (`sync.reconcile_run`) сравнивает пары «ID, версия» манифеста источника с текущими версиями. Отсутствующие и изменённые объекты попадают в `sync.dirty_key` и перечитываются.
+3. Сверка (`sync.reconcile_run`) сравнивает пары «ID, версия» манифеста источника с текущими версиями. Версия манифеста сравнивается с `source_revision`, если источник даёт номер версии, и с `source_updated_at` текущей версии, если номером версии служит хэш (Jira, GitLab). Поэтому адаптер такого источника обязан передавать время изменения объекта. Отсутствующие и изменённые объекты попадают в `sync.dirty_key` и перечитываются.
 4. `watermark`, `completeness = 'complete'` и `last_success_at` обновляются только после сверки без расхождений (BR-022). До этого ревизии области публикуются с `loading = true` и состоянием PROVISIONAL (раздел 10.6).
 
 **Противоречащие данные не склеиваются.**
@@ -3533,7 +3573,7 @@ RETURNING record_no;
 
 #### 12.7. Ревизии расчёта, раскрытие и воспроизводимость
 
-Ряд (`calc.series`) - область, набор показателей и шаг; его ревизии (`calc.revision`) неизменяемы после публикации. Первая часть фиксирует `knowledge_seq`, все части читают факты и настройки на этот срез (раздел 12.6). Входы ревизии с версиями записаны в `calc.revision_input`. Часть ряда (`calc.part`) с тем же хэшем входа переиспользуется: новая ревизия ссылается на прежнюю строку через `calc.revision_part`, а не копирует её точки.
+Ряд (`calc.series`) - область, набор показателей и шаг; его ревизии (`calc.revision`) неизменяемы после публикации. Первая часть фиксирует `knowledge_seq`, все части читают факты и настройки на этот срез (раздел 12.6). Входы ревизии с версиями записаны в `calc.revision_input`. Часть ряда (`calc.part`) с тем же хэшем входа переиспользуется: новая ревизия ссылается на прежнюю строку через `calc.revision_part`, а не копирует её точки. Хэш входа считается по тому, что часть действительно прочитала: определения и их версии, ID версий настроек, ID и `known_seq` версий фактов, область и интервал части. Сам номер среза в хэш не входит, иначе любой новый факт организации делал бы все части новыми. Описание области ряда (`calc.series.scope`) хранится каноническим JSON с упорядоченными ключами, и `scope_hash` считается по нему: одна и та же область всегда находит один ряд.
 
 Публикация выполняется одной транзакцией:
 
@@ -3548,7 +3588,11 @@ WHERE organization_id = $org AND id = $series
 
 Если обновлено ноль строк, ревизию опубликовал кто-то другой. Это нарушение порядка цепочки: задание завершается ошибкой, и публикация не перезаписывает чужую.
 
-Раскрытие читает `calc.contribution` той же части и точки, поэтому список объектов совпадает с когортой формулы (FR-021). Для пользователя с частичным доступом `access` выдаёт разрешённые `area_id`. `calc` строит агрегат по сохранённым вкладам с этими областями и пропускает объекты с `restricted = true`, если их отдельная проверка не дала разрешения (раздел 10.4). Факты при этом не читаются.
+Цепочка не может зависнуть в `building` навсегда: иначе частичный уникальный индекс запретил бы ряду новые расчёты. Каждая часть в своей транзакции обновляет `progress_at`. Обработчик исчерпанных попыток задания переводит ревизию в `failed`. Новая цепочка перед стартом переводит в `failed` ревизию `building` с `progress_at` старше 30 минут. Задание части, проснувшееся после такого перехвата, не должно ничего записать. Поэтому каждая часть и публикация начинают транзакцию с `UPDATE calc.revision SET progress_at = $now WHERE id = $r AND status = 'building'` и при нуле строк завершаются без записи. Порог перехвата влияет только на задержку: корректность держит условное обновление. Ревизия `failed` не публикуется, её части удаляет сборка мусора, а ошибка видна в диагностике (раздел 10.7).
+
+Раскрытие читает `calc.contribution` той же части и точки, поэтому список объектов совпадает с когортой формулы (FR-021). Для пользователя с частичным доступом `access` выдаёт разрешённые `area_id`. `calc` строит агрегат по сохранённым вкладам объектов, чья текущая область разрешена, и пропускает объекты с `restricted = true`, если их отдельная проверка не дала разрешения (раздел 10.4). Факты при этом не читаются.
+
+Область и ограничение объекта проверяются по его текущему положению, а не на момент расчёта (FR-001). Поэтому вклад их не хранит. `calc` получает у `normalize` текущие `current_area_id` и `restricted` объектов когорты одним запросом по ключам `normalize.source_object` и кэширует результат вместе с агрегатом на 60 с (раздел 10.4). Перенос задачи в закрытый проект меняет одну строку `source_object`, и следующий запрос уже не покажет её вклад через прежнюю область. Массового обновления вкладов при переносе нет. Событие задачи хранит `area_id` на момент события только для поиска по проекту на дату. Доступ к событию решается по текущей области задачи, поэтому перенесённая в закрытый проект задача не видна через старый проект на таймлайне.
 
 Ревизия становится невоспроизводимой и получает `irreproducible_reason`, когда:
 
@@ -3575,7 +3619,7 @@ WHERE organization_id = $org AND id = $series
 | Нормализация части | Подготовка в памяти; транзакция: номер знания, объекты, замена и вставка версий, `area_change`, задания `calc` и `change`, завершение | Версии и номер знания коммитятся вместе | Две нормализации одной организации выполняются по очереди на строке счётчика |
 | Часть расчёта | Чтение на срез без длинной транзакции; транзакция: `calc.part` через `ON CONFLICT (organization_id, input_hash) DO NOTHING`, точки и вклады, `calc.revision_part`, следующее задание | Часть сохраняется целиком или не сохраняется | Одна цепочка на ряд: частичный уникальный индекс `building` |
 | Публикация ревизии | Транзакция со статусами и условным обновлением указателя (раздел 12.7) | Указатель не перезаписывает чужую публикацию | Ноль обновлённых строк - ошибка задания |
-| Подтверждение настройки: сопоставление, срок, профиль, решение, структура | Транзакция: номер знания, вставка версии `version_no = base + 1`, аудит, задания пересчёта | `UNIQUE (<область>, version_no)` и `UNIQUE (confirmation_id)` | Устаревшая форма получает нарушение уникальности номера, `api` отвечает конфликтом без перезаписи (FR-008). Повтор того же `confirmation_id` возвращает сохранённую версию (FR-007). Содержимое, равное текущей версии по `content_hash`, новую версию не создаёт |
+| Подтверждение настройки: сопоставление, срок, профиль, решение, структура | Транзакция: номер знания, `INSERT ... version_no = base + 1 ... ON CONFLICT (organization_id, confirmation_id) DO NOTHING RETURNING id`; пустой ответ - чтение сохранённой версии по `confirmation_id`; затем аудит и задания пересчёта | `UNIQUE (<область>, version_no)` и `UNIQUE (confirmation_id)` | Устаревшая форма получает нарушение уникальности номера, `api` отвечает конфликтом без перезаписи (FR-008). Повтор того же `confirmation_id` возвращает сохранённую версию (FR-007): `ON CONFLICT` по `confirmation_id` проверяется до вставки, поэтому повтор не упирается в уникальность номера. Содержимое, равное текущей версии по `content_hash`, новую версию не создаёт |
 | Структура организации | Обновление `org.organization.structure_version` с условием `= $base` и изменение строк структуры в одной транзакции | `EXCLUDE` не даёт перекрыть интервалы | Ноль обновлённых строк - конфликт версии структуры |
 | Переход статуса решения | Транзакция: номер знания, строка `decision_transition`, аудит, задания пересчёта | Переход фиксируется вместе с номером знания | Истечение срока не требует записи: оно следует из `expires_at`, а `decision.expire` только ставит пересчёт |
 | Публикация в MR и задача трекера | Транзакция: намерение в `outbound.action`; вне транзакции: сверка head, `FindPublished`, `Publish`; транзакция: исход и `external_id` (раздел 10.5.4) | PK `outbound.target` - один внешний объект на MR или действие | Задания одного MR уникальны в River и идут по очереди |
@@ -3587,7 +3631,8 @@ WHERE organization_id = $org AND id = $series
 
 - Внутри транзакции нет сетевых вызовов (раздел 10.3).
 - Номер знания берётся первым из блокирующих операторов транзакции. Строки одной таблицы блокируются по возрастанию ID. Так циклы ожидания не возникают.
-- Ошибки `40P01` (взаимоблокировка) и `40001` пакет `db` повторяет до трёх раз со случайной паузой. Сценарий при этом выполняется целиком, а он идемпотентен.
+- Ошибки `40P01` (взаимоблокировка), `40001` и `55P03` (истёк `lock_timeout`) пакет `db` повторяет до трёх раз со случайной паузой. Сценарий при этом выполняется целиком, а он идемпотентен.
+- Уникальность заданий River задаётся явно: `UniqueOpts.ByState` = `available`, `pending`, `running`, `retryable`, `scheduled`. Список River по умолчанию включает и `completed`, поэтому задание, которое отметило себя завершённым и поставило такое же снова (раздел 10.6), было бы молча отброшено как дубль.
 - Ожидаемое нарушение уникальности - это результат сценария (повтор или конфликт), а не ошибка сервиса.
 - Ограничения времени задаются в строке подключения процесса:
   - `api`: `statement_timeout` 5 с, равный максимуму NFR-001;
@@ -3603,27 +3648,36 @@ WHERE organization_id = $org AND id = $series
 |---|---|---|---|---|
 | `SOURCE_FACTS` | Объекты и события активных подключений: версии задач, MR, запусков, документов, события | Объект удаляется целиком, когда его последнее событие старше срока и объект не открыт | Версии, события, связи объекта; строка `source_object` остаётся отметкой | `normalize.area.retained_from` сдвигается; окна раньше границы получают BOUNDED или UNKNOWN с причиной |
 | `SUPERSEDED_FACTS` | Заменённые версии фактов | От `superseded_at` | Строки с `superseded_seq`; затем `reproducible_from_seq` поднимается до наибольшего удалённого `superseded_seq` | Ревизии со срезом меньше этого номера помечаются `basis_expired` |
-| `CI_RESULTS` | Отчёты, находки, выполнения тестов, покрытие | От `finished_at` отчёта | Отчёт с каскадом на свои строки и объекты построчных карт покрытия. Отчёты действующих баз и последних сводок открытых MR не удаляются | Старые сводки показывают отметку удалённых оснований |
+| `CI_RESULTS` | Отчёты, находки, выполнения тестов, покрытие, ревизии сводок MR | От `finished_at` отчёта и `built_at` сводки | Отчёт с каскадом на свои строки и объекты построчных карт покрытия. Отчёты с записью в `normalize.report_pin` (действующие базы, последние сводки открытых MR) не удаляются | Старые сводки показывают отметку удалённых оснований |
 | `PACKAGES` | Очищенные пакеты в хранилище и записи журнала приёма | От `received_at` | Объект хранилища и записи журнала | Переразбор этих пакетов новым парсером невозможен; факты остаются |
 | `SUPERSEDED_REVISIONS` | Вытесненные ревизии без закреплений и их неиспользуемые части | От `superseded_at` | Ревизия, затем части без ссылок | - |
 | `EXPORTS` | Файлы выгрузок | От `completed_at` | Объект хранилища; задание получает `expired` | Ссылка на выгрузку перестаёт работать |
-| `DECISIONS` | Заменённые версии настроек и решений, истёкшие решения | От замены или `expires_at` | Строки версий, кроме тех, на которые ссылаются хранимые ревизии | История решений короче этого срока не показывается |
+| `DECISIONS` | Заменённые версии настроек и решений, истёкшие решения | От замены или `expires_at` | Строки версий, кроме тех, на которые ссылаются хранимые ревизии (индекс `calc.revision_input (input_kind, input_id)`) и строки своего модуля | История решений короче этого срока не показывается |
 | `AUDIT` | `audit.event` | От `occurred_at` | Порции по индексу `occurred_at` | - |
 | `DISCONNECTED` | Факты областей удалённого подключения | От `deleted_at` подключения | Как `SOURCE_FACTS` для всей области | До удаления выдача области уже закрыта (раздел 10.7) |
 | `BACKUPS` | Копии во внешнем хранилище | От времени копии | Правило жизненного цикла хранилища копий (раздел 14.2) | - |
 | `SEARCH`, `SURVEY` (M2) | Поисковые фрагменты и отметки, ответы опроса | По Q-02 и Q-08 | Строки и производные сводки | - |
+
+Удаление по сроку выбирает только строки, на которые не ссылается ни одна строка того же модуля (`NOT EXISTS` по индексу внешнего ключа). Поэтому `ON DELETE RESTRICT` не роняет ежедневное задание: например, версия календаря, на которую ссылается хранимая версия сопоставления, ждёт удаления этой версии.
 
 При запуске проверяются два соотношения:
 
 - `SUPERSEDED_FACTS` не меньше `SUPERSEDED_REVISIONS`, иначе незакреплённые ревизии теряли бы основания раньше собственного удаления;
 - записи `audit.deletion` хранятся не меньше `BACKUPS` независимо от `AUDIT`: без них восстановление из копии не повторит удаление (раздел 14.8).
 
+Строки, которые ссылаются на данные другого модуля без внешнего ключа, удаляет их собственный модуль. Когда владелец удаляет объект или отчёт по сроку, он ставит задания зависимым модулям так же, как при удалении по запросу:
+
+- `link` удаляет связи объекта;
+- `calc` обновляет вклады и помечает ревизии `basis_expired`;
+- `change` удаляет `occurrence_identity` по `reported_at` с тем же сроком `CI_RESULTS`.
+
+Поэтому висячая ссылка живёт не дольше одного задания, а чтение по ней получает «объект удалён», а не ошибку. Удаление объектов по `SOURCE_FACTS` и `DISCONNECTED` меняет факты, поэтому, как и удаление по запросу, берёт номер знания и дописывает `normalize.area_change`, и затронутые ряды пересчитываются. Удаление заменённых версий (`SUPERSEDED_FACTS`) текущих фактов не меняет и номер знания не берёт.
+
 Технические данные удаляются по фиксированным правилам:
 
 | Данные | Когда удаляются |
 |---|---|
 | `auth.login_attempt` и `auth.session` | Строки с истёкшим сроком или отметкой завершения, ежедневно (раздел 13.2) |
-| `access.decision_cache` | Истёкшие строки, ежедневно |
 | Карантин хранилища | Через сутки (`objstore.gc`) |
 | `sync.dirty_key` | После перечитывания |
 | `normalize.area_change` | Через 30 дней. Если `consumed_seq` ряда старше самой старой оставшейся строки, `calc` пересчитывает окно целиком |
@@ -3641,7 +3695,7 @@ WHERE organization_id = $org AND id = $series
    - `ingest` - отмечает записи и перепаковывает пакеты, включая пакеты с повторами.
 4. Когда все задания завершены, запись получает `applied`. Восстановление из копии повторно применяет записи новее дампа (раздел 14.8).
 
-**Обезличивание.** Персональные данные в модели: логин, имя и почта в `org.source_account`, имя в `org.person` и `org.app_user`, а также исходные поля в пакетах хранилища. В событиях пользовательские поля хранятся ссылками на учётные записи (`before_account_id`, `after_account_id`), а не строками имён. Поэтому по запросу человека обезличивание:
+**Обезличивание.** Персональные данные в модели: логин, имя и почта в `org.source_account`, имя в `org.person` и `org.app_user`, а также исходные поля в пакетах хранилища. В событиях и версиях пользовательские поля хранятся ссылками на учётные записи (`before_account_id`, `after_account_id`, `assignee_account_id`), а не строками имён. `normalize` заменяет объекты пользователей и в `raw_fields`, и в значениях пользовательских полей (`before_value`, `after_value`) на ID учётных записей, поэтому имя и почта из источника в таблицы фактов не попадают. Поэтому по запросу человека обезличивание:
 
 - очищает имя, логин и почту и ставит `anonymized_at`;
 - перепаковывает пакеты без этих полей.
@@ -3666,7 +3720,7 @@ ID учётной записи в источнике остаётся техни
 | Удаление колонки или таблицы | Отдельный выпуск после того, как код предыдущей версии её не использует | Откат кода остаётся возможным |
 | Заполнение данных | Задание `worker` порциями по курсору ключа с паузой | Нет длинной транзакции, автовакуум успевает |
 
-**Обслуживание.** Таблицы с частыми обновлениями получают свои параметры автовакуума: `autovacuum_vacuum_scale_factor = 0.02` и, кроме счётчика, запас страницы `fillfactor`. Это `platform.org_clock`, `sync.state`, `sync.lease`, `sync.dirty_key`, `auth.session`, `access.decision_cache` и таблица заданий River. Остальные таблицы в основном дополняются, поэтому строки в них почти не умирают. Медленные запросы находит `pg_stat_statements`; `log_min_duration_statement`, `log_lock_waits` и предел соединений задаются конфигурацией PostgreSQL стенда (раздел 14.9). Задание копирования держит снимок, пока идёт `pg_dump`, поэтому оно запускается вне окна ежедневных заданий (раздел 14.8).
+**Обслуживание.** Таблицы с частыми обновлениями получают свои параметры автовакуума: `autovacuum_vacuum_scale_factor = 0.02` и запас страницы `fillfactor`. Это `platform.org_clock`, `sync.state`, `sync.lease`, `sync.dirty_key`, `auth.session` и таблица заданий River. Остальные таблицы в основном дополняются, поэтому строки в них почти не умирают. Медленные запросы находит `pg_stat_statements`; `log_min_duration_statement`, `log_lock_waits` и предел соединений задаются конфигурацией PostgreSQL стенда (раздел 14.9). Задание копирования держит снимок, пока идёт `pg_dump`, поэтому оно запускается вне окна ежедневных заданий (раздел 14.8).
 
 **Секционирование.** В M0 таблицы не секционируются: при объёме профиля S PostgreSQL обслуживает их обычными индексами. Удаление по сроку идёт порциями, и автовакуум его догоняет. Секционирование таблиц фактов по `event_time` запрещено самой моделью. Уникальный ключ секционированной таблицы обязан включать ключ секционирования (проверено: создание такого ограничения отклоняется). Время события не определяется идентичностью записи, а исправление может его изменить. Значит, ограничение по `event_time` пропустило бы конфликт BR-002.
 
@@ -3676,7 +3730,7 @@ ID учётной записи в источнике остаётся техни
 
 | Ограничение | Как модель с ним работает |
 |---|---|
-| RLS не действует на суперпользователя и роли с `BYPASSRLS`, не проверяет `TRUNCATE` и обычные представления | Права роли приложения и правила раздела 12.2; `BYPASSRLS` есть только у роли копирования без права записи |
+| RLS не действует на суперпользователя, владельца таблиц без `FORCE` и роли с `BYPASSRLS`, не проверяет `TRUNCATE` и обычные представления | Приложение не владеет таблицами, не имеет `BYPASSRLS` и `TRUNCATE`, представления только с `security_invoker` (раздел 12.2); роль-владелец используется только миграциями и копированием |
 | Проверки внешних ключей идут в обход RLS | Ключи составные с `organization_id`, ссылка на чужую строку невозможна |
 | Номера sequence не совпадают с порядком коммитов | Номер знания на строке-счётчике (раздел 12.6) |
 | Запись знания в одной организации сериализована | Короткие транзакции под блокировкой; нормализация разных организаций идёт параллельно |
@@ -3703,11 +3757,24 @@ ID учётной записи в источнике остаётся техни
 | 8. Объект из другого проекта или экземпляра с тем же внешним ID | `J2/P/A` даёт ключ `(O, J2, task, '', id)` - новая строка `source_object`. Тот же ID в организации O2 - другая строка, невидимая для O из-за RLS. Сборка `#7` двух jobs Jenkins различается `native_ns` | Учёт не удваивается и объекты не склеиваются; связь MR с `J1/P/A` не переходит к `J2/P/A` (V-17) |
 | 9. Удаление задачи A по запросу | `audit.deletion` и `ingest.suppression` для A; запись в хранилище копий; задания модулей. `normalize` удаляет версии и события, `link` - связи, `calc` удаляет вклады A и помечает R0-R2 `basis_deleted`, `ingest` перепаковывает пакеты шагов 1-2 | A нет в выдаче, раскрытии и пакетах. Новая доставка A получает `suppressed`. После восстановления из копии удаление применяется повторно |
 
-#### 12.12. Связь с требованиями к данным
+#### 12.12. Порядок ввода таблиц
+
+Таблицы появляются в инкрементах раздела 14.12 вместе с кодом, который их использует. Миграция инкремента добавляет таблицы и ничего не удаляет (раздел 12.10).
+
+| Инкремент | Таблицы |
+|---|---|
+| И0. Каркас | `platform.tenant`, `platform.org_clock`; `org.organization`, `org.team`, `org.project`, `org.service`, `org.person`, `org.app_user`, `org.role_assignment`, `org.team_member`, `org.team_project`; все таблицы `auth`, `audit`, `install`; таблицы River; база тестового адаптера |
+| И1. Jira DC → отчёт команды | `connect.*`, `sync.*`, `ingest.*`; `normalize.source_object`, `normalize.area`, `normalize.area_change`, `normalize.task_version`, `normalize.task_event`; `org.source_account`, `org.account_assignment`, `org.project_area`; `process.*`; `calc.*`; `view.export_job` |
+| И2. GitLab и GitLab CI → разбор задачи | `normalize.mr_version`, `normalize.mr_event`, `normalize.ci_run_version`, `normalize.ci_attempt_version`; `link.edge` |
+| И3. Проверки → сводка MR | `normalize.report`, `normalize.report_pin`, `normalize.finding_occurrence`, `normalize.test_case`, `normalize.test_execution`, `normalize.coverage_fact`; `org.component`; `change.*` M0; `decision.decision`, `decision.decision_version`, `decision.decision_transition`; `outbound.*`; `docs.root`, `normalize.document_version` |
+| И4. Остальной состав стенда | Новых таблиц нет: Confluence DC, GitHub, Jenkins и SonarQube пишут в те же таблицы; базы своих адаптеров |
+| M1 и M2 | Таблицы раздела 12.5.10 вместе со своими функциями |
+
+#### 12.13. Связь с требованиями к данным
 
 | DR | Таблицы |
 |---|---|
-| DR-001 | `connect.source_instance`, `connect.connection`, `connect.connection_scope`, `connect.capability`, `normalize.source_object`, `org.*`, `access.decision_cache`, `access.source_permission` |
+| DR-001 | `connect.source_instance`, `connect.connection`, `connect.connection_scope`, `connect.capability`, `normalize.source_object`, `org.*`, `platform.tenant`, `access.source_permission` |
 | DR-002 | `normalize.task_version`, `normalize.task_event`, `normalize.sprint_version`, `normalize.sprint_event` |
 | DR-003 | `ingest.receipt`, `ingest.record`, `ingest.conflict`, `sync.state`, `sync.reconcile_run` |
 | DR-004 | `process.mapping_version`, `process.mapping_rule`, `process.calendar_version`, `process.target_version`, `process.dod_version`, `process.dod_obligation`, `org.account_assignment` |
@@ -3987,7 +4054,7 @@ CI репозитория на каждый PR запускает `repository-ch
 
 Копия снимается в 06:00 и 18:00, вне окна ежедневных заданий 01:00-05:00, с пониженным приоритетом CPU и диска у процессов копирования. Так возраст последней пригодной копии в момент потери не превышает 24 ч даже при одном неудачном запуске (NFR-020). Окна копирования записываются в протокол, и замер отклика NFR-001 выполняется вне них. Порядок:
 
-1. `pg_dumpall --roles-only` (на управляемой БД - с `--no-role-passwords`, пароли ролей берутся из секретов) и `pg_dump` в архивном формате по базе ядра и каждой базе адаптера под ролью копирования `craftpulse_backup` (раздел 12.2) без данных `access.decision_cache`, шифрование открытым ключом age, запись во внешнее хранилище копий.
+1. `pg_dumpall --roles-only` (на управляемой БД - с `--no-role-passwords`, пароли ролей берутся из секретов) и `pg_dump` в архивном формате по базе ядра и каждой базе адаптера под ролью копирования `craftpulse_backup` (раздел 12.2) с `--enable-row-security`, шифрование открытым ключом age, запись во внешнее хранилище копий.
 2. Копирование бакета во внешнее хранилище копий после завершения дампа: новые объекты дописываются, и для копии сохраняется манифест - список ключей и хэшей объектов на её момент. Объекты не изменяются после записи, поэтому всё, на что ссылается дамп, есть в копии бакета.
 3. Запись контрольной точки: время дампа, число строк ключевых таблиц, хэши файлов, версии схем баз ядра и адаптеров, digest образов.
 4. Сигнал об успехе в мониторинг. Отсутствие успешной копии больше 13 ч поднимает алерт.
