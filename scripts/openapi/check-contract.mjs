@@ -22,12 +22,22 @@ for (const operation of operations) {
   if (security.some(item => 'apiKey' in item)) {
     assert(apiKeyActions.has(operation['x-craftpulse-action']), `${operation.operationId}: key exceeds BI permissions`);
   }
+  if (!['get', 'head', 'options'].includes(operation.method) && security.some(item => 'cookieSession' in item)) {
+    assert(operation.responses['403'], `${operation.operationId}: missing Origin rejection`);
+  }
   const parameters = operation.parameters?.map(dereference) ?? [];
   if (parameters.some(parameter => parameter.name === 'If-Match')) {
     assert(operation.responses['412'] && operation.responses['428'], `${operation.operationId}: missing precondition errors`);
   }
   for (const [status, response] of Object.entries(operation.responses)) {
-    if (status === '202') assert(dereference(response).headers?.Location, `${operation.operationId}: missing Location`);
+    if (status === '202') {
+      const accepted = dereference(response);
+      assert(accepted.headers?.Location, `${operation.operationId}: missing Location`);
+      for (const media of Object.values(accepted.content ?? {})) {
+        const schema = dereference(media.schema);
+        assert(schema?.required?.includes('retry_after_seconds'), `${operation.operationId}: missing polling delay`);
+      }
+    }
   }
 }
 for (const id of ['requestSyncRun', 'refreshSeries', 'requestDocumentationCheck']) {
@@ -56,3 +66,38 @@ for (const path of ['//evil.example', '/\\evil.example', '/x\\y', '/x\ny', 'http
   assert(!returnToPattern.test(path), `Unsafe return_to accepted: ${JSON.stringify(path)}`);
 }
 console.log(`Contract invariants passed: ${operations.length} operations, UC-01..48 and FR-001..064 mapped.`);
+
+// Examples must obey access and metric semantics in addition to JSON Schema types.
+const dataStates = new Set(contract.components.schemas.DataState.enum);
+function checkExample(value) {
+  if (!value || typeof value !== 'object') return;
+  if (Array.isArray(value.redactions)) {
+    for (const field of value.redactions) {
+      assert(/^[a-z][a-z0-9_]*$/.test(field), 'Redactions must not expose array indices');
+      assert(!(field in value), `Redacted field ${field} is still present`);
+    }
+  }
+  if (dataStates.has(value.state) && 'value' in value && 'unit' in value) {
+    if (['UNKNOWN', 'NOT_EVALUATED', 'NOT_APPLICABLE', 'BOUNDED'].includes(value.state)) {
+      assert.equal(value.value, null, `${value.state} must not contain an exact value`);
+    }
+    if (value.state === 'BOUNDED') assert(value.bound, 'BOUNDED needs a bound');
+    if (['ASSESSED', 'PROVISIONAL'].includes(value.state) && value.unit === 'ratio') {
+      assert(value.denominator > 0, 'An assessed ratio needs a positive denominator');
+    }
+  }
+  if ('retry_after_seconds' in value && ['pending', 'quarantined', 'queued', 'running'].includes(value.status)) {
+    assert(Number.isInteger(value.retry_after_seconds) && value.retry_after_seconds >= 1, 'Active operation needs a polling delay');
+  }
+  for (const child of Object.values(value)) checkExample(child);
+}
+for (const operation of operations) for (const response of Object.values(operation.responses)) {
+  for (const media of Object.values(dereference(response).content ?? {})) {
+    if (media.example) checkExample(media.example);
+    for (const example of Object.values(media.examples ?? {})) if ('value' in example) checkExample(example.value);
+  }
+}
+const summarySchema = contract.components.schemas.MergeRequestSummary;
+assert(summarySchema.required.includes('access_limited') && summarySchema.required.includes('access_notes'));
+assert.equal(contract.components.schemas.Redactions.items.pattern, '^[a-z][a-z0-9_]*$');
+console.log('Access, polling and metric examples passed.');

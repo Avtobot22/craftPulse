@@ -25,11 +25,12 @@ info:
       Клиент игнорирует неизвестные поля ответа.
     - Сервер отклоняет неизвестные параметры запроса (`400 unknown_parameter`) и неизвестные
       поля тела (`422 validation_failed`, причина `unknown_field`).
-    - Поле, закрытое правами, в ответе отсутствует, а его имя перечислено в `redactions`.
+    - Необязательное поле, закрытое правами, в ответе отсутствует, а его имя перечислено в `redactions`.
       Объекты вне разрешённой области не дают ни строк, ни количества; ответ помечается
       `access_limited: true` без числа скрытых объектов.
     - `null` означает, что значения нет. Обязательность поля задаётся `required` его схемы.
-      Поле, закрытое правами, отсутствует и перечислено в `redactions`; остальные
+      Обязательные поля схемы не маскируются отдельно: отсутствие права закрывает весь объект.
+      Необязательное поле, закрытое правами, отсутствует и перечислено в `redactions`; остальные
       необязательные поля можно не передавать по условиям схемы.
       Частичное обновление - JSON Merge Patch (RFC 7396): `null` очищает поле, отсутствующее
       поле не меняется.
@@ -1447,7 +1448,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ReceiptAccepted'}
-              example: {receipt_id: 0193a5b0-5858-7000-8000-000000000001, status: quarantined, duplicate_of: null}
+              example: {"receipt_id":"0193a5b0-5858-7000-8000-000000000001","status":"quarantined","duplicate_of":null,"retry_after_seconds":3}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -1484,7 +1485,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ReceiptAccepted'}
-              example: {receipt_id: 0193a5b0-5858-7000-8000-000000000002, status: quarantined, duplicate_of: null}
+              example: {"receipt_id":"0193a5b0-5858-7000-8000-000000000002","status":"quarantined","duplicate_of":null,"retry_after_seconds":3}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -2374,6 +2375,8 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /saved-views/{saved_view_id}:
     get:
       operationId: getSavedView
@@ -2408,6 +2411,8 @@ paths:
         '204': {description: Срез удалён.}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /exports:
     post:
       operationId: createExport
@@ -2787,7 +2792,9 @@ paths:
         устранённые и впервые обнаруженные находки относительно сопоставимой базы, попытки CI,
         тесты, покрытие изменённых строк, непроверенные области и состояние публикации
         комментария. Сводка старого head помечена `stale`. Строки, требующие права на данные
-        безопасности, без этого права заменены отметкой в `redactions` (SEC-16). Пока ревизии
+        безопасности, без этого права удаляются из items; access_limited и access_notes
+        дают только общую отметку без индексов и количества скрытых строк (SEC-16).
+        item_no и rank назначаются после фильтрации по правам текущего субъекта. Пока ревизии
         нет - `404`.
       tags: [changes]
       x-craftpulse-action: mr.read
@@ -2810,16 +2817,55 @@ paths:
                 head_sha: 9f2c1e0d8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e
                 base_sha: 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
                 pipeline_state: complete
-                built_at: '2026-11-08T11:02:00Z'
+                built_at: 2026-11-08T11:02:00Z
                 stale_reason: null
                 items:
-                  - {item_no: 1, item_kind: new, finding_id: 0193a5b0-e2e2-7000-8000-000000000001, rule_id: go.lang.security.audit.sqli, severity: high, location: {path: services/billing/repo.go, line_start: 88, line_end: 88}, rank: 1}
-                  - {item_no: 2, item_kind: not_evaluated, finding_id: null, rule_id: null, severity: null, location: null, rank: null}
-                not_evaluated: [{analysis_kind: coverage, reason_code: report_missing}]
-                coverage_changed_lines: {state: NOT_EVALUATED, value: null, unit: ratio, numerator: null, denominator: null, n: null, bound: null, low_sample: false, excluded_count: 0, missing_count: 0, reason_code: report_missing}
-                ci: {pipeline_id: 0193a5b0-d1d1-7000-8000-000000000001, outcome: success, attempts: 4, retried_jobs: 1}
-                publication: {status: succeeded, external_id: '88213', error_code: null, published_at: '2026-11-08T11:02:40Z'}
-                redactions: [items/3]
+                  - item_no: 1
+                    item_kind: new
+                    finding_id: 0193a5b0-e2e2-7000-8000-000000000001
+                    rule_id: go.lang.security.audit.sqli
+                    severity: high
+                    location:
+                      path: services/billing/repo.go
+                      line_start: 88
+                      line_end: 88
+                    rank: 1
+                  - item_no: 2
+                    item_kind: not_evaluated
+                    finding_id: null
+                    rule_id: null
+                    severity: null
+                    location: null
+                    rank: null
+                not_evaluated:
+                  - analysis_kind: coverage
+                    reason_code: report_missing
+                coverage_changed_lines:
+                  state: NOT_EVALUATED
+                  value: null
+                  unit: ratio
+                  numerator: null
+                  denominator: null
+                  n: null
+                  bound: null
+                  low_sample: false
+                  excluded_count: 0
+                  missing_count: 0
+                  reason_code: report_missing
+                ci:
+                  pipeline_id: 0193a5b0-d1d1-7000-8000-000000000001
+                  outcome: success
+                  attempts: 4
+                  retried_jobs: 1
+                publication:
+                  status: succeeded
+                  external_id: "88213"
+                  error_code: null
+                  published_at: 2026-11-08T11:02:40Z
+                redactions: []
+                access_limited: true
+                access_notes:
+                  - code: restricted_by_access
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -4135,7 +4181,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/TechDebtDraft'}
-              example: {id: 0193a5b0-e9e9-7000-8000-000000000001, finding_ids: [0193a5b0-e2e2-7000-8000-000000000001], tracker_area_id: 0193a5b0-8888-7000-8000-000000000002, issue_type: Task, title: Устранить SQL-инъекцию в repo.go, body: Находка правила go.lang.security.audit.sqli в services/billing/repo.go:88, status: draft, external_task: null, error_code: null}
+              example: {"id":"0193a5b0-e9e9-7000-8000-000000000001","finding_ids":["0193a5b0-e2e2-7000-8000-000000000001"],"tracker_area_id":"0193a5b0-8888-7000-8000-000000000002","issue_type":"Task","title":"Устранить SQL-инъекцию в repo.go","body":"Находка правила go.lang.security.audit.sqli в services/billing/repo.go:88","status":"draft","external_task":null,"error_code":null,"retry_after_seconds":null}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -4158,7 +4204,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/TechDebtDraft'}
-              example: {id: 0193a5b0-e9e9-7000-8000-000000000001, finding_ids: [0193a5b0-e2e2-7000-8000-000000000001], tracker_area_id: 0193a5b0-8888-7000-8000-000000000002, issue_type: Task, title: Устранить SQL-инъекцию в repo.go, body: Находка правила go.lang.security.audit.sqli в services/billing/repo.go:88, status: succeeded, external_task: {kind: task, id: 0193a5b0-f000-7000-8000-000000000040, display_key: CORE-88, title: Устранить SQL-инъекцию в repo.go, source_url: 'https://jira.example/browse/CORE-88'}, error_code: null}
+              example: {"id":"0193a5b0-e9e9-7000-8000-000000000001","finding_ids":["0193a5b0-e2e2-7000-8000-000000000001"],"tracker_area_id":"0193a5b0-8888-7000-8000-000000000002","issue_type":"Task","title":"Устранить SQL-инъекцию в repo.go","body":"Находка правила go.lang.security.audit.sqli в services/billing/repo.go:88","status":"succeeded","external_task":{"kind":"task","id":"0193a5b0-f000-7000-8000-000000000040","display_key":"CORE-88","title":"Устранить SQL-инъекцию в repo.go","source_url":"https://jira.example/browse/CORE-88"},"error_code":null,"retry_after_seconds":null}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
   /tech-debt-drafts/{draft_id}/confirmation:
@@ -4186,7 +4232,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/TechDebtDraft'}
-              example: {id: 0193a5b0-e9e9-7000-8000-000000000001, finding_ids: [0193a5b0-e2e2-7000-8000-000000000001], tracker_area_id: 0193a5b0-8888-7000-8000-000000000002, issue_type: Task, title: Устранить SQL-инъекцию в repo.go, body: Находка правила go.lang.security.audit.sqli в services/billing/repo.go:88, status: pending, external_task: null, error_code: null}
+              example: {"id":"0193a5b0-e9e9-7000-8000-000000000001","finding_ids":["0193a5b0-e2e2-7000-8000-000000000001"],"tracker_area_id":"0193a5b0-8888-7000-8000-000000000002","issue_type":"Task","title":"Устранить SQL-инъекцию в repo.go","body":"Находка правила go.lang.security.audit.sqli в services/billing/repo.go:88","status":"pending","external_task":null,"error_code":null,"retry_after_seconds":3}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -4407,6 +4453,8 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /forecasts:
     post:
       operationId: createForecast
@@ -4433,11 +4481,13 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Forecast'}
-              example: {id: 0193a5b0-f2f2-7000-8000-000000000001, status: pending, method: {method_id: monte-carlo-throughput, method_version: 1}, distribution: [], backtest_error: null, assumptions: [], refusal_reason: null}
+              example: {"id":"0193a5b0-f2f2-7000-8000-000000000001","status":"pending","method":{"method_id":"monte-carlo-throughput","method_version":1},"distribution":[],"backtest_error":null,"assumptions":[],"refusal_reason":null,"retry_after_seconds":3}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /forecasts/{forecast_id}:
     get:
       operationId: getForecast
@@ -4455,7 +4505,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Forecast'}
-              example: {id: 0193a5b0-f2f2-7000-8000-000000000001, status: succeeded, method: {method_id: monte-carlo-throughput, method_version: 1}, distribution: [{probability: 0.5, date: '2026-12-01T00:00:00Z', count: null}, {probability: 0.85, date: '2026-12-15T00:00:00Z', count: null}], backtest_error: 0.18, assumptions: [scope_stable, team_stable], refusal_reason: null}
+              example: {"id":"0193a5b0-f2f2-7000-8000-000000000001","status":"succeeded","method":{"method_id":"monte-carlo-throughput","method_version":1},"distribution":[{"probability":0.5,"date":"2026-12-01T00:00:00Z","count":null},{"probability":0.85,"date":"2026-12-15T00:00:00Z","count":null}],"backtest_error":0.18,"assumptions":["scope_stable","team_stable"],"refusal_reason":null,"retry_after_seconds":null}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
   /projects/{project_id}/test-selection-experiments:
@@ -4612,6 +4662,8 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /surveys:
     post:
       operationId: createSurvey
@@ -5239,8 +5291,8 @@ components:
         detail: {type: string}
     Redactions:
       type: array
-      description: Имена полей, которые закрыты правами субъекта и поэтому отсутствуют в объекте.
-      items: {type: string}
+      description: "Имена отсутствующих необязательных полей, закрытых правами. Индексы и пути к скрытым элементам коллекции запрещены: элементы отфильтровываются, а ограничение отмечается access_limited/access_notes. Обязательные поля схемы не маскируются отдельно; отсутствие права на такой объект закрывает весь объект."
+      items: {"type":"string","pattern":"^[a-z][a-z0-9_]*$"}
     AccessNote:
       type: object
       description: Отметка ограничения выдачи без числа и названий скрытых объектов (FR-001).
@@ -5317,11 +5369,17 @@ components:
     ReceiptAccepted:
       type: object
       description: Пакет принят к разбору. Итог - в квитанции по адресу `Location`.
-      required: [receipt_id, status]
+      required: ["receipt_id","status","retry_after_seconds"]
       properties:
         receipt_id: {type: string, format: uuid}
         status: {type: string, enum: [quarantined, duplicate]}
         duplicate_of: {type: [string, 'null'], format: uuid}
+        retry_after_seconds:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          description: Через сколько секунд прочитать квитанцию по Location; null, если результат уже конечный. Для duplicate опрашивается первая квитанция.
     Team:
       type: object
       required: [id, name, status]
@@ -6388,7 +6446,7 @@ components:
       required: [object, item_no, role, value, reason_code, basis_deleted]
       properties:
         object: {$ref: '#/components/schemas/ObjectRef'}
-        item_no: {type: integer, minimum: 0}
+        item_no: {"type":"integer","minimum":0,"description":"Номер среди разрешённых элементов выбранной когорты, начиная с 0. Перенумеровывается после фильтрации; номер строки хранилища не выдаётся."}
         role: {type: string, enum: [numerator, denominator, excluded, missing]}
         value: {type: [number, 'null']}
         reason_code: {type: [string, 'null']}
@@ -6647,16 +6705,16 @@ components:
       type: object
       required: [item_no, item_kind, finding_id, rule_id, severity, location, rank]
       properties:
-        item_no: {type: integer, minimum: 1}
+        item_no: {"type":"integer","minimum":1,"description":"Номер в отфильтрованной сводке, начиная с 1. Номер строки хранилища не выдаётся."}
         item_kind: {type: string, enum: [new, resolved, newly_observed, unchanged, not_evaluated, ci_attempts, coverage, tests]}
         finding_id: {type: [string, 'null'], format: uuid}
         rule_id: {type: [string, 'null']}
         severity: {type: [string, 'null'], description: Сопоставленная серьёзность; исходная - в карточке находки.}
         location: {$ref: '#/components/schemas/CodeLocation'}
-        rank: {type: [integer, 'null'], description: Порядок среди пяти важнейших сигналов комментария (FR-060).}
+        rank: {type: [integer, 'null'], description: "Порядок среди пяти важнейших разрешённых сигналов после фильтрации по аудитории (FR-060); без пропусков от скрытых строк."}
     MergeRequestSummary:
       type: object
-      required: [id, merge_request_id, revision_no, status, head_sha, base_sha, pipeline_state, built_at, stale_reason, items, not_evaluated, coverage_changed_lines, ci, publication, redactions]
+      required: ["id","merge_request_id","revision_no","status","head_sha","base_sha","pipeline_state","built_at","stale_reason","items","not_evaluated","coverage_changed_lines","ci","publication","redactions","access_limited","access_notes"]
       properties:
         id: {type: string, format: uuid}
         merge_request_id: {type: string, format: uuid}
@@ -6694,6 +6752,13 @@ components:
             error_code: {type: [string, 'null'], description: '`write_permission_missing`, `head_changed`, `provider_error`.'}
             published_at: {type: [string, 'null'], format: date-time}
         redactions: {$ref: '#/components/schemas/Redactions'}
+        access_limited:
+          type: boolean
+          description: Часть строк скрыта правами; число и позиции скрытых строк не выдаются.
+        access_notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccessNote"
     Pipeline:
       type: object
       required: [id, ref_name, sha, merge_request_id, outcome, native_status, started_at, finished_at, attempts_total, retried_jobs, allowed_failures, attempt_history, reports, tests, source_url]
@@ -7471,7 +7536,7 @@ components:
         body: {type: string, maxLength: 20000}
     TechDebtDraft:
       type: object
-      required: [id, finding_ids, tracker_area_id, issue_type, title, body, status, external_task, error_code]
+      required: ["id","finding_ids","tracker_area_id","issue_type","title","body","status","external_task","error_code","retry_after_seconds"]
       properties:
         id: {type: string, format: uuid}
         finding_ids: {type: array, items: {type: string, format: uuid}}
@@ -7482,6 +7547,12 @@ components:
         status: {type: string, enum: [draft, pending, succeeded, failed, unknown]}
         external_task: {oneOf: [{$ref: '#/components/schemas/ObjectRef'}, {type: 'null'}]}
         error_code: {type: [string, 'null']}
+        retry_after_seconds:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          description: Задержка опроса для pending; в остальных состояниях null.
     Artifact:
       type: object
       required: [id, digest, source_sha, sbom_completeness, affected, db_version, last_assessed_at]
@@ -7641,7 +7712,7 @@ components:
         history: {$ref: '#/components/schemas/Period'}
     Forecast:
       type: object
-      required: [id, status, method, distribution, backtest_error, assumptions, refusal_reason]
+      required: ["id","status","method","distribution","backtest_error","assumptions","refusal_reason","retry_after_seconds"]
       properties:
         id: {type: string, format: uuid}
         status: {type: string, enum: [pending, succeeded, refused, failed]}
@@ -7658,6 +7729,12 @@ components:
         backtest_error: {type: [number, 'null']}
         assumptions: {type: array, items: {type: string}}
         refusal_reason: {type: [string, 'null']}
+        retry_after_seconds:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          description: Задержка опроса для pending; в остальных состояниях null.
     TestSelectionExperimentCreate:
       type: object
       additionalProperties: false
