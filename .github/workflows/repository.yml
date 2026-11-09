@@ -18,7 +18,7 @@ jobs:
   repository-check:
     name: repository-check
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,3 +28,20 @@ jobs:
         run: python3 scripts/check_repository.py --event "$GITHUB_EVENT_PATH"
       - name: Test repository tooling
         run: python3 -m unittest discover -s tests -v
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26.3.0'
+          cache: npm
+          cache-dependency-path: scripts/openapi/package-lock.json
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.0'
+          cache: false
+      - name: Install OpenAPI checks
+        run: npm --prefix scripts/openapi ci --ignore-scripts --no-audit --no-fund
+      - name: Validate contract, examples and SRS operation map
+        run: npm --prefix scripts/openapi run verify
+      - name: Generate and compile Go and TypeScript contracts
+        run: npm --prefix scripts/openapi run generators
+      - name: Build API documentation
+        run: npm --prefix scripts/openapi run docs

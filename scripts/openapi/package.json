@@ -1,0 +1,24 @@
+{
+  "name": "craftpulse-openapi-checks",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "redocly lint ../../docs/technical-specification/openapi.yaml --config ../../docs/technical-specification/redocly.yaml && spectral lint ../../docs/technical-specification/openapi.yaml --ruleset ../../docs/technical-specification/openapi.spectral.yaml --fail-severity=warn",
+    "check": "node check-contract.mjs && node operation-map.mjs && node negative-checks.mjs",
+    "verify": "npm run lint && npm run check",
+    "map": "node operation-map.mjs --write",
+    "docs": "redocly build-docs ../../docs/technical-specification/openapi.yaml --config ../../docs/technical-specification/redocly.yaml -o ../../build/openapi.html",
+    "types": "openapi-typescript ../../docs/technical-specification/openapi.yaml -o ../../build/openapi.d.ts",
+    "generators": "sh check-generators.sh"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.76.0",
+    "@stoplight/spectral-cli": "6.17.1",
+    "openapi-typescript": "7.13.0",
+    "yaml": "2.8.1"
+  }
+}

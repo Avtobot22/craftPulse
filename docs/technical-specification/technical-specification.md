@@ -1440,6 +1440,406 @@ Data state описывает качество данных; право чтен
 | V-40. Покрытие/tests | h1 line covered2/executable4 и сопоставимый diff; JUnit содержит case a в linux/windows | 50% line coverage; test executions различаются по config, не две попытки одного flaky test | executable0=N/A; no coverage report=NOT_EVALUATED; malformed=UNKNOWN; report h0 не h1; JUnit не coverage; разные виды line/branch не смешаны | FR-062; BR-011/BR-014; DR-006/DR-008 |
 | V-41. Границы и единицы | Длительности [1,2,3,4] суток; событие completion ровно to; timestamp `2026-10-02T03:00:00+03:00`; перекрывающиеся blocked `[d1,d3)`/`[d2,d4)` | p50=2, p85=4 дня; completion на to не входит; timestamp=d1 UTC; blocked union=3 дня, не4. n4 low-sample отдельно от ASSESSED | n0 не percentile0; отрицательный interval отклоняется/UNKNOWN до сверки; неподтверждённый business calendar не подменяет calendar seconds | FR-003/FR-023/FR-039; BR-005/BR-006; DR-007/DR-011 |
 
+### 5. Внешние интерфейсы и API
+
+HTTP-контракт craftPulse - один файл [openapi.yaml](openapi.yaml) версии OpenAPI 3.1.2. В нём лежат все операции, параметры, схемы запросов и ответов, ошибки и примеры. Этот раздел описывает границы обмена, общие правила контракта, действия прав и карту операций; схемы из контракта сюда не копируются. Серверные интерфейсы Go и типы frontend генерируются из контракта (раздел 11).
+
+#### 5.1. Границы обмена
+
+| Интерфейс | Кто инициирует обмен | Назначение | Вход / выход | Протокол и формат | Ошибки / ограничения / права | Приложение |
+|---|---|---|---|---|---|---|
+| HTTP API craftPulse | SPA в браузере пользователя | Все экраны раздела 6: настройки, отчёты, раскрытие, задачи, MR, находки, документация | JSON-представления ресурсов | HTTPS, REST, `/api/v1`, cookie сессии `__Host-cp_session` | Ошибки RFC 9457; чтение по пересечению прав (раздел 7.3); изменяющий запрос требует `Origin` сайта | [openapi.yaml](openapi.yaml), все теги |
+| Вход через провайдера | Браузер пользователя | Вход в организацию (UC-03) | Переход к провайдеру и возврат с кодом авторизации | OpenID Connect, код авторизации с PKCE (раздел 13.1); `/o/{org_slug}/login` и `/callback` вне `/api/v1` | Ошибка входа - переход на страницу входа с классом причины; сессия не создаётся | `startLogin`, `completeLogin` |
+| Шаг CI клиента | `craftpulse-ci` на runner клиента | Профиль проверок проекта, загрузка пакета отчётов, итог приёма (UC-25, UC-26) | Профиль JSON; пакет tar.gz с манифестом; квитанция JSON | HTTPS, `Authorization: Bearer cpt_...` | Пакет до 25 MiB, после распаковки до 100 MiB и 1 000 файлов (NFR-015); токен даёт только свой проект | `getCiCheckProfile`, `uploadPackage`, `getReceipt` |
+| Универсальный импорт | Администратор или техлид в форме UI-12 | Передача фактов системы без адаптера (UC-06) | Файл JSON или CSV и поля манифеста; квитанция | HTTPS, `multipart/form-data` | Тот же приём, что у пакета CI; записи только в областях с правом импорта | `createImport` |
+| Машинное чтение | Внешняя BI-система | Тот же срез, что в UI и выгрузке (UC-12) | Ряды, ревизии, когорта, выгрузка | HTTPS, `Authorization: Bearer cpk_...` | Права владельца ключа на момент запроса; ключ в адресе отклоняется и отзывается (SEC-17) | Операции с `security: apiKey` |
+| Webhook источника | Git-хостинг, трекер, CI | Сигнал перечитать объект (раздел 10.6) | Тело в формате источника | HTTPS, `POST /api/v1/webhooks/{route_id}` | Ответ `200` сразу; подпись проверяет адаптер; тело до 1 MiB | `receiveWebhook` |
+| Доступ пользователя к источнику | Пользователь в профиле | Разрешение craftPulse читать от имени пользователя, например Confluence DC (раздел 13.5) | Переход к источнику и возврат с кодом | OAuth 2.0, код авторизации | Токены хранит адаптер; отзыв закрывает документы источника для пользователя | `startSourceLink`, `completeSourceLink`, `deleteSourceLink` |
+| Файл выгрузки | Пользователь или BI | Срез вне сайта (UI-35) | JSON или zip с `data.csv` и `metadata.json` | HTTPS, скачивание после повторной проверки прав | Уже скачанный файл не отзывается (BR-023) | `downloadExport` |
+| Контракт адаптера | Ядро craftPulse | Вызовы адаптеров источников: `Probe`, `Fetch`, `Manifest`, `CheckAccess`, `Publish` и другие (раздел 10.3) | Канонический пакет фактов, JSON | HTTPS внутри установки, отдельный контракт `adapter.yaml` | Не входит в `openapi.yaml`: это внутренний API установки и адаптеров клиентов, его версии описаны в разделе 10.3 | `adapter.yaml` |
+| API провайдеров | Адаптер craftPulse | Чтение задач, MR, CI, отчётов, документов и прав; публикация комментария MR | Формат провайдера | REST провайдера; версии - в манифесте поставки (раздел 1.5) | Поддержанные версии и возможности - раздел 5.5 и [коннекторы](../product/connectors.md) | Документация провайдера |
+
+API craftPulse и API провайдеров разделены: браузер, CI и BI никогда не обращаются к источнику через craftPulse, а адаптер не принимает запросов извне установки.
+
+#### 5.2. Правила контракта
+
+Общие правила записаны в `info.description` контракта и действуют для всех операций:
+
+- **Версия.** Префикс `/api/v1`. Совместимые изменения добавляют операции и поля без новой версии. Несовместимое изменение выходит новой версией с объявленным сроком параллельной жизни, а старые операции помечаются заголовками `Deprecation` и `Sunset`.
+- **Организация.** Берётся из сессии, ключа или токена и в адресе не передаётся (раздел 13.2).
+- **Ресурсы и имена.** Пути - существительные во множественном числе в `kebab-case`, не глубже двух уровней вложенности. Поля - `snake_case`, ссылки - `*_id`, время - `*_at`. Действие с параметрами или побочным эффектом оформляется подресурсом: `/activation`, `/decisions`, `/confirmation`.
+- **Данные.** Время - RFC 3339 в UTC. Длительности - целые `*_seconds` или `*_ms`. Деньги - строка-decimal и валюта ISO 4217. Перечисления - стабильные строки: клиент принимает неизвестное значение и показывает его как неизвестное. Значение показателя - объект `MetricValue` с состоянием данных (раздел 4.3): у `UNKNOWN`, `NOT_EVALUATED` и `NOT_APPLICABLE` значения нет, и оно не заменяется нулём.
+- **`null` и отсутствие поля.** `null` - значения нет. Обязательность поля задаётся `required` его схемы. Необязательное поле, закрытое правами, отсутствует и перечислено в `redactions`; остальные необязательные поля можно не передавать по условиям схемы. Обязательные поля не маскируются по отдельности: при отсутствии права закрывается весь объект. Закрытые элементы коллекции фильтруются без исходных индексов, с отметкой `access_limited` и `access_notes`. Пустая коллекция - пустой массив.
+- **Неполные и ограниченные данные.** Ответ, построенный по части области, имеет `access_limited: true` и `access_notes` без числа и названий скрытых объектов (FR-001). Недоступная проверка прав источника даёт отметку `access_check_unavailable`, а не ошибку всего ответа.
+- **Коллекции.** `{data, next_cursor}`, курсор непрозрачен и действует 24 ч. `limit` по умолчанию 50, максимум 200. Сортировка - только по полям из операции, вторым ключом всегда идёт `id`. Точного общего количества коллекции не отдают.
+- **Строгость запроса.** Неизвестный параметр запроса даёт `400 unknown_parameter`, неизвестное поле тела - `422` с причиной `unknown_field`. Клиент обязан игнорировать неизвестные поля ответа.
+- **Частичное обновление.** JSON Merge Patch (`application/merge-patch+json`): `null` очищает поле, отсутствующее поле не меняется.
+- **Конкурентные изменения.** Версионируемый ресурс отдаёт `ETag`, изменение требует `If-Match`. Устаревшая версия даёт `412 version_conflict`, отсутствие заголовка - `428 precondition_required`, первая версия ресурса - `If-Match: "0"`. Это реализует FR-008 и уникальный номер версии из раздела 12.8.
+- **Повтор подтверждения.** Операция, которая создаёт версию настройки, решение или внешнюю запись, требует `Idempotency-Key` (UUID на одну попытку пользователя). Повтор возвращает сохранённый результат, тот же ключ с другим телом - `422 idempotency_key_reused`. Сохранённый повтор проверяется до `If-Match`, поэтому уже созданная версия не приводит к `412` при повторе. Область ключа включает организацию, субъекта, операцию и целевой ресурс; другое тело с тем же ключом отклоняется. Ключ хранится как `confirmation_id` вместе с созданной записью (раздел 12.5) и живёт по её сроку хранения. Выпуск ключа API и токена загрузки ключа повтора не имеет: значение показывается один раз, и слепой повтор выпустил бы второй ключ. Поэтому клиент после таймаута сверяется со списком.
+- **Долгие операции.** Пробное чтение, загрузка пакета, импорт, выгрузка, пересчёт, повторная проверка документации, прогноз и запись в трекер отвечают `202` с адресом ресурса-операции в `Location`. Пока операция идёт, её ресурс содержит `retry_after_seconds`. Сбор, пересчёт ряда и повторная проверка документации возвращают `BackgroundOperation`; `getBackgroundOperation` различает очередь, выполнение, успех и ошибку. Ресурс доступен инициатору с действующими правами исходного действия и хранится 24 ч после завершения. Для других долгих запросов состояние находится в их собственном ресурсе: квитанции, пробе, выгрузке, прогнозе или черновике.
+- **Лимиты.** Пределы пакета - NFR-015. Частоту на адресах входа и webhook ограничивает nginx (раздел 13.4): `429` с `Retry-After`. Недоступное хранилище объектов даёт `503` с `Retry-After`.
+- **Ограничение генератора.** Тип-массив в схеме допускается только как пара «тип и `null`»: другие объединения генератор сервера `oapi-codegen` не поддерживает. Это проверяет правило Spectral `craftpulse-type-union`.
+
+Каталог кодов ошибок - поле `code` ответа `application/problem+json`. Один и тот же исход на всех операциях даёт один и тот же код. Новый код добавляется без новой версии: клиент обрабатывает неизвестный код по HTTP-статусу.
+
+| `code` | HTTP | Когда | Что делает клиент |
+|---|---|---|---|
+| `malformed_request` | 400 | Тело или параметр не разобраны | Исправляет запрос |
+| `unknown_parameter` | 400 | Параметр запроса не поддерживается операцией | Исправляет запрос |
+| `auth_required` | 401 | Нет действующей сессии, ключа или токена | SPA показывает UI-03 и ведёт на вход с текущим путём |
+| `forbidden` | 403 | Область видна, но роль не содержит действия | Показывает отказ без данных |
+| `origin_rejected` | 403 | Изменяющий запрос с cookie и чужим или пустым `Origin` | Не повторяет; это признак подделки запроса |
+| `not_found` | 404 | Объекта нет, он в другой организации или закрыт | Показывает UI-04; не различает три случая |
+| `state_conflict` | 409 | Действие невозможно в текущем состоянии ресурса | Перечитывает ресурс; повтор не поможет |
+| `capability_missing` | 409 | У подключения нет проверенной возможности | Показывает, какую возможность проверить в UI-10 |
+| `stale_head` | 409 | Сводка относится к устаревшему head MR | Открывает сводку текущего head |
+| `version_conflict` | 412 | Версия в `If-Match` устарела | Перечитывает и показывает актуальную версию в UI-17 |
+| `payload_too_large` | 413 | Пакет или тело больше предела | Уменьшает пакет |
+| `unsupported_media_type` | 415 | Неподдержанный `Content-Type` | Исправляет запрос |
+| `validation_failed` | 422 | Данные не проходят по смыслу; все ошибки полей в `errors` | Показывает ошибки у полей формы |
+| `idempotency_key_reused` | 422 | Тот же `Idempotency-Key` с другим телом | Генерирует новый ключ для новой попытки |
+| `precondition_required` | 428 | Нет `If-Match` у версионируемого изменения | Перечитывает ресурс и передаёт `ETag` |
+| `rate_limited` | 429 | Превышен лимит частоты | Повторяет через `Retry-After` |
+| `internal_error` | 500 | Непредвиденная ошибка сервера | Показывает `correlation_id`; повтор чтения допустим |
+| `service_unavailable` | 503 | База или хранилище объектов временно недоступны | Повторяет через `Retry-After` |
+
+Код `internal_error` в операциях не перечисляется: любая операция может его вернуть. Ответ содержит только класс ошибки и `correlation_id`, без стека, SQL и внутренних адресов (SEC-23).
+
+#### 5.3. Действия и права
+
+У каждой операции есть `x-craftpulse-action`. Middleware `access` проверяет, что роль субъекта содержит это действие в области запроса (раздел 13.4). Данные дополнительно фильтруются по правам источника и отдельным правам на данные безопасности и wiki (раздел 7.3). Таблица связывает действия с ролями матрицы 7.7. «Любая роль» означает любую роль с чтением в своей области.
+
+| Действие | Кто | Область |
+|---|---|---|
+| `public` | Без входа: начало входа, возврат провайдера, webhook | Маршрут организации или подключения |
+| `session.read`, `session.manage`, `profile.manage` | Любой вошедший пользователь | Своя сессия, настройки и фоновые операции; для операции также проверяются исходное действие и область |
+| `org.read`, `report.read`, `tasks.read`, `mr.read`, `ci.read`, `findings.read`, `docs.read` | Любая роль; ключ API - только `org.read` и `report.read` | Назначенные команды, проекты и сервисы. Находки безопасности требуют `security_access`, wiki - `wiki_access` и доступа пользователя к Confluence |
+| `export.create` | Любая роль; ключ API | Текущая область, файл - только запросившему |
+| `org.manage`, `users.manage`, `accounts.manage`, `api_keys.manage`, `connections.manage`, `sync.read`, `installation.read`, `audit.read`, `ci_rates.manage` | `administrator` | Организация; содержимое закрытого кода, безопасности и wiki администратор не получает (SEC-15) |
+| `imports.create` | `administrator`, `tech_lead` | Области, где у пользователя есть право импорта |
+| `receipts.read` | `administrator`, `tech_lead`; токен загрузки - свои пакеты | Квитанции своих приёмов и проектов |
+| `upload_tokens.manage`, `check_profiles.manage`, `experiments.manage`, `tech_debt.draft` | `tech_lead`; токены загрузки - также `administrator` | Свой проект |
+| `ingest.upload` | Токен загрузки CI | Свой проект |
+| `process.manage` | `process_owner` | Своя команда |
+| `links.decide`, `mirrors.manage` | `project_manager` | Свой проект; нужен доступ к обоим концам связи |
+| `exceptions.manage` | `tech_lead`, `developer`; `service_owner` для документации (M1) | Область находки, не шире области автора |
+| `exceptions.review` | `tech_lead` | Область находки |
+| `docs.manage` | `service_owner` | Свой сервис |
+| `initiatives.manage` | `dev_lead` | Назначенные команды |
+| `policy.manage` | `tech_lead` с правом на политику | Свой проект |
+| `policy.bypass` | Роль `bypass_authority` из версии политики | MR своего проекта |
+| `tracker.write` | `tech_lead` с правом записи в выбранный проект трекера | Проект трекера |
+| `surveys.manage` | `dev_lead` в согласованной области (Q-02) | Своя команда |
+| `survey.respond` | Приглашение участника (Q-02) | Свой опрос |
+
+Ответ на отказ следует разделу 13.4: если область субъекту не видна, ответ `404 not_found`; если видна, но действия нет, - `403 forbidden`. Статус и тело ошибки не раскрывают существование чужого объекта (SEC-11).
+
+#### 5.4. Карта операций
+
+Карта построена из `openapi.yaml`: по `operationId` находится полное описание операции, её параметры, ответы и примеры. Ссылка - JSON Pointer операции в файле контракта. Поставка - с какой поставки операция доступна; раньше неё операция отвечает `404 not_found`.
+
+<!-- OPERATION-MAP:START -->
+<!-- Карта генерируется: npm --prefix scripts/openapi run map -->
+
+**session** - Вход, сессия и текущий пользователь (UC-03, раздел 13).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `startLogin` | `GET /o/{org_slug}/login` | Начать вход через провайдера организации. FR-013, UC-03; UI-02 | `public`; без входа | M0 | [контракт](openapi.yaml#/paths/~1o~1{org_slug}~1login/get) |
+| `completeLogin` | `GET /o/{org_slug}/callback` | Завершить вход по ответу провайдера. FR-013, FR-064, UC-03, UC-01; UI-02, UI-03, UI-06 | `public`; без входа | M0 | [контракт](openapi.yaml#/paths/~1o~1{org_slug}~1callback/get) |
+| `logout` | `POST /api/v1/session/logout` | Выйти из текущей сессии. FR-002, UC-03; UI-01 | `session.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1session~1logout/post) |
+| `getCurrentUser` | `GET /api/v1/me` | Получить текущего пользователя, организацию, роли и доступные действия. FR-001, FR-013, UC-03; UI-01 | `session.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1me/get) |
+| `getBackgroundOperation` | `GET /api/v1/operations/{operation_id}` | Получить состояние фоновой операции. FR-001, FR-006, FR-023, FR-047, UC-05, UC-10, UC-13, UC-37 | `session.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1operations~1{operation_id}/get) |
+
+**organization** - Структура организации, пользователи, роли и учётные записи источников (UC-02, UC-03, UC-08).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `getOrganizationStructure` | `GET /api/v1/organization/structure` | Получить структуру организации. FR-012, UC-02; UI-07 | `org.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1organization~1structure/get) |
+| `replaceOrganizationStructure` | `PUT /api/v1/organization/structure` | Подтвердить новую структуру организации. FR-012, FR-007, FR-008, UC-02; UI-07, UI-17 | `org.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1organization~1structure/put) |
+| `listTeams` | `GET /api/v1/teams` | Список доступных команд. FR-001, FR-024, UC-14; UI-01 | `org.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1teams/get) |
+| `listProjects` | `GET /api/v1/projects` | Список доступных проектов. FR-001, UC-14; UI-01, UI-22 | `org.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1projects/get) |
+| `listServices` | `GET /api/v1/services` | Список доступных сервисов. FR-001, FR-042, UC-32; UI-44 | `org.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1services/get) |
+| `listAreas` | `GET /api/v1/areas` | Список областей источников. FR-012, FR-046, UC-02, UC-36; UI-07, UI-64 | `org.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1areas/get) |
+| `listUsers` | `GET /api/v1/users` | Список пользователей организации. FR-013, UC-03; UI-08 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users/get) |
+| `listUserRoles` | `GET /api/v1/users/{user_id}/roles` | Роли пользователя. FR-001, FR-013, UC-03; UI-08 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users~1{user_id}~1roles/get) |
+| `replaceUserRoles` | `PUT /api/v1/users/{user_id}/roles` | Заменить роли пользователя. FR-001, FR-013, UC-03; UI-08, UI-17 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users~1{user_id}~1roles/put) |
+| `blockUser` | `POST /api/v1/users/{user_id}/block` | Заблокировать пользователя. FR-002, UC-03, SEC-08; UI-08 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users~1{user_id}~1block/post) |
+| `unblockUser` | `POST /api/v1/users/{user_id}/unblock` | Разблокировать пользователя. UC-03; UI-08 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users~1{user_id}~1unblock/post) |
+| `endUserSessions` | `DELETE /api/v1/users/{user_id}/sessions` | Завершить все сессии пользователя. FR-002, UC-03, SEC-08; UI-08 | `users.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1users~1{user_id}~1sessions/delete) |
+| `listPersons` | `GET /api/v1/persons` | Список людей и ботов. FR-018, UC-08; UI-15 | `accounts.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1persons/get) |
+| `listSourceAccounts` | `GET /api/v1/source-accounts` | Учётные записи источников и кандидаты сопоставления. FR-018, UC-08; UI-15 | `accounts.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1source-accounts/get) |
+| `createAccountAssignments` | `POST /api/v1/account-assignments` | Подтвердить привязки учётных записей и вид участника. FR-018, FR-007, FR-008, UC-08; UI-15, UI-17 | `accounts.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1account-assignments/post) |
+
+**credentials** - Ключи API, токены загрузки CI и доступ пользователя к источникам (разделы 7.2, 13.3, 13.6).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `listSourceLinks` | `GET /api/v1/me/source-links` | Список подключений, которым нужен доступ пользователя. FR-001, UC-03; UI-04, UI-73 | `profile.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1me~1source-links/get) |
+| `startSourceLink` | `POST /api/v1/me/source-links/{connection_id}/authorization` | Начать разрешение доступа к источнику через OAuth 2.0. FR-001, UC-03; UI-04, UI-73 | `profile.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1me~1source-links~1{connection_id}~1authorization/post) |
+| `deleteSourceLink` | `DELETE /api/v1/me/source-links/{connection_id}/authorization` | Отозвать доступ craftPulse к источнику от имени пользователя. FR-001, UC-03; UI-73 | `profile.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1me~1source-links~1{connection_id}~1authorization/delete) |
+| `completeSourceLink` | `GET /api/v1/source-links/callback` | Принять код авторизации источника. FR-001, UC-03; UI-73 | `profile.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1source-links~1callback/get) |
+| `listApiKeys` | `GET /api/v1/api-keys` | Ключи API организации. FR-022, UC-12; UI-08 | `api_keys.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1api-keys/get) |
+| `createApiKey` | `POST /api/v1/api-keys` | Выпустить ключ API. FR-022, UC-12, SEC-17; UI-08 | `api_keys.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1api-keys/post) |
+| `revokeApiKey` | `DELETE /api/v1/api-keys/{api_key_id}` | Отозвать ключ API. FR-002, UC-12, SEC-17; UI-08 | `api_keys.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1api-keys~1{api_key_id}/delete) |
+| `listUploadTokens` | `GET /api/v1/upload-tokens` | Токены загрузки CI. FR-035, UC-25; UI-50 | `upload_tokens.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1upload-tokens/get) |
+| `createUploadToken` | `POST /api/v1/upload-tokens` | Выпустить токен загрузки CI. FR-035, UC-25; UI-50 | `upload_tokens.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1upload-tokens/post) |
+| `revokeUploadToken` | `DELETE /api/v1/upload-tokens/{upload_token_id}` | Отозвать токен загрузки CI. UC-25, SEC-17; UI-50 | `upload_tokens.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1upload-tokens~1{upload_token_id}/delete) |
+
+**connections** - Подключения источников, пробное чтение и состояние сбора (UC-04, UC-05, UC-10).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `listAdapters` | `GET /api/v1/adapters` | Список поддержанных адаптеров. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1adapters/get) |
+| `listConnections` | `GET /api/v1/connections` | Подключения и сводное состояние сбора. FR-014, FR-020, UC-04, UC-10; UI-09 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections/get) |
+| `createConnection` | `POST /api/v1/connections` | Создать подключение в состоянии черновика. FR-014, UC-04, SEC-18, SEC-20; UI-10 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections/post) |
+| `getConnection` | `GET /api/v1/connections/{connection_id}` | Получить подключение. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}/get) |
+| `updateConnection` | `PATCH /api/v1/connections/{connection_id}` | Изменить подключение. FR-014, FR-020, UC-04, UC-10; UI-10, UI-11 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}/patch) |
+| `deleteConnection` | `DELETE /api/v1/connections/{connection_id}` | Удалить подключение. FR-010, FR-020, UC-10; UI-11, UI-17 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}/delete) |
+| `startConnectionProbe` | `POST /api/v1/connections/{connection_id}/probes` | Запустить пробное чтение. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}~1probes/post) |
+| `getConnectionProbe` | `GET /api/v1/connections/{connection_id}/probes/{probe_id}` | Результат пробного чтения. FR-014, UC-04; UI-10 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}~1probes~1{probe_id}/get) |
+| `activateConnection` | `POST /api/v1/connections/{connection_id}/activation` | Подтвердить возможности и запустить загрузку истории. FR-014, FR-015, FR-007, UC-04, UC-05; UI-10, UI-17 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}~1activation/post) |
+| `getSyncStatus` | `GET /api/v1/connections/{connection_id}/sync-status` | Состояние сбора подключения. FR-006, FR-015, FR-020, UC-05, UC-10; UI-11 | `sync.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}~1sync-status/get) |
+| `requestSyncRun` | `POST /api/v1/connections/{connection_id}/sync-runs` | Запросить повтор сбора или сверку. FR-006, FR-015, UC-05, UC-10; UI-11 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1connections~1{connection_id}~1sync-runs/post) |
+
+**ingest** - Приём пакетов из CI и универсального импорта, квитанции и конфликты (UC-06, UC-25).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `getCiCheckProfile` | `GET /api/v1/ci/check-profile` | Профиль проверок проекта для шага CI. FR-035, UC-25; UI-51 | `ingest.upload`; токен загрузки | M0 | [контракт](openapi.yaml#/paths/~1ci~1check-profile/get) |
+| `uploadPackage` | `POST /api/v1/ingest/packages` | Загрузить пакет отчётов из CI. FR-004, FR-016, FR-036, UC-25, UC-26; UI-51 | `ingest.upload`; токен загрузки | M0 | [контракт](openapi.yaml#/paths/~1ingest~1packages/post) |
+| `createImport` | `POST /api/v1/imports` | Передать файл универсального импорта. FR-016, FR-004, UC-06; UI-12, UI-13 | `imports.create`; сессия | M0 | [контракт](openapi.yaml#/paths/~1imports/post) |
+| `listReceipts` | `GET /api/v1/receipts` | Журнал приёма пакетов. FR-016, FR-020, UC-06, UC-10; UI-13 | `sync.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1receipts/get) |
+| `getReceipt` | `GET /api/v1/receipts/{receipt_id}` | Квитанция приёма. FR-016, FR-004, UC-06, UC-25; UI-13, UI-51 | `receipts.read`; сессия, токен загрузки | M0 | [контракт](openapi.yaml#/paths/~1receipts~1{receipt_id}/get) |
+| `listReceiptRecords` | `GET /api/v1/receipts/{receipt_id}/records` | Записи пакета и их исходы. FR-016, UC-06; UI-13 | `receipts.read`; сессия, токен загрузки | M0 | [контракт](openapi.yaml#/paths/~1receipts~1{receipt_id}~1records/get) |
+| `listIngestConflicts` | `GET /api/v1/ingest-conflicts` | Конфликты приёма. FR-004, UC-06; UI-11 | `sync.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1ingest-conflicts/get) |
+| `resolveIngestConflict` | `POST /api/v1/ingest-conflicts/{conflict_id}/resolution` | Решить конфликт приёма. FR-004, FR-005, UC-06; UI-11, UI-17 | `connections.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1ingest-conflicts~1{conflict_id}~1resolution/post) |
+
+**process** - Сопоставление workflow, календарь, целевые сроки и DoD (UC-07, UC-09, UC-16).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `getWorkflowCatalog` | `GET /api/v1/teams/{team_id}/workflow-catalog` | Справочники источников для сопоставления команды. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1workflow-catalog/get) |
+| `previewMapping` | `POST /api/v1/teams/{team_id}/mapping-previews` | Предпросмотр сопоставления на задачах. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1mapping-previews/post) |
+| `listMappingVersions` | `GET /api/v1/teams/{team_id}/mapping-versions` | Версии сопоставления команды. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1mapping-versions/get) |
+| `createMappingVersion` | `POST /api/v1/teams/{team_id}/mapping-versions` | Подтвердить новую версию сопоставления. FR-017, FR-007, FR-008, UC-07; UI-14, UI-17 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1mapping-versions/post) |
+| `listCalendarVersions` | `GET /api/v1/teams/{team_id}/calendar-versions` | Версии рабочего календаря команды. FR-017, UC-07; UI-14 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1calendar-versions/get) |
+| `createCalendarVersion` | `POST /api/v1/teams/{team_id}/calendar-versions` | Подтвердить новую версию календаря. FR-017, FR-007, FR-008, UC-07; UI-14, UI-17 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1calendar-versions/post) |
+| `getTargetBaselines` | `GET /api/v1/teams/{team_id}/target-baselines` | Исторический p85 как ориентир целевого срока. FR-019, UC-09; UI-16 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1target-baselines/get) |
+| `listTargetVersions` | `GET /api/v1/teams/{team_id}/target-versions` | Версии целевых сроков команды. FR-019, UC-09; UI-16 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1target-versions/get) |
+| `createTargetVersion` | `POST /api/v1/teams/{team_id}/target-versions` | Подтвердить целевой срок группы. FR-019, FR-007, FR-008, UC-09; UI-16, UI-17 | `process.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1target-versions/post) |
+
+**reports** - Отчёты, ряды показателей, паспорт и когорта раскрытия, сохранённые срезы (UC-11, UC-13).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `getTeamReport` | `GET /api/v1/teams/{team_id}/report` | Ежедневный отчёт команды. FR-023, FR-003, FR-009, UC-13, FR-025, UC-15; UI-20 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1report/get) |
+| `listMetricDefinitions` | `GET /api/v1/metric-definitions` | Определения показателей. FR-021, FR-022, UC-11, UC-12; UI-23 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1metric-definitions/get) |
+| `refreshSeries` | `POST /api/v1/series/{series_id}/refreshes` | Пересчитать ряд вручную. FR-023, FR-005, UC-13; UI-20 | `report.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1series~1{series_id}~1refreshes/post) |
+| `getRevision` | `GET /api/v1/revisions/{revision_id}` | Паспорт ревизии расчёта. FR-021, FR-005, FR-009, UC-11; UI-23 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1revisions~1{revision_id}/get) |
+| `listRevisionCohort` | `GET /api/v1/revisions/{revision_id}/cohort` | Когорта точки показателя. FR-021, FR-001, FR-024, UC-11, UC-14, FR-025, UC-15; UI-24 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1revisions~1{revision_id}~1cohort/get) |
+| `listSavedViews` | `GET /api/v1/saved-views` | Сохранённые срезы пользователя. FR-023, UC-13; UI-37 | `report.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1saved-views/get) |
+| `createSavedView` | `POST /api/v1/saved-views` | Сохранить срез. FR-023, FR-009, UC-13; UI-37 | `report.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1saved-views/post) |
+| `getSavedView` | `GET /api/v1/saved-views/{saved_view_id}` | Открыть сохранённый срез. FR-001, FR-009, UC-13; UI-37 | `report.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1saved-views~1{saved_view_id}/get) |
+| `deleteSavedView` | `DELETE /api/v1/saved-views/{saved_view_id}` | Удалить сохранённый срез. UC-13; UI-37 | `report.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1saved-views~1{saved_view_id}/delete) |
+
+**exports** - Выгрузки и машинное чтение для BI (UC-12).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `listSeries` | `GET /api/v1/series` | Ряды показателей в доступной области. FR-022, UC-12; UI-36 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1series/get) |
+| `getSeriesData` | `GET /api/v1/series/{series_id}/data` | Значения ряда. FR-009, FR-022, UC-12; UI-36 | `report.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1series~1{series_id}~1data/get) |
+| `createExport` | `POST /api/v1/exports` | Запросить выгрузку. FR-022, FR-009, UC-12; UI-34 | `export.create`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1exports/post) |
+| `getExport` | `GET /api/v1/exports/{export_id}` | Состояние выгрузки. FR-022, UC-12; UI-34 | `export.create`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1exports~1{export_id}/get) |
+| `downloadExport` | `GET /api/v1/exports/{export_id}/file` | Скачать файл выгрузки. FR-022, FR-001, UC-12; UI-35 | `export.create`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1exports~1{export_id}~1file/get) |
+
+**tasks** - Задачи, история, таймлайн проекта, связи и очередь ревью (UC-14, UC-19-UC-21).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `getProjectOverview` | `GET /api/v1/projects/{project_id}/overview` | Обзор проекта. FR-024, FR-029, UC-14, UC-19; UI-22 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1overview/get) |
+| `listProjectTimeline` | `GET /api/v1/projects/{project_id}/timeline` | События проекта на дату. FR-030, UC-20; UI-26 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1timeline/get) |
+| `listTasks` | `GET /api/v1/tasks` | Задачи в доступной области. FR-024, FR-029, UC-14, UC-19; UI-22 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1tasks/get) |
+| `getTask` | `GET /api/v1/tasks/{task_id}` | Карточка задачи с наблюдением о задержке. FR-029, FR-024, UC-19, UC-14; UI-25 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1tasks~1{task_id}/get) |
+| `listTaskEvents` | `GET /api/v1/tasks/{task_id}/events` | История задачи. FR-029, FR-030, UC-19, UC-20; UI-25 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1tasks~1{task_id}~1events/get) |
+| `decideLink` | `POST /api/v1/links/{link_id}/decisions` | Подтвердить или отклонить связь-кандидат. FR-024, FR-029, FR-007, UC-19; UI-25, UI-17 | `links.decide`; сессия | M0 | [контракт](openapi.yaml#/paths/~1links~1{link_id}~1decisions/post) |
+
+**changes** - MR, сводка head, pipeline, попытки, тесты, матрица проверок и базовые линии (UC-25, UC-26, UC-29).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `listMergeRequests` | `GET /api/v1/merge-requests` | MR в доступной области и очередь ревью. FR-031, UC-21; UI-27 | `mr.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1merge-requests/get) |
+| `getMergeRequest` | `GET /api/v1/merge-requests/{merge_request_id}` | MR. FR-031, FR-036, UC-21, UC-26; UI-53 | `mr.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1merge-requests~1{merge_request_id}/get) |
+| `getMergeRequestSummary` | `GET /api/v1/merge-requests/{merge_request_id}/summary` | Сводка MR по точному head. FR-036, FR-059, FR-060, FR-062, UC-26; UI-53, UI-54 | `mr.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1merge-requests~1{merge_request_id}~1summary/get) |
+| `getPipeline` | `GET /api/v1/pipelines/{pipeline_id}` | Pipeline с оговорками. FR-039, FR-062, UC-29, UC-26; UI-55 | `ci.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1pipelines~1{pipeline_id}/get) |
+| `listPipelineAttempts` | `GET /api/v1/pipelines/{pipeline_id}/attempts` | Jobs и все известные попытки. FR-039, UC-29; UI-56 | `ci.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1pipelines~1{pipeline_id}~1attempts/get) |
+| `listTestExecutions` | `GET /api/v1/pipelines/{pipeline_id}/test-executions` | Выполнения тестов pipeline. FR-062, UC-26; UI-55 | `ci.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1pipelines~1{pipeline_id}~1test-executions/get) |
+| `getCheckProfile` | `GET /api/v1/projects/{project_id}/check-profiles` | Действующая матрица проверок проекта. FR-035, UC-25; UI-49 | `check_profiles.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1check-profiles/get) |
+| `createCheckProfileVersion` | `POST /api/v1/projects/{project_id}/check-profiles` | Подтвердить новую матрицу проверок. FR-035, FR-007, FR-008, UC-25; UI-49, UI-17 | `check_profiles.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1check-profiles/post) |
+| `getCiConfiguration` | `GET /api/v1/projects/{project_id}/ci-configuration` | Фрагмент конфигурации CI. FR-035, UC-25; UI-50 | `check_profiles.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1ci-configuration/get) |
+| `listBaselines` | `GET /api/v1/projects/{project_id}/baselines` | Базовые линии проекта. FR-035, FR-036, UC-25, UC-26; UI-52 | `ci.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1baselines/get) |
+
+**findings** - Находки, обзор компонента, причины изменения результата и исключения (UC-27, UC-28, UC-30, UC-32).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `getComponentOverview` | `GET /api/v1/components/{component_id}/overview` | Технический обзор компонента. FR-042, UC-32; UI-44 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1components~1{component_id}~1overview/get) |
+| `listFindings` | `GET /api/v1/findings` | Находки кода, безопасности и документации. FR-037, FR-042, FR-047, UC-27, UC-32, UC-37; UI-45, UI-65 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1findings/get) |
+| `getFinding` | `GET /api/v1/findings/{finding_id}` | Карточка находки. FR-037, FR-038, UC-27; UI-46 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1findings~1{finding_id}/get) |
+| `compareTechnicalResults` | `GET /api/v1/technical-comparisons` | Причины изменения технического результата. FR-040, UC-30; UI-57 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1technical-comparisons/get) |
+| `listExceptions` | `GET /api/v1/exceptions` | Исключения и ожидающие подтверждения решения. FR-038, FR-061, UC-28; UI-48 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1exceptions/get) |
+| `createException` | `POST /api/v1/exceptions` | Оформить исключение для находки. FR-038, FR-061, FR-007, UC-28; UI-47, UI-17 | `exceptions.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1exceptions/post) |
+| `getException` | `GET /api/v1/exceptions/{exception_id}` | Решение с версиями и переходами. FR-038, FR-061, UC-28; UI-48 | `findings.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1exceptions~1{exception_id}/get) |
+| `createExceptionVersion` | `POST /api/v1/exceptions/{exception_id}/versions` | Продлить или изменить решение новой версией. FR-038, FR-061, FR-008, UC-28; UI-47, UI-17 | `exceptions.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1exceptions~1{exception_id}~1versions/post) |
+| `decideException` | `POST /api/v1/exceptions/{exception_id}/decisions` | Подтвердить или отклонить ожидающую версию решения. FR-038, FR-061, UC-28; UI-48, UI-17 | `exceptions.review`; сессия | M0 | [контракт](openapi.yaml#/paths/~1exceptions~1{exception_id}~1decisions/post) |
+
+**documentation** - Корни документации, документы и повторная проверка (UC-36, UC-37).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `listDocumentationRoots` | `GET /api/v1/services/{service_id}/documentation-roots` | Корни документации сервиса. FR-046, UC-36; UI-64 | `docs.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1services~1{service_id}~1documentation-roots/get) |
+| `replaceDocumentationRoots` | `PUT /api/v1/services/{service_id}/documentation-roots` | Подтвердить корни документации сервиса. FR-046, FR-007, FR-008, UC-36; UI-64, UI-17 | `docs.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1services~1{service_id}~1documentation-roots/put) |
+| `listServiceDocuments` | `GET /api/v1/services/{service_id}/documents` | Корпус документации сервиса. FR-046, FR-047, UC-36, UC-37; UI-65 | `docs.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1services~1{service_id}~1documents/get) |
+| `requestDocumentationCheck` | `POST /api/v1/services/{service_id}/documentation-checks` | Запросить повторную проверку документации. FR-047, UC-37; UI-66 | `docs.manage`; сессия | M0 | [контракт](openapi.yaml#/paths/~1services~1{service_id}~1documentation-checks/post) |
+
+**webhooks** - Приём webhook источников (раздел 10.6).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `receiveWebhook` | `POST /api/v1/webhooks/{route_id}` | Принять webhook источника. FR-015, UC-05 | `public`; без входа | M0 | [контракт](openapi.yaml#/paths/~1webhooks~1{route_id}/post) |
+
+**installation** - Протокол проверки установки и аудит (UC-01, раздел 13.8).
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `getLatestInstallationProtocol` | `GET /api/v1/installation/protocols/latest` | Последний протокол проверки установки. FR-011, UC-01; UI-05 | `installation.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1installation~1protocols~1latest/get) |
+| `listAuditEvents` | `GET /api/v1/audit-events` | Журнал аудита организации. FR-010, SEC-22; UI-09 | `audit.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1audit-events/get) |
+
+**m1** - Операции поставки M1 - зеркала, спринты, DoD, инициативы, бизнес-цепочка, политика, выпуск, техдолг, обязательства документации, передача проекта.
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `getOrganizationReport` | `GET /api/v1/organization/report` | Срез организации по командам. FR-024, UC-14; UI-21 | `report.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1organization~1report/get) |
+| `listMirrorCandidates` | `GET /api/v1/projects/{project_id}/mirror-candidates` | Кандидаты зеркал задач двух трекеров. FR-033, UC-23; UI-19 | `mirrors.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1mirror-candidates/get) |
+| `listMirrorGroups` | `GET /api/v1/mirror-groups` | Подтверждённые группы зеркал. FR-033, UC-23; UI-19, UI-22 | `tasks.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1mirror-groups/get) |
+| `createMirrorGroup` | `POST /api/v1/mirror-groups` | Подтвердить группу зеркал. FR-033, FR-007, UC-23; UI-19, UI-17 | `mirrors.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1mirror-groups/post) |
+| `deleteMirrorGroup` | `DELETE /api/v1/mirror-groups/{mirror_group_id}` | Снять подтверждение группы зеркал. FR-033, UC-23; UI-19 | `mirrors.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1mirror-groups~1{mirror_group_id}/delete) |
+| `listSprints` | `GET /api/v1/projects/{project_id}/sprints` | Спринты проекта. FR-032, UC-22; UI-32 | `tasks.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1sprints/get) |
+| `getSprint` | `GET /api/v1/sprints/{sprint_id}` | План спринта и результат. FR-032, UC-22; UI-32 | `tasks.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1sprints~1{sprint_id}/get) |
+| `listDodVersions` | `GET /api/v1/teams/{team_id}/dod-versions` | Версии Definition of Done команды. FR-063, UC-07, UC-16; UI-14 | `process.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1dod-versions/get) |
+| `createDodVersion` | `POST /api/v1/teams/{team_id}/dod-versions` | Подтвердить версию DoD. FR-063, FR-007, FR-008, UC-07; UI-14, UI-17 | `process.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1dod-versions/post) |
+| `getTaskDod` | `GET /api/v1/tasks/{task_id}/dod` | Выполнение DoD задачи. FR-026, UC-16; UI-29 | `tasks.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1tasks~1{task_id}~1dod/get) |
+| `listInitiatives` | `GET /api/v1/initiatives` | Инициативы. FR-027, UC-17; UI-30 | `report.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1initiatives/get) |
+| `createInitiative` | `POST /api/v1/initiatives` | Сохранить инициативу. FR-027, FR-007, UC-17; UI-30, UI-17 | `initiatives.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1initiatives/post) |
+| `getInitiativeComparison` | `GET /api/v1/initiatives/{initiative_id}/comparison` | Сравнение периодов до и после инициативы. FR-027, UC-17; UI-30 | `report.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1initiatives~1{initiative_id}~1comparison/get) |
+| `getDeliveryChain` | `GET /api/v1/tasks/{task_id}/delivery-chain` | Цепочка бизнес-обязательства до поставки. FR-028, UC-18; UI-31 | `tasks.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1tasks~1{task_id}~1delivery-chain/get) |
+| `listCheckPolicyVersions` | `GET /api/v1/projects/{project_id}/check-policies` | Версии политики обязательных проверок. FR-041, UC-31; UI-58 | `findings.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1check-policies/get) |
+| `createCheckPolicyVersion` | `POST /api/v1/projects/{project_id}/check-policies` | Подтвердить версию политики проверок. FR-041, FR-007, FR-008, UC-31; UI-58, UI-17 | `policy.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1check-policies/post) |
+| `createPolicyBypass` | `POST /api/v1/policy-bypasses` | Оформить разрешённый обход политики. FR-041, FR-007, UC-31; UI-59, UI-17 | `policy.bypass`; сессия | M1 | [контракт](openapi.yaml#/paths/~1policy-bypasses/post) |
+| `listPolicyEvaluations` | `GET /api/v1/policy-evaluations` | Вердикты политики и история обходов. FR-041, UC-31; UI-60 | `findings.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1policy-evaluations/get) |
+| `createTechDebtDraft` | `POST /api/v1/tech-debt-drafts` | Создать черновик задачи техдолга. FR-043, UC-33; UI-61 | `tech_debt.draft`; сессия | M1 | [контракт](openapi.yaml#/paths/~1tech-debt-drafts/post) |
+| `getTechDebtDraft` | `GET /api/v1/tech-debt-drafts/{draft_id}` | Черновик и исход записи в трекер. FR-043, UC-33; UI-61 | `findings.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1tech-debt-drafts~1{draft_id}/get) |
+| `confirmTechDebtDraft` | `POST /api/v1/tech-debt-drafts/{draft_id}/confirmation` | Подтвердить запись задачи в трекер. FR-043, FR-007, UC-33; UI-61, UI-17 | `tracker.write`; сессия | M1 | [контракт](openapi.yaml#/paths/~1tech-debt-drafts~1{draft_id}~1confirmation/post) |
+| `listArtifacts` | `GET /api/v1/artifacts` | Выпущенные артефакты. FR-044, FR-045, FR-057, UC-34, UC-35, UC-47; UI-63 | `findings.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1artifacts/get) |
+| `getArtifactPassport` | `GET /api/v1/artifacts/{artifact_id}` | Паспорт артефакта по digest. FR-044, FR-045, FR-057, UC-34, UC-35, UC-47; UI-62 | `findings.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1artifacts~1{artifact_id}/get) |
+| `listDocumentationObligations` | `GET /api/v1/documentation-obligations` | Обязательства документации по версии контракта. FR-048, UC-38; UI-67 | `docs.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1documentation-obligations/get) |
+| `decideDocumentationObligation` | `POST /api/v1/documentation-obligations/{obligation_id}/decisions` | Подтвердить или отклонить кандидат изменения контракта. FR-048, FR-007, UC-38; UI-67, UI-17 | `docs.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1documentation-obligations~1{obligation_id}~1decisions/post) |
+| `getHandoverPackage` | `GET /api/v1/projects/{project_id}/handover` | Комплект передачи проекта. FR-034, UC-24; UI-33 | `docs.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1handover/get) |
+| `decideHandover` | `POST /api/v1/projects/{project_id}/handover/decisions` | Принять комплект или запросить дополнение. FR-034, FR-007, UC-24; UI-33, UI-17 | `docs.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1handover~1decisions/post) |
+
+**m2** - Операции поставки M2 - прогноз, маршрут ревью, отбор тестов, учения, поиск, опрос, стабильность поставки, стоимость CI, передачи между командами.
+
+| operationId | Метод и путь | Назначение / FR / UC; UI | Право и вход | Поставка | Ссылка в OpenAPI |
+|---|---|---|---|---|---|
+| `setReviewParticipation` | `PUT /api/v1/me/review-participation` | Включить или выключить участие в рекомендациях ревью. FR-050, UC-40; UI-69 | `profile.manage`; сессия | M1 | [контракт](openapi.yaml#/paths/~1me~1review-participation/put) |
+| `getReviewRoute` | `GET /api/v1/merge-requests/{merge_request_id}/review-route` | Маршрут ревью MR. FR-050, UC-40; UI-68 | `mr.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1merge-requests~1{merge_request_id}~1review-route/get) |
+| `createReviewRouteFeedback` | `POST /api/v1/merge-requests/{merge_request_id}/review-route/feedback` | Отметить рекомендацию маршрута. FR-050, UC-40; UI-68 | `mr.read`; сессия | M1 | [контракт](openapi.yaml#/paths/~1merge-requests~1{merge_request_id}~1review-route~1feedback/post) |
+| `createForecast` | `POST /api/v1/forecasts` | Запросить прогноз срока или объёма. FR-049, UC-39; UI-38 | `report.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1forecasts/post) |
+| `getForecast` | `GET /api/v1/forecasts/{forecast_id}` | Результат прогноза. FR-049, UC-39; UI-38 | `report.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1forecasts~1{forecast_id}/get) |
+| `createTestSelectionExperiment` | `POST /api/v1/projects/{project_id}/test-selection-experiments` | Включить теневой эксперимент отбора тестов. FR-051, FR-007, UC-41; UI-70, UI-17 | `experiments.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1test-selection-experiments/post) |
+| `getTestSelectionExperiment` | `GET /api/v1/test-selection-experiments/{experiment_id}` | Оценка теневого отбора тестов. FR-051, UC-41; UI-70 | `ci.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1test-selection-experiments~1{experiment_id}/get) |
+| `listRunbookDrills` | `GET /api/v1/documents/{document_id}/drills` | Учения по runbook. FR-052, UC-42; UI-71 | `docs.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1documents~1{document_id}~1drills/get) |
+| `createRunbookDrill` | `POST /api/v1/documents/{document_id}/drills` | Записать учение по версии runbook. FR-052, FR-007, UC-42; UI-71, UI-17 | `docs.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1documents~1{document_id}~1drills/post) |
+| `searchDocuments` | `GET /api/v1/document-search` | Поиск по разрешённой документации. FR-053, UC-43; UI-72 | `docs.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1document-search/get) |
+| `createSearchFeedback` | `POST /api/v1/document-search/{query_id}/feedback` | Отметить, помог ли найденный документ. FR-053, UC-43; UI-72 | `docs.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1document-search~1{query_id}~1feedback/post) |
+| `createSurvey` | `POST /api/v1/surveys` | Провести pulse-опрос. FR-054, FR-007, UC-44; UI-40, UI-17 | `surveys.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1surveys/post) |
+| `getSurvey` | `GET /api/v1/surveys/{survey_id}` | Опрос и групповая сводка. FR-054, UC-44; UI-40 | `surveys.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1surveys~1{survey_id}/get) |
+| `getSurveyForm` | `GET /api/v1/survey-invitations/current` | Форма опроса по приглашению. FR-054, UC-44; UI-39 | `survey.respond`; приглашение опроса | M2 | [контракт](openapi.yaml#/paths/~1survey-invitations~1current/get) |
+| `submitSurveyResponse` | `POST /api/v1/survey-responses` | Отправить ответ на опрос. FR-054, UC-44; UI-39 | `survey.respond`; приглашение опроса | M2 | [контракт](openapi.yaml#/paths/~1survey-responses/post) |
+| `getDeliveryStability` | `GET /api/v1/services/{service_id}/delivery-stability` | Стабильность поставки сервиса. FR-055, UC-45; UI-41 | `report.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1services~1{service_id}~1delivery-stability/get) |
+| `getCiCost` | `GET /api/v1/ci-cost` | Расход и расчётная стоимость CI. FR-056, UC-46; UI-42 | `report.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1ci-cost/get) |
+| `listCiRates` | `GET /api/v1/ci-rates` | Версии ставок стоимости CI. FR-056, UC-46; UI-42 | `ci_rates.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1ci-rates/get) |
+| `createCiRateVersion` | `POST /api/v1/ci-rates` | Задать версию ставки. FR-056, FR-007, UC-46; UI-42, UI-17 | `ci_rates.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1ci-rates/post) |
+| `listTeamTransfers` | `GET /api/v1/teams/{team_id}/transfers` | Межкомандные передачи и ожидания. FR-058, UC-48; UI-43 | `report.read`; сессия | M2 | [контракт](openapi.yaml#/paths/~1teams~1{team_id}~1transfers/get) |
+| `createCiInvoice` | `POST /api/v1/ci-invoices` | Записать фактический счёт поставщика CI. FR-056, FR-007, UC-46; UI-42 | `ci_rates.manage`; сессия | M2 | [контракт](openapi.yaml#/paths/~1ci-invoices/post) |
+
+<!-- OPERATION-MAP:END -->
+
+#### 5.5. Адаптеры и API провайдеров
+
+Адаптер переводит API провайдера в канонический пакет фактов (раздел 10.3). Точные версии провайдеров конкретной поставки фиксирует её манифест (раздел 1.5); состав стенда - [требования MVP](mvp-scope.md#2-интеграции-и-штатная-реализация).
+
+| Адаптер | Провайдер и редакция | Возможности, нужные функциям M0 | Поведение при неподдержанном |
+|---|---|---|---|
+| `jiradc` | Jira Server / Data Center | `read_current`, `read_status_history`, `read_field_history`, `read_resolution_history`, `read_permissions`; M1 - `read_sprint_history`, `write_tracker_issue` | Jira Cloud на этом адаптере не подключается: проба завершается `edition_mismatch` (V-12). Без истории доступен только текущий снимок с границей истории (BR-022) |
+| `gitlab` | GitLab self-managed CE/EE и GitLab CI | `read_current`, `read_links`, `read_permissions`, `webhook`; публикация - `write_mr_comment` | Без права записи сводка остаётся на сайте, публикация - `failed` с `write_permission_missing` (FR-060). Без webhook обновление идёт ночной сверкой с видимым отставанием |
+| `github` | GitHub.com и GitHub Actions (стенд) | Как у `gitlab` | Как у `gitlab`; GitHub Enterprise Server этим адаптером не поддерживается |
+| `jenkins` | Jenkins build API (стенд) | `read_current` для сборок | Внутренние повторы без манифеста запуска не восстанавливаются: `attempt_history = truncated` (FR-039 A3) |
+| `sonarqube` | SonarQube Server и Community Build (стенд) | `read_current` для анализов и находок | Анализ MR без поддержки редакции - `NOT_EVALUATED` для Sonar, штатный профиль работает отдельно (FR-036 A6) |
+| `confluencedc` | Confluence Data Center (стенд) | `read_current`, `read_permissions` через токен пользователя | Без OAuth 2.0 у экземпляра проба не проходит; без разрешения пользователя документы Confluence для него закрыты (раздел 13.5) |
+| `git` | Любой Git по SSH или HTTPS | Дерево, refs, diff и история | MR и права не читаются: их даёт адаптер Git-хостинга |
+| Адаптер клиента | Система клиента без встроенного адаптера | Объявляет возможности в `Probe` | Не объявленная и не проверенная возможность не используется; запрос, которому она нужна, получает `409 capability_missing` |
+
+#### 5.6. Проверка контракта и документация
+
+Проверки запускаются из корня репозитория. Нужны Node.js 26.3.0, npm и Go 1.27.0. Зависимости инструментов закреплены в `scripts/openapi/package-lock.json`; сервер и frontend для проверки не создаются.
+
+| Инструмент | Роль | Конфигурация |
+|---|---|---|
+| Redocly CLI 2.76.0 | Структура OpenAPI 3.1, примеры по схемам без лишних полей, читаемая документация Redoc 3 | [redocly.yaml](redocly.yaml); [.redocly.lint-ignore.yaml](.redocly.lint-ignore.yaml) отключает только требование 2xx у трёх операций-перенаправлений |
+| Spectral CLI 6.17.1 | Действие, поставка, связи FR/UC/UI, имена операций, полей и путей, общие ошибки, допустимые объединения типов | [openapi.spectral.yaml](openapi.spectral.yaml) |
+| oapi-codegen v2.8.2 | Модели Go и строгий интерфейс Gin; сборка с Gin 1.12.0 и oapi-codegen/runtime 1.8.0 | `scripts/openapi/go-codegen.yaml`, `check-generators.sh` |
+| openapi-typescript 7.13.0 | Типы клиента; результат проверяется TypeScript 6.0.3 в строгом режиме | `scripts/openapi/check-generators.sh`; компилятор запускается отдельно от генератора, чей peer - TypeScript 5.x |
+| Проверки craftPulse | Полнота связей с 48 UC и 64 FR, ограничения ключа BI, `ETag` целевого срока, повторы версий, опрос фоновых операций, отказ `Origin`, отсутствие индексов скрытых строк, безопасный `return_to`, соответствие карты SRS | `scripts/openapi/check-contract.mjs`, `operation-map.mjs` |
+
+```sh
+npm --prefix scripts/openapi ci --ignore-scripts --no-audit --no-fund
+npm --prefix scripts/openapi run verify
+npm --prefix scripts/openapi run generators
+npm --prefix scripts/openapi run docs
+```
+
+`verify` запускает оба линтера, проверку правил craftPulse, сверку карты и отрицательные проверки. Отрицательные проверки намеренно удаляют действие, задают неподдержанное объединение типов, портят пример ответа добавляют индекс скрытой строки в `redactions` и удаляют версию настроек из пробы: каждая должна завершиться отказом ожидаемого правила. Исходный контракт не меняется.
+
+`generators` создаёт временный каталог, генерирует и собирает Go-контракт, генерирует типы TypeScript и проверяет их компилятором 6.0.3. После проверки каталог удаляется. Объединения типов, кроме пары с `null`, в контракте запрещены из-за ограничений oapi-codegen. Схемы тел запросов имеют суффиксы `Input`, `Draft` или `Create`, чтобы их имена не совпадали с именами типов полей генератора.
+
+Карта раздела 5.4 строится из того же файла командой `npm --prefix scripts/openapi run map`; `verify` отклоняет устаревшую карту. UC-15/FR-025 используют `getTeamReport` и `listRevisionCohort`: отдельного вызова для каждого графика возвратов нет. UC-01/FR-011 запускается конфигурацией и командой вне HTTP; `getLatestInstallationProtocol` показывает его результат. Отмена неподтверждённой формы HTTP-запроса не создаёт. Решение ревьюера выполняет `decideException` с правом `exceptions.review`; автор оформляет и продлевает исключение через операции с правом `exceptions.manage`.
+
+Линтеры и проверки проходят для 152 операций. Генераторы проверяют возможность собрать интерфейсы; они не подтверждают реализацию сервера. При запуске генератора типов без конфигурации три предупреждения о 2xx относятся к тем же перенаправлениям. Документация собирается в `build/openapi.html`; сгенерированные код и HTML в Git не входят. Эти команды входят в обязательный `repository-check`.
+
+#### 5.7. Проверка контракта на сценариях
+
+Проход выполнен по контракту: для каждого шага выбраны операция, успешный ответ и существенная ошибка и сверены с UC и матрицей 7.7.
+
+| Сценарий | Шаг и операция | Успешный ответ | Существенная ошибка | UC и права |
+|---|---|---|---|---|
+| Подключение Jira DC | `createConnection` с адресом, учётными данными и проектом | `201`, подключение `draft`, учётные данные представлены только `credentials_set_at` | Адрес вне сетевой области - `422 outside_scope`; область уже собирает другое подключение - `409 state_conflict` | UC-04 шаги 1-3; `connections.manage` - администратор |
+| | `startConnectionProbe`, затем `getConnectionProbe` | `202` и ресурс пробы; затем `succeeded` с возможностями и причинами недоступных | Jira Cloud - `failed` с `edition_mismatch` | UC-04 шаги 4-5, A3 |
+| | `activateConnection` с `probe_id` и `If-Match` | `200`, подключение `active`, началась загрузка истории | Проба не последняя или выполнена для другой версии настроек - `409 state_conflict`; новая форма устарела - `412`; повтор уже выполненной активации возвращает `200` до сравнения прежнего `If-Match` | UC-04 шаг 6, UC-05 шаг 1 |
+| | `getSyncStatus` | Последняя попытка, последний успех, отставание и граница истории по видам данных | Подключение недоступно субъекту - `404` | UC-10 шаги 1-3; `sync.read` - администратор |
+| Импорт | `createImport` с CSV задач и полями манифеста | `202`, `receipt_id`, `Location` на квитанцию | Неподдержанная схема - отказ пакета целиком в квитанции, прежний результат сохранён; файл больше 25 MiB - `413` | UC-06 шаги 1-3; `imports.create` - администратор, техлид |
+| | `getReceipt`, `listReceiptRecords?outcome=rejected` | `partial`: 1 принята, 1 отклонена с `missing_source_id` | Повтор того же файла - `202` со статусом `duplicate`, вклад не удваивается | UC-06 шаги 4-5, A3; FR-004, FR-016 |
+| Отчёт с раскрытием | `getTeamReport` за период | Ряды T04-T23 с `MetricValue`, ревизия и `grouping` | Нет сопоставления - точки `NOT_EVALUATED` с `mapping_missing`, а не нули | UC-13 шаги 1-3; `report.read` - любая роль |
+| | `getRevision` по `revision.id` | Паспорт: определения, версии сопоставления и календаря, watermark, срез | Ревизия удалена по сроку - `404`; невоспроизводимая - `irreproducible_reason` | UC-11 шаги 1-2 |
+| | `listRevisionCohort` с `metric_id` и `point_start` | Объекты точки с ролью и вкладом, тот же набор, что в формуле | Часть объектов закрыта - `access_limited: true` без их числа | UC-11 шаги 3-5, A4; FR-021, FR-001 |
+| Исключение | `getFinding` | Правило, место, исходная серьёзность, `confidence: null`, действие `create_exception` | Находка безопасности без `security_access` - `404` | UC-27; `findings.read` |
+| | `createException` с `Idempotency-Key` | `201`, решение `pending`, если политика требует подтверждения | Пустая причина или срок раньше начала - `422`; повтор с тем же ключом возвращает то же решение | UC-28 шаги 1-4; `exceptions.manage` - техлид, разработчик |
+| | `decideException` с `approve` и `If-Match` | `200`, решение `active` с переходом `approved` | Автор подтверждает своё при требовании ревьюера - `403`; решение уже отклонено - `409` | UC-28 A3; `exceptions.review` - техлид |
+| Отказ в доступе | `getTask` задачи проекта B пользователем u1 из проекта A | - | `404 not_found` без названия; в аудите отказ с ID и причиной «вне области» | UC-03 A4, ST-02; раздел 13.10 |
+| | `downloadExport` после отзыва права в Jira | - | `404 not_found`, файл не выдаётся | UC-12 A1, ST-03 |
+| | `createException` для закрытой находки; расширение области доступной находки | - | Закрытая находка - одинаковый `404`; недопустимое расширение доступной области - `422 outside_scope` у `/scope` | UC-28 A5, раздел 7.4 |
+| | Любая операция с истёкшей сессией | - | `401 auth_required`, SPA возвращается на тот же экран после входа без повторной отправки формы | UC-03 ОВ-7, FR-002 |
+
 ### 6. Интерфейс пользователя: полное текстовое описание
 
 #### 6.1. Карта интерфейса
@@ -1452,7 +1852,7 @@ Data state описывает качество данных; право чтен
 
 | Группа | Область ответственности | UI-ID | Следующий комплект описаний |
 |---|---|---|---|
-| G1 | Настройки, источники, доступы; общая оболочка, вход, общие состояния и подтверждения | UI-01-UI-18 | Подключения, импорт и доступы |
+| G1 | Настройки, источники, доступы; общая оболочка, вход, общие состояния и подтверждения | UI-01-UI-18, UI-73 | Подключения, импорт и доступы |
 | G2 | Управленческие панели, раскрытие задач, таймлайн, зеркала трекеров, выгрузка и управленческие представления M2 | UI-19-UI-40, UI-43 | Дашборды и раскрытие исходных событий |
 | G3 | Находки, CI, документация, технические и внешние представления, включая стабильность поставки и стоимость CI | UI-41-UI-42, UI-44-UI-72 | Находки, исключения, MR/CI и документация |
 
@@ -1480,6 +1880,7 @@ Data state описывает качество данных; право чтен
 | UI-16 | Целевые сроки команды: ориентир и форма версии | Владелец процесса | Задать срок по типу/размеру с видимым n | FR-019; F-14/F-16; UC-09: 1-5/A1-A3 | Настройки/панель → исторический p85 и ввод срока → UI-17 → UI-20; без mapping ссылка UI-14 | M0 |
 | UI-17 | Общий диалог подтверждения изменения / конфликта версии | Роль, которой разрешено исходное действие | Подтвердить именно просмотренное изменение | FR-007/008/010; UC-02/04/07/08/09, UC-10 A2, ОВ-5/ОВ-6 | Форма → область, изменения, последствия и версия → результат исходного UI; конфликт → просмотр свежей версии и новое подтверждение | M0 |
 | UI-18 | Общий диалог несохранённых изменений | Пользователь с изменённой формой | Явно сохранить ввод или отказаться от него | FR-007; ОВ-6 | Переход/закрытие формы → «Продолжить редактирование» либо «Отбросить изменения» → прежняя форма/целевой экран | M0 |
+| UI-73 | Личное разрешение доступа к Confluence | Пользователь | Разрешить или отозвать чтение от своего имени без выдачи новой роли | FR-001/002/013; UC-03, ОВ-1/ОВ-7; SEC-10/15 | Профиль UI-01 или UI-04 → Confluence READ → UI-73 → повтор разрешённого чтения; отзыв закрывает свои документы | M0 при поддержанном Confluence DC |
 
 UI-05 - реальный внешний интерфейс конфигурации, команды запуска и диагностического вывода, а не мастер установки в ещё не запущенном сайте. Секретные параметры маскируются. Экран UI-08 не определяет протокол выпуска ключей, срок сессии или новый способ входа: это границы разделов 5 и 7 и вопросов Q-01/Q-06.
 
@@ -1559,7 +1960,7 @@ UI-50, UI-51 и UI-54 существуют вне собственного бр�
 |---|---|---|---|
 | UC-01 | 1-7; A1-A4 | Внешняя конфигурация/запуск UI-05 → результат диагностики → UI-02/UI-06; сбой исправляется вне ещё недоступного сайта | G1 |
 | UC-02 | 1-8; A1/A2 | Настройки UI-07 → подтверждённая структура; форма и ручные пути компонентов там же | G1 |
-| UC-03 | 1-7; A1-A5 | UI-02 → UI-01 в разрешённой области; назначение UI-08, сбои UI-03, отказ UI-04 | G1 |
+| UC-03 | 1-7; A1-A5 | UI-02 → UI-01 в разрешённой области; назначение UI-08, сбои UI-03, отказ UI-04; личное разрешение источника UI-73 | G1 |
 | UC-04 | 1-6; A1-A5 | UI-09 → UI-10 с пробным чтением → UI-11; неподдержанная редакция → UI-12 | G1 |
 | UC-05 | 1-5; A1-A5 | Подключение запускает сбор → UI-11: ход, границы, остановка/повтор; webhooks и сверка фоновые | G1 |
 | UC-06 | 1-5; A1-A3 | UI-12 или внешний приём → UI-13 с принятым/отклонённым; исправление пакета → UI-12 | G1; передача CI G3 |
@@ -1610,12 +2011,12 @@ UI-50, UI-51 и UI-54 существуют вне собственного бр�
 
 Стартовый экран отвечает на рабочий вопрос роли, затем показывает наблюдение, основание и следующее доступное действие. В UI-20 сначала видны изменение потока и задачи, которым нужно внимание; в UI-25 - наблюдаемое препятствие и исходные события; в UI-53 - новое/исправленное/непроверенное для текущего head и переход к разбору. Набор графиков ниже раскрывает этот ответ, а полный паспорт UI-23 открывается явной ссылкой «Как рассчитано». Нейтральные формулировки описывают события команды и не приписывают человеку причину задержки или личный балл.
 
-Настройка первого доверенного отчёта проходит короткую последовательность: UI-10 (источник, область и проверенные возможности) → UI-11 (история и её качество) → UI-14 (примеры задач и подтверждение смысла) → UI-20 (отчёт с видимой полнотой). Шаг не отмечается успешным до своего фактического результата; автоматическое предложение не подменяет подтверждение пользователя.
+Настройка первого доверенного отчёта проходит короткую последовательность: UI-10 (источник, область и проверенные возможности) → UI-11 (история и её качество) → UI-14 (примеры задач и подтверждение смысла) → UI-20 (отчёт с видимой полнотой). При первом подключении полученные области связываются с проектами в UI-07 перед подтверждением workflow. Шаг не отмечается успешным до своего фактического результата; автоматическое предложение не подменяет подтверждение пользователя.
 
 | Ситуация | Правило перехода и сохранения контекста |
 |---|---|
 | Старт после входа | UI-02 возвращает на запрошенный путь после новой проверки прав. Без пути открывается последняя доступная область; если её нет, UI-01 предлагает только назначенные команды/проекты. Для руководителя начальная панель UI-20, PM - UI-22, техлида - UI-44, разработчика - разрешённый контекст проекта UI-22 или запрошенный MR UI-53. Первый администратор без структуры начинает с UI-07. Выбор панели не назначает роль |
-| Общая навигация | Верхняя область UI-01: выбор организации, текущая область и профиль. Навигация: «Обзор», «Задачи и история», «MR и CI», «Код и безопасность», «Документация», «Настройки» по доступности. Вложенные пункты ведут к UI-ID; активный пункт обозначен текстом и маркером, текущий объект - в хлебных крошках |
+| Общая навигация | Верхняя область UI-01: контекст организации, текущая область и профиль с личным доступом UI-73. На M0 организация фиксируется сессией; её смена требует отдельного входа по известному адресу, чужие организации не перечисляются. Навигация: «Обзор», «Задачи и история», «MR и CI», «Код и безопасность», «Документация», «Настройки» по доступности. Вложенные пункты ведут к UI-ID; активный пункт обозначен текстом и маркером, текущий объект - в хлебных крошках |
 | Организация → команда → проект/сервис | UI-21 → UI-20 → UI-22; селектор команды не меняет доступ в источнике. На M0 нет отдельного аналитического уровня организации: UI-01 выбирает команду. После смены области сохраняются совместимые период/дата и вид, несовместимые параметры сбрасываются с сообщением; чужой объект не переносится |
 | Панель → объект → обратно | Значение → UI-23 → UI-24 → предметная карточка. «Назад к отчёту/списку» восстанавливает область, период/as_of, revision, фильтры, сортировку, страницу и позицию/фокус выбранного объекта. Внешний объект открывается обычной подписанной ссылкой с названием системы; действия назначения, правки, merge и развёртывания выполняются там |
 | Глубокая ссылка | Идентифицирует тип/ID объекта и разрешённый контекст scope, периода/as_of, фильтров и revision. Ссылка «актуальная сводка» и ссылка на конкретную revision различаются подписью; появление нового head/revision предлагается явно. Полные URL API не проектируются в этом разделе. Credentials, текст секретов и несохранённые поля в URL не попадают |
@@ -1642,13 +2043,353 @@ UI-50, UI-51 и UI-54 существуют вне собственного бр�
 | S-09. Успех / ожидает решения | Встроенное подтверждение с версией/датой/ссылкой; отдельный текст «Ожидает подтверждения» для исключения. Принятое исключение не обозначается исправленным | Ожидающее решение не действует до подтверждения; поздний ответ не закрывает новую форму другого объекта |
 | S-10. Конфликт / отмена | UI-17 при устаревшей версии; UI-18 для изменённого ввода. Причина блокировки отправки видна рядом с действием | Новое решение другого автора сохранено; отмена до записи оставляет прежнюю версию, FR-007/008 |
 
-#### 6.2. Подробные карточки UI и граница описаний
+#### 6.2. Подробные карточки UI
 
-Реестр определяет полный состав и владельцев; отдельные карточки заполняются по форме раздела 6.2 [шаблона ТЗ/SRS](../templates/technical-specification-srs.md). G1 описывает UI-01-UI-18, G2 - UI-19-UI-40 и UI-43, G3 - UI-41-UI-42 и UI-44-UI-72. При детализации ID сохраняются. Новый самостоятельный экран добавляется в реестр и проверку покрытия; повтор общего диалога нового ID не получает.
+G1 включает UI-01-UI-18 и UI-73; G2 - UI-19-UI-40 и UI-43; G3 - UI-41-UI-42 и UI-44-UI-72. Карточки G1 ниже описывают подготовку установки, подключение, импорт, правила процесса и собственный доступ пользователя к источнику. ID из реестра сохраняются; UI-73 добавлен для самостоятельного OAuth-сценария. Карточки G2/G3 детализируются в тех же границах реестра.
 
-В каждой карточке нужны назначение/права, структура блоков, все поля и форматы данных, валидация формы с текстами ошибок, условия каждого действия, исход/ошибка/повтор/отмена, состояния S-01-S-10 или причина неприменимости, сохранение контекста, клавиатура/фокус, адаптация, FR/UC/ветки и применимые DS-ID, проверяемая приёмка. Внешняя карточка вместо браузерной компоновки задаёт место вывода, структуру текста/пакета, обязательные метаданные, ссылку на подробности и исходы провайдера. Точные API operationId добавляются после проектирования контракта; придуманные имена операций не используются.
+Каждая карточка следует форме раздела 6.2 [шаблона ТЗ/SRS](../templates/technical-specification-srs.md). Состояния S-01-S-10 определены в 6.1.6, компоненты DS - в 6.3. Поле «Figma» связывает карточку с будущим макетом по 6.4; ссылки на ещё не созданные фреймы не подставляются.
 
-Общие DS-ID и правила состояний имеют единственное определение ниже. Карточка ссылается на них и называет только предметные исключения. Детализация всех карточек и их сквозная проверка предшествуют макетам; этот раздел не выдаёт реестр за завершённые карточки.
+Общие правила форм G1: новая форма имеет пустые текстовые поля и невыбранные обязательные справочники, если карточка не задаёт иной исходный выбор; checkbox не означает согласия до явного выбора пользователя. Редактирование загружает текущие значения и ETag, а секретное поле всегда остаётся пустым с отметкой «Задано». Несекретный черновик хранится только для того же пользователя и организации, не восстанавливает закрытые данные после отзыва прав и очищается при явном выходе. Выбор команды/вкладки не отправляет форму. Клиентские проверки ускоряют обратную связь, окончательные права и ограничения проверяет сервер.
+
+В строке «Состояния» названы предметные исходы; общие S-01-S-10 применяются по смыслу, а неприменимость указана для внешних/локальных интерфейсов. Пока запрос выполняется, кнопка его повторной отправки недоступна и это объяснено текстом. Успех изменения виден после ответа сервера; 202 означает лишь приём в работу. Неизвестный исход не превращается в успех или слепое повторное создание. URL предметных экранов и черновик не содержат credentials, ключ, callback code, payload файла и фрагменты закрытых объектов. Служебные параметры callback удаляются из адреса перед открытием предметного экрана.
+
+
+##### UI-01. Оболочка, область и профиль
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Любой вошедший пользователь. Открывается после UI-02 либо по разрешённой глубокой ссылке; выбор панели не назначает роль и не расширяет область. |
+| Структура | Верхняя строка: название организации, команда/проект/сервис, профиль и выход. Слева навигация DS-07; затем хлебные крошки, заголовок выбранного представления и его содержимое. В профиле отдельный пункт «Доступ к источникам» → UI-73. |
+| Данные | Организация, имя пользователя, роли и доступные действия из `getCurrentUser`; команды, проекты и сервисы только из разрешённых списков. На M0 организация текущей сессии показана как фиксированный контекст. Переход в другую организацию идёт по её известному адресу входа через UI-02, без перечисления чужих организаций. Период и часовой пояс подписаны в представлении данных. |
+| Формы | Селекторы области с поиском по доступным именам; выбор необязателен до открытия панели, единственная доступная область выбирается явно в интерфейсе. Нет подходящей области - «Нет доступной области. Обратитесь к администратору». Несовместимый проект не переносится при смене команды. |
+| Действия | Выбор области обновляет содержимое после проверки прав; вид панели выбирается отдельно из разрешённых. «Настройки» показывает только доступные пункты. «Выход» при изменённой форме сначала открывает UI-18; после подтверждения выполняет `logout`, очищает текущую область и ведёт в UI-02. Другие сессии не завершаются. Неуспешный выход показывает «Не удалось завершить выход» и повтор; до подтверждённого результата выход не объявляется выполненным. |
+| Состояния | S-01-S-10 по применимости. Пока профиль загружается, закрытые пункты не показываются. Пустая область имеет собственное объяснение; 401 ведёт в UI-03, прямой закрытый объект - в UI-04. Общая отметка неполноты не заменяет состояния внутри активной панели. |
+| Изменения и навигация | URL содержит только несекретные ID области, вид и допустимые фильтры. После смены области сохраняются совместимые период и дата; сброшенные фильтры перечисляются сообщением. Назад/вперёд восстанавливает контекст после новой проверки прав. Черновики привязаны к пользователю и организации; выход удаляет их, а смена организации не переносит ввод. |
+| Доступность | Ссылка «Перейти к содержимому» первая по Tab; затем область, профиль, навигация и содержимое. Активный пункт имеет текстовый признак, селекторы подписаны. После перехода фокус в заголовке, после закрытия меню возвращается к его кнопке; DS-08/09/21. |
+| Адаптация | От 1280 px навигация 240 px; при 768-1279 px вызываемая панель, при 320-767 px область и профиль переносятся, содержимое одной колонкой. Меню не закрывает текущий фокус; длинное имя организации переносится, полный текст доступен без hover. |
+| Связи | UC-03 шаги 6-7, A2-A5; UC-02/UC-14 как точки входа. FR-001/002/007/013/024; SEC-08/10/11/14. `getCurrentUser`, `listTeams`, `listProjects`, `listServices`, `logout`; DS-07/08/09/21/24. |
+| Приёмка | Пользователь без назначенной области не видит чужой проект; смена панели не меняет роль; смена команды сохраняет совместимый период. После выхода эта сессия отклоняется, вход в другой организации не восстанавливает её черновик. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-02. Вход через провайдера организации
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Пользователь без действующей сессии; переход из UI-01/UI-03 или по адресу организации. На M0 используется GitLab, SSO - только в поставке, где он настроен по Q-01. |
+| Структура | Название установки/организации без списка участников, объяснение внешнего входа, одна основная кнопка «Войти через <провайдер>», ссылка на помощь. Формы пароля craftPulse нет. |
+| Данные | Адрес организации задан ссылкой входа, провайдер определяется её конфигурацией. Путь возврата - только относительный путь этой установки без секретов; имя аккаунта и пароль вводятся на стороне провайдера. |
+| Формы | В приложении нет логина/пароля и выбора произвольного issuer. Если исходная ссылка содержит недопустимый путь возврата, он не используется: после входа открывается UI-01. Тексты ошибок не раскрывают, существует ли неизвестная организация. |
+| Действия | «Войти» выполняет `startLogin`, затем браузер переходит к провайдеру; повторный щелчок до перехода не создаёт параллельных форм. `completeLogin` завершает обмен и ведёт на разрешённый исходный путь либо UI-01/UI-06. Отказ провайдера → UI-03 с возможностью начать вход заново. Назад возвращает к старту входа, не создавая сессию. |
+| Состояния | Загрузка провайдера имеет текст «Переходим к провайдеру входа». Невозможный вход - UI-03. Отмена согласия и просроченный обмен не обозначаются успехом. Пустой список объектов, partial и устаревшие расчёты здесь неприменимы: данные продукта ещё не запрашиваются. |
+| Изменения и навигация | Перед перенаправлением сохраняется только безопасный путь и допустимый несекретный черновик текущего пользователя. Код и state передаются только в служебном обмене/callback, не отображаются полями формы и не копируются в URL предметного экрана или черновик; после callback адрес очищается. Nonce проверяет сервер. Ввод провайдера craftPulse не сохраняет. |
+| Доступность | Кнопка названа вместе с провайдером, доступна Enter/Space. Текст сообщает о внешнем переходе; после возврата фокус в заголовке результата, ошибка объявляется через alert. Внешняя форма использует доступность самого провайдера. |
+| Адаптация | Одна колонка и одна основная кнопка; на 320 px название провайдера и ошибки переносятся, кнопка на доступную ширину. Внешний сайт не стилизуется под собственные DS. |
+| Связи | UC-03 шаги 1-4, A1/A5; UC-01 шаг 6. FR-002/013/064; SEC-01-07/09. `startLogin`, `completeLogin`; DS-08/09/20/23/24/26. |
+| Приёмка | Вход не предлагает пароль craftPulse; отмена у провайдера не создаёт сессию; неизвестная организация не выдаёт её реквизиты. Допустимая глубокая ссылка возвращается после входа и повторной проверки прав. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-03. Вход невозможен или сессия истекла
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Любой пользователь после неуспешного входа или 401 во время работы. Это общий результат, а не новая форма аутентификации. |
+| Структура | Заголовок «Сессия завершилась» либо «Не удалось войти», безопасное объяснение, состояние несекретного ввода, кнопки «Войти снова» и «Вернуться к началу». При техническом сбое доступен correlation ID, без ответа провайдера и токенов. |
+| Данные | Различаются отказ/недоступность провайдера, просроченный обмен, завершение сессии по сроку или администратором. Неподтверждённая причина не называется блокировкой пользователя. Если у человека нет учётной записи провайдера, помощь предлагает обратиться к администратору GitLab либо использовать настроенный корпоративный SSO соответствующей поставки; создать пароль craftPulse нельзя. Наименование закрытого объекта в сообщении отсутствует. |
+| Формы | Новых полей нет. Разрешено скопировать correlation ID. Ввод credentials, ключа и выбранный файл исключаются из восстанавливаемого черновика; рядом указано «Секретные поля и файл нужно заполнить заново». |
+| Действия | «Войти снова» → UI-02 с прежним безопасным путём. После успеха чтение формы/объекта выполняется заново; изменение автоматически не повторяется. «Вернуться к началу» оставляет изменение неподтверждённым и открывает UI-01 либо UI-02. Отмена повторного входа сохраняет экран причины. |
+| Состояния | S-04/S-08/S-10: старое действие остановлено и успех не показан. При новом сбое сообщение обновляется без бесконечных автоматических перенаправлений. Partial и пустая коллекция неприменимы к самому экрану; состояние прежней выборки не выдаётся за новую выдачу. |
+| Изменения и навигация | После входа тем же пользователем несекретный ввод восстанавливается только при сохранённых правах. Другой пользователь, организация или отказ источника исключают восстановление закрытых полей. Запрос с неизвестным исходом сначала сверяется с ресурсом результата, а не отправляется повторно. |
+| Доступность | Фокус на заголовке причины, alert объявляется один раз; Tab проходит две кнопки и correlation ID. Автоматического таймера перенаправления и ловушки фокуса нет. |
+| Адаптация | Сообщение остаётся в одной колонке; длинный ID копируется целиком, но не расширяет страницу. На узком экране действия вертикальны; при увеличении шрифта причина не скрывается. |
+| Связи | UC-03 A1/A5, ОВ-7; FR-002/006/007/013; SEC-07/08. `startLogin`, `completeLogin`, затем повтор исходного чтения и при необходимости `getBackgroundOperation`/`getReceipt`; DS-08/09/20/23/24. |
+| Приёмка | Истечение сессии при заполнении импорта не отправляет файл второй раз. После входа другой учётной записью старый черновик не виден; неуспешная запись не объявляется сохранённой. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-04. Объект или область недоступны
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Любой пользователь при закрытом, отсутствующем или чужом объекте; также при недоступности проверки прав источника. Сведения о скрытом объекте не раскрываются. |
+| Структура | Общий заголовок, краткая причина класса отказа и безопасный выход. Для неподтверждённых прав отдельная текстовая отметка «Проверка прав недоступна»; для доступной части агрегата отметка находится в его представлении DS-24. |
+| Данные | Нет названия, пути, количества, выдержки или идентичности скрытых объектов. 404 выглядит одинаково для отсутствующего и закрытого объекта. При недоступном ACL показывается только факт, что источник сейчас не подтверждает права; последнее разрешение после TTL не используется. |
+| Формы | Полей нет. Состояние собственного разрешения к Confluence проверяется через UI-73; ввод учётных данных источника здесь не предлагается. |
+| Действия | «К доступной области» → UI-01 или последний разрешённый список. «Повторить проверку» перечитывает исходный ресурс и не расширяет доступ. «Разрешить доступ к Confluence» → UI-73 доступно только когда собственное состояние связи требует разрешения; при чужом объекте эта кнопка не обещает открыть его. Администратор при видимой общей проблеме может перейти в UI-11. |
+| Состояния | S-04 для 404/403 без данных; отдельный S-08 для неизвестного решения источника. При отказе повтор сохраняет безопасный экран; после восстановления разрешения открывается объект. Ноль и пустой результат не используются вместо отказа. |
+| Изменения и навигация | Из URL разрешено сохранить только уже запрошенный путь, но не прежние заголовки/строки закрытого объекта. Возврат на список проверяет права заново. При отзыве разрешения форма и ранее показанные детали удаляются при следующем запросе; несекретный ввод не восстанавливает закрытое содержимое. |
+| Доступность | Фокус в заголовке, причина читается текстом и не зависит от цвета. Повтор не сдвигает фокус при сохранении отказа; после успеха фокус в заголовке объекта. DS-08/09/20/24. |
+| Адаптация | На всех ширинах одна колонка с причиной и действиями; кнопки переносятся. Нет скрытого за горизонтальной прокруткой действия возвращения. |
+| Связи | UC-03 A2-A4, ОВ-1; UC-10 A2. FR-001/002/006; SEC-10-16. Исходная операция чтения, `listSourceLinks`, переход в UI-73; DS-08/09/20/24. |
+| Приёмка | Прямые ссылки на несуществующую и закрытую задачу выглядят одинаково. При недоступной проверке прав нет старого положительного результата. После отзыва Confluence ни выдержка, ни заголовок страницы не остаются в выдаче. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-05. Конфигурация, запуск и диагностика установки вне сайта
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Администратор сервера при установке в контуре по UC-01. В облаке этот интерфейс использует команда поставки; пользователь начинает с UI-02. Это файлы конфигурации, штатная команда запуска и её вывод, а не страница неработающего приложения. |
+| Структура | Инструкция поставки → параметры окружения и отдельные файлы секретов → команды проверки/запуска → протокол по проверяемым границам. Вывод разделяет параметр, результат и безопасный класс причины. |
+| Данные | Адрес сайта, провайдер входа, идентификатор первого администратора, адреса БД/хранилища, разрешённая сетевая область, сроки хранения и закреплённый манифест поставки. Секреты представлены только признаком наличия. Версия запуска и время протокола видны; содержимое source API не печатается. |
+| Формы | Параметры задаются в формах файлов/CLI, предусмотренных разделами 11 и 14. Обязательны адреса и параметры выбранной поставки, доверенные сертификаты и согласованные значения хранения; отсутствующие параметры перечисляются по имени. Сообщения: «Не задан параметр <имя>», «Сертификат не принят», «Нет доступа к хранилищу». Значение секрета не цитируется. |
+| Действия | Администратор исправляет конфигурацию и повторяет штатную проверку; только успешный запуск делает UI-02 доступным. Прерванная команда не считается установленной системой. После запуска ссылка на сайт ведёт в UI-02, а протокол доступен администратору через `getLatestInstallationProtocol`. Кнопки «Назначить себя администратором» нет. |
+| Состояния | До запуска - список выполненных/неуспешных проверок; после ошибки доступны причина и шаг исправления. История прежней попытки подписана датой. Отсутствие готового сайта не маскируется страницей успеха; partial/устаревший отчёт продукта здесь неприменим. |
+| Изменения и навигация | Несекретная конфигурация сохраняется в файлах установки, секреты отдельно по процедуре поставки. Отмена не выдаёт успешный протокол. Повтор использует исправленную конфигурацию и не создаёт вторую организацию или первого администратора. |
+| Доступность | Проверки имеют текстовые статусы и код завершения, читаются без цвета; вывод можно выделить/скопировать клавиатурой. Нативные средства терминала сохраняются, автоматическая очистка ошибки не применяется. |
+| Адаптация | Браузерные breakpoint неприменимы. Вывод переносится по доступной ширине терминала, длинный идентификатор можно скопировать целиком. Будущий образец Figma не изображает админ-панель до запуска. |
+| Связи | UC-01 шаги 1-5, A1-A3; FR-011; NFR-013/014/020-022; SEC-18-23. Внешние команды раздела 14; после запуска `getLatestInstallationProtocol`; DS-04/05/20 применимы только к текстовому образцу, DS-07 не применяется. |
+| Приёмка | Без обязательного параметра, при недоверенном TLS и недоступной БД установка не объявлена готовой. Диагностика даёт следующий шаг без секрета. После исправления пользователь достигает UI-02, а не придуманного мастера установки. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-06. Результат первого входа
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Первый вошедший администратор либо пользователь, который вошёл раньше него. Назначение определяется настроенной учётной записью провайдера, а не именем, почтой в форме или действием посетителя. |
+| Структура | Результат входа, состояние подготовки организации и следующий разрешённый шаг. Для администратора - краткий маршрут «Структура → источник → история → workflow → отчёт». Для иного пользователя - безопасное сообщение без идентификатора ожидаемого администратора. |
+| Данные | Собственная роль и `organization.status` из `getCurrentUser`; администратору доступен протокол установки. Показ имени первого администратора другим пользователям не требуется. Переход к UI-07 появляется только при `org.manage`. |
+| Формы | Нет формы самостоятельного выбора администратора. Название организации и состав команды вводятся в UI-07; параметры входа меняет оператор через UI-05. |
+| Действия | «Настроить организацию» у уполномоченного администратора → UI-07. «Продолжить» при готовой структуре → UI-01. У другого пользователя «Вернуться ко входу» завершает текущую сессию через `logout` и открывает UI-02; повтор входа не повышает роль. |
+| Состояния | Загрузка профиля, успех назначения, организация ещё не подготовлена, ошибка чтения и 401 различаются. Отсутствие назначения не раскрывает, какая другая учётная запись требуется. Неполные расчёты здесь неприменимы. |
+| Изменения и навигация | Профиль перечитывается после callback; серверный результат не выводится из локального признака «первый вход». После возврата/повтора назначение не создаётся второй раз, несохранённого ввода в карточке нет. |
+| Доступность | Фокус в результате первого входа; основное действие доступно с клавиатуры. Маршрут подготовки - обычный упорядоченный список, доступность шагов указана текстом. |
+| Адаптация | Маршрут расположен строкой только когда помещается; на узком экране шаги вертикальны. Длинное название организации переносится без уменьшения текста. |
+| Связи | UC-01 шаги 6-7, A4; UC-03 шаги 4-7. FR-013/064; SEC-01/02/10/11. `completeLogin`, `getCurrentUser`, `getLatestInstallationProtocol`, `logout`; DS-08/09/20/23/24. |
+| Приёмка | Настроенная учётная запись получает администратора один раз и проходит в UI-07. Иная учётная запись не получает роль, не видит ожидаемый subject и не может назначить её кнопкой. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-07. Структура организации и форма связей
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Администратор с `org.manage`; открывается из настроек или UI-06. Назначение структуры не даёт доступ к закрытым объектам источника. |
+| Структура | Вкладки «Команды», «Проекты», «Сервисы и компоненты», «Связи». Слева список, справа форма выбранной записи; ниже связи команды с проектами и участниками, проекта с областями источников. Предложения manifests отделены от подтверждённых компонентов. |
+| Данные | Имена, статус active/archived, участники, связи, область репозитория и префикс пути компонента; версия структуры из ETag. ID сохраняют идентичность при переименовании. Проект может включать несколько областей, M1 позволяет даты действия связей. |
+| Формы | Имя: текст 1-200 символов, обязательно, без пустого значения после удаления пробелов; новое id отсутствует до создания. Сервис и область репозитория компонента обязательны, путь до 1024 символов, пустой - корень; статус предложения «Подтвердить/Отклонить» задаётся явно. Связи выбираются по ID существующих записей, участник - из `listPersons`. На M0 даты начала/конца не редактируются и передаются null; на M1 даты RFC 3339, конец позже начала, интервалы одной пары не перекрываются. Ошибки: «Укажите имя», «Выберите сервис и репозиторий», «Проверьте путь», «Интервалы связи пересекаются». |
+| Действия | «Добавить», «Изменить», «Архивировать» меняют черновик, но не систему. «Просмотреть изменения» → UI-17 со всем набором добавлений/изменений/снятых связей; подтверждение выполняет полную замену структуры с исходным ETag. Неотредактированные строки входят в тот же набор и не теряются из-за фильтра или страницы. Новые команды, проекты и сервисы сначала сохраняются без связей; после получения серверных ID отдельным подтверждением добавляются связи и компоненты. До получения ID связанное поле недоступно с текстом «Сначала сохраните запись». Отмена второго шага не отменяет уже сохранённые имена. Предложенный компонент не участвует в расчёте до подтверждения. Отмена с изменённой формой → UI-18. |
+| Состояния | Пустая организация предлагает создать команду и проект. Неполный manifest даёт ручной ввод пути, а не подтверждённый компонент. 412 открывает сравнение со свежей структурой, 422 подсвечивает конкретные связи; ошибка не удаляет черновик. Отзыв роли закрывает изменение через UI-04. |
+| Изменения и навигация | URL хранит вкладку и ID записи; фильтр не удаляет скрытые им строки из полной замены. Несекретный черновик сохраняется в пределах пользователя/организации, изменения не отправляются при переключении вкладки. При конфликте слияние не выполняется молча: перечитать, проверить и подтвердить заново. |
+| Доступность | Сначала вкладки и поиск, затем список, поля и действия. Все назначения доступны селекторами без обязательного drag-and-drop. Ошибки сведены в DS-26 и связаны с полями; после добавления строки фокус в её имени, после удаления - в соседней строке. |
+| Адаптация | От 1280 px список и форма рядом; ниже 1280 px форма под списком; на 320-767 px одна колонка и вертикальные действия. Таблица связей прокручивается в подписанной области, имена и результат сохранения остаются читаемыми. |
+| Связи | UC-02 шаги 1-8, A1/A2; FR-007/008/012; BR-001/023. `getOrganizationStructure`, `replaceOrganizationStructure`, `listAreas`, `listPersons`; DS-08/09/10/11/12/13/18/14/15/19/26. |
+| Приёмка | Изменение имени не создаёт новый объект; снятие связи видно в подтверждении. Фильтр не стирает остальные проекты. Устаревший ETag не перезаписывает чужую правку; на M0 нет обещания исторической группировки M1. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-08. Пользователи, права, сессии и ключи API
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Администратор с `users.manage`/`api_keys.manage`; открывается из настроек. Роли и области назначаются отдельно от прав в источниках. |
+| Структура | Список пользователей с фильтром статуса; карточка: роли и область, блокировка и сессии, ключи API владельца. Выпуск ключа - отдельная форма и отдельный однократный результат, а не текстовая колонка списка. |
+| Данные | Имя/логин, состояние active/blocked, назначения ролей и время изменения; у ключа ID, владелец, область, выпуск, срок и отзыв. Значения существующих ключей не возвращаются. Администратор не получает закрытый код или wiki вследствие просмотра этой карточки. |
+| Формы | Роль выбирается из каталога; область - не более одной команды, проекта или сервиса на назначение. Администратор задаётся для всей организации, владелец процесса - для команды, владелец сервиса - для сервиса. `security_access` и `wiki_access` задаются отдельно. Для ключа обязательны владелец, хотя бы одна область и дата и время окончания с явным часовым поясом позже текущего времени, не дальше 365 дней; передача на сервер в RFC 3339 UTC; срок по умолчанию не подставляется. Ошибки: «Выберите область роли», «Срок должен быть в будущем и не больше 365 дней», «Владелец или область недоступны». |
+| Действия | «Просмотреть изменения ролей» → UI-17; `replaceUserRoles` передаёт полный набор и ETag. «Заблокировать»/«Разблокировать», «Завершить все сессии», «Отозвать ключ» имеют отдельное подтверждение с точной областью действия. Блокировка прекращает сессии и ключи; завершение сессий не названо отзывом ключей. «Выпустить ключ» после подтверждения показывает значение один раз: «Скопировать» и «Закрыть»; при потере ответа клиент перечитывает список, не выпускает ключ вслепую повторно. |
+| Состояния | Пустой список пользователей и отсутствие ключей объяснены отдельно. Заблокированный пользователь помечен текстом, ошибки сохраняют форму. Конфликт ролей → свежая версия и новое подтверждение. При потере своей роли администратор получает UI-04; при блокировке собственной учётной записи - UI-03, без ложного успеха дальнейших действий. |
+| Изменения и навигация | URL содержит только ID пользователя и вкладку. Значение ключа существует только в однократном результате, не сохраняется в URL/черновик/журнал и удаляется из представления при закрытии/выходе. Несекретные назначения можно восстановить после нового чтения прав; повтор после таймаута сначала сверяет результат. |
+| Доступность | Таблица и формы доступны клавиатурой. Диалоги возвращают фокус к вызвавшему действию; скопированное значение объявляется без повторного чтения секрета в live-region. Разрушительные действия различаются текстом, не только цветом. |
+| Адаптация | Список/карточка рядом на широком экране, последовательно на узком; таблица назначений имеет локальную прокрутку. Однократное значение ключа переносится и копируется целиком, кнопка копирования остаётся видимой при масштабе. |
+| Связи | UC-03 A3/A4; UC-12 A2; FR-001/002/007/008/013/022; SEC-08/10/14/15/17. `listUsers`, `listUserRoles`, `replaceUserRoles`, `blockUser`, `unblockUser`, `endUserSessions`, `listApiKeys`, `createApiKey`, `revokeApiKey`; DS-08/09/10/11/12/13/14/19/20/26. |
+| Приёмка | После снятия роли следующее чтение сужается; блокировка прекращает сессии и ключи со следующего запроса. Истёкший ключ отклоняется, выпущенный не отображается повторно. Изменение области не открывает объект без прав источника. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-09. Подключения и сводное состояние
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Администратор с `connections.manage`; переход из настроек. Пользователь без полномочия видит лишь относящуюся к своей панели отметку качества, а не служебный список подключений. |
+| Структура | Заголовок и «Добавить источник», фильтр статуса, таблица подключений. В строке имя, провайдер/редакция, область, состояние, последний успех и действия «Настроить», «Состояние». Отдельно ссылка на универсальный импорт. |
+| Данные | Источник из `listConnections`, поддержанные адаптеры из `listAdapters`. Статусы draft/active/access_lost/deleted не смешиваются с полнотой истории. Время последнего успеха и состояние подключения подписаны; значение секрета и тела ответов источника отсутствуют. |
+| Формы | Фильтр статуса необязателен, по умолчанию все доступные записи; пагинация limit 50, максимум 200. Поиск выполняется по уже разрешённым именам без обращения к произвольным адресам источников. |
+| Действия | «Добавить источник» → UI-10 с пустой формой; «Настроить» → UI-10 с выбранным ID; «Состояние» → UI-11. «Универсальный импорт» → UI-12. Повтор загрузки перечитывает список; само открытие списка не запускает сбор. Отключение выполняется из UI-11 через UI-17, а не случайным щелчком строки. |
+| Состояния | Пусто: «Нет подключений» с предложением первого источника или импорта. Ошибка чтения списка имеет повтор. Draft предлагает завершить пробу; access_lost - восстановить полномочия; давний последний успех не обозначается актуальной загрузкой. Часть источников с ошибками не скрывает доступные строки. |
+| Изменения и навигация | URL хранит фильтр и курсор; возврат из UI-10/UI-11 восстанавливает список и повторно читает состояние. Несохранённой формы здесь нет. После 401 путь сохраняется через UI-03, после отзыва роли список закрывается. |
+| Доступность | Имена строк - самостоятельные ссылки; действия имеют доступные имена с названием видимого подключения. Таблица DS-13, статусы DS-05/24, фокус не переносится при фоновом обновлении строки. |
+| Адаптация | От 1280 px таблица; в узком окне остаются видимыми имя, статус и действия, вторичные данные открываются раскрытием строки либо локальной прокруткой DS-13. Поля и фильтры переносятся, а не обрезаются. |
+| Связи | UC-04 шаг 1; UC-10 шаги 1-2, A1/A2; FR-014/015/020; SEC-15/18/23. `listAdapters`, `listConnections`; DS-08/09/11/13/14/15/20/24. |
+| Приёмка | Первое открытие не создаёт подключение и не запускает синхронизацию. Из access_lost есть путь к восстановлению; возврат сохраняет фильтр, но обновляет статус. Учётные данные не обнаруживаются в строке или ошибке. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-10. Форма подключения и пробное чтение
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Администратор с `connections.manage`; создание из UI-09 или изменение своего подключения из UI-11. Сетевая область и доверенные сертификаты задаются установкой, а не обходятся переключателем формы. |
+| Структура | Блоки «Источник», «Учётные данные», «Область и история», «Проверка», затем действия сохранения и активации. Результат пробы отделён от действующей конфигурации; capabilities показаны списком «проверена/частично/недоступна» с безопасной причиной. |
+| Данные | Провайдер, редакция/версия, адрес, тип адаптера, идентификаторы областей и начало истории; заданность credentials и дата замены. Доступные поля строятся по выбранному адаптеру. Результат пробы связан с ID и версией настроек; на M0 Jira Cloud не подменяет Jira DC. |
+| Формы | Имя 1-200 символов; провайдер и тип адаптера обязательны при создании и недоступны для изменения у существующего подключения; смена требует нового подключения. Произвольной подмены редакции нет; base_url - HTTPS до 2048 символов. Для клиентского адаптера обязательны HTTPS-адрес и ключ, для встроенного они null. Credentials содержат поля выбранного адаптера с замаскированными значениями: не больше 16 параметров, каждое строковое значение до 8192 символов; имена/обязательность задаёт поддержанный формат адаптера. Значения вводятся password-полями; существующее значение не загружается, пустое при редактировании означает «не менять», а не очистить. Полномочия чтения отделены от необязательных групп «Публикация в MR» и «Создание задач в трекере» (M1): администратор явно включает нужную группу и вводит отдельные credentials по формату адаптера. По умолчанию группы записи выключены; отсутствие этих полномочий не запрещает чтение. Нужна хотя бы одна область: тип, стабильный native ID 1-255 символов, дата и время начала истории с подписью UTC либо явно выбранная «Вся доступная история». ID вводится вручную, если адаптер не предоставляет каталог. Ошибки: «Укажите адрес HTTPS», «Адрес вне разрешённой сети», «Укажите область», «Учётные данные не приняты», «Редакция не поддерживается». |
+| Действия | «Сохранить черновик» создаёт/изменяет подключение, не объявляя сбор запущенным. «Проверить подключение» сохраняет изменённые настройки после их просмотра и запускает пробу; результат опрашивается по Location. «Подтвердить и начать сбор» доступно для последней успешной пробы текущей версии: UI-17 → `activateConnection` с её ID и ETag → UI-11. При изменении адреса/области/credentials старая проба более не подходит. При succeeded с partial/missing у отдельных возможностей UI-17 перечисляет доступный объём и показатели, которым не хватает данных. Администратор либо подтверждает этот объём, либо возвращается к полномочиям и выполняет новую пробу; ограничения остаются видимыми после активации. Неподдержанный источник предлагает UI-12; отсутствие write-capability не выдаётся за невозможность чтения. |
+| Состояния | Pending/running показывают выполняемую проверку; succeeded показывает фактически проверенные возможности; failed сохраняет причину и действие исправления. 409 устаревшей/идущей другой пробы предлагает дождаться завершения или повторить для новых настроек; 412 требует перечитать форму. При ошибке TLS нет действия «Не проверять сертификат». Прежний успешный снимок не становится результатом новой пробы. |
+| Изменения и навигация | Несекретный черновик связан с ID подключения и пользователем, секретные поля не сохраняются вне открытой формы. После 401 их вводится заново. Повтор старта возвращает текущую пробу; повтор выполненной активации сверяет её результат и не ставит второй сбор. Отмена неподтверждённого ввода → UI-18; созданный draft явно остаётся в UI-09, удаляется только отдельным подтверждённым действием. |
+| Доступность | Порядок Tab соответствует блокам, результат пробы объявляется статусом без перехвата фокуса; список ошибок со ссылками на поля. Кнопки «Сохранить», «Проверить» и «Начать сбор» различаются названиями и состоянием. Полный секрет не объявляется в сообщениях. |
+| Адаптация | Форма max 720 px; связанные поля в двух колонках только от 768 px, далее одна колонка. Длинный URL переносится в результате проверки; таблица capabilities имеет текстовый список в узком режиме. Footer не закрывает поле или ошибку. |
+| Связи | UC-04 шаги 1-6, A1-A5; UC-05 шаг 1. FR-007/008/014/015; SEC-18/20/21/23. `listAdapters`, `createConnection`, `getConnection`, `updateConnection`, `startConnectionProbe`, `getConnectionProbe`, `activateConnection`; DS-08/09/10/11/14/19/20/24/26. |
+| Приёмка | После смены credentials старая проба не активируется; failed при неверных credentials, недопустимой области или TLS не запускает сбор. Успешная проба с частичной историей допускает подтверждение доступного объёма: недоступные показатели остаются UNKNOWN, а отсутствие права публикации не блокирует чтение. Права комментария MR и создания задачи проверяются отдельно без пробной записи. Успешная проба сама по себе не подтверждает конфигурацию. После подтверждения открывается наблюдаемая загрузка; повтор не создаёт вторую активацию. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-11. Ход сбора, диагностика и восстановление подключения
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Администратор с `sync.read` и действиями управления своим подключением. Открывается из UI-09/UI-10; не даёт содержимого закрытых задач и отчётов. |
+| Структура | Сверху имя/состояние подключения и действия. Далее строки по видам данных: фаза, последняя попытка/успех, отставание, watermark и граница истории; ниже неполные страницы, неизвестные поля, сверка и затронутые показатели. Конфликты приёма - отдельный список с безопасными координатами. |
+| Данные | `getConnection` и `getSyncStatus`: время RFC 3339 с видимым часовым поясом, отставание в секундах с понятным форматированием, исход и безопасная причина ошибки. «Обработано N» не становится процентом при неизвестном полном объёме. Последний успех отделён от текущей неуспешной попытки и не называется свежими данными. |
+| Формы | Для повтора выбираются вид данных и режим «Продолжить с сохранённой точки» либо «Сверить с источником». Для конфликта администратор выбирает «Оставить принятую версию», «Принять исправление» либо «Исправлено в источнике»; данные не редактируются произвольным JSON. Невозможное действие содержит объяснение: «Сначала восстановите доступ к источнику». |
+| Действия | «Обновить» перечитывает диагностику. «Повторить сбор»/«Сверить» подтверждаются в контексте выбранного вида и создают фоновую операцию с опросом по Location; повтор активного запуска не создаёт второй. «Применить решение конфликта» доступно для выбранного открытого конфликта и решения: UI-17 показывает изменение → `resolveIngestConflict` → перечитать конфликт и квитанцию. Принятие исправления запускает пересчёт; «Исправлено в источнике» требует последующего перечитывания источника и до него не называется исправленным фактом. Если конфликт уже решён другим администратором, 409 предлагает обновить результат, повторное решение не отправляется. «Приостановить сбор» меняет sync_paused после UI-17: остановка на сохранённой границе, а не обещание отменить уже принятую страницу. «Возобновить» снимает паузу. «Изменить полномочия/область» → UI-10. После первого получения областей «Назначить области проектам» ведёт в UI-07: до этого они не объявляются частью отчёта команды. «Отключить источник» → UI-17 → удаление подключения; чтение его данных прекращается сразу, срок удаления сохранённых данных подписан по политике установки. |
+| Состояния | Первичная загрузка, ограничение частоты с временем следующей попытки, пауза пользователя, access_lost и ошибка источника различаются. Отсутствующая история не равна нулю. Неуспешная фоновая операция показывает безопасный класс причины, correlation ID и путь исправления. Успех отмечается после новой сверки/чтения, а не по ответу «запрос принят». |
+| Изменения и навигация | ID подключения и выбранный вид данных остаются в URL; возврат из UI-10 перечитывает состояние и сохраняет раздел. Опрос останавливается при уходе со страницы; запуск на сервере продолжается. При возврате сначала проверяется существующая операция; 401 → UI-03, отзыв полномочий → UI-04. Секреты в протоколе отсутствуют. |
+| Доступность | Изменение progress объявляется ненавязчиво, фокус не перемещается на каждое обновление. Строки проблем имеют клавиатурные ссылки; заголовки различают попытку и последний успех. Подтверждение отключения DS-19 возвращает фокус к исходной кнопке. |
+| Адаптация | По видам данных таблица DS-13 на широком экране, вертикальные карточки с теми же подписями на узком. Длинные причины переносятся; watermark и точные даты доступны целиком. Плавающие действия не закрывают текущую строку. |
+| Связи | UC-05 шаги 1-5, A1-A5; UC-10 шаги 1-6, A1/A2; FR-004/005/006/014/015/020; SEC-15/18/23. `getConnection`, `getSyncStatus`, `requestSyncRun`, `getBackgroundOperation`, `updateConnection`, `deleteConnection`, `listIngestConflicts`, `resolveIngestConflict`; DS-08/09/13/19/20/21/23/24. |
+| Приёмка | После обрыва продолжение использует сохранённую точку без дублей. Неполная страница, последний успех и неизвестный знаменатель видны отдельно. Отключённый источник не остаётся доступным через старую ссылку; восстановление без новой сверки не объявляет данные полными. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-12. Универсальный импорт: файл и параметры
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Администратор или техлид с `imports.create` в выбранной области. Переход из UI-09 или сценария проверки CI; неподдержанный встроенным адаптером источник не объявляется подключённым. |
+| Структура | Выбор проекта, вида/версии схемы и системы-источника; затем поле файла, описание охвата, проверки и итоговое подтверждение отправки. Рядом ссылка на описание выбранной схемы из комплекта поставки. |
+| Данные | Стабильный ключ экземпляра источника, provider, schema_id/schema_version, project_id и признак snapshot. Для файла видны имя, размер и формат, но не фрагменты потенциальных секретов. Охват не выводится из расширения файла как доказанная полнота. |
+| Формы | Проект обязателен и ограничен правом импорта. Вид схемы из каталога `tasks`, `task_events`, `relations`, `findings`, `junit`, `coverage`, `documents`; версия - обязательная непустая строка до 16 символов; провайдер `source_provider` обязателен и выбирается из поддержанного каталога, по умолчанию не выбран; ключ экземпляра - обязательная непустая строка до 512 символов. Файл один, JSON либо CSV по выбранной схеме; предел приёма 25 MiB включает служебную упаковку, окончательно проверяет сервер. Для CSV текущих задач snapshot включён и объясняет, что прошлый WIP не восстанавливается; для JSON признак задаётся по содержимому, false не доказывает полноту истории. Ошибки: «Выберите проект», «Выберите файл поддержанной схемы», «Пакет превышает лимит», «Выберите провайдер источника», «Укажите экземпляр источника». |
+| Действия | «Передать файл» сначала проверяет форму и показывает UI-17 с проектом, схемой, именем файла и охватом; после подтверждения отправляет `createImport` один раз. 202 ведёт в UI-13 по квитанции, не сообщает об успешном разборе. «Отмена» до отправки → исходный экран через UI-18 при изменённом вводе. После приёма нет вымышленной кнопки отмены серверного импорта: можно закрыть экран и позже открыть квитанцию. |
+| Состояния | Передача, ожидание квитанции, ошибка сети, 413/415/422 и отсутствие доступа имеют разные сообщения. Ошибка строк после приёма показывается в UI-13. При неизвестном исходе загрузки текст «Исход передачи пока не известен» предлагает проверить журнал квитанций, если он разрешён; повтор того же файла безопасен по идентичности и хэшу, но не считается новым набором фактов. |
+| Изменения и навигация | URL содержит проект и вид схемы, не локальный путь и не содержимое файла. Несекретные параметры остаются в черновике; файл и credentials не сохраняются браузерным черновиком. После 401 файл выбирается заново, повтор передачи не запускается автоматически. Из UI-13 «Исправить и повторить» возвращает параметры, но требует выбрать исправленный файл. |
+| Доступность | Нативное поле файла имеет label и клавиатурный выбор; drag-and-drop только дополнение. Ошибки объявлены до отправки и связаны с полями. Во время передачи кнопка недоступна с видимым объяснением; фокус после перехода в UI-13 на заголовке квитанции. |
+| Адаптация | Форма DS-26 на всех ширинах; длинное имя файла переносится, размер и удаление выбранного файла доступны без горизонтальной прокрутки. Параметры одной колонкой на телефоне, связанная пара полей - с 768 px. |
+| Связи | UC-06 шаги 1-3, A1-A3, ОВ-5-ОВ-7; FR-004/007/016; NFR-015; SEC-10/19/23. `listProjects`, `createImport`, `getReceipt`; DS-08/09/10/11/12/19/23/24/26. |
+| Приёмка | CSV-снимок явно не обещает исторические сроки. Неверная схема отклоняет пакет без замены прежнего отчёта; повтор файла не удваивает факты. Отмена до отправки не создаёт квитанцию, а потеря сессии не отправляет файл снова. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-13. Квитанция приёма и ошибки записей
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Администратор/техлид с `receipts.read` для доступного приёма. CI-токен читает только свои пакеты; интерфейс вывода CI принадлежит G3, эта карточка описывает сайт. |
+| Структура | Заголовок квитанции, состояние и время приёма; схема/экземпляр/охват; счётчики принято/отклонено/повтор/конфликт; таблица исходов записей и затронутые показатели. Кнопки «Обновить», «Исправить и повторить», «К результату», при duplicate - ссылка на первый доступный приём. |
+| Данные | ID, статус quarantined/accepted/partial/rejected/duplicate, причина отказа пакета; record_no, record_kind, безопасный native_key и reason_code строки. Тело записи, значение секрета и необработанная ошибка парсера не показываются. Счётчики относятся к этому пакету, а не ко всей истории источника. |
+| Формы | Фильтр исхода и страница необязательны, по умолчанию видны все исходы; пользователь может выбрать отклонённые/конфликтные строки. Новая запись данных в квитанции не редактируется. Если идентичность строки неизвестна, показан номер записи и причина, а не выдуманный внешний ключ. |
+| Действия | Quarantined опрашивается с retry_after_seconds; accepted/partial показывают конечный исход и доступный результат. «Исправить и повторить» → UI-12 с параметрами: файл редактируется вне квитанции, повторяет только подтверждённое пользователем содержимое. Неизменённые принятые записи при повторе учитываются как replay. Duplicate не называется исправлением или новым вкладом. Ссылка на первый приём и результат проверяет права заново; закрытый объект → UI-04. Администратор может открыть конфликт в UI-11, техлиду не обещается административное решение. |
+| Состояния | Пустая страница фильтра отлична от пакета без записей. Rejected показывает причину отказа целиком и сохранение прежнего результата; partial - отдельные принятые/отклонённые строки. Suppressed объясняется как запись, не восстановленная из-за политики удаления. При ошибке опроса остаётся последний подтверждённый статус с датой, не подменяя завершение. |
+| Изменения и навигация | URL включает receipt_id, фильтр и курсор, но не содержимое файла. Возврат сохраняет фильтр; обновление квитанции не отправляет новый импорт. При 401 восстановленный экран сначала перечитывает квитанцию; при отзыве доступа убирает её детали. |
+| Доступность | Таблица с заголовками и подписями исходов; live-region объявляет завершение и итог один раз. Выбор фильтра сохраняет фокус, а кнопка повторного импорта имеет явное название. Полная причина доступна без tooltip и без цвета. |
+| Адаптация | На широком экране счётчики над таблицей; на узком - последовательно, исходы записей в локально прокручиваемой таблице DS-13. Имя/номер и причина не исчезают при сворачивании вторичных колонок. |
+| Связи | UC-06 шаги 3-5, A1-A3; UC-10, UC-25 как смежные точки; FR-004/006/016/020; DR-003; SEC-10/19/23. `getReceipt`, `listReceiptRecords`, `listReceipts` только при `sync.read`; DS-08/09/13/14/15/20/21/23/24. |
+| Приёмка | На пакете с одной принятой и одной отклонённой записью видны оба исхода и partial. Повтор не удваивает вклад; неверная версия схемы не делает старый отчёт актуальным для нового SHA. Чужой CI-токен не открывает квитанцию. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-14. Workflow, календарь, предпросмотр и сверка
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Владелец процесса с `process.manage` в своей команде. Открывается из настроек, UI-16 или пробела в отчёте; отсутствие роли не заменяется ролью администратора. |
+| Структура | Контекст команды/проектов и действующая версия; затем таблицы статусов/исходов, полей размера/команды, календаря; блок предпросмотра задач и три контрольных расчёта. Расширения M1 - отдельные подписанные группы «Этап приёмки», «Эпик/бизнес-эпик», «DoD». |
+| Данные | Справочники источников содержат native ID и имя, категорию и тип поля; категории только подсказывают смысл. Предпросмотр на одну as_of показывает 10-20 доступных задач либо меньше с явным n, начало/завершение, блокировки, исход и неизвестные значения. Сохраняемые версии и версии отчётов различаются. |
+| Формы | Для каждого статуса выбирается смысл intake/active/wait/blocked/done/cancelled/duplicate/ignored, для resolution - accepted/cancelled/duplicate/ignored. Неизвестное не становится началом/завершением. Поле размера необязательно: без него отдельная группа «Без размера»; для размеров задан явный порядок rank. Поле команды и его значения сопоставляются с ID команды. Часовой пояс IANA обязателен; календарь задаётся отдельной версией: дни недели, локальные границы HH:MM и даты исключений (ввод ДД.ММ.ГГГГ, на сервер YYYY-MM-DD); связанные часы заполнены вместе, конец позже начала. Для календарного времени рабочий календарь не выбирается. Ошибки: «Выберите смысл», «Значение не найдено в источнике», «Укажите порядок размеров», «Проверьте часовой пояс и календарь». На M1 этап приёмки выбирается отдельным правилом acceptance_gate по ID статуса и не заменяет его основной смысл; поле связи с эпиком задаётся epic_field, признак бизнес-эпика - business_epic_value с ID поля и исходным значением. Для DoD обязательны тип задачи и 1-50 обязательств: вид основания check/document/business_signoff, выбранный источник подтверждения (вид отчёта, документ, поле/статус трекера) и явный флаг «Обязательно». Пустое основание показывает «Укажите, чем подтверждается обязательство». На M0 эти группы не показываются, а смысл этапа или бизнес-эпика не выводится из названия. |
+| Действия | «Применить предложение» меняет только черновик. «Предпросмотр» выполняет `previewMapping`, не сохраняя настройку; ссылки на исходные задачи позволяют сверить три контрольных расчёта на ту же дату. «Подтвердить соответствие» → UI-17 → `createMappingVersion` с ETag и ключом подтверждения; календарь сохраняется своим действием и его подтверждённая версия выбирается в соответствии. Сбой сохранения mapping не откатывает уже сохранённый календарь молча: обе версии и фактический результат остаются видимыми. Изменение запускает пересчёт, прежняя ревизия отчёта воспроизводится по старому mapping. DoD сохраняется отдельным подтверждением и своей версией для типа задачи; ETag читается через listDodVersions с task_type этого типа. Перед подтверждением явно показаны версия mapping и основание каждого обязательства; новый mapping не означает автоматического подтверждения DoD. |
+| Состояния | Неизвестные статусы и поля вынесены в отдельный список. Если примеров для сверки нет, сообщение «Нет задач для проверки» ведёт в UI-11; подтверждение проверенного соответствия не объявляется выполненным. При несовпадении расчёта показаны задача и события, пользователь правит черновик и повторяет предпросмотр. 412 → свежая версия без потери своего ввода; ошибки частичного источника не заменяются нулями. |
+| Изменения и навигация | URL хранит команду, выбранную версию и раздел. Изменённые правила требуют нового предпросмотра; смена команды при несохранённом вводе → UI-18. UI-17 показывает базовую/новую версии, неизвестные значения и влияние на отчёты. Повтор с прежним ключом возвращает тот же результат; новое содержание получает новый ключ. После 401 перечитываются справочники и версии. |
+| Доступность | Сопоставление доступно combobox и текстовыми действиями без drag-and-drop. Заголовки содержат исходный ID и имя, ошибки связаны с конкретной строкой. После предпросмотра фокус остаётся на кнопке, ссылка «Перейти к результату» ведёт к заголовку; таблица имеет DS-13. |
+| Адаптация | Две колонки «источник → смысл» на широком экране, последовательные пары на узком. Контрольные значения и их единицы остаются рядом с названием; длинные имена статусов переносятся. Справочники и предпросмотр имеют независимую подписанную прокрутку. |
+| Связи | UC-07 шаги 1-8, A1-A7; UC-16 для DoD. FR-003/005/007/008/017/063; BR-002/004/008/022. `getWorkflowCatalog`, `previewMapping`, `listMappingVersions`, `createMappingVersion`, `listCalendarVersions`, `createCalendarVersion`, M1 `listDodVersions`/`createDodVersion`; DS-08/09/10/11/12/13/19/20/24/26. |
+| Приёмка | Входящий статус категории «в работе» можно оставить intake; задача, созданная в рабочем статусе, показывает начало на creation. Неизвестные статусы не исчезают. Без размера отчёт остаётся по типам, а после смены mapping сохранённый старый отчёт открывается по прежней версии. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-15. Учётные записи, кандидаты и боты
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Администратор с `accounts.manage`; переход из настроек после загрузки учётных записей источника. Подтверждение личности не расширяет доступ пользователя в источнике. |
+| Структура | Фильтры системы/экземпляра, статуса привязки и типа участника; таблица source account → действующая привязка → предложение. Отдельные действия подтверждения выбранных строк и результат пакета по каждой строке. |
+| Данные | Система, instance ID, native account ID, логин/отображаемое имя, известная привязка, предложения с основанием login/email/provider identity. По одному отображаемому имени учётные записи не объединяются. Типы human/bot/system/unknown показаны словами; человек выбирается из `listPersons`. |
+| Формы | У каждой выбранной записи обязательны исходный аккаунт и тип участника; базовый assignment ID берётся из загруженной привязки, при её отсутствии передаётся null и вручную не вводится. Для human обязателен person_id, у остальных он может отсутствовать. «Оставить раздельно» сохраняет отсутствие подтверждённого объединения. До 200 строк в одном подтверждении. Ошибки: «Выберите человека», «Эта привязка уже изменена», «Нет доступа к учётной записи». |
+| Действия | «Подтвердить совпадение», «Пометить ботом/служебной», «Изменить привязку» формируют черновик. «Просмотреть выбранные» → UI-17 со всеми парами и типами → `createAccountAssignments`. Массовое подтверждение включает только явно выбранные строки с известным основанием, не всё совпавшее имя. Частичный успех показывает saved/unchanged/version_conflict/rejected отдельно; принятые строки при исправлении не отправляются как новые решения. Пометка бота инициирует пересчёт зависимых показателей. |
+| Состояния | Пусто - нет учётных записей после загрузки; отдельное пустое состояние фильтра. Несопоставленные остаются раздельными, неизвестный тип не называется человеком. Конфликт одной строки не скрывает успех остальных. Ошибка справочника людей запрещает подтверждение human без выбора, но не блокирует чтение уже разрешённых строк. |
+| Изменения и навигация | Фильтры и страница в URL; выбранные строки с базовыми версиями сохраняются в несекретном черновике текущего субъекта. После конфликта перечитывается только нужная привязка, затем новое подтверждение для исправленного набора. Уход с изменениями → UI-18; 401 не повторяет пакет автоматически. |
+| Доступность | Выбор строк checkbox доступен клавиатурой; массовый выбор сообщает число выбранных доступных строк. Основание предложения и тип участника читаются текстом. После частичного результата фокус в сводке со ссылками на проблемные строки. |
+| Адаптация | Таблица DS-13 с локальной прокруткой; на узком экране пара аккаунт/человек и тип остаются первыми, подробности предложения раскрываются. Панель массовых действий не закрывает строки и переносится вертикально. |
+| Связи | UC-08 шаги 1-5, A1/A2; FR-004/005/007/008/018; DR-001; SEC-10/14. `listSourceAccounts`, `listPersons`, `createAccountAssignments`; DS-08/09/11/12/13/14/15/19/20/21/24/26. |
+| Приёмка | Два одинаковых имени не объединяются без подтверждения. У пакета с конфликтом одной строки остальные исходы видны. После пометки бота его комментарий не становится человеческим ответом при новом расчёте, старые ревизии сохраняют свои версии привязок. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-16. Целевые сроки команды
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Владелец процесса с `process.manage` для команды и подтверждённым workflow. Переход из настроек или отчёта; незаданный mapping ведёт в UI-14, а не к сохранению срока. |
+| Структура | Контекст команды, тип/размер, период исторического ориентира; рядом p85, n и полнота. Ниже ручной срок, выбранное основание и список версий. «Без размера» - самостоятельная строка без формы применяемого срока. |
+| Данные | Исторический p85 в секундах с понятным отображением, период, basis_revision_id, low_sample и DataState. Действующий срок и его версия показаны отдельно от ориентира. Неизвестное значение p85 не заменяется нулём; размер n < 20 подписан как малая выборка. |
+| Формы | Тип и размер обязательны; даты периода имеют порядок от/до и переводятся в RFC 3339, правая граница исключительная. Единица по умолчанию - секунды, числовое поле первоначально пустое. Срок - положительное целое число секунд либо часы/сутки с явным переводом 1 час = 3600 с, 1 сутки = 86400 с; «рабочий день = 8 часов» не предполагается. Основание manual или historical_p85; для второго нужна ревизия ориентира. Малое n не подставляет «надёжный» срок, ручной выбор разрешён с предупреждением. Ошибки: «Выберите тип и размер», «Укажите срок больше нуля», «Сначала подтвердите соответствие», «Проверьте период». |
+| Действия | «Показать ориентир» читает `getTargetBaselines`; «Использовать p85» доступно при определённом основании, не выдаёт малую выборку за надёжную. «Сохранить срок» → UI-17 с группой, значением, основанием и базовой версией → `createTargetVersion`. Версия группы берётся запросом `listTargetVersions` с теми же task_type/size_label; первая - ETag "0". Повтор не создаёт версию, одинаковое содержание даёт прежнюю. Смена срока не переписывает прежние нарушения. |
+| Состояния | Нулевое n/неполная история/NOT_EVALUATED показывают причину, а не p85 = 0. Без размера форма срока недоступна и объясняет ограничение. При 412 перечитывается выбранная группа; ошибка расчёта ориентира оставляет ручную форму с явным отсутствием основания. |
+| Изменения и навигация | Команда, группа и период сохраняются в URL; ввод не отправляется при переключении размера. Несохранённый срок → UI-18. После сохранения возвращается UI-20 в той же группе и периоде; результат нового расчёта не объявляется мгновенно готовым. После входа заново читается версия группы. |
+| Доступность | Значение и единица имеют самостоятельные подписи; предупреждение малой выборки связано с ориентиром и не только цветовое. Ошибка срока получает фокус через сводку, подтверждение возвращает к группе. История версий доступна таблично. |
+| Адаптация | На широком экране ориентир и форма рядом; на узком ориентир над формой. Число, единица, период и n не разделяются скрытыми колонками; история версий прокручивается локально. |
+| Связи | UC-09 шаги 1-5, A1-A3; FR-003/007/008/019; BR-007/022. `getTargetBaselines`, `listTargetVersions`, `createTargetVersion`; DS-08/09/10/11/13/16/19/20/24/26. |
+| Приёмка | При n < 20 видна оговорка и срок всё ещё выбирает команда. Группе без размера срок не назначается. Конфликт версии не затирает чужой срок; после изменения прежние нарушения ссылаются на прежнюю версию. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-17. Подтверждение изменения и конфликт версии
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Уполномоченный пользователь из изменяющей формы. Диалог получает конкретный набор изменений и область; сам по себе не предоставляет право выполнять действие. |
+| Структура | Заголовок с действием, область, сравнение «было → станет», версия/влияние, затем точная кнопка действия и «Вернуться к редактированию». Для разрушительного действия отдельно описаны немедленное ограничение и политика сохранённых данных. |
+| Данные | Сводка содержит только доступные изменения исходной формы, базовую версию и известные последствия: пересчёт, отзыв доступа, остановка/отключение, необратимость потери однократного значения ключа. Секреты показаны как «Будут заменены», без длины или фрагмента. Для импорта - имя файла и охват, не payload. |
+| Формы | Новые предметные поля не вводятся; при ошибке нужен возврат к исходной форме. Idempotency-Key на одну попытку генерируется для операций, где он предусмотрен контрактом; If-Match берётся из прочитанного ресурса, а не из локально увеличенного числа. |
+| Действия | Основное действие выполняет ровно операцию вызывающей формы. Во время запроса повторный submit недоступен. Успех закрывает диалог и обновляет исходный ресурс; 202 переводит к ходу операции/квитанции, не к сообщению «Завершено». При таймауте клиент проверяет результат и только затем повторяет тем же ключом, если такой повтор поддержан. Выпуск ключа не повторяется автоматически. «Вернуться» сохраняет ввод, Escape до отправки делает то же. |
+| Состояния | 412: «Данные изменились. Просмотрите актуальную версию» с кнопкой перечитать и сравнением своей формы; нет кнопки безусловной перезаписи. 409 состояния требует исправить причину, 422 возвращает ошибки полей, 403/404 закрывает недоступное действие, 401 → UI-03. Ошибка остаётся, пока её не исправили или явно не закрыли. |
+| Изменения и навигация | После перечитывания требуется новое подтверждение уже нового набора; старый ключ не используется с другим телом. Закрытие отправленного запроса не отменяет серверное действие, неизвестный исход проверяется по ресурсу. Диалог не создаёт вложенных диалогов: для UI-18 возвращает управление исходной форме. |
+| Доступность | DS-19: focus trap в видимом диалоге, начальный фокус на заголовке/объяснении, не на опасной кнопке; Escape до запроса возвращает ввод, Tab проходит весь контент и действия, после закрытия фокус на вызвавшей кнопке. Ошибка объявляется alert и доступна без цвета. |
+| Адаптация | Диалог не шире доступного окна и имеет собственную прокрутку содержимого. На 320-767 px действия вертикальны, длинные значения переносятся; footer не закрывает изменение или фокус. При 400% доступен весь текст сравнения. |
+| Связи | FR-007/008, ОВ-5-ОВ-7; SEC-09/10/14. Конкретные operationId исходных UI-07/08/10/11/12/14/15/16/73; DS-08/09/19/20/24/25/26. |
+| Приёмка | Повтор подтверждения с прежним ключом возвращает прежний результат. При 412 нет молчаливого затирания; после 202 действие названо принятым, а не завершённым. В сравнении и ошибке нет секрета. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-18. Несохранённые изменения и уход
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Пользователь с изменённой локальной формой при навигации, смене области/вкладки или явном выходе. Не появляется у неизменённой формы и не притворяется отменой уже отправленного действия. |
+| Структура | Название исходной формы, текст «Изменения не сохранены» и два действия: «Продолжить редактирование» и «Отбросить изменения». Если заполнены секретные поля, отдельно сказано, что они не сохранятся для восстановления. |
+| Данные | Показывается только факт несохранённого ввода и безопасное назначение перехода. Не повторяются значения credentials, ключа, файла или скрытых полей. Список несохранённых разделов допустим без содержимого. |
+| Формы | Полей и серверного сохранения нет. «Сохранить автоматически» отсутствует: для сохранения пользователь возвращается в форму, проходит её проверку и UI-17. |
+| Действия | «Продолжить редактирование» и Escape закрывают диалог, восстанавливают форму и её фокус. «Отбросить» очищает её черновик, секретные значения и выбранный файл, затем выполняет исходный переход/подтверждённый выход. Browser Back при отмене возвращает прежний маршрут; закрытие вкладки использует доступное нативное предупреждение браузера, без обещания сохранения при аварийном завершении. |
+| Состояния | Загрузка и partial данных неприменимы к локальному решению. Если запись уже отправлена, показывается её ход или неизвестный исход, а не обещание «Отбросить» серверное изменение. Принудительный 401/отзыв права не блокируется этим диалогом: применяется UI-03/UI-04. |
+| Изменения и навигация | Явный отказ от ввода очищает локальный черновик; простое продолжение его сохраняет. Данные другого пользователя/организации не восстанавливаются. Навигация выполняется один раз после решения и не вызывает повторный диалог по уже очищенной форме. |
+| Доступность | DS-19: начальный фокус на безопасном продолжении, Escape сохраняет ввод, две кнопки различаются текстом. После отмены ухода фокус возвращается в прежнее поле; при подтверждении перехода - в заголовок назначения. |
+| Адаптация | Короткий диалог с переносом текста; на узком экране кнопки вертикальны и доступны без горизонтальной прокрутки. При увеличении текст не скрывает выбор действия. |
+| Связи | FR-007; ОВ-6/ОВ-7. HTTP-вызова для решения об отбросе нет; `logout` выполняется только если исходным действием был выход. DS-08/09/19/20/25/26. |
+| Приёмка | «Продолжить» сохраняет ввод и остаётся в форме; «Отбросить» уходит без её отправки. Уже принятый импорт не объявляется отменённым. После принудительного отзыва доступа диалог не удерживает закрытые данные на экране. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### UI-73. Личное разрешение доступа к Confluence
+
+| Поле | Описание |
+|---|---|
+| Назначение и роль | Пользователь в своей сессии с `profile.manage`; вход из профиля UI-01, отказа UI-04 или документации. Отдельная роль wiki_access и назначенная область проверяются независимо от OAuth. M0 - для Confluence DC в поддержанном составе установки. |
+| Структура | Заголовок «Доступ к источникам», пояснение чтения от имени пользователя, список относящихся к нему подключений Confluence. В строке название, состояние разрешения и дата, затем действие разрешить/повторить/отключить. Пароля Confluence и поля вставки личного токена нет. |
+| Данные | `listSourceLinks`: display_name, provider, state not_linked/linked/expired/revoked, linked_at. Показываются подписи «Доступ не разрешён», «Доступ разрешён», «Нужно разрешить заново», «Доступ отозван». Истёкшая проверка прав не подменяется свежим решением на основании одной linked_at; факт OAuth не гарантирует права на конкретную страницу. |
+| Формы | В craftPulse нет формы credentials. Кнопка согласия ведёт в Confluence, где запрашивается только READ; выбор аккаунта и согласие принадлежат внешнему провайдеру. Клиент не предлагает ослабить проверку сертификата или выдать право записи. |
+| Действия | «Разрешить чтение»/«Разрешить заново» выполняет `startSourceLink` и переходит по полученному адресу; `completeSourceLink` возвращает в UI-73. После возврата состояние перечитывается, токены/код не показываются. Отмена или ошибка согласия сохраняет not_linked/expired/revoked с сообщением «Разрешение не получено» и повтором. «Отключить» → UI-17 с предупреждением о закрытии документов этого источника для себя → `deleteSourceLink` → состояние not_linked/revoked после чтения. Действие не отключает источник для коллег. |
+| Состояния | Пустой список: «Нет источников, которым требуется личное разрешение». Невозможный OAuth, недоступность источника и отозванное разрешение различаются без тела ответа провайдера. При linked, но отсутствии wiki_access/права страницы, UI-04 не объявляет документ доступным; разрешение не назначает роль. 401 сначала требует нового входа в craftPulse. |
+| Изменения и навигация | В sessionStorage допустимы только безопасный путь возврата и ID выбранного подключения, привязанные к субъекту/организации. State и токены хранит сервер/адаптер, а код callback убирается из адресной строки. «Вернуться к документу» после linked заново читает исходный ресурс и его ACL; не восстанавливает старую выдержку. После отзыва право и результаты поиска сужаются по правилам 7.3. |
+| Доступность | Кнопка сообщает «Откроется Confluence»; после возврата фокус на результате выбранного подключения, статус объявляется один раз. Отключение подтверждается с клавиатуры, отказ согласия оставляет доступный путь назад. Внешняя форма сохраняет свои механизмы доступности. |
+| Адаптация | Строки подключений становятся карточками на узком экране, имя и статус переносятся; кнопки разрешения/отключения доступны на 320 px. Внешний Confluence не получает собственную оболочку craftPulse. |
+| Связи | UC-03 в части прав источника, ОВ-1/ОВ-7; FR-001/002/013; SEC-09/10/15/18/21. `listSourceLinks`, `startSourceLink`, `completeSourceLink`, `deleteSourceLink`; DS-08/09/13/19/20/21/23/24. |
+| Приёмка | Отмена в Confluence не показывает linked. После успешного READ выполняется новое чтение документа; закрытая страница не открывается только из-за OAuth. Отключение действует лишь для текущего пользователя, токены и фрагменты закрытой страницы не попадают в URL, список и сообщение. |
+| Figma | Карточка служит основанием макета по 6.4; ссылка на фрейм добавляется после общей проверки G1/G2/G3. |
+
+##### Сквозная проверка карточек G1
+
+| Проход | Действия и видимый результат | Проверяемая граница |
+|---|---|---|
+| Первое подключение | UI-05 проверяет установку → UI-02/06 выполняют вход → UI-07 подтверждает структуру → UI-09/10 сохраняют draft и пробу → UI-17 активирует только текущую успешную пробу → UI-11 показывает реальную историю → UI-07 назначает полученные области проектам/командам → UI-14 сверяет mapping → UI-20 открывает отчёт | До активации нет обещания сбора; до сверки нет обещания полного отчёта; настройка и чтение закрытых данных имеют разные права |
+| Неверные полномочия | UI-10 показывает безопасную причину неуспеха пробы → администратор исправляет credentials → новая проба → UI-11 после подтверждения | Старая проба другой версии не активируется; secret отсутствует в ошибке и восстановленном черновике |
+| Частичное чтение и запись | UI-10 показывает успешную пробу с неполной историей и отсутствующим правом комментария → UI-17 подтверждает доступный объём → UI-11 сохраняет ограничения; затем отдельные полномочия записи и новая проба | Частичное чтение не блокируется отсутствием записи; неизвестные показатели не заменяются нулём; проба не публикует комментарий и не создаёт задачу |
+| Частичный импорт | UI-12 передаёт пакет из двух записей → UI-13 показывает partial, одну принятую и одну отклонённую строку с причиной → исправление файла и новая подтверждённая передача | Прежняя принятая запись не пропадает и не учитывается дважды; отказ части строк не назван полным успехом |
+| Повтор файла | UI-12 повторно передаёт тот же файл → UI-13 показывает duplicate/replay и первый доступный приём | Вклад не удваивается; чтение первого приёма и результата снова проверяет права |
+| Истечение сессии | При заполнении UI-10/UI-12 получен 401 → UI-03 → UI-02 → перечитывание прав/версий и восстановление допустимого ввода | Секрет и файл выбираются заново; запрос изменения не отправляется автоматически; другая учётная запись не получает прежний черновик |
+| Конфликт формы | Второй администратор/владелец процесса сохранил новую версию → UI-17 показывает конфликт → перечитать/сравнить → новое явное подтверждение | Ни API, ни форма не перезаписывают чужую версию; старый ключ подтверждения не используется с новым содержимым |
+| Личный доступ к wiki | UI-04/профиль → UI-73 → согласие READ в Confluence → повтор чтения страницы; затем отзыв своего разрешения | Отмена не становится linked, OAuth не выдаёт роль wiki_access, отзыв одного пользователя не отключает коллег и убирает его закрытые выдержки |
+
 
 #### 6.3. Дизайн-система в тексте
 
@@ -2439,7 +3180,8 @@ PostgreSQL и S3-хранилище в облаке - управляемые с�
 | Контракт адаптеров | HTTP, спецификация `adapter.yaml` в OpenAPI 3.1.2 с номером версии: `Fetch` отдаёт пакет tar.gz потоком, остальные операции - JSON; общая Go-библиотека `adaptersdk` для встроенных адаптеров | Адаптер клиента пишется на любом языке по опубликованной спецификации; генерация кода та же, что для API craftPulse; страницы фактов передаются тем же каноническим пакетом, что и импорт (FR-016) | gRPC | Ядро поддерживает текущую и предыдущую версию контракта; несовместимый адаптер не становится рабочим (FR-014); каждый встроенный адаптер проходит контрактные тесты по `adapter.yaml` в CI |
 | Язык сервера | Go 1.27 | Сборка статического бинарника; дешёвые горутины для сбора, где основное время уходит на ожидание API источников; стандартная библиотека даёт TLS, HTTP и AES-GCM | Kotlin/JVM | Поддерживаются два последних выпуска Go; переход на следующий выпуск плановый, не реже раза в год |
 | HTTP-сервер | gin v1 | Готовые middleware восстановления после panic, лимита тела и журналирования; поддерживается генератором серверного кода из OpenAPI; один каркас для всех обработчиков | `net/http` ServeMux с шаблонами методов | Обработчик только разбирает запрос, вызывает сценарий модуля и переводит ошибку в формат контракта |
-| Контракт API | OpenAPI 3.1.2, contract-first: `openapi.yaml` первичен, серверные интерфейсы и типы клиента генерируются | Backend и frontend реализуются независимо по одному контракту; ошибки, пагинация и частичные результаты заданы в одном месте (`openapi.yaml` и раздел 5 «Внешние интерфейсы и API», который добавляется вместе с контрактом) | Code-first: спецификация из аннотаций кода | Генератор сервера oapi-codegen v2.8 поддерживает OpenAPI 3.1 в начальном объёме; конструкции контракта проверяются генерацией в CI, неподдержанные заменяются эквивалентом 3.1 |
+| Проверка и документация контракта | Redocly CLI 2.76.0 - валидация и примеры, сборка документации; Spectral CLI 6.17.1 - правила стиля | Redocly проверяет каждый пример по схеме и собирает документацию Redoc одной командой; Spectral задаёт правила продукта, включая обязательный `x-craftpulse-action` (раздел 13.4) | Swagger UI и отдельный валидатор примеров | Версии закреплены в командах раздела 5.6; оба инструмента запускаются через `npx` и не требуют сервера |
+| Контракт API | OpenAPI 3.1.2, contract-first: `openapi.yaml` первичен, серверные интерфейсы и типы клиента генерируются | Backend и frontend реализуются независимо по одному контракту; ошибки, пагинация и частичные результаты заданы в одном месте (`openapi.yaml` и раздел 5) | Code-first: спецификация из аннотаций кода | Генератор сервера oapi-codegen v2.8 поддерживает OpenAPI 3.1 в начальном объёме: объединения типов, кроме пары с `null`, он не принимает (раздел 5.2). Конструкции контракта проверяются генерацией в CI |
 | Типы клиента | openapi-typescript | Поддерживает OpenAPI 3.0 и 3.1; типы запросов и ответов frontend совпадают с контрактом | Ручные типы | Генерация входит в проверку frontend; расхождение с контрактом ломает сборку |
 | СУБД | PostgreSQL 18 | Транзакции для журнала приёма, checkpoint и очереди; row-level security для изоляции организаций (NFR-010); `jsonb` для исходных полей источников; ограничения `EXCLUDE` для интервалов; секционирование больших таблиц результатов, когда этого потребует объём (раздел 12.10); полнотекстовый поиск документов M2 | ClickHouse или отдельная аналитическая БД; MongoDB | Поддержка версии до 14.11.2030. Агрегаты считает `calc` в Go и сохраняет ревизиями, поэтому профиль S (100 000 событий задач, 40 000 запусков CI) обслуживает одна PostgreSQL |
 | Доступ к БД | pgx v5, запросы на SQL с генерацией типизированного кода sqlc v1.31 | SQL виден в ревью и проверяется на реальной схеме при генерации; без отражения и скрытых запросов ORM | ORM (GORM), построитель запросов squirrel | Динамических запросов немного: фильтры отчётов применяются к готовой ревизии. Редкие динамические запросы пишутся на pgx напрямую |
@@ -2719,7 +3461,13 @@ erDiagram
   }
   connection["connect.connection"] {
     uuid id PK
+    uuid activated_probe_id FK
     uuid instance_id FK
+  }
+  probe["connect.probe"] {
+    uuid id PK
+    uuid connection_id FK
+    int configuration_version
   }
   scope["connect.connection_scope"] {
     uuid id PK
@@ -2765,6 +3513,8 @@ erDiagram
     text native_id PK
   }
   instance ||--o{ connection : ""
+  connection ||--o{ probe : "connection_id"
+  probe |o--o| connection : "activated_probe_id"
   connection ||--o{ scope : ""
   connection ||--o{ capability : ""
   connection ||--o{ webhook : ""
@@ -3032,6 +3782,14 @@ erDiagram
 
 ```mermaid
 erDiagram
+  requester["org.app_user"] {
+    uuid id PK
+  }
+  operation["view.operation"] {
+    uuid id PK
+    uuid requested_by
+    uuid resource_id
+  }
   summary["change.summary_revision"] {
     uuid id PK
     int revision_no UK
@@ -3066,6 +3824,7 @@ erDiagram
   revision["calc.revision"] {
     uuid id PK
   }
+  requester ||..o{ operation : "requested_by"
   profile ||--o{ summary : ""
   summary ||--o{ sinput : ""
   summary ||--o{ item : ""
@@ -3180,7 +3939,8 @@ erDiagram
 | Таблица | Назначение | Поля и типы | Ключи и связи | Ограничения | Индексы и запрос |
 |---|---|---|---|---|---|
 | `connect.source_instance` | Экземпляр источника - якорь идентичности (раздел 12.4) | `id`; `provider text`; `instance_key text`; `base_url text?`; `edition text?`; `source_version text?`; `verified_at timestamptz?` | PK (`id`) | `provider IN ('jira_dc','gitlab','github','jenkins','sonarqube','confluence_dc','git','universal','client')`; `instance_key` - `text COLLATE "C"` до 512 байт | UNIQUE (`provider`, `instance_key`) - сопоставление пакета и подключения экземпляру |
-| `connect.connection` | Подключение | `id`; `instance_id uuid`; `name text`; `adapter_kind text`; `adapter_url text?`; `adapter_key_enc bytea?`; `key_version integer?`; `contract_version text`; `access_mode text`; `status text`; `paused_until timestamptz?`; `row_version integer`; `created_by uuid`; `created_at timestamptz`; `deleted_at timestamptz?` | PK (`id`); FK `instance_id` → `connect.source_instance`; UNIQUE (`id`, `instance_id`) - цель составного FK области | `adapter_kind IN ('builtin','client')`; у адаптера клиента заданы адрес и ключ, у встроенного - нет; `access_mode IN ('service_account','user_token','synced')`; `status IN ('draft','active','access_lost','deleted')`; `(status = 'deleted') = (deleted_at IS NOT NULL)` | (`instance_id`) - индекс FK. `row_version` - проверка устаревшей формы администратора. `paused_until` - пауза лимита 429 для всех вызовов (раздел 10.7) |
+| `connect.connection` | Подключение | `id`; `instance_id uuid`; `name text`; `adapter_kind text`; `adapter_url text?`; `adapter_key_enc bytea?`; `key_version integer?`; `contract_version text`; `access_mode text`; `status text`; `paused_until timestamptz?`; `row_version integer`; `activated_probe_id uuid?`; `activated_row_version integer?`; `created_by uuid`; `created_at timestamptz`; `deleted_at timestamptz?` | PK (`id`); FK `instance_id` → `connect.source_instance`; UNIQUE (`id`, `instance_id`) - цель составного FK области; FK (`id`, `activated_probe_id`) → `connect.probe` (`connection_id`, `id`) | `adapter_kind IN ('builtin','client')`; у адаптера клиента заданы адрес и ключ, у встроенного - нет; `access_mode IN ('service_account','user_token','synced')`; `status IN ('draft','active','access_lost','deleted')`; `(status = 'deleted') = (deleted_at IS NOT NULL)`; `row_version > 0`; поля последней активации заполнены вместе, `activated_row_version <= row_version` | (`instance_id`) - индекс FK. `row_version` - проверка устаревшей формы администратора. `paused_until` - пауза лимита 429 для всех вызовов (раздел 10.7) |
+| `connect.probe` | Сохранённая проба конфигурации до подтверждения | `id`; `connection_id uuid`; `configuration_version integer`; `status text`; `started_at timestamptz`; `finished_at timestamptz?`; `edition`, `source_version`, `contract_version text?`; `capabilities jsonb`; `reason_code text?` | PK (`id`); FK `connection_id` → `connect.connection`; UNIQUE (`connection_id`, `id`) - активация только своей пробы | `configuration_version > 0`; `status IN ('pending','running','succeeded','failed')`; время завершения заполнено только у конечного статуса; при ошибке задан `reason_code`; capabilities - массив результатов проверки без учётных данных и ответов источника | Частичный UNIQUE (`connection_id`) WHERE `status IN ('pending','running')` - одна идущая проба; (`connection_id`, `started_at` DESC, `id` DESC) - последняя проба; (`finished_at`) WHERE `finished_at IS NOT NULL` - очистка |
 | `connect.connection_scope` | Область подключения в источнике | `id`; `connection_id uuid`; `instance_id uuid`; `scope_kind text`; `native_scope_id ntext`; `display_name text`; `history_from timestamptz?`; `status text`; `added_at timestamptz`; `removed_at timestamptz?` | PK (`id`); FK (`connection_id`, `instance_id`) → `connect.connection` (`id`, `instance_id`) | `scope_kind IN ('tracker_project','repository','wiki_space','ci_project','analysis_project')`; `status IN ('active','removed')` | UNIQUE (`instance_id`, `scope_kind`, `native_scope_id`) WHERE `status = 'active'` - одну область экземпляра собирает одно подключение; (`connection_id`) - области подключения и индекс FK |
 | `connect.capability` | Проверенная возможность подключения (FR-014) | `connection_id uuid`; `capability text`; `state text`; `reason_code text?`; `checked_at timestamptz`; `source_version text?` | PK (`connection_id`, `capability`); FK `connection_id` → `connect.connection` | `capability IN ('read_current','read_status_history','read_field_history','read_resolution_history','read_sprint_history','read_links','read_permissions','read_deletions','write_mr_comment','write_tracker_issue','webhook')`; `state IN ('verified','partial','missing')` | PK |
 | `connect.webhook_route` | Адрес webhook подключения. Вне RLS | `id uuid DEFAULT gen_random_uuid()`; `organization_id uuid`; `connection_id uuid`; `created_at timestamptz`; `revoked_at timestamptz?` | PK (`id`); FK (`organization_id`, `connection_id`) → `connect.connection` | - | PK - приём webhook по адресу; (`organization_id`, `connection_id`) - индекс FK |
@@ -3188,6 +3948,8 @@ erDiagram
 | `sync.lease` | Одна активная попытка сбора на подключение (NFR-006) | `connection_id uuid`; `holder text`; `lease_until timestamptz` | PK (`connection_id`); ссылка → `connect.connection` | - | PK. Захват: `INSERT ... ON CONFLICT (organization_id, connection_id) DO UPDATE ... WHERE sync.lease.lease_until < $now OR sync.lease.holder = $me RETURNING`; пустой ответ - аренда занята |
 | `sync.dirty_key` | Набор объектов «перечитать» | `connection_id uuid`; `key_hash hash`; `object_kind text`; `native_ref ptext`; `added_at timestamptz` | PK (`connection_id`, `key_hash`); ссылка → `connect.connection` | - | PK. Добавление: `ON CONFLICT DO UPDATE SET added_at = EXCLUDED.added_at`; после перечитывания `DELETE ... WHERE added_at <= $read_started_at`, поэтому ключ, пришедший во время чтения, не теряется |
 | `sync.reconcile_run` | Результат сверки с манифестом источника | `id`; `connection_id uuid`; `data_kind text`; `as_of`, `started_at timestamptz`; `finished_at timestamptz?`; `expected_count`, `observed_count`, `missing_count`, `changed_count integer?`; `outcome text`; `reason_code text?` | PK (`id`); ссылка → `connect.connection` | `outcome IN ('running','complete','incomplete','failed')` | (`connection_id`, `data_kind`, `started_at DESC`) - последняя сверка в диагностике (FR-020) |
+
+Проба и её начальное задание River создаются одной транзакцией. Worker при фиксации результата под блокировкой подключения повторно сверяет `configuration_version` с настройками; если они изменились, завершает пробу с `configuration_changed`. Любое изменение адреса, областей, адаптера или учётных данных увеличивает `connect.connection.row_version`. До подтверждения `connect.capability` не меняется. Активация под блокировкой подключения проверяет, что последняя проба успешна и её версия настроек актуальна, копирует её возможности, увеличивает `row_version`, запоминает ID пробы и новую версию в полях активации, пишет аудит и ставит сбор одной транзакцией. Повтор с тем же `probe_id` при `status = active` и `row_version = activated_row_version` возвращает результат до сравнения устаревшего `If-Match`; без заголовка ответ 428. После изменения настроек этот повтор не применяется. Права проверяются каждый раз.
 
 ##### 12.5.4. Приём
 
@@ -3231,7 +3993,7 @@ erDiagram
 |---|---|---|---|---|---|
 | `link.edge` | Связь объектов с методом и подтверждением (DR-005, BR-010) | `id`; `link_type text`; `from_object_id`, `to_object_id uuid`; `method text`; `status text`; `[знание]`; `[запись]?`; `evidence jsonb?`; `actor_user_id uuid?`; `confirmation_id uuid?`; `valid tstzrange?` | PK (`id`); ссылки `from_object_id`, `to_object_id` → `normalize.source_object` | `link_type IN ('task_mr','mr_run','run_report','task_parent','finding_task','document_service','task_task')`; `method IN ('source_explicit','user_confirmed','branch_key','title_key','time_window','path_match')`; `status IN ('candidate','confirmed','rejected')`; подтверждённая связь только с методом `source_explicit` или `user_confirmed`; `user_confirmed` требует `actor_user_id`; концы различны | UNIQUE (`link_type`, `from_object_id`, `to_object_id`, `method`) WHERE `superseded_seq IS NULL` - повтор подтверждения не создаёт вторую связь, прямой переход; (`to_object_id`, `link_type`) WHERE `superseded_seq IS NULL` - обратный переход от MR к задачам; UNIQUE (`confirmation_id`) WHERE `confirmation_id IS NOT NULL` |
 | `process.mapping_version` | Версия сопоставления статусов, исходов и полей команды (DR-004) | `id`; `team_id uuid`; `version_no integer`; `base_version_no integer?`; `content_hash hash`; `timezone text`; `calendar_version_id uuid?`; `known_seq bigint`; `[подтверждение]` | PK (`id`); FK `calendar_version_id` → `process.calendar_version`; ссылка `team_id` → `org.team` | Первая версия без базы, иначе `base_version_no = version_no - 1`; `timezone` проверяется по `pg_timezone_names` при подтверждении | UNIQUE (`team_id`, `version_no`) - устаревшая форма даёт конфликт (FR-008), последняя версия команды; UNIQUE (`confirmation_id`) - повтор подтверждения (FR-007); (`calendar_version_id`) WHERE `calendar_version_id IS NOT NULL` - индекс FK |
-| `process.mapping_rule` | Правило сопоставления в версии | `mapping_version_id uuid`; `rule_kind text`; `instance_id uuid`; `native_ref ntext`; `native_value text`; `meaning text`; `rank smallint?` | PK (`mapping_version_id`, `rule_kind`, `instance_id`, `native_ref`, `native_value`); FK `mapping_version_id` → `process.mapping_version` | `rule_kind IN ('status','resolution','issue_type','size_field','size_value','team_field','team_value')`; для `status` - `meaning IN ('intake','active','wait','blocked','done','cancelled','duplicate','ignored')`, для `resolution` - `('accepted','cancelled','duplicate','ignored')`; `size_value` требует `rank`; `native_value` пустая строка для правил без значения | PK - правила версии. Статус без правила остаётся неизвестным и не даёт начала или завершения (FR-017 A3) |
+| `process.mapping_rule` | Правило сопоставления в версии | `mapping_version_id uuid`; `rule_kind text`; `instance_id uuid`; `native_ref ntext`; `native_value text`; `meaning text`; `rank smallint?` | PK (`mapping_version_id`, `rule_kind`, `instance_id`, `native_ref`, `native_value`); FK `mapping_version_id` → `process.mapping_version` | `rule_kind IN ('status','resolution','issue_type','size_field','size_value','team_field','team_value','acceptance_gate','epic_field','business_epic_value')`; для `status` - `meaning IN ('intake','active','wait','blocked','done','cancelled','duplicate','ignored')`, для `resolution` - `('accepted','cancelled','duplicate','ignored')`; `size_value` требует `rank`; M1: `acceptance_gate` имеет `meaning = acceptance`, `epic_field` - `parent_epic`, `business_epic_value` - `business_epic`; дополнительные правила не заменяют status, на M0 отклоняются; `native_value` пустая строка для правил без значения | PK - правила версии. Статус без правила остаётся неизвестным и не даёт начала или завершения (FR-017 A3) |
 | `process.calendar_version` | Версия рабочего календаря | `id`; `team_id uuid`; `version_no integer`; `base_version_no integer?`; `timezone text`; `workdays smallint`; `work_start`, `work_end time?`; `holidays date[]`; `known_seq bigint`; `[подтверждение]` | PK (`id`); ссылка `team_id` → `org.team` | `workdays BETWEEN 0 AND 127` - битовая маска дней недели; `cardinality(holidays) <= 400`; база как у сопоставления | UNIQUE (`team_id`, `version_no`); UNIQUE (`confirmation_id`) |
 | `process.target_version` | Версия целевого срока (FR-019) | `id`; `team_id uuid`; `task_type text`; `size_label text`; `version_no integer`; `base_version_no integer?`; `duration_s bigint`; `basis text`; `basis_revision_id uuid?`; `basis_value_s bigint?`; `basis_n integer?`; `basis_window tstzrange?`; `known_seq bigint`; `[подтверждение]` | PK (`id`); ссылки на `org.team`, `calc.revision` | `duration_s > 0`; `basis IN ('manual','historical_p85')`; ориентир p85 хранит ревизию, значение, n и окно: значение основания остаётся, даже когда ревизия удалена по сроку | UNIQUE (`team_id`, `task_type`, `size_label`, `version_no`) - конфликт устаревшей формы и действующий срок группы; UNIQUE (`confirmation_id`) |
 | `decision.decision` | Решение по находке или обход политики | `id`; `kind text`; `created_by uuid`; `created_at timestamptz` | PK (`id`) | `kind IN ('exception','bypass')` | Только PK |
@@ -3274,6 +4036,9 @@ erDiagram
 | `calc.revision_pin` | Кто удерживает ревизию от удаления | `revision_id uuid`; `holder_kind text`; `holder_id uuid` | PK (`revision_id`, `holder_kind`, `holder_id`); FK `revision_id` → `calc.revision` | `holder_kind IN ('saved_view','export','mr_summary')` | PK - проверка перед удалением вытесненной ревизии |
 | `calc.saved_view` | Сохранённый срез | `id`; `owner_user_id uuid`; `name text`; `series_id uuid`; `filters jsonb`; `pinned_revision_id uuid?`; `created_at timestamptz` | PK (`id`); FK `series_id` → `calc.series`; FK `pinned_revision_id` → `calc.revision`; ссылка → `org.app_user` | Без `pinned_revision_id` срез показывает актуальную ревизию | (`owner_user_id`) - срезы пользователя; (`series_id`), (`pinned_revision_id`) WHERE `IS NOT NULL` - индексы FK |
 | `view.export_job` | Задание и файл выгрузки | `id`; `requested_by uuid`; `revision_id uuid`; `allowed_scope_hash hash`; `format text`; `status text`; `object_key text?`; `requested_at timestamptz`; `completed_at`, `expires_at timestamptz?` | PK (`id`); ссылки на `org.app_user`, `calc.revision` | `status IN ('pending','ready','failed','expired')`; у готовой есть объект | (`requested_by`, `requested_at`) - выгрузки пользователя; скачивание проверяет сессию того же пользователя (раздел 13.4) |
+| `view.operation` | Публичное состояние запуска сбора, пересчёта или проверки документации | `id`; `requested_by uuid`; `kind text`; `resource_kind text`; `resource_id uuid`; `action text`; `request_hash hash`; `status text`; `created_at`, `updated_at timestamptz`; `completed_at timestamptz?`; `result_uri ptext?`; `error_code text?`; `correlation_id uuid?` | PK (`id`); ссылка на `org.app_user`; область и ресурс проверяются через владельца модуля | `kind IN ('sync_run','series_refresh','documentation_check')`; `status IN ('queued','running','succeeded','failed')`; время завершения заполнено только у конечных статусов; `result_uri` только у успеха, код ошибки и correlation ID только у ошибки | Частичный `UNIQUE (requested_by, kind, resource_kind, resource_id) WHERE status IN ('queued','running')` - повтор активного запроса; (`completed_at`) - очистка; (`requested_by`, `created_at`) - собственные операции |
+
+Дескриптор `view.operation` и начальное задание River создаются в одной транзакции; состояние и ссылка на результат обновляются вместе с публикацией результата. Повтор с тем же `request_hash` возвращает существующий дескриптор; иные параметры активного запуска для этого ресурса дают `409 state_conflict`. Для сохранённого запуска worker при повторе использует тот же ID и не создаёт второй результат. Сбор одного подключения и пересчёт одного ряда сохраняют существующую сериализацию; разные инициаторы получают собственные дескрипторы, которые могут ссылаться на один общий запуск. Чтение повторно проверяет исходное действие и область; внутренний ID задания очереди наружу не передаётся. `retry_after_seconds` задаётся API при опросе и в таблице не хранится.
 
 Поля ревизии и точки покрывают состав DR-011: определение, версии входов, область, окно, as_of, срез знания, часовой пояс, значение, единица, числитель, знаменатель, n, исключения, пропуски, состояние, границы и происхождение.
 
@@ -3301,8 +4066,12 @@ erDiagram
 | `link.mirror_member` | M1 | Задача в группе | FK `mirror_group_id` → `link.mirror_group`; ссылка `task_id` → `normalize.source_object`; `[знание]` | UNIQUE (`task_id`) WHERE `superseded_seq IS NULL` - задача в одной группе |
 | `decision.policy_version` | M1 | Версия политики обязательных проверок (BR-018) | `project_id`, `version_no`; `unknown_behavior IN ('pass','fail')`; `bypass_authority text`; `known_seq`; `[подтверждение]` | UNIQUE (`project_id`, `version_no`) |
 | `decision.policy_rule` | M1 | Категория политики | PK (`policy_version_id`, `rule_no`); FK → `decision.policy_version`; `category`, `condition jsonb` | PK |
+| `decision.bypass` | M1 | Обход политики для MR (FR-041 A2) | FK `decision_id` → `decision.decision` вида `bypass`, причина и срок - в его версии; FK `policy_version_id` → `decision.policy_version`; ссылка `merge_request_id` → `normalize.source_object`; `head_sha` | UNIQUE (`decision_id`); (`merge_request_id`) - вердикты и обходы MR |
 | `docs.obligation` | M1 | Обязательство документации по версии контракта (FR-048) | `service_id`; `contract_document_id`, `contract_version_ref`; `[знание]`; `status IN ('open','closed')` | (`service_id`) WHERE `status = 'open'` |
 | `docs.review` | M1 | Ревью версии документа | `document_id`, `version_ref`; `reviewer_person_id`; `reviewed_at`; `known_seq` | (`document_id`, `version_ref`) |
+| `docs.handover_decision` | M1 | Решение принимающей стороны по комплекту передачи (FR-034) | ссылка `project_id` → `org.project`; `decision IN ('accept','request_additions')`; `requested_additions text[]`; `[подтверждение]` | (`project_id`, `confirmed_at`) |
+| `outbound.tech_debt_draft` | M1 | Черновик задачи техдолга до подтверждения (FR-043) | ссылка `tracker_area_id` → `normalize.area`; `finding_ids uuid[]`; `issue_type`, `title`, `body text`; `created_by`; `confirmation_id uuid?` - значение совпадает с `outbound.action.confirmation_id` подтверждённой записи | UNIQUE (`confirmation_id`) WHERE `confirmation_id IS NOT NULL` - один черновик на подтверждение; (`created_by`, `created_at`) |
+| `org.review_opt_out` | M1 | Отказ участника от рекомендаций ревью (FR-050 A2, UI-69) | PK (`person_id`); FK `person_id` → `org.person`; `opted_out_at` | PK - исключение участника при построении групп |
 | `calc.initiative` | M1 | Инициатива для сравнения периодов (FR-027) | `name`; `effective_at`; `team_ids uuid[]`; `[подтверждение]` | Только PK |
 | `access.source_permission` | При режиме синхронизированных прав | Право принципала источника на область или объект | `area_id`, `object_id?`; `principal_kind IN ('account','group')`; `principal_native_id`; `permission`; `[знание]` | (`area_id`, `principal_native_id`) WHERE `superseded_seq IS NULL` - вычисление итогового права |
 | `change.artifact` | M1 | Артефакт по неизменяемому digest (DR-013) | `digest_algorithm`, `digest bytea`; UNIQUE (`digest_algorithm`, `digest`); `source_sha`, `build_ref`; `sbom_completeness IN ('complete','partial','unknown')` | UNIQUE - паспорт по digest |
@@ -3313,13 +4082,14 @@ erDiagram
 | `change.deployment_exposure` | M2 | Доступность развёртывания извне (FR-057) | FK `deployment_version_id` → `change.deployment_version`; `exposure IN ('public','internal','unknown')`; `source`, `as_of` | (`deployment_version_id`, `as_of`) |
 | `normalize.incident_version` | M2 | Инцидент (DR-016) | `incident_id` FK → `normalize.source_object`; `started_at`, `restored_at?`; `origin`; `[знание]`; `restored_at >= started_at` | Текущая версия |
 | `calc.episode` | M2 | Эпизод инцидента или межкомандной передачи | FK `part_id` → `calc.part`; `episode_kind IN ('incident','transfer')`; `during tstzrange`; `from_team_id?`, `to_team_id?` | PK с частью |
-| `calc.method_run` | M2 | Запуск метода прогноза, маршрута или отбора тестов (DR-014) | `method_id`, `method_version`; `seed bigint?`; `cohort_hash`; `backtest_error numeric?`; `sufficient boolean` | (`method_id`, `method_version`) |
+| `calc.method_run` | M2 | Запуск метода прогноза, маршрута или отбора тестов (DR-014) | `method_id`, `method_version`; `seed bigint?`; `cohort_hash`; `status IN ('pending','succeeded','refused','failed')`; `result jsonb?` - распределение прогноза, маршрут или оценка эксперимента; `backtest_error numeric?`; `sufficient boolean` | (`method_id`, `method_version`) |
 | `calc.recommendation_feedback` | M2 | Оценка рекомендации пользователем | FK `method_run_id` → `calc.method_run`; `user_id`; `verdict IN ('accepted','rejected')` | (`method_run_id`) |
 | `calc.rate_version` | M2 | Ставка стоимости CI (DR-017) | `runner_class`, `unit`; `amount numeric(18,4)`; `currency char(3)`; `valid tstzrange`; `EXCLUDE` перекрытия по классу runner и валюте | GiST ограничения - ставка на дату |
 | `calc.invoice` | M2 | Фактический счёт поставщика CI | `invoice_ref`; `period tstzrange`; `amount numeric(18,4)`; `currency char(3)` | (`period`) через GiST |
 | `docs.drill` | M2 | Учение по версии runbook (FR-052) | `document_id`, `version_ref`; `scenario`; `outcome IN ('success','failed')`; `stopped_at_step?`; `held_at` | (`document_id`, `version_ref`) |
 | `docs.search_chunk` | M2 | Фрагмент разрешённого документа для поиска | `document_version_id`; `chunk_no`; `body text`; `tsv tsvector GENERATED ALWAYS AS (to_tsvector('russian', body)) STORED` | GIN (`tsv`) - полнотекстовый запрос; (`document_version_id`) - удаление вместе с документом |
-| `docs.search_feedback` | M2 | Явная отметка полезности (FR-053) | `query_id`; `document_version_id`; `verdict IN ('helped','not_helped')`; `marked_at` | (`document_version_id`) |
+| `docs.search_feedback` | M2 | Явная отметка полезности (FR-053) | FK `query_id` → `docs.search_query`; `document_version_id`; `verdict IN ('helped','not_helped')`; `marked_at`; UNIQUE (`query_id`, `document_version_id`) - повтор отметки заменяет её | (`document_version_id`) |
+| `docs.search_query` | M2 | Поисковый запрос, к которому относятся отметки (DR-015) | `user_id`; `query_text text` до 500 символов; `created_at`; удаляется по классу `SEARCH` | (`user_id`, `created_at`) |
 | `survey.survey` | M2 | Опрос с правилами Q-02 | `group_ref`; `question_version`; `threshold integer > 0`; `opens_at`, `closes_at` | Только PK |
 | `survey.participation` | M2 | Кто ответил: без содержания ответа | `id uuid DEFAULT gen_random_uuid()`; FK `survey_id` → `survey.survey`; `person_id`; UNIQUE (`survey_id`, `person_id`) | UNIQUE - один ответ на участника |
 | `survey.answer` | M2 | Ответ без ID участника и точного времени | `id uuid DEFAULT gen_random_uuid()`; FK `survey_id` → `survey.survey`; `answers jsonb` | (`survey_id`) |
@@ -3365,6 +4135,27 @@ erDiagram
   policy["decision.policy_version"] {
     uuid id PK
   }
+  ddecision["decision.decision"] {
+    uuid id PK
+  }
+  bypass["decision.bypass"] {
+    uuid id PK
+    uuid decision_id FK
+    uuid policy_version_id FK
+  }
+  handover["docs.handover_decision"] {
+    uuid id PK
+  }
+  draft["outbound.tech_debt_draft"] {
+    uuid id PK
+    uuid confirmation_id UK
+  }
+  person["org.person"] {
+    uuid id PK
+  }
+  optout["org.review_opt_out"] {
+    uuid person_id PK
+  }
   prule["decision.policy_rule"] {
     uuid policy_version_id PK
     int rule_no PK
@@ -3390,6 +4181,11 @@ erDiagram
   object ||..o{ mmember : "task_id"
   object |o..o{ mgroup : "status_authority_task_id"
   policy ||--o{ prule : ""
+  ddecision ||--o| bypass : ""
+  policy ||--o{ bypass : ""
+  object ||..o{ bypass : "merge_request_id"
+  person ||--o| optout : ""
+  area ||..o{ draft : "tracker_area_id"
 ```
 
 **ER-11. M1 и M2: выпуск и развёртывание**
@@ -3468,6 +4264,9 @@ erDiagram
   chunk["docs.search_chunk"] {
     uuid id PK
   }
+  squery["docs.search_query"] {
+    uuid id PK
+  }
   sfeedback["docs.search_feedback"] {
     uuid id PK
   }
@@ -3485,6 +4284,7 @@ erDiagram
   object ||--o{ incident : ""
   part ||--o{ episode : ""
   method ||--o{ feedback : ""
+  squery ||--o{ sfeedback : ""
   survey ||--o{ participation : ""
   survey ||--o{ answer : ""
 ```
@@ -3681,6 +4481,8 @@ WHERE organization_id = $org AND id = $series
 | Карантин хранилища | Через сутки (`objstore.gc`) |
 | `sync.dirty_key` | После перечитывания |
 | `normalize.area_change` | Через 30 дней. Если `consumed_seq` ряда старше самой старой оставшейся строки, `calc` пересчитывает окно целиком |
+| `view.operation` | Через 24 ч после `completed_at`; активная операция не удаляется. Отзыв доступа закрывает чтение немедленно, независимо от срока |
+| `connect.probe` | Через 24 ч после завершения, если проба не указана в `connect.connection.activated_probe_id`; текущая активированная проба сохраняется. Удаление подключения закрывает чтение проб сразу; при его окончательном удалении сначала очищаются ссылка активации и пробы |
 | Задания River | Завершённые и отменённые через 24 ч, отброшенные после исчерпания попыток через 7 дней. Это заданные значения очистки River |
 
 **Удаление по запросу (FR-010).**
@@ -3764,7 +4566,7 @@ ID учётной записи в источнике остаётся техни
 | Инкремент | Таблицы |
 |---|---|
 | И0. Каркас | `platform.tenant`, `platform.org_clock`; `org.organization`, `org.team`, `org.project`, `org.service`, `org.person`, `org.app_user`, `org.role_assignment`, `org.team_member`, `org.team_project`; все таблицы `auth`, `audit`, `install`; таблицы River; база тестового адаптера |
-| И1. Jira DC → отчёт команды | `connect.*`, `sync.*`, `ingest.*`; `normalize.source_object`, `normalize.area`, `normalize.area_change`, `normalize.task_version`, `normalize.task_event`; `org.source_account`, `org.account_assignment`, `org.project_area`; `process.*`; `calc.*`; `view.export_job` |
+| И1. Jira DC → отчёт команды | `connect.*`, `sync.*`, `ingest.*`; `normalize.source_object`, `normalize.area`, `normalize.area_change`, `normalize.task_version`, `normalize.task_event`; `org.source_account`, `org.account_assignment`, `org.project_area`; `process.*`; `calc.*`; `view.export_job`, `view.operation` |
 | И2. GitLab и GitLab CI → разбор задачи | `normalize.mr_version`, `normalize.mr_event`, `normalize.ci_run_version`, `normalize.ci_attempt_version`; `link.edge` |
 | И3. Проверки → сводка MR | `normalize.report`, `normalize.report_pin`, `normalize.finding_occurrence`, `normalize.test_case`, `normalize.test_execution`, `normalize.coverage_fact`; `org.component`; `change.*` M0; `decision.decision`, `decision.decision_version`, `decision.decision_transition`; `outbound.*`; `docs.root`, `normalize.document_version` |
 | И4. Остальной состав стенда | Новых таблиц нет: Confluence DC, GitHub, Jenkins и SonarQube пишут в те же таблицы; базы своих адаптеров |
@@ -3774,7 +4576,7 @@ ID учётной записи в источнике остаётся техни
 
 | DR | Таблицы |
 |---|---|
-| DR-001 | `connect.source_instance`, `connect.connection`, `connect.connection_scope`, `connect.capability`, `normalize.source_object`, `org.*`, `platform.tenant`, `access.source_permission` |
+| DR-001 | `connect.source_instance`, `connect.connection`, `connect.connection_scope`, `connect.capability`, `connect.probe`, `normalize.source_object`, `org.*`, `platform.tenant`, `access.source_permission` |
 | DR-002 | `normalize.task_version`, `normalize.task_event`, `normalize.sprint_version`, `normalize.sprint_event` |
 | DR-003 | `ingest.receipt`, `ingest.record`, `ingest.conflict`, `sync.state`, `sync.reconcile_run` |
 | DR-004 | `process.mapping_version`, `process.mapping_rule`, `process.calendar_version`, `process.target_version`, `process.dod_version`, `process.dod_obligation`, `org.account_assignment` |
@@ -3783,15 +4585,15 @@ ID учётной записи в источнике остаётся техни
 | DR-007 | `calc.interval` |
 | DR-008 | `normalize.coverage_fact` |
 | DR-009 | `normalize.report`, `normalize.finding_occurrence`, `change.finding_identity`, `change.occurrence_identity`, `change.profile_version`, `change.profile_entry`, `change.baseline` |
-| DR-010 | `decision.decision`, `decision.decision_version`, `decision.decision_transition`, `decision.policy_version`, `decision.policy_rule` |
-| DR-011 | `calc.series`, `calc.revision`, `calc.revision_input`, `calc.part`, `calc.revision_part`, `calc.point`, `calc.contribution`, `calc.revision_pin`, `calc.saved_view`, `view.export_job` |
+| DR-010 | `decision.decision`, `decision.decision_version`, `decision.decision_transition`, `decision.policy_version`, `decision.policy_rule`, `decision.bypass`, `docs.handover_decision` |
+| DR-011 | `calc.series`, `calc.revision`, `calc.revision_input`, `calc.part`, `calc.revision_part`, `calc.point`, `calc.contribution`, `calc.revision_pin`, `calc.saved_view`, `view.export_job`, `view.operation` |
 | DR-012 | `normalize.document_version`, `docs.root`, `docs.obligation`, `docs.review`, `docs.drill` |
 | DR-013 | `change.artifact`, `change.deployment_version`, `change.sbom_component`, `change.vulnerability_db`, `change.reassessment` |
-| DR-014 | `calc.method_run`, `calc.recommendation_feedback`, `calc.initiative` |
-| DR-015 | `docs.search_chunk`, `docs.search_feedback`, `survey.*` |
+| DR-014 | `calc.method_run`, `calc.recommendation_feedback`, `calc.initiative`, `org.review_opt_out` |
+| DR-015 | `docs.search_chunk`, `docs.search_query`, `docs.search_feedback`, `survey.*` |
 | DR-016 | `normalize.incident_version`, `calc.episode`, `change.deployment_exposure` |
 | DR-017 | `calc.rate_version`, `calc.invoice` |
-| DR-018 | `audit.event`, `audit.deletion`, `outbound.target`, `outbound.action` |
+| DR-018 | `audit.event`, `audit.deletion`, `outbound.target`, `outbound.action`, `outbound.tech_debt_draft` |
 
 ### 13. Реализация доступа и защиты
 
@@ -3854,7 +4656,7 @@ SPA на ответ 401 показывает UI-03 и передаёт теку�
 |---|---|---|---|
 | Граница | nginx | TLS, размер тела, частота запросов на адресах входа и webhook | 413, 429 |
 | Субъект | Middleware `auth` в `api` | Сессия, ключ API или токен загрузки по хэшу в таблицах вне row-level security (раздел 10.3); из них - пользователь или проект и организация. Дальше организация устанавливается в транзакции для row-level security | 401 |
-| Действие | Middleware `access` по контракту | У каждой операции OpenAPI есть обязательное расширение `x-craftpulse-action`; правило Spectral в CI не пропускает контракт с операцией без него. Роль субъекта должна содержать это действие в области запроса | 403, если область пользователю видна; иначе 404 |
+| Действие | Middleware `access` по контракту | У каждой операции OpenAPI есть обязательное расширение `x-craftpulse-action`; правило Spectral `craftpulse-action-present` из `openapi.spectral.yaml` не пропускает контракт с операцией без него (раздел 5.6). Роль субъекта должна содержать это действие в области запроса | 403, если область пользователю видна; иначе 404 |
 | Данные | `access` и методы чтения модулей | Публичные методы чтения модулей принимают обязательный параметр разрешённой области `access.Scope`; создать его может только `access` по решению для субъекта. Запросы sqlc лежат во внутренних пакетах модулей, поэтому другой модуль или обработчик не может прочитать данные мимо такого метода | Объект вне области - 404 |
 | Поля | Структуры ответа | Поля находок безопасности, тела документов и детали диагностики заполняются только при соответствующем праве | Поле отсутствует, вместо него отметка |
 | Строки | PostgreSQL | Политика row-level security по организации, роль приложения без владения таблицами (раздел 10.3) | Пустой результат |
@@ -3994,7 +4796,7 @@ Runner клиента получает только токен загрузки 
 
 #### 14.3. Сборка
 
-CI репозитория на каждый PR запускает `repository-check`, а также проверки Go и frontend: форматирование, линтеры, depguard для направлений импортов, генерацию из `openapi.yaml`, `adapter.yaml` и sqlc с проверкой отсутствия расхождений, тесты, контрактные тесты адаптеров, сборку образов. После слияния в `main` из одного коммита собираются образ `craftpulse-server` (бинарники `api` и `worker`), образы адаптеров, образ frontend с nginx и образы `craftpulse-ci` по профилям. Образы помечаются SHA коммита, сканируются Trivy и публикуются в реестр. Дальше они идут по средам по digest без пересборки. Манифест выпуска содержит digest образов, версии схем баз ядра и адаптеров, версию контракта адаптеров, версии инструментов `craftpulse-ci`, хэши правил и лицензии компонентов.
+CI репозитория на каждый PR запускает `repository-check`, а также проверки Go и frontend: форматирование, линтеры, depguard для направлений импортов, линт контракта Redocly и Spectral по командам раздела 5.6, генерацию из `openapi.yaml`, `adapter.yaml` и sqlc с проверкой отсутствия расхождений, тесты, контрактные тесты адаптеров, сборку образов. После слияния в `main` из одного коммита собираются образ `craftpulse-server` (бинарники `api` и `worker`), образы адаптеров, образ frontend с nginx и образы `craftpulse-ci` по профилям. Образы помечаются SHA коммита, сканируются Trivy и публикуются в реестр. Дальше они идут по средам по digest без пересборки. Манифест выпуска содержит digest образов, версии схем баз ядра и адаптеров, версию контракта адаптеров, версии инструментов `craftpulse-ci`, хэши правил и лицензии компонентов.
 
 #### 14.4. Развёртывание и миграции
 
