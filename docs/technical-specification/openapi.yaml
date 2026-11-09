@@ -188,28 +188,30 @@ paths:
         Данные для оболочки UI-01. Роли и область читаются при каждом запросе, поэтому их смена
         видна без повторного входа. Пользователь без области получает `areas` с пустыми
         списками и показывает экран «Нет доступной области».
-      tags: [session]
+      tags: [ session ]
       x-craftpulse-action: session.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-001, FR-013, UC-03, UI-01]
+      x-craftpulse-trace: [ FR-001, FR-013, UC-03, UI-01 ]
       responses:
         '200':
           description: Текущий пользователь.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/CurrentUser'}
+              schema: { $ref: '#/components/schemas/CurrentUser' }
               example:
-                user: {id: 0193a5b0-1111-7000-8000-000000000001, display_name: Анна Смирнова, status: active, person_id: 0193a5b0-2222-7000-8000-000000000001}
-                organization: {id: 0193a5b0-0000-7000-8000-000000000001, name: Пример, slug: example, status: active}
+                user: { id: 0193a5b0-1111-7000-8000-000000000001, display_name: Анна Смирнова, status: active, person_id: 0193a5b0-2222-7000-8000-000000000001 }
+                organization: { id: 0193a5b0-0000-7000-8000-000000000001, name: Пример, slug: example, status: active }
                 roles:
-                  - {role: dev_lead, team_id: 0193a5b0-3333-7000-8000-000000000001, project_id: null, service_id: null, assigned_at: '2026-10-01T09:00:00Z'}
+                  - { role: dev_lead, team_id: 0193a5b0-3333-7000-8000-000000000001, project_id: null, service_id: null, assigned_at: '2026-10-01T09:00:00Z' }
                 areas:
-                  teams: [{id: 0193a5b0-3333-7000-8000-000000000001, name: Платформа, status: active}]
-                  projects: [{id: 0193a5b0-4444-7000-8000-000000000001, name: Core, status: active}]
+                  teams: [ { id: 0193a5b0-3333-7000-8000-000000000001, name: Платформа, status: active } ]
+                  projects: [ { id: 0193a5b0-4444-7000-8000-000000000001, name: Core, status: active } ]
                   services: []
-                actions: [session.read, report.read, tasks.read, export.create]
-                session: {expires_at: '2026-11-08T21:00:00Z', idle_expires_at: '2026-11-08T10:00:00Z'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
+                actions: [ session.read, report.read, tasks.read, export.create ]
+                session: { expires_at: '2026-11-08T21:00:00Z', idle_expires_at: '2026-11-08T10:00:00Z' }
+                review_participation:
+                  participates: false
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /me/review-participation:
     put:
       operationId: setReviewParticipation
@@ -2272,15 +2274,16 @@ paths:
     get:
       operationId: getRevision
       summary: Паспорт ревизии расчёта
-      description: |
+      description: |-
         Паспорт показателя UI-23: определения и версии, версии сопоставления, календаря, сроков,
         решений и связей, watermark источников, as_of и срез знания (DR-011). Невоспроизводимая
         ревизия имеет `irreproducible_reason`.
-      tags: [reports]
-      security: [{cookieSession: []}, {apiKey: []}]
+         Для I18 когорта закрепляет класс runner, окно и версию ставки (input_kind=ci_rate в revision.inputs); attempt-объекты дают вклад в job_seconds. Для I39-I41 используется ревизия getDeliveryStability.
+      tags: [ reports ]
+      security: [ { cookieSession: [] }, { apiKey: [] } ]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-021, FR-005, FR-009, UC-11, UI-23]
+      x-craftpulse-trace: [ FR-021, FR-005, FR-009, UC-11, UI-23 ]
       parameters:
         - $ref: '#/components/parameters/RevisionId'
       responses:
@@ -2288,31 +2291,31 @@ paths:
           description: Ревизия.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/Revision'}
+              schema: { $ref: '#/components/schemas/Revision' }
               example:
                 id: 0193a5b0-a1a1-7000-8000-000000000002
                 series_id: 0193a5b0-a2a2-7000-8000-000000000001
                 revision_no: 31
                 status: published
-                window: {from: '2026-01-01T00:00:00Z', to: '2026-11-01T00:00:00Z'}
+                window: { from: '2026-01-01T00:00:00Z', to: '2026-11-01T00:00:00Z' }
                 as_of: '2026-11-01T00:00:00Z'
                 timezone: Europe/Moscow
                 published_at: '2026-11-08T03:40:00Z'
                 superseded_at: null
                 loading: false
                 irreproducible_reason: null
-                definitions: [{metric_id: T08, definition_version: 1, name: Cycle time, unit: seconds, catalog_ref: docs/product/metrics/tasks.md#t08}]
+                definitions: [ { metric_id: T08, definition_version: 1, name: Cycle time, unit: seconds, catalog_ref: docs/product/metrics/tasks.md#t08 } ]
                 inputs:
-                  - {input_kind: mapping, input_id: 0193a5b0-3333-7000-8000-000000000001, version: '2'}
-                  - {input_kind: calendar, input_id: 0193a5b0-3333-7000-8000-000000000001, version: '1'}
-                source_watermarks: [{connection_id: 0193a5b0-5555-7000-8000-000000000001, watermark: '2026-11-07T03:00:00Z', completeness: complete}]
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '404': {$ref: '#/components/responses/NotFound'}
+                  - { input_kind: mapping, input_id: 0193a5b0-3333-7000-8000-000000000001, version: '2' }
+                  - { input_kind: calendar, input_id: 0193a5b0-3333-7000-8000-000000000001, version: '1' }
+                source_watermarks: [ { connection_id: 0193a5b0-5555-7000-8000-000000000001, watermark: '2026-11-07T03:00:00Z', completeness: complete } ]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /revisions/{revision_id}/cohort:
     get:
       operationId: listRevisionCohort
       summary: Когорта точки показателя
-      description: |
+      description: |-
         Объекты, вошедшие в точку ряда, с ролью в формуле и значением вклада (UI-24, FR-021):
         по ним независимо получаются числитель, знаменатель и исключения. Объекты вне прав не
         возвращаются и не считаются; ответ `access_limited` без их числа. Удалённые основания
@@ -2320,16 +2323,17 @@ paths:
 
         Для T23-T25 роли вклада отделяют числитель, знаменатель и незрелое наблюдение;
         клиент передаёт metric_id выбранного вида возврата (UC-15), не объединяя их.
-      tags: [reports]
-      security: [{cookieSession: []}, {apiKey: []}]
+         Для I18 когорта закрепляет класс runner, окно и версию ставки (input_kind=ci_rate в revision.inputs); attempt-объекты дают вклад в job_seconds. Для I39-I41 используется ревизия getDeliveryStability.
+      tags: [ reports ]
+      security: [ { cookieSession: [] }, { apiKey: [] } ]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: ["FR-021","FR-001","FR-024","UC-11","UC-14","UI-24","FR-025","UC-15"]
+      x-craftpulse-trace: [ "FR-021", "FR-001", "FR-024", "UC-11", "UC-14", "UI-24", "FR-025", "UC-15" ]
       parameters:
         - $ref: '#/components/parameters/RevisionId'
-        - {name: metric_id, in: query, required: true, schema: {type: string, maxLength: 64}}
-        - {name: point_start, in: query, required: true, schema: {type: string, format: date-time}}
-        - {name: role, in: query, schema: {type: string, enum: [numerator, denominator, excluded, missing]}}
+        - { name: metric_id, in: query, required: true, schema: { type: string, maxLength: 64 } }
+        - { name: point_start, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: role, in: query, schema: { type: string, enum: [ numerator, denominator, excluded, missing ] } }
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
       responses:
@@ -2337,17 +2341,17 @@ paths:
           description: Страница когорты.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/CohortPage'}
+              schema: { $ref: '#/components/schemas/CohortPage' }
               example:
                 data:
-                  - {object: {kind: task, id: 0193a5b0-f000-7000-8000-000000000001, display_key: CORE-12, title: Ошибка экспорта, source_url: 'https://jira.example/browse/CORE-12'}, item_no: 0, role: numerator, value: 259200, reason_code: null, basis_deleted: false}
+                  - { object: { kind: task, id: 0193a5b0-f000-7000-8000-000000000001, display_key: CORE-12, title: Ошибка экспорта, source_url: 'https://jira.example/browse/CORE-12' }, item_no: 0, role: numerator, value: 259200, reason_code: null, basis_deleted: false }
                 next_cursor: null
                 access_limited: false
                 access_notes: []
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /saved-views:
     get:
       operationId: listSavedViews
@@ -2720,15 +2724,25 @@ paths:
     post:
       operationId: decideLink
       summary: Подтвердить или отклонить связь-кандидат
-      description: |
+      description: |-
         Подтверждение создаёт связь с методом `user_confirmed`; отклонение убирает кандидата из
         оснований (BR-010). Нужен доступ к обоим концам связи (раздел 7.7). Повтор того же
         решения с тем же `Idempotency-Key` возвращает сохранённую связь и не создаёт второй
         (FR-007). Связь уже подтверждённая источником не отклоняется - `409 state_conflict`.
-      tags: [tasks]
+         Для UI-41 направление фиксировано в кандидате: caused_failure подтверждает deployment_incident, response_to_incident - incident_deployment; сервер возвращает Link того же типа и концов. Другой тип не подставляется при повторе.
+      tags: [ tasks ]
       x-craftpulse-action: links.decide
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-024, FR-029, FR-007, UC-19, UI-25, UI-17]
+      x-craftpulse-trace:
+        - FR-024
+        - FR-029
+        - FR-007
+        - UC-19
+        - UI-25
+        - UI-17
+        - FR-055
+        - UC-45
+        - UI-41
       parameters:
         - $ref: '#/components/parameters/LinkId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -2736,21 +2750,21 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/LinkDecision'}
-            example: {decision: confirm}
+            schema: { $ref: '#/components/schemas/LinkDecision' }
+            example: { decision: confirm }
       responses:
         '200':
           description: Связь после решения.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/Link'}
-              example: {id: 0193a5b0-c0c0-7000-8000-000000000003, link_type: task_mr, method: user_confirmed, status: confirmed, from_object_id: 0193a5b0-f000-7000-8000-000000000002, to: {kind: merge_request, id: 0193a5b0-b0b0-7000-8000-000000000002, display_key: '!43', title: Правка экспорта, source_url: 'https://gitlab.example/core/-/merge_requests/43'}, decided_at: '2026-11-08T11:40:00Z'}
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        '409': {$ref: '#/components/responses/Conflict'}
-        '422': {$ref: '#/components/responses/ValidationFailed'}
+              schema: { $ref: '#/components/schemas/Link' }
+              example: { id: 0193a5b0-c0c0-7000-8000-000000000003, link_type: task_mr, method: user_confirmed, status: confirmed, from_object_id: 0193a5b0-f000-7000-8000-000000000002, to: { kind: merge_request, id: 0193a5b0-b0b0-7000-8000-000000000002, display_key: '!43', title: Правка экспорта, source_url: 'https://gitlab.example/core/-/merge_requests/43' }, decided_at: '2026-11-08T11:40:00Z' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /merge-requests:
     get:
       operationId: listMergeRequests
@@ -4546,10 +4560,10 @@ paths:
       operationId: createTestSelectionExperiment
       summary: Включить теневой эксперимент отбора тестов
       description: Рекомендация набора тестов сохраняется и сравнивается с полным прогоном без изменения pipeline (FR-051, UI-70). Сокращение прогонов требует отдельного решения после оценки.
-      tags: [m2]
+      tags: [ m2 ]
       x-craftpulse-action: experiments.manage
       x-craftpulse-delivery: M2
-      x-craftpulse-trace: [FR-051, FR-007, UC-41, UI-70, UI-17]
+      x-craftpulse-trace: [ FR-051, FR-007, UC-41, UI-70, UI-17 ]
       parameters:
         - $ref: '#/components/parameters/ProjectId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -4557,42 +4571,95 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/TestSelectionExperimentCreate'}
-            example: {component_id: 0193a5b0-7777-7000-8000-000000000001, method_id: changed-files-map, method_version: 1}
+            schema: { $ref: '#/components/schemas/TestSelectionExperimentCreate' }
+            example: { component_id: 0193a5b0-7777-7000-8000-000000000001, method_id: changed-files-map, method_version: 1 }
       responses:
         '201':
           description: Эксперимент включён.
           headers:
-            Location: {$ref: '#/components/headers/Location'}
+            Location: { $ref: '#/components/headers/Location' }
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/TestSelectionExperiment'}
-              example: {id: 0193a5b0-f3f3-7000-8000-000000000001, component_id: 0193a5b0-7777-7000-8000-000000000001, mode: shadow, runs_compared: 0, missed_failures: {state: NOT_EVALUATED, value: null, unit: count, numerator: null, denominator: null, n: 0, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: no_runs_yet}, estimated_savings_seconds: null}
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '404': {$ref: '#/components/responses/NotFound'}
-        '422': {$ref: '#/components/responses/ValidationFailed'}
+              schema: { $ref: '#/components/schemas/TestSelectionExperiment' }
+              example: { id: 0193a5b0-f3f3-7000-8000-000000000001, component_id: 0193a5b0-7777-7000-8000-000000000001, mode: shadow, runs_compared: 0, missed_failures: { state: NOT_EVALUATED, value: null, unit: count, numerator: null, denominator: null, n: 0, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: no_runs_yet }, estimated_savings_seconds: null, stopped_at }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /test-selection-experiments/{experiment_id}:
     get:
       operationId: getTestSelectionExperiment
       summary: Оценка теневого отбора тестов
       description: Пропущенные падения и оценка экономии по сопоставимым полным прогонам (FR-051). Неполное сравнение не даёт «0 пропусков».
-      tags: [m2]
+      tags: [ m2 ]
       x-craftpulse-action: ci.read
       x-craftpulse-delivery: M2
-      x-craftpulse-trace: [FR-051, UC-41, UI-70]
+      x-craftpulse-trace: [ FR-051, UC-41, UI-70 ]
       parameters:
-        - {name: experiment_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - { name: experiment_id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
         '200':
           description: Эксперимент.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/TestSelectionExperiment'}
-              example: {id: 0193a5b0-f3f3-7000-8000-000000000001, component_id: 0193a5b0-7777-7000-8000-000000000001, mode: shadow, runs_compared: 40, missed_failures: {state: ASSESSED, value: 1, unit: count, numerator: null, denominator: null, n: 40, bound: null, low_sample: false, excluded_count: 0, missing_count: 0, reason_code: null}, estimated_savings_seconds: 5400}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '404': {$ref: '#/components/responses/NotFound'}
+              schema: { $ref: '#/components/schemas/TestSelectionExperiment' }
+              example: { id: 0193a5b0-f3f3-7000-8000-000000000001, component_id: 0193a5b0-7777-7000-8000-000000000001, mode: shadow, runs_compared: 40, missed_failures: { state: ASSESSED, value: 1, unit: count, numerator: null, denominator: null, n: 40, bound: null, low_sample: false, excluded_count: 0, missing_count: 0, reason_code: null }, estimated_savings_seconds: 5400, stopped_at }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /test-selection-experiments/{experiment_id}/termination:
+    put:
+      operationId: stopTestSelectionExperiment
+      summary: Прекратить теневой эксперимент отбора тестов
+      description: "Выключает дальнейшие рекомендации и новые сравнения эксперимента (UC-41, UI-70). PUT без тела идемпотентен: повтор возвращает тот же stopped_at. Результаты уже зафиксированных сравнений остаются доступны через getTestSelectionExperiment. Выполняющееся сравнение после остановки не добавляется к итогам эксперимента. Pipeline клиента не меняется, полный набор тестов продолжает выполняться. Возобновление этим ресурсом не поддерживается; новый эксперимент создаётся отдельно."
+      tags:
+        - m2
+      x-craftpulse-action: experiments.manage
+      x-craftpulse-delivery: M2
+      x-craftpulse-trace:
+        - FR-051
+        - UC-41
+        - UI-70
+        - UI-17
+      parameters:
+        - name: experiment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Эксперимент остановлен; сохранённый отчёт остаётся доступен.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestSelectionExperiment"
+              example:
+                id: 0193a5b0-f3f3-7000-8000-000000000001
+                component_id: 0193a5b0-7777-7000-8000-000000000001
+                mode: shadow
+                stopped_at: 2026-11-09T12:00:00Z
+                runs_compared: 40
+                missed_failures:
+                  state: ASSESSED
+                  value: 1
+                  unit: count
+                  numerator: null
+                  denominator: null
+                  n: 40
+                  bound: null
+                  low_sample: false
+                  excluded_count: 0
+                  missing_count: 0
+                  reason_code: null
+                estimated_savings_seconds: 5400
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /documents/{document_id}/drills:
     get:
       operationId: listRunbookDrills
@@ -4793,60 +4860,171 @@ paths:
     get:
       operationId: getDeliveryStability
       summary: Стабильность поставки сервиса
-      description: I39-I41 по подтверждённым связям развёртывания в production и инцидента с числителями, знаменателями и временем восстановления (FR-055, UI-41). Совпадение по времени - только кандидат связи.
-      tags: [m2]
+      description: I39-I41 по подтверждённым связям развёртывания в production и инцидента с числителями, знаменателями и временем восстановления (FR-055, UI-41). Совпадение по времени - только кандидат связи. Ответ закрепляет revision_id; подтверждённые пары deployment/incident находятся в confirmed_links с cursor-пагинацией. При продолжении клиент передаёт ту же revision_id; cursor привязан к ревизии и субъекту. Агрегаты относятся ко всей разрешённой когорте, а не к текущей странице. Закрытые объекты и их вклад исключены; access_limited/access_notes не раскрывают число скрытых.
+      tags: [ m2 ]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M2
-      x-craftpulse-trace: [FR-055, UC-45, UI-41]
+      x-craftpulse-trace: [ FR-055, UC-45, UI-41 ]
       parameters:
-        - $ref: '#/components/parameters/ServiceId'
-        - $ref: '#/components/parameters/From'
-        - $ref: '#/components/parameters/To'
+        - $ref: "#/components/parameters/ServiceId"
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/RevisionQuery"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
       responses:
         '200':
           description: Показатели стабильности.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/DeliveryStability'}
+              schema: { $ref: '#/components/schemas/DeliveryStability' }
               example:
                 service_id: 0193a5b0-6666-7000-8000-000000000001
-                period: {from: '2026-10-01T00:00:00Z', to: '2026-11-01T00:00:00Z'}
-                change_failure_rate: {state: ASSESSED, value: 0.5, unit: ratio, numerator: 1, denominator: 2, n: 2, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: null}
-                recovery_p50_seconds: {state: ASSESSED, value: 86400, unit: seconds, numerator: null, denominator: null, n: 1, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: null}
-                incident_link_candidates: [{incident: {kind: incident, id: 0193a5b0-f7f7-7000-8000-000000000001, display_key: INC-12, title: Ошибки оплаты, source_url: 'https://jira.example/browse/INC-12'}, link_id: 0193a5b0-c0c0-7000-8000-000000000009}]
+                period: { from: '2026-10-01T00:00:00Z', to: '2026-11-01T00:00:00Z' }
+                change_failure_rate: { state: ASSESSED, value: 0.5, unit: ratio, numerator: 1, denominator: 2, n: 2, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: null }
+                recovery_p50_seconds: { state: ASSESSED, value: 86400, unit: seconds, numerator: null, denominator: null, n: 1, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: null }
+                incident_link_candidates:
+                  - incident:
+                      kind: incident
+                      id: 0193a5b0-f7f7-7000-8000-000000000001
+                      display_key: INC-12
+                      title: Ошибки оплаты
+                      source_url: https://jira.example/browse/INC-12
+                    link_id: 0193a5b0-c0c0-7000-8000-000000000009
+                    deployment:
+                      kind: deployment
+                      id: 0193a5b0-f8f8-7000-8000-000000000001
+                      display_key: deploy-17
+                      title: Выпуск billing
+                      source_url: https://gitlab.example/core/-/environments/1
+                    artifact_id: 0193a5b0-f9f9-7000-8000-000000000001
+                    relation: caused_failure
+                    started_at: null
+                    restored_at: null
                 access_limited: false
                 access_notes: []
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '404': {$ref: '#/components/responses/NotFound'}
+                recovery_p85_seconds:
+                  state: ASSESSED
+                  value: 86400
+                  unit: seconds
+                  numerator: null
+                  denominator: null
+                  n: 1
+                  bound: null
+                  low_sample: true
+                  excluded_count: 0
+                  missing_count: 0
+                  reason_code: null
+                unplanned_deployment_rate:
+                  state: ASSESSED
+                  value: 0.5
+                  unit: ratio
+                  numerator: 1
+                  denominator: 2
+                  n: 2
+                  bound: null
+                  low_sample: true
+                  excluded_count: 0
+                  missing_count: 0
+                  reason_code: null
+                revision_id: 0193a5b0-a1a1-7000-8000-000000000041
+                confirmed_links:
+                  data:
+                    - deployment:
+                        kind: deployment
+                        id: 0193a5b0-f8f8-7000-8000-000000000001
+                        display_key: deploy-17
+                        title: Выпуск billing
+                        source_url: https://gitlab.example/core/-/environments/1
+                      artifact_id: 0193a5b0-f9f9-7000-8000-000000000001
+                      incident:
+                        kind: incident
+                        id: 0193a5b0-f7f7-7000-8000-000000000002
+                        display_key: INC-11
+                        title: Отказ после выпуска
+                        source_url: https://jira.example/browse/INC-11
+                      link_id: 0193a5b0-c0c0-7000-8000-000000000010
+                      started_at: 2026-10-10T00:00:00Z
+                      restored_at: 2026-10-11T00:00:00Z
+                      relation: caused_failure
+                    - deployment:
+                        kind: deployment
+                        id: 0193a5b0-f8f8-7000-8000-000000000002
+                        display_key: deploy-18
+                        title: Внеплановое исправление billing
+                        source_url: https://gitlab.example/core/-/environments/1
+                      artifact_id: 0193a5b0-f9f9-7000-8000-000000000002
+                      incident:
+                        kind: incident
+                        id: 0193a5b0-f7f7-7000-8000-000000000002
+                        display_key: INC-11
+                        title: Отказ после выпуска
+                        source_url: https://jira.example/browse/INC-11
+                      link_id: 0193a5b0-c0c0-7000-8000-000000000011
+                      started_at: 2026-10-10T00:00:00Z
+                      restored_at: 2026-10-11T00:00:00Z
+                      relation: response_to_incident
+                  next_cursor: null
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /ci-cost:
     get:
       operationId: getCiCost
       summary: Расход и расчётная стоимость CI
-      description: Расход jobs и стоимость по применимым версиям ставок, фиксированные платежи и фактический счёт раздельно (FR-056, UI-42). Без ставки стоимость `UNKNOWN`, а не ноль; разные валюты не складываются.
-      tags: [m2]
+      description: Расход jobs и стоимость по применимым версиям ставок, фиксированные платежи и фактический счёт раздельно (FR-056, UI-42). Без ставки стоимость `UNKNOWN`, а не ноль; разные валюты не складываются. Ответ закреплён revision_id; usage разделяется по классу runner и применённой версии ставки. Для раскрытия строки getRevision(basis_revision_id) возвращает определения и версию ci_rate, listRevisionCohort с metric_id=I18 и point_start - те же attempt-основания и их вклад в job_seconds. Ссылки attempts ведут к исходному job; pipeline и все попытки доступны через getPipeline/listPipelineAttempts. Смена ставки не меняет закреплённую когорту. Права заново проверяются на каждом чтении, закрытые attempts и их вклад исключаются без скрытого количества.
+      tags: [ m2 ]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M2
-      x-craftpulse-trace: [FR-056, UC-46, UI-42]
+      x-craftpulse-trace: [ FR-056, UC-46, UI-42 ]
       parameters:
-        - {name: project_id, in: query, required: true, schema: {type: string, format: uuid}}
-        - $ref: '#/components/parameters/From'
-        - $ref: '#/components/parameters/To'
+        - name: project_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/RevisionQuery"
       responses:
         '200':
           description: Расход и стоимость.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/CiCost'}
+              schema: { $ref: '#/components/schemas/CiCost' }
               example:
                 project_id: 0193a5b0-4444-7000-8000-000000000001
-                period: {from: '2026-10-01T00:00:00Z', to: '2026-11-01T00:00:00Z'}
-                usage: [{runner_class: linux-medium, job_seconds: {state: ASSESSED, value: 600, unit: seconds, numerator: null, denominator: null, n: 12, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: null}, estimate: {amount: '20.0000', currency: RUB, rate_version_no: 1}}]
-                fixed_fees: [{amount: '5.0000', currency: RUB}]
-                invoices: [{invoice_ref: INV-2026-10, amount: '30.0000', currency: RUB}]
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '404': {$ref: '#/components/responses/NotFound'}
+                period: { from: '2026-10-01T00:00:00Z', to: '2026-11-01T00:00:00Z' }
+                usage:
+                  - runner_class: linux-medium
+                    rate: {version_no: 1, runner_class: linux-medium, unit: minute, amount: '2.0000', currency: RUB, valid_from: '2026-10-01T00:00:00Z', valid_to: null}
+                    job_seconds:
+                      state: ASSESSED
+                      value: 600
+                      unit: seconds
+                      numerator: null
+                      denominator: null
+                      n: 12
+                      bound: null
+                      low_sample: true
+                      excluded_count: 0
+                      missing_count: 0
+                      reason_code: null
+                    estimate:
+                      amount: "20.0000"
+                      currency: RUB
+                      rate_version_no: 1
+                    basis_revision_id: 0193a5b0-a1a1-7000-8000-000000000043
+                    point_start: 2026-10-01T00:00:00Z
+                fixed_fees: [ { amount: '5.0000', currency: RUB } ]
+                invoices: [ { invoice_ref: INV-2026-10, amount: '30.0000', currency: RUB } ]
+                revision_id: 0193a5b0-a1a1-7000-8000-000000000042
+                access_limited: false
+                access_notes: []
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /ci-rates:
     get:
       operationId: listCiRates
@@ -5498,36 +5676,39 @@ components:
         data: {type: array, maxItems: 200, items: {$ref: '#/components/schemas/RoleAssignmentInput'}}
     CurrentUser:
       type: object
-      required: [user, organization, roles, areas, actions, session]
+      required: [ user, organization, roles, areas, actions, session ]
       properties:
-        user: {$ref: '#/components/schemas/User'}
+        user: { $ref: '#/components/schemas/User' }
         organization:
           type: object
-          required: [id, name, slug, status]
+          required: [ id, name, slug, status ]
           properties:
-            id: {type: string, format: uuid}
-            name: {type: string}
-            slug: {type: string}
-            status: {type: string, enum: [setup, active, blocked, deleting]}
-        roles: {type: array, items: {$ref: '#/components/schemas/RoleAssignment'}}
+            id: { type: string, format: uuid }
+            name: { type: string }
+            slug: { type: string }
+            status: { type: string, enum: [ setup, active, blocked, deleting ] }
+        roles: { type: array, items: { $ref: '#/components/schemas/RoleAssignment' } }
         areas:
           type: object
           description: Назначенная область. Пустые списки - область не назначена.
-          required: [teams, projects, services]
+          required: [ teams, projects, services ]
           properties:
-            teams: {type: array, items: {$ref: '#/components/schemas/Team'}}
-            projects: {type: array, items: {$ref: '#/components/schemas/Project'}}
-            services: {type: array, items: {$ref: '#/components/schemas/Service'}}
+            teams: { type: array, items: { $ref: '#/components/schemas/Team' } }
+            projects: { type: array, items: { $ref: '#/components/schemas/Project' } }
+            services: { type: array, items: { $ref: '#/components/schemas/Service' } }
         actions:
           type: array
           description: Значения `x-craftpulse-action`, разрешённые ролями пользователя хотя бы в одной области. Для показа элементов интерфейса; сервер проверяет право на каждом запросе.
-          items: {type: string}
+          items: { type: string }
         session:
           type: object
-          required: [expires_at, idle_expires_at]
+          required: [ expires_at, idle_expires_at ]
           properties:
-            expires_at: {type: string, format: date-time, description: Конец общего срока 12 ч.}
-            idle_expires_at: {type: string, format: date-time, description: Конец срока неактивности 1 ч на момент ответа.}
+            expires_at: { type: string, format: date-time, description: Конец общего срока 12 ч. }
+            idle_expires_at: { type: string, format: date-time, description: Конец срока неактивности 1 ч на момент ответа. }
+        review_participation:
+          $ref: "#/components/schemas/ReviewParticipation"
+          description: Личное участие в рекомендациях ревью (UI-69). Передаётся с M1 при доступной возможности; отсутствие поля означает, что настройка сейчас недоступна, а не согласие на участие.
     ReviewParticipation:
       type: object
       additionalProperties: false
@@ -6472,38 +6653,38 @@ components:
         access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}
     Revision:
       type: object
-      required: [id, series_id, revision_no, status, window, as_of, timezone, published_at, superseded_at, loading, irreproducible_reason, definitions, inputs, source_watermarks]
+      required: [ id, series_id, revision_no, status, window, as_of, timezone, published_at, superseded_at, loading, irreproducible_reason, definitions, inputs, source_watermarks ]
       properties:
-        id: {type: string, format: uuid}
-        series_id: {type: string, format: uuid}
-        revision_no: {type: integer}
-        status: {type: string, enum: [building, published, superseded, failed]}
-        window: {$ref: '#/components/schemas/Period'}
-        as_of: {type: string, format: date-time}
-        timezone: {type: string}
-        published_at: {type: [string, 'null'], format: date-time}
-        superseded_at: {type: [string, 'null'], format: date-time}
-        loading: {type: boolean}
-        irreproducible_reason: {type: [string, 'null'], enum: [basis_deleted, basis_expired, definition_retired, null]}
-        definitions: {type: array, items: {$ref: '#/components/schemas/MetricDefinition'}}
+        id: { type: string, format: uuid }
+        series_id: { type: string, format: uuid }
+        revision_no: { type: integer }
+        status: { type: string, enum: [ building, published, superseded, failed ] }
+        window: { $ref: '#/components/schemas/Period' }
+        as_of: { type: string, format: date-time }
+        timezone: { type: string }
+        published_at: { type: [ string, 'null' ], format: date-time }
+        superseded_at: { type: [ string, 'null' ], format: date-time }
+        loading: { type: boolean }
+        irreproducible_reason: { type: [ string, 'null' ], enum: [ basis_deleted, basis_expired, definition_retired, null ] }
+        definitions: { type: array, items: { $ref: '#/components/schemas/MetricDefinition' } }
         inputs:
           type: array
           items:
             type: object
-            required: [input_kind, input_id, version]
+            required: [ input_kind, input_id, version ]
             properties:
-              input_kind: {type: string, enum: [definition, mapping, calendar, target, decision, structure, accounts, links, source_watermark]}
-              input_id: {type: string}
-              version: {type: [string, 'null']}
+              input_kind: { type: string, enum: [ definition, mapping, calendar, target, decision, structure, accounts, links, source_watermark, ci_rate ] }
+              input_id: { type: string }
+              version: { type: [ string, 'null' ] }
         source_watermarks:
           type: array
           items:
             type: object
-            required: [connection_id, watermark, completeness]
+            required: [ connection_id, watermark, completeness ]
             properties:
-              connection_id: {type: string, format: uuid}
-              watermark: {type: [string, 'null'], format: date-time}
-              completeness: {type: string, enum: [complete, partial, unknown]}
+              connection_id: { type: string, format: uuid }
+              watermark: { type: [ string, 'null' ], format: date-time }
+              completeness: { type: string, enum: [ complete, partial, unknown ] }
     CohortItem:
       type: object
       required: [object, item_no, role, value, reason_code, basis_deleted]
@@ -6514,6 +6695,7 @@ components:
         value: {type: [number, 'null']}
         reason_code: {type: [string, 'null']}
         basis_deleted: {type: boolean, description: Основание удалено по запросу или сроку; содержимое объекта не выдаётся.}
+        pipeline_id: {type: string, format: uuid, description: 'Для attempt-оснований I18 передаётся ID доступного pipeline для UI-55/UI-56; закрытый pipeline и его вклад не выдаются.'}
     CohortPage:
       type: object
       required: [data, next_cursor, access_limited, access_notes]
@@ -6667,15 +6849,15 @@ components:
         access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}
     Link:
       type: object
-      required: [id, link_type, method, status, from_object_id, to, decided_at]
+      required: [ id, link_type, method, status, from_object_id, to, decided_at ]
       properties:
-        id: {type: string, format: uuid}
-        link_type: {type: string, enum: [task_mr, mr_run, run_report, task_parent, finding_task, document_service, task_task]}
-        method: {type: string, enum: [source_explicit, user_confirmed, branch_key, title_key, time_window, path_match]}
-        status: {type: string, enum: [candidate, confirmed, rejected]}
-        from_object_id: {type: string, format: uuid}
-        to: {$ref: '#/components/schemas/ObjectRef'}
-        decided_at: {type: [string, 'null'], format: date-time}
+        id: { type: string, format: uuid }
+        link_type: { type: string, enum: [ task_mr, mr_run, run_report, task_parent, finding_task, document_service, task_task, deployment_incident, incident_deployment ], description: "deployment_incident: from_object_id развёртывания вызвал to=incident (I39/I40). incident_deployment: from_object_id инцидента вызвал to=deployment, внеплановый выпуск (I41). Подтверждение требует текущего доступа к обоим концам." }
+        method: { type: string, enum: [ source_explicit, user_confirmed, branch_key, title_key, time_window, path_match ] }
+        status: { type: string, enum: [ candidate, confirmed, rejected ] }
+        from_object_id: { type: string, format: uuid }
+        to: { $ref: '#/components/schemas/ObjectRef' }
+        decided_at: { type: [ string, 'null' ], format: date-time }
     LinkDecision:
       type: object
       additionalProperties: false
@@ -7808,14 +7990,27 @@ components:
         method_version: {type: integer, minimum: 1}
     TestSelectionExperiment:
       type: object
-      required: [id, component_id, mode, runs_compared, missed_failures, estimated_savings_seconds]
+      required:
+        - id
+        - component_id
+        - mode
+        - runs_compared
+        - missed_failures
+        - estimated_savings_seconds
+        - stopped_at
       properties:
-        id: {type: string, format: uuid}
-        component_id: {type: string, format: uuid}
-        mode: {type: string, enum: [shadow]}
-        runs_compared: {type: integer, minimum: 0}
-        missed_failures: {$ref: '#/components/schemas/MetricValue'}
-        estimated_savings_seconds: {type: [integer, 'null']}
+        id: { type: string, format: uuid }
+        component_id: { type: string, format: uuid }
+        mode: { type: string, enum: [ shadow ] }
+        runs_compared: { type: integer, minimum: 0 }
+        missed_failures: { $ref: '#/components/schemas/MetricValue' }
+        estimated_savings_seconds: { type: [ integer, 'null' ] }
+        stopped_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: null - теневой эксперимент активен; дата - остановлен. mode остаётся shadow, результаты сохраняются, новые рекомендации и сравнения не добавляются.
     RunbookDrillInput:
       type: object
       additionalProperties: false
@@ -7923,22 +8118,98 @@ components:
               value: {type: integer}
     DeliveryStability:
       type: object
-      required: [service_id, period, change_failure_rate, recovery_p50_seconds, incident_link_candidates, access_limited, access_notes]
+      required:
+        - service_id
+        - period
+        - change_failure_rate
+        - recovery_p50_seconds
+        - incident_link_candidates
+        - access_limited
+        - access_notes
+        - recovery_p85_seconds
+        - unplanned_deployment_rate
+        - revision_id
+        - confirmed_links
       properties:
-        service_id: {type: string, format: uuid}
-        period: {$ref: '#/components/schemas/Period'}
-        change_failure_rate: {$ref: '#/components/schemas/MetricValue'}
-        recovery_p50_seconds: {$ref: '#/components/schemas/MetricValue'}
+        service_id: { type: string, format: uuid }
+        period: { $ref: '#/components/schemas/Period' }
+        change_failure_rate: { $ref: '#/components/schemas/MetricValue' }
+        recovery_p50_seconds: { $ref: '#/components/schemas/MetricValue' }
         incident_link_candidates:
           type: array
           items:
-            type: object
-            required: [incident, link_id]
-            properties:
-              incident: {$ref: '#/components/schemas/ObjectRef'}
-              link_id: {type: string, format: uuid}
-        access_limited: {type: boolean}
-        access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}
+            $ref: "#/components/schemas/DeploymentIncidentLink"
+        access_limited: { type: boolean }
+        access_notes: { type: array, items: { $ref: '#/components/schemas/AccessNote' } }
+        recovery_p85_seconds:
+          $ref: "#/components/schemas/MetricValue"
+          description: p85 восстановления по завершённым подтверждённым сбоям развёртываний той же доступной когорты; единица seconds, n и low_sample обязательны внутри MetricValue.
+        unplanned_deployment_rate:
+          $ref: "#/components/schemas/MetricValue"
+          description: "I41: доля внеплановых production-развёртываний из-за подтверждённого инцидента. numerator - подтверждённые внеплановые развёртывания, denominator - все разрешённые production-развёртывания периода. Hotfix без связи - кандидат; неизвестная история не точный ноль."
+        revision_id:
+          type: string
+          format: uuid
+          description: Закреплённая ревизия показателей и оснований; getRevision/listRevisionCohort раскрывают I39/I40/I41 того же периода.
+        confirmed_links:
+          $ref: "#/components/schemas/DeploymentIncidentPage"
+    DeploymentIncidentLink:
+      type: object
+      description: Обе безопасные стороны связи и направление причинности для подтверждения или раскрытия. Выдаётся только при доступе к обоим концам. Кандидат не входит в числитель; подтверждённые caused_failure дают I39/I40, response_to_incident даёт I41. Несколько инцидентов одного deployment не удваивают deployment в числителе.
+      required:
+        - deployment
+        - artifact_id
+        - incident
+        - link_id
+        - relation
+        - started_at
+        - restored_at
+      properties:
+        deployment:
+          $ref: "#/components/schemas/ObjectRef"
+        artifact_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        incident:
+          $ref: "#/components/schemas/ObjectRef"
+        link_id:
+          type: string
+          format: uuid
+        relation:
+          type: string
+          enum:
+            - caused_failure
+            - response_to_incident
+          description: caused_failure соответствует Link.link_type=deployment_incident; response_to_incident соответствует incident_deployment. Тип подтверждается вместе с обоими концами; не выводится только из близости времени.
+        started_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: Начало связанного инцидента; null если неизвестно.
+        restored_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: Подтверждённое восстановление; null для открытого/неизвестного исхода.
+    DeploymentIncidentPage:
+      type: object
+      required:
+        - data
+        - next_cursor
+      properties:
+        data:
+          type: array
+          description: Только подтверждённые связи с доступом к обоим концам; кандидаты находятся отдельно.
+          items:
+            $ref: "#/components/schemas/DeploymentIncidentLink"
+        next_cursor:
+          type:
+            - string
+            - "null"
     Money:
       type: object
       required: [amount, currency]
@@ -7947,36 +8218,73 @@ components:
         currency: {type: string, pattern: '^[A-Z]{3}$'}
     CiCost:
       type: object
-      required: [project_id, period, usage, fixed_fees, invoices]
+      required:
+        - project_id
+        - period
+        - usage
+        - fixed_fees
+        - invoices
+        - revision_id
+        - access_limited
+        - access_notes
       properties:
-        project_id: {type: string, format: uuid}
-        period: {$ref: '#/components/schemas/Period'}
+        project_id: { type: string, format: uuid }
+        period: { $ref: '#/components/schemas/Period' }
         usage:
           type: array
           items:
             type: object
-            required: [runner_class, job_seconds, estimate]
+            required:
+              - runner_class
+              - job_seconds
+              - estimate
+              - basis_revision_id
+              - point_start
+              - rate
             properties:
-              runner_class: {type: string}
-              job_seconds: {$ref: '#/components/schemas/MetricValue'}
+              runner_class: { type: string }
+              job_seconds: { $ref: '#/components/schemas/MetricValue' }
+              rate:
+                description: 'Снимок ставки для читателя отчёта; null при неизвестной ставке. Версия совпадает с estimate.rate_version_no и основанием ci_rate.'
+                oneOf:
+                  - $ref: '#/components/schemas/CiRate'
+                  - type: 'null'
               estimate:
-                type: [object, 'null']
+                type: [ object, 'null' ]
                 description: '`null` - ставки нет; стоимость неизвестна.'
-                required: [amount, currency, rate_version_no]
+                required: [ amount, currency, rate_version_no ]
                 properties:
-                  amount: {type: string}
-                  currency: {type: string}
-                  rate_version_no: {type: integer}
-        fixed_fees: {type: array, items: {$ref: '#/components/schemas/Money'}}
+                  amount: { type: string }
+                  currency: { type: string }
+                  rate_version_no: { type: integer }
+              basis_revision_id:
+                type: string
+                format: uuid
+                description: Ревизия когорты I18 именно этой строки, класса runner и версии ставки. getRevision содержит input_kind=ci_rate с идентификатором класса и версией; при отсутствии ставки этого input нет. listRevisionCohort(metric_id=I18,point_start) возвращает разрешённые attempt-основания; value - вклад в job_seconds. Одна строка не смешивает разные версии ставок.
+              point_start:
+                type: string
+                format: date-time
+                description: Точка I18 для listRevisionCohort; окно и ставка закреплены basis_revision_id.
+        fixed_fees: { type: array, items: { $ref: '#/components/schemas/Money' } }
         invoices:
           type: array
           items:
             type: object
-            required: [invoice_ref, amount, currency]
+            required: [ invoice_ref, amount, currency ]
             properties:
-              invoice_ref: {type: string}
-              amount: {type: string}
-              currency: {type: string}
+              invoice_ref: { type: string }
+              amount: { type: string }
+              currency: { type: string }
+        revision_id:
+          type: string
+          format: uuid
+          description: Закреплённый расчёт стоимости; новая ставка/поздние attempts создают новую ревизию.
+        access_limited:
+          type: boolean
+        access_notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccessNote"
     CiRateInput:
       type: object
       additionalProperties: false

@@ -110,3 +110,43 @@ for (const id of ['startConnectionProbe', 'getConnectionProbe']) {
   assert(Number.isInteger(probe.configuration_version) && probe.configuration_version > 0, 'Probe example needs a configuration version');
 }
 assert(byId.startConnectionProbe.responses['409'], 'A concurrent probe for another configuration must be rejected');
+
+// UI lifecycle and evidence must remain available without inventing client state.
+assert.equal(contract.components.schemas.CurrentUser.properties.review_participation.$ref,
+  '#/components/schemas/ReviewParticipation');
+const stop = byId.stopTestSelectionExperiment;
+assert.equal(stop.method, 'put', 'Stopping an experiment must be idempotent');
+assert.equal(stop['x-craftpulse-action'], 'experiments.manage');
+assert(stop.responses['403'] && stop.responses['404'], 'Stop must enforce Origin and scope');
+assert.equal(stop.responses['200'].content['application/json'].schema.$ref,
+  '#/components/schemas/TestSelectionExperiment', 'Stopping preserves the readable report');
+const stopped = stop.responses['200'].content['application/json'].example;
+assert(stopped.stopped_at && stopped.mode === 'shadow' && stopped.runs_compared > 0);
+const experiment = byId.createTestSelectionExperiment.responses['201'].content['application/json'].example;
+assert.equal(experiment.stopped_at, null, 'A new shadow experiment is active');
+for (const name of ['recovery_p85_seconds', 'unplanned_deployment_rate', 'revision_id', 'confirmed_links']) {
+  assert(contract.components.schemas.DeliveryStability.required.includes(name), `Missing stability evidence: ${name}`);
+}
+const stability = byId.getDeliveryStability.parameters.map(dereference);
+assert(stability.some(p => p.name === 'cursor') && stability.some(p => p.name === 'revision_id'),
+  'Confirmed incident links must paginate within the selected revision');
+const costRow = contract.components.schemas.CiCost.properties.usage.items;
+assert(costRow.required.includes('basis_revision_id') && costRow.required.includes('point_start'),
+  'Cost drill-down needs its rate-specific immutable cohort');
+assert(contract.components.schemas.CiCost.required.includes('access_limited') &&
+  contract.components.schemas.CiCost.required.includes('access_notes'), 'Cost must expose safe access limitations');
+console.log('UI lifecycle, incident evidence and cost drill-down invariants passed.');
+const incidentLink = contract.components.schemas.DeploymentIncidentLink;
+for (const name of ['deployment', 'incident', 'relation', 'link_id']) {
+  assert(incidentLink.required.includes(name), `A candidate must show both endpoints and relation: ${name}`);
+}
+assert.deepEqual(incidentLink.properties.relation.enum, ['caused_failure', 'response_to_incident']);
+const linkTypes = contract.components.schemas.Link.properties.link_type.enum;
+assert(linkTypes.includes('deployment_incident') && linkTypes.includes('incident_deployment'),
+  'decideLink must return both incident-causality directions');
+const stabilityExample = byId.getDeliveryStability.responses['200'].content['application/json'].example;
+assert(stabilityExample.incident_link_candidates.every(link => link.deployment && link.incident && link.relation));
+assert(stabilityExample.confirmed_links.data.some(link => link.relation === 'caused_failure') &&
+  stabilityExample.confirmed_links.data.some(link => link.relation === 'response_to_incident'),
+  'Failure-causing and responsive deployments must have distinct evidence');
+console.log('Incident candidate endpoints and causality direction invariants passed.');
