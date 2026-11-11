@@ -45,10 +45,10 @@ func TestLoad_Defaults(t *testing.T) {
 func TestLoad_ReportsEveryProblemAtOnce(t *testing.T) {
 	t.Parallel()
 
-	_, err := config.Load(map[string]string{"LOG_LEVEL": "loud", "METRICS_ADDR": ":8080"})
+	_, err := config.Load(map[string]string{"LOG_LEVEL": "loud", "METRICS_ADDR": ":8080", "DATABASE_MAX_CONNS": "0"})
 
 	require.Error(t, err)
-	for _, want := range []string{"DATABASE_URL", "DATABASE_PASSWORD_FILE", "LOG_LEVEL", "METRICS_ADDR"} {
+	for _, want := range []string{"DATABASE_URL", "DATABASE_PASSWORD_FILE", "LOG_LEVEL", "METRICS_ADDR", "DATABASE_MAX_CONNS"} {
 		assert.Contains(t, err.Error(), want)
 	}
 }

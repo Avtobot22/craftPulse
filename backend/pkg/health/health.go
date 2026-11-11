@@ -49,20 +49,36 @@ func (r *Readiness) Ready(ctx context.Context) bool {
 	return true
 }
 
-func Handler(ready *Readiness) http.Handler {
+type Probes struct {
+	Ready         *Readiness
+	Live          Check
+	SchemaVersion func(ctx context.Context) (int64, error)
+}
+
+func Handler(p Probes) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, statusBody{Status: "ok"})
-	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if !ready.Ready(r.Context()) {
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) {
+		if p.Live != nil && p.Live(r.Context()) != nil {
 			writeJSON(w, http.StatusServiceUnavailable, statusBody{Status: "unavailable"})
 			return
 		}
 		writeJSON(w, http.StatusOK, statusBody{Status: "ok"})
 	})
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, versionBody{CommitSHA: CommitSHA()})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if !p.Ready.Ready(r.Context()) {
+			writeJSON(w, http.StatusServiceUnavailable, statusBody{Status: "unavailable"})
+			return
+		}
+		writeJSON(w, http.StatusOK, statusBody{Status: "ok"})
+	})
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
+		body := versionBody{CommitSHA: CommitSHA()}
+		if p.SchemaVersion != nil {
+			if v, err := p.SchemaVersion(r.Context()); err == nil {
+				body.SchemaVersion = &v
+			}
+		}
+		writeJSON(w, http.StatusOK, body)
 	})
 	return mux
 }

@@ -38,7 +38,7 @@ func newFixture(t *testing.T) fixture {
 	t.Helper()
 	var logs bytes.Buffer
 	reg := prometheus.NewRegistry()
-	router := httpctrl.NewRouter(zerolog.New(&logs), reg, &health.Readiness{}, handler.New())
+	router := httpctrl.NewRouter(zerolog.New(&logs), reg, health.Probes{Ready: &health.Readiness{}}, handler.New())
 	return fixture{handler: router, metrics: promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), logs: &logs}
 }
 

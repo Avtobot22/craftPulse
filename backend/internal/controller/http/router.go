@@ -12,7 +12,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
 
-func NewRouter(log zerolog.Logger, reg prometheus.Registerer, ready *health.Readiness, h *handler.Handler) *gin.Engine {
+func NewRouter(log zerolog.Logger, reg prometheus.Registerer, probes health.Probes, h *handler.Handler) *gin.Engine {
 	r := gin.New()
 	// Strict handlers receive *gin.Context as context.Context; this exposes the request values.
 	r.ContextWithFallback = true
@@ -20,7 +20,7 @@ func NewRouter(log zerolog.Logger, reg prometheus.Registerer, ready *health.Read
 	r.RedirectFixedPath = false
 	_ = r.SetTrustedProxies(nil)
 
-	state := gin.WrapH(health.Handler(ready))
+	state := gin.WrapH(health.Handler(probes))
 	r.GET("/livez", state)
 	r.GET("/readyz", state)
 	r.GET("/version", state)

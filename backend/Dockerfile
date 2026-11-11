@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY docs/technical-specification/openapi.yaml /src/docs/technical-specification/openapi.yaml
 COPY backend/ ./
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    go generate ./...
+    go generate ./internal/controller/http/...
 
 ARG COMMIT_SHA=unknown
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
