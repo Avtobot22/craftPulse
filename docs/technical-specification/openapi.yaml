@@ -260,13 +260,14 @@ paths:
     post:
       operationId: startSourceLink
       summary: Начать разрешение доступа к источнику через OAuth 2.0
-      description: Возвращает адрес авторизации источника с одноразовым `state` (раздел 13.6). Браузер переходит по нему, источник возвращает код на `completeSourceLink`.
+      description: 'Возвращает адрес авторизации источника с одноразовым `state` (раздел 13.6). Адрес строит адаптер подключения (`AuthorizeUrl`): идентификатор клиента OAuth и адрес авторизации знает только он. Браузер переходит по адресу, источник возвращает код на `completeSourceLink`. `return_to` принимается только как относительный путь сайта; без него возврат идёт на UI-73.'
       tags: [credentials]
       x-craftpulse-action: profile.manage
       x-craftpulse-delivery: M0
       x-craftpulse-trace: [FR-001, UC-03, UI-04, UI-73]
       parameters:
         - $ref: '#/components/parameters/ConnectionId'
+        - {name: return_to, in: query, description: 'Относительный путь сайта для возврата после связывания; правила те же, что у `startLogin`.', schema: {type: string, maxLength: 2048}}
       responses:
         '200':
           description: Адрес авторизации.
@@ -297,7 +298,7 @@ paths:
     get:
       operationId: completeSourceLink
       summary: Принять код авторизации источника
-      description: Проверяет одноразовый `state`, передаёт код адаптеру через `PutCredentials` и возвращает браузер в craftPulse. Токены в браузер не попадают.
+      description: Проверяет одноразовый `state`, передаёт код адаптеру через `PutCredentials` и возвращает браузер на сохранённый `return_to` или на экран доступа к источникам UI-73. Токены в браузер не попадают.
       tags: [credentials]
       x-craftpulse-action: profile.manage
       x-craftpulse-delivery: M0
@@ -308,7 +309,7 @@ paths:
         - {name: error, in: query, schema: {type: string, maxLength: 256}}
       responses:
         '302':
-          description: Переход в профиль с исходом `linked` или `link_failed`.
+          description: Переход на `return_to` или UI-73 с исходом `linked` или `link_failed`.
           headers:
             Location: {$ref: '#/components/headers/Location'}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -906,11 +907,11 @@ paths:
     get:
       operationId: listAuditEvents
       summary: Журнал аудита организации
-      description: Записи раздела 13.8 без секретов и содержимого закрытых объектов (DR-018).
+      description: Записи раздела 13.8 без секретов и содержимого закрытых объектов (DR-018). На M0 журнал читается только через API, отдельного экрана нет.
       tags: [installation]
       x-craftpulse-action: audit.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-010, UI-09, SEC-22]
+      x-craftpulse-trace: [FR-010, SEC-22]
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -3629,8 +3630,9 @@ paths:
       summary: Запросить повторную проверку документации
       description: |
         Исправление нарушения подтверждается только повторной проверкой той же области (FR-047).
-        Для Git-корней проверку выполняет шаг CI клиента; запрос ставит её для источников,
-        которые читает адаптер (wiki), и перечитывание Git-корня. Ответ - `202`; итог виден в
+        Для Git-корней проверку выполняет шаг CI клиента: запрос её не запускает, результат
+        приходит со следующим pipeline, и запуск завершается после его отчёта. Для источников,
+        которые читает адаптер (wiki), запрос ставит перечитывание. Ответ - `202`; итог виден в
         находках.
 
         Ответ содержит дескриптор запуска; GET по Location возвращает queued/running/succeeded/failed,
@@ -6171,7 +6173,7 @@ components:
       properties:
         name: {type: string, minLength: 1, maxLength: 200}
         provider: {$ref: '#/components/schemas/Provider'}
-        base_url: {type: string, format: uri, pattern: '^https://', maxLength: 2048}
+        base_url: {type: string, format: uri, pattern: '^(https|ssh)://', maxLength: 2048, description: 'Адрес источника. `ssh://` принимается только для адаптера `git`; для остальных адаптеров - 422.'}
         adapter_kind: {type: string, enum: [builtin, client]}
         adapter_url: {type: [string, 'null'], format: uri, pattern: '^https://', description: Обязателен для адаптера клиента.}
         adapter_key: {type: [string, 'null'], writeOnly: true, maxLength: 512, description: Ключ адаптера клиента; хранится зашифрованным в `connect`.}
@@ -6183,7 +6185,7 @@ components:
       description: JSON Merge Patch. Отсутствующее поле не меняется.
       properties:
         name: {type: string, minLength: 1, maxLength: 200}
-        base_url: {type: string, format: uri, pattern: '^https://', maxLength: 2048}
+        base_url: {type: string, format: uri, pattern: '^(https|ssh)://', maxLength: 2048}
         adapter_url: {type: string, format: uri, pattern: '^https://'}
         adapter_key: {type: string, writeOnly: true, maxLength: 512}
         credentials: {$ref: '#/components/schemas/Credentials'}
@@ -7067,7 +7069,9 @@ components:
       required: [item_no, item_kind, finding_id, rule_id, severity, location, rank]
       properties:
         item_no: {"type":"integer","minimum":1,"description":"Номер в отфильтрованной сводке, начиная с 1. Номер строки хранилища не выдаётся."}
-        item_kind: {type: string, enum: [new, resolved, newly_observed, unchanged, not_evaluated, ci_attempts, coverage, tests]}
+        item_kind: {type: string, enum: [new, resolved, newly_observed, unchanged, accepted, not_evaluated, ci_attempts, coverage, tests], description: '`accepted` - находка с действующим исключением: она остаётся в сводке отдельно и не считается исправленной.'}
+        analysis_kind: {$ref: '#/components/schemas/AnalysisKind', description: Вид анализа строки; отсутствует у строк попыток CI.}
+        mode: {type: string, enum: [import, builtin], description: Отчёт клиента или штатный профиль; передаётся для строк находок и непроверенных областей.}
         finding_id: {type: [string, 'null'], format: uuid}
         rule_id: {type: [string, 'null']}
         severity: {type: [string, 'null'], description: Сопоставленная серьёзность; исходная - в карточке находки.}
@@ -7096,6 +7100,40 @@ components:
               analysis_kind: {$ref: '#/components/schemas/AnalysisKind'}
               reason_code: {type: string}
         coverage_changed_lines: {$ref: '#/components/schemas/MetricValue'}
+        change:
+          type: object
+          description: Размер и структура изменения относительно базы (C15-C17). Значение без сопоставимой базы или анализа имеет состояние `NOT_EVALUATED`.
+          required: [lines_added, lines_removed, files_changed, complexity_increased_functions, new_clone_groups]
+          properties:
+            lines_added: {$ref: '#/components/schemas/MetricValue'}
+            lines_removed: {$ref: '#/components/schemas/MetricValue'}
+            files_changed: {$ref: '#/components/schemas/MetricValue'}
+            complexity_increased_functions: {$ref: '#/components/schemas/MetricValue'}
+            new_clone_groups: {$ref: '#/components/schemas/MetricValue'}
+        tests:
+          type: object
+          description: Исходы тестов head по отчётам JUnit (I19); без отчёта значения `NOT_EVALUATED`.
+          required: [passed, failed, errored, skipped]
+          properties:
+            passed: {$ref: '#/components/schemas/MetricValue'}
+            failed: {$ref: '#/components/schemas/MetricValue'}
+            errored: {$ref: '#/components/schemas/MetricValue'}
+            skipped: {$ref: '#/components/schemas/MetricValue'}
+        expected:
+          type: object
+          description: Ожидаемый состав проверок и отчётов профиля (I08/I09).
+          required: [missing_checks, missing_reports]
+          properties:
+            missing_checks: {$ref: '#/components/schemas/MetricValue'}
+            missing_reports: {$ref: '#/components/schemas/MetricValue'}
+        last_good:
+          type: [object, 'null']
+          description: Последняя ревизия MR с полным набором ожидаемых отчётов; показывается отдельно с датой и не переносится на текущий head.
+          required: [head_sha, revision_no, built_at]
+          properties:
+            head_sha: {$ref: '#/components/schemas/GitSha'}
+            revision_no: {type: integer, minimum: 1}
+            built_at: {type: string, format: date-time}
         ci:
           type: [object, 'null']
           required: [pipeline_id, outcome, attempts, retried_jobs]
@@ -7387,6 +7425,8 @@ components:
             id: {type: string, format: uuid}
             producer: {type: string}
             producer_version: {type: string}
+            profile_id: {type: [string, 'null'], description: 'Профиль проверки, которым получен отчёт; `null` для отчёта клиента без профиля.'}
+            mode: {type: string, enum: [import, builtin]}
             rules_version: {type: [string, 'null']}
             db_version: {type: [string, 'null']}
             sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
