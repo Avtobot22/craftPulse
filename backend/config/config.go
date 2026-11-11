@@ -38,6 +38,7 @@ type Config struct {
 type DB struct {
 	URL      string `env:"DATABASE_URL,required,notEmpty"`
 	Password Secret `env:"DATABASE_PASSWORD_FILE,file,required,notEmpty"`
+	MaxConns int32  `env:"DATABASE_MAX_CONNS" envDefault:"10"`
 }
 
 func (c Config) Secrets() []string {
@@ -52,6 +53,9 @@ func Load(environ map[string]string) (Config, error) {
 	}
 	if cfg.HTTPAddr == cfg.MetricsAddr {
 		errs = append(errs, errors.New("METRICS_ADDR must differ from HTTP_ADDR"))
+	}
+	if cfg.DB.MaxConns < 1 {
+		errs = append(errs, errors.New("DATABASE_MAX_CONNS must be positive"))
 	}
 	if cfg.DB.URL != "" {
 		errs = append(errs, validateDatabaseURL(cfg.DB.URL))

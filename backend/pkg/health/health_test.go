@@ -45,7 +45,7 @@ func TestReadyz(t *testing.T) {
 				ready.Drain()
 			}
 
-			rec := get(health.Handler(ready), "/readyz")
+			rec := get(health.Handler(health.Probes{Ready: ready}), "/readyz")
 
 			assert.Equal(t, tt.wantStatus, rec.Code)
 		})
@@ -55,10 +55,18 @@ func TestReadyz(t *testing.T) {
 func TestLivezAndVersion(t *testing.T) {
 	t.Parallel()
 
-	h := health.Handler(&health.Readiness{})
+	h := health.Handler(health.Probes{Ready: &health.Readiness{}})
 
 	assert.Equal(t, http.StatusOK, get(h, "/livez").Code)
 	version := get(h, "/version")
 	assert.Equal(t, http.StatusOK, version.Code)
 	assert.JSONEq(t, `{"commit_sha":"unknown","schema_version":null}`, version.Body.String())
+
+	stalled := health.Handler(health.Probes{
+		Ready:         &health.Readiness{},
+		Live:          func(context.Context) error { return errors.New("stalled") },
+		SchemaVersion: func(context.Context) (int64, error) { return 3, nil },
+	})
+	assert.Equal(t, http.StatusServiceUnavailable, get(stalled, "/livez").Code)
+	assert.JSONEq(t, `{"commit_sha":"unknown","schema_version":3}`, get(stalled, "/version").Body.String())
 }

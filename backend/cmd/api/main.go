@@ -22,7 +22,12 @@ func main() {
 	if err != nil {
 		boot.Fatal().Err(err).Msg("logger")
 	}
-	if err := app.RunAPI(cfg, log); err != nil {
+
+	run := app.RunAPI
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		run = app.RunMigrate
+	}
+	if err := run(cfg, log); err != nil {
 		log.Fatal().Err(err).Msg("api stopped with error")
 	}
 }
