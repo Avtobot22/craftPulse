@@ -7020,6 +7020,10 @@ components:
                 type: string
                 enum: [assign_reviewer, request_review, check_pipeline, restore_report, review_finding, resolve_blocker, link_merge_request, review_target, clarify_reason]
                 description: Следующее доступное действие; выполняется пользователем в исходной системе или на экране craftPulse. `clarify_reason` - вопрос к исполнителю, когда данных для вывода нет.
+              question:
+                type: string
+                enum: [reviewer_assigned, merge_request_exists, delay_reason]
+                description: 'Недостающий вопрос при действии `clarify_reason`: назначен ли ревьюер в MR (поле ревьюера недоступно), есть ли MR по задаче, что задерживает задачу. У остальных наблюдений отсутствует.'
         links: {type: array, items: {$ref: '#/components/schemas/Link'}}
         redactions: {$ref: '#/components/schemas/Redactions'}
     ReviewWait:
