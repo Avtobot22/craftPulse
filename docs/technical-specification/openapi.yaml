@@ -949,7 +949,7 @@ paths:
               schema: {$ref: '#/components/schemas/AdapterList'}
               example:
                 data:
-                  - {provider: jira_dc, display_name: Jira Data Center, editions: [data_center, server], contract_versions: ['1'], data_kinds: [tasks, accounts, permissions], scope_kinds: [tracker_project], credential_fields: [{name: token, label: Personal access token служебной учётной записи, required: true, secret: true}]}
+                  - {provider: jira_dc, display_name: Jira Data Center, editions: [data_center, server], contract_versions: ['1'], data_kinds: [tasks, accounts, permissions], scope_kinds: [tracker_project], credential_fields: [{name: username, label: Логин служебной учётной записи, required: true, secret: false}, {name: token, label: Personal access token служебной учётной записи, required: true, secret: true}]}
                   - {provider: gitlab, display_name: GitLab self-managed, editions: [ce, ee], contract_versions: ['1'], data_kinds: [merge_requests, ci, reports, accounts, permissions], scope_kinds: [repository], credential_fields: [{name: read_token, label: Токен чтения API и репозитория, required: true, secret: true}, {name: write_token, label: Токен бота для комментария MR, required: false, secret: true}, {name: webhook_secret, label: Секрет подписи webhook, required: false, secret: true}]}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
