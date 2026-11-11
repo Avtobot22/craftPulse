@@ -26,4 +26,4 @@ test: generate
 
 ## image: build the craftpulse-server image
 image:
-	docker build -f Dockerfile --build-arg COMMIT_SHA=$(COMMIT_SHA) -t $(IMAGE) ..
+	docker build --build-arg COMMIT_SHA=$(COMMIT_SHA) -t $(IMAGE) .
