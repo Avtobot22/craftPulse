@@ -19,7 +19,7 @@ Git-репозиторий и его API - разные источники. Че
 | Сервис | Данные | Метрики/возможности | Этап и условия |
 |---|---|---|---|
 | **GitLab self-managed CE/EE**, также GitLab.com | Git, default branch, MR head/base, refs, merge, paths, notes/review; pipeline links | Все C01–C25 при наличии соответствующих отчётов, публикация MR-сводки | **M0**. Раздельные read credentials и bot write permissions. CE не требует Ultimate для получения Git/MR и обычных CI-артефактов |
-| **SourceCraft** | Git clone; PR, comments, reviewers через API; существующие адаптеры | Структура, история, первоначальная связь PR с кодом | **M0: сохранить существующую поддержку**, расширенные проверки delta/публикации после contract test; не обещать все GitLab-возможности |
+| **SourceCraft** | Git clone; PR, comments, reviewers через API | Структура, история, связь PR с кодом | **M1 по пилоту**: новый адаптер; delta и публикация после contract test; не обещать все GitLab-возможности |
 | **GitHub / Enterprise Server** | Git, PR, reviews, checks, workflow links | Та же нормализованная модель и рекомендации | **M1**. GitHub App с минимальными правами; Enterprise Server проверять по его версии |
 | **Bitbucket Data Center / Cloud** | Git и PR API соответствующей редакции | Структура/история и PR-представление | **M2**. Это два адаптера с разными контрактами; CI может быть Jenkins |
 | **GitVerse** | Git; PR/files/commits/reviews, API version=1 | Российский provider, общий каталог C-метрик | **M1**. Capabilities проверяются отдельно; совместимость с GitHub не предполагается |
@@ -183,7 +183,7 @@ Git-репозиторий и его API - разные источники. Че
 
 ## Первый выпуск и критерии готовности
 
-**M0:** generic Git и GitLab, сохранение SourceCraft, Sonar measures/issues, SARIF 2.1.0 + GitLab Code Quality + native JSON поддержанных линтеров, базовые Go/Python/JS/TS profiles, CC/NLOC/clones, baseline/head, lifecycle, advisory MR comment, states/coverage. Без construction-kit для произвольных plugin chains и без собственного language-semantic engine.
+**M0:** generic Git и GitLab, Sonar measures/issues, SARIF 2.1.0 + GitLab Code Quality + native JSON поддержанных линтеров, базовые Go/Python/JS/TS profiles, CC/NLOC/clones, baseline/head, lifecycle, advisory MR comment, states/coverage. Без construction-kit для произвольных plugin chains и без собственного language-semantic engine.
 
 **M1:** больше языков и провайдеров, temporal coupling, component ownership, создаваемые по запросу задачи, устойчивый refactoring mapping. **M2:** cross-repo coupling и рекомендации по инвестициям с проверкой на реальных затратах/результатах.
 
