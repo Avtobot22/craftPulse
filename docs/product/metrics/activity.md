@@ -21,7 +21,7 @@
 | Яндекс Трекер | M1 | Задачи, пагинированный changelog, связи, выбранные поля | A18–A22 и T-метрики | Следовать `Link` следующей страницы; права очередей. [Changelog](../../research/sources.md#ref-090) |
 | Confluence DC / Cloud | M1, один вариант под пилот | Метаданные страниц и версий, автор/дата, явная связь со службой; тело опционально | A19, A22, A24; D-метрики | DC и Cloud разные адаптеры. Событие изменения страницы не доказывает прочтение. ACL - отдельное требование. [Cloud versions](../../research/sources.md#ref-097), [DC](../../research/sources.md#ref-099) |
 | GitHub | M1 | Pulls, reviews, comments, issue timeline, Git | A01–A24 с capability-флагами | PR одновременно является issue: дедупликация обязательна. [Issue timeline](../../research/sources.md#ref-082) |
-| SourceCraft | M1 | Используем проверенные текущим продуктом Git/issue факты; дополнительные PR/review события только после проверки API и прав | Частичные A01–A04, A18; остальное UNKNOWN | Не переносим возможности GitLab по аналогии; состав реально собираемых полей - в аудите |
+| SourceCraft | M1 по пилоту | Git/issue факты опубликованного API; PR/review события только после проверки API и прав | Частичные A01–A04, A18; остальное UNKNOWN | Не переносим возможности GitLab по аналогии; состав полей подтверждается contract test |
 | YouTrack / Kaiten / Linear | M2, по клиенту | Activities; истории карточек; GraphQL issues/cycles + webhooks соответственно | Таймлайн и T-метрики по manifest | Не обещаем одинаковую глубину истории. [YouTrack history](../../research/sources.md#ref-092), [Kaiten API](../../research/sources.md#ref-093), [Linear](../../research/sources.md#ref-094) |
 | Notion / Drive / SharePoint | M2 | Изменения разрешённых страниц/файлов | События документации A19/A22 | Не источник доказанного времени работы. Детали в D-коннекторах |
 | Generic import | M0 | NDJSON событий/связей + manifest; позже подписанный webhook | Любая метрика, чьи обязательные поля действительно есть | Версия схемы, idempotency key, source URL, время, права; импорт не превращает неполную историю в полную |
@@ -113,7 +113,7 @@ Draft→ready→draft→ready сохраняется эпизодами. Для 
 
 ## Этапы и приёмка
 
-M0: GitLab + Jira DC + generic import, A05–A07/A10/A18/A20/A22–A24/A27–A28/A30, таймлайн и объяснимая очередь. Git counts доступны как диагностика. Redmine, Яндекс Трекер и расширение SourceCraft подключаются на следующем этапе по своим capabilities.
+M0: GitLab + Jira DC + generic import, A05–A07/A10/A18/A20/A22–A24/A27–A28/A30, таймлайн и объяснимая очередь. Git counts доступны как диагностика. Redmine, Яндекс Трекер и SourceCraft подключаются на следующем этапе по своим capabilities.
 
 M1: второй трекер по пилоту (приоритет Redmine из прямого запроса), Confluence выбранного типа, GitHub/Яндекс Трекер, версионирование команд, расширенные интервалы ревью. M2: pulse survey, межкомандные сценарии, дополнительные адаптеры.
 

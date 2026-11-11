@@ -63,7 +63,7 @@ info:
     identifier: LicenseRef-Proprietary
 servers:
   - url: https://craftpulse.example/api/v1
-    description: Адрес установки craftPulse; операции входа и webhook адресуются от корня сайта, их пути в `servers` операций.
+    description: Адрес установки craftPulse. Операции входа адресуются от корня сайта, их адрес задан в `servers` операций; webhook принимается по адресу `/api/v1/webhooks/{route_id}`.
 security:
   - cookieSession: []
 tags:
@@ -260,13 +260,14 @@ paths:
     post:
       operationId: startSourceLink
       summary: Начать разрешение доступа к источнику через OAuth 2.0
-      description: Возвращает адрес авторизации источника с одноразовым `state` (раздел 13.6). Браузер переходит по нему, источник возвращает код на `completeSourceLink`.
+      description: 'Возвращает адрес авторизации источника с одноразовым `state` (раздел 13.6). Адрес строит адаптер подключения (`AuthorizeUrl`): идентификатор клиента OAuth и адрес авторизации знает только он. Браузер переходит по адресу, источник возвращает код на `completeSourceLink`. `return_to` принимается только как относительный путь сайта; без него возврат идёт на UI-73.'
       tags: [credentials]
       x-craftpulse-action: profile.manage
       x-craftpulse-delivery: M0
       x-craftpulse-trace: [FR-001, UC-03, UI-04, UI-73]
       parameters:
         - $ref: '#/components/parameters/ConnectionId'
+        - {name: return_to, in: query, description: 'Относительный путь сайта для возврата после связывания; правила те же, что у `startLogin`.', schema: {type: string, maxLength: 2048}}
       responses:
         '200':
           description: Адрес авторизации.
@@ -297,7 +298,7 @@ paths:
     get:
       operationId: completeSourceLink
       summary: Принять код авторизации источника
-      description: Проверяет одноразовый `state`, передаёт код адаптеру через `PutCredentials` и возвращает браузер в craftPulse. Токены в браузер не попадают.
+      description: Проверяет одноразовый `state`, передаёт код адаптеру через `PutCredentials` и возвращает браузер на сохранённый `return_to` или на экран доступа к источникам UI-73. Токены в браузер не попадают.
       tags: [credentials]
       x-craftpulse-action: profile.manage
       x-craftpulse-delivery: M0
@@ -308,7 +309,7 @@ paths:
         - {name: error, in: query, schema: {type: string, maxLength: 256}}
       responses:
         '302':
-          description: Переход в профиль с исходом `linked` или `link_failed`.
+          description: Переход на `return_to` или UI-73 с исходом `linked` или `link_failed`.
           headers:
             Location: {$ref: '#/components/headers/Location'}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -676,6 +677,7 @@ paths:
                     native_account_id: JIRAUSER10021
                     login: asmirnova
                     display_name: Анна Смирнова
+                    proposed_kind: human
                     assignment: null
                     proposals: [{person_id: 0193a5b0-2222-7000-8000-000000000001, basis: login_match}]
                 next_cursor: null
@@ -905,11 +907,11 @@ paths:
     get:
       operationId: listAuditEvents
       summary: Журнал аудита организации
-      description: Записи раздела 13.8 без секретов и содержимого закрытых объектов (DR-018).
+      description: Записи раздела 13.8 без секретов и содержимого закрытых объектов (DR-018). На M0 журнал читается только через API, отдельного экрана нет.
       tags: [installation]
       x-craftpulse-action: audit.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-010, UI-09, SEC-22]
+      x-craftpulse-trace: [FR-010, SEC-22]
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -947,8 +949,8 @@ paths:
               schema: {$ref: '#/components/schemas/AdapterList'}
               example:
                 data:
-                  - {provider: jira_dc, display_name: Jira Data Center, editions: [data_center, server], contract_versions: ['1'], data_kinds: [tasks, accounts, permissions]}
-                  - {provider: gitlab, display_name: GitLab self-managed, editions: [ce, ee], contract_versions: ['1'], data_kinds: [merge_requests, ci, reports, accounts, permissions]}
+                  - {provider: jira_dc, display_name: Jira Data Center, editions: [data_center, server], contract_versions: ['1'], data_kinds: [tasks, accounts, permissions], scope_kinds: [tracker_project], credential_fields: [{name: username, label: Логин служебной учётной записи, required: true, secret: false}, {name: token, label: Personal access token служебной учётной записи, required: true, secret: true}]}
+                  - {provider: gitlab, display_name: GitLab self-managed, editions: [ce, ee], contract_versions: ['1'], data_kinds: [merge_requests, ci, reports, accounts, permissions], scope_kinds: [repository], credential_fields: [{name: read_token, label: Токен чтения API и репозитория, required: true, secret: true}, {name: write_token, label: Токен бота для комментария MR, required: false, secret: true}, {name: webhook_secret, label: Секрет подписи webhook, required: false, secret: true}]}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
   /connections:
@@ -1236,7 +1238,9 @@ paths:
       operationId: activateConnection
       summary: Подтвердить возможности и запустить загрузку истории
       description: |
-        Администратор подтверждает результат успешной пробы (UI-17). Проба должна принадлежать
+        Администратор подтверждает результат успешной пробы (UI-17). Активируется подключение
+        в состоянии draft или access_lost: после потери доступа нужны замена учётных данных
+        и новая проба, прежняя история и курсоры сохраняются. Проба должна принадлежать
         этому подключению, быть последней, иметь status succeeded и configuration_version,
         равную текущей row_version; иначе 409 state_conflict. If-Match должен совпадать
         с текущим ETag, иначе 412. Подтверждённые возможности копируются из connect.probe
@@ -1391,7 +1395,8 @@ paths:
       operationId: receiveWebhook
       summary: Принять webhook источника
       description: |
-        Адрес содержит случайный ID маршрута подключения. `api` проверяет только маршрут и
+        Адрес содержит случайный ID маршрута подключения; полный адрес для настройки в
+        источнике отдаёт `Connection.webhook_url`. `api` проверяет только маршрут и
         размер тела и сразу отвечает `200`; подпись проверяет адаптер в задании
         `sync.webhook`, а webhook служит только сигналом к перечитыванию (раздел 10.6).
         Неверная подпись не меняет ответ отправителю, но учитывается в диагностике.
@@ -1440,6 +1445,8 @@ paths:
                   - {component_id: 0193a5b0-7777-7000-8000-000000000001, path_prefix: services/billing, language: go, analysis_kind: code, mode: builtin, profile_id: go-default, image_digest: 'sha256:6b2f0c1d9e8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c'}
                   - {component_id: 0193a5b0-7777-7000-8000-000000000001, path_prefix: services/billing, language: '', analysis_kind: secrets, mode: builtin, profile_id: gitleaks-default, image_digest: 'sha256:1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809'}
                 expected_reports: [code, secrets, sca, junit, coverage]
+                documentation_roots:
+                  - {root_id: 0193a5b0-e4e4-7000-8000-000000000001, kind: docs, path_prefix: docs}
                 limits: {max_package_bytes: 26214400, max_unpacked_bytes: 104857600, max_files: 1000}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -1487,7 +1494,9 @@ paths:
       operationId: createImport
       summary: Передать файл универсального импорта
       description: |
-        Форма UI-12: файл JSON или CSV и поля манифеста. `api` упаковывает файл в такой же
+        Форма UI-12: файл и поля манифеста. Факты задач, событий, связей, MR, запусков CI и
+        документов передаются JSON или CSV; отчёты находок, тестов и покрытия - файлом
+        поддержанного формата с `report_format` и `commit_sha`. `api` упаковывает файл в такой же
         пакет, как из CI, и дальше он проходит общий приём (раздел 10.5.2). Неподдержанная
         схема отклоняет пакет целиком, прежний результат сохраняется (FR-016). Записи
         принимаются только для областей, где у пользователя есть право импорта.
@@ -1501,7 +1510,7 @@ paths:
           multipart/form-data:
             schema: {$ref: '#/components/schemas/ImportUpload'}
             encoding:
-              file: {contentType: 'application/json, text/csv'}
+              file: {contentType: 'application/json, text/csv, application/xml, text/plain'}
       responses:
         '202':
           description: Пакет принят к разбору.
@@ -2103,7 +2112,9 @@ paths:
         Графики потока работы T04/T05/T08/T10-T15/T18/T23 и очередь MR по актуальной или
         указанной ревизии (FR-023). Каждая точка - значение с состоянием данных; раскрытие -
         через `revision_id` и `listRevisionCohort`. Без подтверждённого сопоставления отчёт
-        отдаёт `NOT_EVALUATED` с причиной `mapping_missing`. Когорта ограничена правами:
+        отдаёт `NOT_EVALUATED` с причиной `mapping_missing`. Фильтры проекта, типа и размера
+        выбирают ряд с той же областью и теми же определениями; знаменатели и когорты точек
+        соответствуют фильтру (AC-18). Когорта ограничена правами:
         значения строятся по разрешённой части, `access_limited` без числа скрытых (FR-001).
 
         UC-15 использует этот отчёт и listRevisionCohort: T23 - переоткрытия в M0; T24 и T25
@@ -2120,6 +2131,10 @@ paths:
         - $ref: '#/components/parameters/To'
         - $ref: '#/components/parameters/Step'
         - $ref: '#/components/parameters/RevisionQuery'
+        - {name: project_id, in: query, description: Ограничить отчёт проектами команды; без параметра - все её проекты., schema: {type: array, maxItems: 50, items: {type: string, format: uuid}}}
+        - {name: task_type, in: query, description: Тип задачи по сопоставлению., schema: {type: string, maxLength: 200}}
+        - {name: size_label, in: query, description: 'Размер задачи; `unknown` - группа «без размера».', schema: {type: string, maxLength: 200}}
+        - {name: group_by, in: query, description: 'Разбить ряды по типу или размеру: каждая группа - отдельный элемент `metrics` с заполненным `group`.', schema: {type: string, enum: [task_type, size_label]}}
       responses:
         '200':
           description: Отчёт.
@@ -2560,8 +2575,9 @@ paths:
       description: |
         События задач, MR, CI и документов проекта за выбранный интервал с разделением людей,
         ботов и систем (FR-030). У события есть время события и время получения; позднее и
-        загруженное с историей событие отмечено. Срез знания задаётся ревизией или текущим
-        состоянием. Событие закрытого объекта не выдаётся.
+        загруженное с историей событие отмечено. Срез знания задаётся `revision_id`: события,
+        полученные после среза знания этой ревизии, не выдаются; без параметра - текущее
+        состояние. Событие закрытого объекта не выдаётся.
       tags: [tasks]
       x-craftpulse-action: tasks.read
       x-craftpulse-delivery: M0
@@ -2572,6 +2588,7 @@ paths:
         - $ref: '#/components/parameters/To'
         - {name: actor_kind, in: query, schema: {$ref: '#/components/schemas/ActorKind'}}
         - {name: object_kind, in: query, schema: {type: string, enum: [task, merge_request, pipeline, document]}}
+        - $ref: '#/components/parameters/RevisionQuery'
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
       responses:
@@ -2670,10 +2687,15 @@ paths:
                 source_url: 'https://jira.example/browse/CORE-15'
                 target: {duration_seconds: 432000, version_no: 1}
                 blocked_intervals: [{from: '2026-11-03T10:00:00Z', to: '2026-11-04T10:00:00Z'}]
-                observation:
-                  kind: awaiting_reviewer
-                  since: '2026-11-06T12:00:00Z'
-                  basis: [{kind: merge_request, id: 0193a5b0-b0b0-7000-8000-000000000001, display_key: '!42', title: Перенос отчёта, source_url: 'https://gitlab.example/core/-/merge_requests/42'}]
+                observations:
+                  - kind: awaiting_reviewer
+                    since: '2026-11-06T12:00:00Z'
+                    basis: [{kind: merge_request, id: 0193a5b0-b0b0-7000-8000-000000000001, display_key: '!42', title: Перенос отчёта, source_url: 'https://gitlab.example/core/-/merge_requests/42'}]
+                    action: assign_reviewer
+                  - kind: ci_passed_after_retry
+                    since: '2026-11-07T09:30:00Z'
+                    basis: [{kind: pipeline, id: 0193a5b0-d0d0-7000-8000-000000000001, display_key: '#8841', title: null, source_url: 'https://gitlab.example/core/-/pipelines/8841'}]
+                    action: check_pipeline
                 links:
                   - {id: 0193a5b0-c0c0-7000-8000-000000000001, link_type: task_mr, method: source_explicit, status: confirmed, from_object_id: 0193a5b0-f000-7000-8000-000000000002, to: {kind: merge_request, id: 0193a5b0-b0b0-7000-8000-000000000001, display_key: '!42', title: Перенос отчёта, source_url: 'https://gitlab.example/core/-/merge_requests/42'}, decided_at: null}
                   - {id: 0193a5b0-c0c0-7000-8000-000000000002, link_type: task_mr, method: branch_key, status: candidate, from_object_id: 0193a5b0-f000-7000-8000-000000000002, to: {kind: merge_request, id: 0193a5b0-b0b0-7000-8000-000000000002, display_key: '!43', title: Правка экспорта, source_url: 'https://gitlab.example/core/-/merge_requests/43'}, decided_at: null}
@@ -3608,8 +3630,9 @@ paths:
       summary: Запросить повторную проверку документации
       description: |
         Исправление нарушения подтверждается только повторной проверкой той же области (FR-047).
-        Для Git-корней проверку выполняет шаг CI клиента; запрос ставит её для источников,
-        которые читает адаптер (wiki), и перечитывание Git-корня. Ответ - `202`; итог виден в
+        Для Git-корней проверку выполняет шаг CI клиента: запрос её не запускает, результат
+        приходит со следующим pipeline, и запуск завершается после его отчёта. Для источников,
+        которые читает адаптер (wiki), запрос ставит перечитывание. Ответ - `202`; итог виден в
         находках.
 
         Ответ содержит дескриптор запуска; GET по Location возвращает queued/running/succeeded/failed,
@@ -5872,7 +5895,7 @@ components:
       enum: [jira_dc, gitlab, github, jenkins, sonarqube, confluence_dc, git, universal, client]
     SourceAccount:
       type: object
-      required: [id, instance_id, provider, native_account_id, login, display_name, assignment, proposals]
+      required: [id, instance_id, provider, native_account_id, login, display_name, proposed_kind, assignment, proposals]
       properties:
         id: {type: string, format: uuid}
         instance_id: {type: string, format: uuid}
@@ -5880,6 +5903,7 @@ components:
         native_account_id: {type: string}
         login: {type: [string, 'null']}
         display_name: {type: [string, 'null']}
+        proposed_kind: {$ref: '#/components/schemas/ActorKind', description: 'Вид участника по данным источника (признак бота или служебной записи); предложение, действует только подтверждённое `assignment.actor_kind`.'}
         assignment:
           type: [object, 'null']
           required: [id, person_id, actor_kind, confirmed_at]
@@ -5918,7 +5942,8 @@ components:
             required: [source_account_id, person_id, actor_kind, base_assignment_id]
             properties:
               source_account_id: {type: string, format: uuid}
-              person_id: {type: [string, 'null'], format: uuid, description: Обязателен для `human`.}
+              person_id: {type: [string, 'null'], format: uuid, description: 'Обязателен для `human`, если не задан `create_person`.'}
+              create_person: {type: boolean, default: false, description: 'Создать нового человека с отображаемым именем учётной записи и привязать её к нему; `person_id` при этом `null`. Так заводится участник, которого ещё нет в `listPersons`.'}
               actor_kind: {$ref: '#/components/schemas/ActorKind'}
               base_assignment_id: {type: [string, 'null'], format: uuid, description: 'Действующая привязка, которую видел администратор; `null` - привязки не было.'}
     AccountAssignmentBatchResult:
@@ -6046,13 +6071,28 @@ components:
       enum: [tasks, merge_requests, ci, reports, documents, accounts, permissions]
     Adapter:
       type: object
-      required: [provider, display_name, editions, contract_versions, data_kinds]
+      required: [provider, display_name, editions, contract_versions, data_kinds, scope_kinds, credential_fields]
       properties:
         provider: {$ref: '#/components/schemas/Provider'}
         display_name: {type: string}
         editions: {type: array, items: {type: string}}
         contract_versions: {type: array, items: {type: string}}
         data_kinds: {type: array, items: {$ref: '#/components/schemas/DataKind'}}
+        scope_kinds:
+          type: array
+          description: Виды областей, которые принимает адаптер в `ConnectionScopeInput.kind`.
+          items: {type: string, enum: [tracker_project, repository, wiki_space, ci_project, analysis_project]}
+        credential_fields:
+          type: array
+          description: Поля `Credentials` этого адаптера; по ним строится блок «Учётные данные» формы UI-10.
+          items:
+            type: object
+            required: [name, label, required, secret]
+            properties:
+              name: {type: string, maxLength: 64, description: Ключ в `Credentials`.}
+              label: {type: string}
+              required: {type: boolean}
+              secret: {type: boolean, description: Значение вводится скрытым полем и после сохранения не показывается.}
     AdapterList:
       type: object
       required: [data]
@@ -6077,6 +6117,7 @@ components:
         native_scope_id: {type: string, maxLength: 255}
         display_name: {type: string}
         area_id: {type: [string, 'null'], format: uuid, description: Область появляется после первого сбора.}
+        repository_scope_id: {type: [string, 'null'], format: uuid}
         history_from: {type: [string, 'null'], format: date-time}
     ConnectionScopeInput:
       type: object
@@ -6086,6 +6127,7 @@ components:
         kind: {type: string, enum: [tracker_project, repository, wiki_space, ci_project, analysis_project]}
         native_scope_id: {type: string, minLength: 1, maxLength: 255}
         history_from: {type: [string, 'null'], format: date-time, description: Начало загрузки истории; `null` - вся доступная история.}
+        repository_scope_id: {type: [string, 'null'], format: uuid, description: 'Для `ci_project` и `analysis_project` вне Git-хостинга (Jenkins, SonarQube) - область репозитория, к которой относятся их запуски и отчёты (раздел 13.5).'}
     Connection:
       type: object
       required: [id, name, provider, instance, status, adapter_kind, access_mode, credentials_set_at, sync_paused, paused_until, last_success_at, scopes, capabilities]
@@ -6101,9 +6143,13 @@ components:
             base_url: {type: [string, 'null'], format: uri}
             edition: {type: [string, 'null']}
             source_version: {type: [string, 'null']}
-        status: {type: string, enum: [draft, active, access_lost, deleted]}
+        status:
+          type: string
+          enum: [draft, active, access_lost, deleted]
+          description: Из `access_lost` подключение возвращается в `active` так же, как из `draft` - после замены учётных данных (`updateConnection`), новой успешной пробы и `activateConnection`; сбор продолжается с сохранённого курсора и заканчивается сверкой.
         adapter_kind: {type: string, enum: [builtin, client]}
         access_mode: {type: string, enum: [service_account, user_token, synced]}
+        webhook_url: {type: [string, 'null'], format: uri, description: 'Адрес `receiveWebhook` этого подключения для настройки в источнике; `null`, если адаптер не поддерживает webhook. Секрет подписи вводится вместе с учётными данными и хранится адаптером.'}
         credentials_set_at: {type: [string, 'null'], format: date-time, description: Учётные данные заданы; их значение не возвращается.}
         sync_paused: {type: boolean}
         paused_until: {type: [string, 'null'], format: date-time, description: Пауза лимита источника по `Retry-After`.}
@@ -6129,7 +6175,7 @@ components:
       properties:
         name: {type: string, minLength: 1, maxLength: 200}
         provider: {$ref: '#/components/schemas/Provider'}
-        base_url: {type: string, format: uri, pattern: '^https://', maxLength: 2048}
+        base_url: {type: string, format: uri, pattern: '^(https|ssh)://', maxLength: 2048, description: 'Адрес источника. `ssh://` принимается только для адаптера `git`; для остальных адаптеров - 422.'}
         adapter_kind: {type: string, enum: [builtin, client]}
         adapter_url: {type: [string, 'null'], format: uri, pattern: '^https://', description: Обязателен для адаптера клиента.}
         adapter_key: {type: [string, 'null'], writeOnly: true, maxLength: 512, description: Ключ адаптера клиента; хранится зашифрованным в `connect`.}
@@ -6141,7 +6187,7 @@ components:
       description: JSON Merge Patch. Отсутствующее поле не меняется.
       properties:
         name: {type: string, minLength: 1, maxLength: 200}
-        base_url: {type: string, format: uri, pattern: '^https://', maxLength: 2048}
+        base_url: {type: string, format: uri, pattern: '^(https|ssh)://', maxLength: 2048}
         adapter_url: {type: string, format: uri, pattern: '^https://'}
         adapter_key: {type: string, writeOnly: true, maxLength: 512}
         credentials: {$ref: '#/components/schemas/Credentials'}
@@ -6209,6 +6255,15 @@ components:
             observed_count: {type: [integer, 'null']}
             missing_count: {type: [integer, 'null']}
             changed_count: {type: [integer, 'null']}
+        webhooks:
+          type: [object, 'null']
+          description: Диагностика webhook подключения; `null`, если webhook не поддерживается или ещё не приходил.
+          required: [last_received_at, rejected_count, last_rejected_at, last_reject_reason]
+          properties:
+            last_received_at: {type: [string, 'null'], format: date-time}
+            rejected_count: {type: integer, minimum: 0, description: Отклонённые доставки за последние 24 ч.}
+            last_rejected_at: {type: [string, 'null'], format: date-time}
+            last_reject_reason: {type: [string, 'null'], description: '`signature_invalid`, `payload_invalid`, `adapter_unavailable`.'}
     SyncRunRequest:
       type: object
       additionalProperties: false
@@ -6218,7 +6273,7 @@ components:
         data_kind: {$ref: '#/components/schemas/DataKind'}
     CiCheckProfile:
       type: object
-      required: [project_id, profile_version_no, entries, expected_reports, limits]
+      required: [project_id, profile_version_no, entries, expected_reports, documentation_roots, limits]
       properties:
         project_id: {type: string, format: uuid}
         profile_version_no: {type: integer, minimum: 1}
@@ -6236,6 +6291,16 @@ components:
               profile_id: {type: string}
               image_digest: {type: [string, 'null'], pattern: '^sha256:[0-9a-f]{64}$', description: 'Образ штатного профиля; `null` для режима импорта.'}
         expected_reports: {type: array, items: {$ref: '#/components/schemas/AnalysisKind'}}
+        documentation_roots:
+          type: array
+          description: Корни документации проекта для профилей `docs` и `openapi` (UC-36); пусто, если корни не назначены.
+          items:
+            type: object
+            required: [root_id, kind, path_prefix]
+            properties:
+              root_id: {type: string, format: uuid}
+              kind: {type: string, enum: [docs, openapi]}
+              path_prefix: {type: string, description: Путь корня в репозитории; пустая строка - корень репозитория.}
         limits:
           type: object
           required: [max_package_bytes, max_unpacked_bytes, max_files]
@@ -6250,8 +6315,10 @@ components:
       type: object
       required: [file, schema_id, schema_version, source_provider, source_instance_key, project_id]
       properties:
-        file: {type: string, contentMediaType: application/octet-stream, description: Файл JSON или CSV по схеме импорта.}
-        schema_id: {type: string, enum: [tasks, task_events, relations, findings, junit, coverage, documents]}
+        file: {type: string, contentMediaType: application/octet-stream, description: 'Файл по схеме импорта: JSON или CSV для фактов, отчёт поддержанного формата для `findings`, `junit` и `coverage`.'}
+        schema_id: {type: string, enum: [tasks, task_events, relations, merge_requests, ci_runs, findings, junit, coverage, documents], description: '`merge_requests` и `ci_runs` несут те же факты MR, запусков, jobs и попыток, что отдают адаптеры Git и CI.'}
+        report_format: {type: string, enum: [envelope, sarif, gitlab_security, gitlab_code_quality, junit_xml, lcov, cobertura, jacoco], description: 'Формат файла для `findings`, `junit` и `coverage`; для остальных схем не передаётся. `envelope` - находки в формате универсального импорта.'}
+        commit_sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$', description: 'Ревизия, к которой относится отчёт; обязательна для `findings`, `junit` и `coverage`. Без неё отчёт отклоняется: результат не привязывается к head по догадке.'}
         schema_version: {type: string, maxLength: 16}
         source_provider: {$ref: '#/components/schemas/Provider'}
         source_instance_key: {type: string, maxLength: 512, description: Экземпляр системы-источника; совпадение с подключённым экземпляром даёт те же идентичности (раздел 12.4).}
@@ -6399,6 +6466,8 @@ components:
       additionalProperties: false
       description: |
         Правило сопоставления (раздел 12.5.6). Значение без правила остаётся неизвестным и не даёт начала или завершения.
+        code_required_type отмечает ID типа задачи, для которого обязательна связь с MR (A20, T28);
+        native_value пуст, meaning - code_required. Без таких правил A20 и T28 не рассчитываются.
         Правила acceptance_gate, epic_field и business_epic_value доступны с M1; на M0
         их передача даёт 422 с not_allowed_value у rule_kind. acceptance_gate отмечает
         ID статуса приёмки отдельно от основного смысла этого статуса; native_value пуст.
@@ -6407,7 +6476,7 @@ components:
 
       required: [rule_kind, instance_id, native_ref, native_value, meaning, rank]
       properties:
-        rule_kind: {type: string, enum: [status, resolution, issue_type, size_field, size_value, team_field, team_value, acceptance_gate, epic_field, business_epic_value]}
+        rule_kind: {type: string, enum: [status, resolution, issue_type, code_required_type, size_field, size_value, team_field, team_value, acceptance_gate, epic_field, business_epic_value]}
         instance_id: {type: string, format: uuid}
         native_ref: {type: string, minLength: 1, maxLength: 255}
         native_value: {type: string, maxLength: 255, description: Пустая строка для правил без значения.}
@@ -6547,6 +6616,7 @@ components:
         basis_revision_id: {type: [string, 'null'], format: uuid, description: Обязателен для `historical_p85`.}
     TargetVersion:
       type: object
+      description: Версия действует с момента подтверждения `confirmed_at` до подтверждения следующей версии той же группы; задним числом срок не задаётся, прежние результаты сохраняют свою версию (FR-019).
       required: [task_type, size_label, version_no, base_version_no, duration_seconds, basis, basis_revision_id, basis_value_seconds, basis_n, confirmed_by, confirmed_at]
       properties:
         task_type: {type: string}
@@ -6590,6 +6660,14 @@ components:
         metric_id: {type: string}
         definition_version: {type: integer}
         unit: {type: string}
+        group:
+          type: object
+          description: Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для отчёта команды - тип или размер задачи.
+          properties:
+            task_type: {type: [string, 'null']}
+            size_label: {type: [string, 'null'], description: '`null` - группа «без размера».'}
+            event_kind: {type: string}
+            actor_kind: {$ref: '#/components/schemas/ActorKind'}
         points: {type: array, items: {$ref: '#/components/schemas/MetricPoint'}}
     TeamReport:
       type: object
@@ -6615,6 +6693,10 @@ components:
         name: {type: string}
         unit: {type: string}
         catalog_ref: {type: string, description: Определение в каталоге метрик.}
+        parameters:
+          type: object
+          description: 'Параметры версии определения, от которых зависит значение; например, для T23 версии 1 - `follow_up_days: 30`. Отсутствует, если параметров нет.'
+          additionalProperties: true
     MetricDefinitionPage:
       type: object
       required: [data, next_cursor]
@@ -6695,6 +6777,16 @@ components:
         value: {type: [number, 'null']}
         reason_code: {type: [string, 'null']}
         basis_deleted: {type: boolean, description: Основание удалено по запросу или сроку; содержимое объекта не выдаётся.}
+        task_type: {type: [string, 'null'], description: Тип задачи по сопоставлению; передаётся для когорт задач.}
+        size_label: {type: [string, 'null'], description: 'Размер задачи на начало эпизода; `null` - группа «без размера». Передаётся для когорт задач.'}
+        interval:
+          type: object
+          description: Интервал, давший вклад - эпизод работы, блокировка или ожидание ревью. Передаётся для показателей длительности и возраста.
+          required: [from, to]
+          properties:
+            from: {type: string, format: date-time}
+            to: {type: [string, 'null'], format: date-time, description: '`null` - интервал открыт на as_of.'}
+        task_age_seconds: {type: [integer, 'null'], description: Возраст текущего эпизода задачи на as_of; передаётся в срезах ожидания ревью и оговорок CI рядом с ожиданием MR в `value`.}
         pipeline_id: {type: string, format: uuid, description: 'Для attempt-оснований I18 передаётся ID доступного pipeline для UI-55/UI-56; закрытый pipeline и его вклад не выдаются.'}
     CohortPage:
       type: object
@@ -6797,7 +6889,7 @@ components:
       properties:
         id: {type: string, format: uuid}
         object: {$ref: '#/components/schemas/ObjectRef'}
-        event_kind: {type: string, description: 'Для задач - `created`, `field_change`, `comment`, `link_change`, `moved`; для MR - `ready`, `reviewer_assigned`, `review`, `comment`, `head_pushed`, `merged` и т. д.'}
+        event_kind: {type: string, description: 'Для задач - `created`, `field_change`, `comment`, `link_change`, `moved`; для MR - `ready`, `reviewer_assigned`, `reviewer_removed`, `review`, `comment`, `approval`, `head_pushed`, `merged`, `closed`, `reopened`; для pipeline - `pipeline_started`, `pipeline_finished`, `attempt_started`, `attempt_finished` (исход - в `after_value`); для документа - `version_created`.'}
         field: {type: [string, 'null']}
         before_value: {type: [string, 'null']}
         after_value: {type: [string, 'null']}
@@ -6812,7 +6904,18 @@ components:
       required: [data, history_from, next_cursor, access_limited, access_notes]
       properties:
         data: {type: array, items: {$ref: '#/components/schemas/TimelineEvent'}}
-        history_from: {type: [string, 'null'], format: date-time, description: 'Граница доступной истории; раньше неё событий нет в данных, а не в источнике.'}
+        history_from: {type: [string, 'null'], format: date-time, description: 'Самая поздняя из границ истории подключений проекта: раньше неё часть событий отсутствует в данных, а не в источнике.'}
+        sources:
+          type: array
+          description: Граница и полнота истории по каждому подключению проекта.
+          items:
+            type: object
+            required: [connection_id, provider, history_from, completeness]
+            properties:
+              connection_id: {type: string, format: uuid}
+              provider: {$ref: '#/components/schemas/Provider'}
+              history_from: {type: [string, 'null'], format: date-time}
+              completeness: {type: string, enum: [complete, partial, unknown]}
         next_cursor: {type: [string, 'null']}
         access_limited: {type: boolean}
         access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}
@@ -6866,7 +6969,7 @@ components:
         decision: {type: string, enum: [confirm, reject]}
     TaskDetail:
       type: object
-      required: [id, key, title, project_id, status, task_type, size_label, team_id, age_seconds, over_target, updated_at, source_url, target, blocked_intervals, observation, links, redactions]
+      required: [id, key, title, project_id, status, task_type, size_label, team_id, age_seconds, over_target, updated_at, source_url, target, blocked_intervals, observations, links, redactions]
       properties:
         id: {type: string, format: uuid}
         key: {type: [string, 'null']}
@@ -6894,14 +6997,33 @@ components:
             properties:
               from: {type: string, format: date-time}
               to: {type: [string, 'null'], format: date-time, description: '`null` - блокировка открыта на as_of.'}
-        observation:
-          type: object
-          description: Наблюдение о текущем эпизоде задачи по основаниям (FR-029).
-          required: [kind, since, basis]
-          properties:
-            kind: {type: string, enum: [awaiting_reviewer, awaiting_first_response, ci_failed, ci_running, blocked, no_merge_request, over_target, unknown]}
-            since: {type: [string, 'null'], format: date-time}
-            basis: {type: array, items: {$ref: '#/components/schemas/ObjectRef'}}
+        observations:
+          type: array
+          description: |
+            Наблюдения о текущем эпизоде задачи по основаниям (FR-029), от самого раннего. У задачи их может быть
+            несколько: например, MR без ревьюера и успешный pipeline после повторов. Если фактов для вывода
+            не хватает, список содержит одно наблюдение `unknown` с действием `clarify_reason`; причина
+            задержки не придумывается. Наблюдения о находках и отчётах строятся только по доступным
+            пользователю данным.
+          minItems: 1
+          items:
+            type: object
+            required: [kind, since, basis, action]
+            properties:
+              kind:
+                type: string
+                enum: [awaiting_reviewer, awaiting_first_response, ci_failed, ci_running, ci_passed_after_retry, missing_report, new_finding, blocked, no_merge_request, over_target, unknown]
+                description: '`ci_passed_after_retry` - pipeline текущего head успешен после повторных попыток; `missing_report` - не получен отчёт, ожидаемый по профилю; `new_finding` - новая находка относительно сопоставимой базы в связанном MR.'
+              since: {type: [string, 'null'], format: date-time}
+              basis: {type: array, items: {$ref: '#/components/schemas/ObjectRef'}}
+              action:
+                type: string
+                enum: [assign_reviewer, request_review, check_pipeline, restore_report, review_finding, resolve_blocker, link_merge_request, review_target, clarify_reason]
+                description: Следующее доступное действие; выполняется пользователем в исходной системе или на экране craftPulse. `clarify_reason` - вопрос к исполнителю, когда данных для вывода нет.
+              question:
+                type: string
+                enum: [reviewer_assigned, merge_request_exists, delay_reason]
+                description: 'Недостающий вопрос при действии `clarify_reason`: назначен ли ревьюер в MR (поле ревьюера недоступно), есть ли MR по задаче, что задерживает задачу. У остальных наблюдений отсутствует.'
         links: {type: array, items: {$ref: '#/components/schemas/Link'}}
         redactions: {$ref: '#/components/schemas/Redactions'}
     ReviewWait:
@@ -6928,6 +7050,10 @@ components:
         ready_at: {type: [string, 'null'], format: date-time}
         review_wait: {$ref: '#/components/schemas/ReviewWait'}
         source_url: {type: [string, 'null'], format: uri}
+        links:
+          type: array
+          description: Связи MR с задачами, подтверждённые и кандидаты. Передаются в `getMergeRequest`; задача без доступа у пользователя не включается.
+          items: {$ref: '#/components/schemas/Link'}
     GitSha:
       type: string
       pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'
@@ -6951,7 +7077,9 @@ components:
       required: [item_no, item_kind, finding_id, rule_id, severity, location, rank]
       properties:
         item_no: {"type":"integer","minimum":1,"description":"Номер в отфильтрованной сводке, начиная с 1. Номер строки хранилища не выдаётся."}
-        item_kind: {type: string, enum: [new, resolved, newly_observed, unchanged, not_evaluated, ci_attempts, coverage, tests]}
+        item_kind: {type: string, enum: [new, resolved, newly_observed, unchanged, accepted, not_evaluated, ci_attempts, coverage, tests], description: '`accepted` - находка с действующим исключением: она остаётся в сводке отдельно и не считается исправленной.'}
+        analysis_kind: {$ref: '#/components/schemas/AnalysisKind', description: Вид анализа строки; отсутствует у строк попыток CI.}
+        mode: {type: string, enum: [import, builtin], description: Отчёт клиента или штатный профиль; передаётся для строк находок и непроверенных областей.}
         finding_id: {type: [string, 'null'], format: uuid}
         rule_id: {type: [string, 'null']}
         severity: {type: [string, 'null'], description: Сопоставленная серьёзность; исходная - в карточке находки.}
@@ -6980,6 +7108,40 @@ components:
               analysis_kind: {$ref: '#/components/schemas/AnalysisKind'}
               reason_code: {type: string}
         coverage_changed_lines: {$ref: '#/components/schemas/MetricValue'}
+        change:
+          type: object
+          description: Размер и структура изменения относительно базы (C15-C17). Значение без сопоставимой базы или анализа имеет состояние `NOT_EVALUATED`.
+          required: [lines_added, lines_removed, files_changed, complexity_increased_functions, new_clone_groups]
+          properties:
+            lines_added: {$ref: '#/components/schemas/MetricValue'}
+            lines_removed: {$ref: '#/components/schemas/MetricValue'}
+            files_changed: {$ref: '#/components/schemas/MetricValue'}
+            complexity_increased_functions: {$ref: '#/components/schemas/MetricValue'}
+            new_clone_groups: {$ref: '#/components/schemas/MetricValue'}
+        tests:
+          type: object
+          description: Исходы тестов head по отчётам JUnit (I19); без отчёта значения `NOT_EVALUATED`.
+          required: [passed, failed, errored, skipped]
+          properties:
+            passed: {$ref: '#/components/schemas/MetricValue'}
+            failed: {$ref: '#/components/schemas/MetricValue'}
+            errored: {$ref: '#/components/schemas/MetricValue'}
+            skipped: {$ref: '#/components/schemas/MetricValue'}
+        expected:
+          type: object
+          description: Ожидаемый состав проверок и отчётов профиля (I08/I09).
+          required: [missing_checks, missing_reports]
+          properties:
+            missing_checks: {$ref: '#/components/schemas/MetricValue'}
+            missing_reports: {$ref: '#/components/schemas/MetricValue'}
+        last_good:
+          type: [object, 'null']
+          description: Последняя ревизия MR с полным набором ожидаемых отчётов; показывается отдельно с датой и не переносится на текущий head.
+          required: [head_sha, revision_no, built_at]
+          properties:
+            head_sha: {$ref: '#/components/schemas/GitSha'}
+            revision_no: {type: integer, minimum: 1}
+            built_at: {type: string, format: date-time}
         ci:
           type: [object, 'null']
           required: [pipeline_id, outcome, attempts, retried_jobs]
@@ -6988,6 +7150,7 @@ components:
             outcome: {type: string, enum: [running, success, failed, canceled, skipped, unknown]}
             attempts: {type: integer}
             retried_jobs: {type: integer}
+            parent_pipeline_id: {type: [string, 'null'], format: uuid, description: 'Родительский pipeline у дочернего.'}
         publication:
           type: object
           required: [status, external_id, error_code, published_at]
@@ -7271,6 +7434,8 @@ components:
             id: {type: string, format: uuid}
             producer: {type: string}
             producer_version: {type: string}
+            profile_id: {type: [string, 'null'], description: 'Профиль проверки, которым получен отчёт; `null` для отчёта клиента без профиля.'}
+            mode: {type: string, enum: [import, builtin]}
             rules_version: {type: [string, 'null']}
             db_version: {type: [string, 'null']}
             sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
@@ -7362,7 +7527,7 @@ components:
         scope: {$ref: '#/components/schemas/ExceptionScope'}
         effective_from: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
-        approval_required: {type: boolean}
+        approval_required: {type: boolean, description: 'На M0 - `true` для `accepted_risk` по находкам видов security, secret, dependency и iac (BR-012).'}
         external_authority: {type: [string, 'null']}
         external_ref: {type: [string, 'null']}
         author_user_id: {type: string, format: uuid}

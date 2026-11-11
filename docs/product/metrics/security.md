@@ -29,7 +29,7 @@
 
 | Сервис | Путь подключения | Что собираем | Приоритет и ограничения |
 |---|---|---|---|
-| **SourceCraft Security / AppSec** | Существующий отдельный AppSec API адаптер с PAT владельца | Scan ID/SHA/status, engine, группы находок, severity, first found, CVSS при наличии | **M0: сохранить и улучшить**. В текущем адаптере нет полноценной доказанной file/package coverage; не выдавать enabled engine за complete scan |
+| **SourceCraft Security / AppSec** | Отдельный AppSec API-адаптер с PAT владельца | Scan ID/SHA/status, engine, группы находок, severity, first found, CVSS при наличии | **M1 по пилоту**. API не даёт доказанной file/package coverage; не выдавать enabled engine за complete scan |
 | **GitLab SAST / dependency / secret / container reports** | JSON security artifacts из CI, не обязательный платный vulnerability dashboard | Findings, scanner/rules, identifiers, locations/packages, scan status и commit | **M0 ingest**. JSON-схемы security reports отличаются от SARIF; версия parser обязательна. Direct vulnerability API - позже с проверкой редакции и прав |
 | **GitHub Code Security / code scanning**, также результаты CodeQL клиента | Code scanning API или SARIF из CI | Alerts/analysis/rule/state/location, dismissal metadata при наличии | **M1 direct**, **M0 SARIF**. Для private repositories нужны соответствующие возможности/права, а не один read Git-token |
 | **SonarQube** | Тот же connector, что в блоке кода | Security issues, hotspots/review state, rules и analysis revision | **M0**. Security hotspot требует review и не равен доказанной vulnerability. Community/Server editions не объявляются одинаковыми |
@@ -208,7 +208,7 @@ M0: группы **немедленно разобрать → запланир�
 
 ## Этапы реализации и приёмка
 
-**M0:** managed toolkit внутри CI клиента, versioned starter rules, reports+scan manifest, GitLab security JSON/SARIF/native отчёты выбранных producer, SourceCraft import, Sonar security facts, redaction, baseline/lifecycle, advisory policy. Поддержанные языки SAST и экосистемы SCA перечисляются точно в manifest; всё остальное import-first.
+**M0:** managed toolkit внутри CI клиента, versioned starter rules, reports+scan manifest, GitLab security JSON/SARIF/native отчёты выбранных producer, Sonar security facts, redaction, baseline/lifecycle, advisory policy. Поддержанные языки SAST и экосистемы SCA перечисляются точно в manifest; всё остальное import-first.
 
 **M1:** registry inventory, EPSS/KEV, CodeScoring/DefectDojo/Dependency-Track по первым клиентам, SBOM reevaluation, SLA/exceptions, паспорт релиза. **M2:** runtime exposure, точечные language-specific reachability и DAST, автоматизированные предложения исправлений после проверки качества.
 

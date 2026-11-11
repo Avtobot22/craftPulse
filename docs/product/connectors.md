@@ -14,7 +14,7 @@
 | Универсальный импорт | Задачи и события истории, явные relations, findings, JUnit, coverage и manifests | Поддержанные метрики без нового native API-коннектора | CSV текущих задач даёт snapshot; прошлый WIP из него не восстанавливается |
 | Git-документация, опция | Выбранные Markdown roots, owners, локальные links/anchors, OpenAPI | Тонкий D-профиль M0 | Scope и аудитория задаются явно; произвольный проектный build не запускается ради чтения текста |
 
-Существующие Git/PR, CI и AppSec-сборщики SourceCraft сохраняются в техническом M0. Расширение их возможностей проходит отдельную проверку API и версии. Сохранённая поддержка прототипа не приравнивается к полной поддержке новых flow-метрик SourceCraft Issues.
+На стенде MVP дополнительно подключаются GitHub.com с GitHub Actions, Jenkins в пределах build API, SonarQube Server/Community Build и Confluence DC в выбранной области. Состав стенда и объём каждого адаптера задаёт [раздел 2 требований MVP](../technical-specification/mvp-scope.md#2-интеграции-и-штатная-реализация). У клиента эти адаптеры включаются, если он работает на этом стеке; этапы в таблицах ниже относятся к клиентским поставкам.
 
 Для начального flow-отчёта не требуется внедрять все сканеры и все технические M0-профили. Их подключение образует отдельный законченный сценарий MR и анализа. Порядок - в [видении](vision.md#ход-разработки).
 
@@ -23,7 +23,7 @@
 | Источник | Этап | Что добавляет | Существенное условие |
 |---|---|---|---|
 | Generic Git SSH/HTTPS | M0 | Дерево, refs, diff и история для структуры и касаний | MR/review API и публикация отдельно; можно использовать CI-ссылку на результат |
-| SourceCraft | Сохранение существующего M0 | Git, PR и факты имеющихся адаптеров | Delta, публикация и расширенная CI-история включаются после contract test |
+| SourceCraft | M1 по пилоту | Git, PR, review и CI по опубликованному API | Новый адаптер по общему контракту; возможности включаются после contract test |
 | GitHub / Enterprise Server | M1 | PR, reviews, checks и workflow links в общей модели | Проверяются версия GHES и доступ App; права на private security data отдельны |
 | GitVerse | M1 | PR, файлы, коммиты, review и CI по подтверждённому контракту | Сходство API с GitHub не означает совместимость семантики |
 | GitFlic | M1 после GitVerse либо по пилоту | Git, MR, обсуждения и CI | Test/report capabilities проверяются отдельно |
@@ -39,7 +39,7 @@
 | Яндекс Трекер | M1 | Changelog с пагинацией, очереди, типы/статусы, поля/оценки и links | История и workflow не копируются из Jira; sprint capabilities проверяются |
 | Jira Cloud | M1, отдельный адаптер | Issues/changelog и Agile metadata на своей версии API | DC endpoints и модель пагинации не переносятся автоматически |
 | GitLab Issues / GitHub Issues | M1 для базового flow | Состояния, timeline, поля и связи | Label не задаёт универсальный workflow; GitHub PR не удваивает issue-throughput |
-| SourceCraft Issues | M1, часть snapshot-фактов есть | Проверенные status/timestamps/labels/comments; история добавляется отдельно | Текущий status не даёт cycle time и старый WIP |
+| SourceCraft Issues | M1 по пилоту | Status, timestamps, labels, comments и история переходов при её наличии в API | Текущий status не даёт cycle time и старый WIP |
 | YouTrack / Kaiten | M2 | Подтверждённые activities/перемещения, поля и история | Схемы workflow, categories и пагинация проверяются по версии |
 | Другие трекеры | По отдельному discovery | Сначала generic import с нужными событиями | Адаптер включается после проверки необходимых capabilities |
 
@@ -54,7 +54,7 @@
 | SonarQube Server / Community Build | Web API, первый direct quality connector технического M0; Cloud отдельной конфигурацией | Analysis/revision, measures, issues/rules, native severity, gates, scope | Версия/edition определяют branch и PR capabilities; SARIF не предполагается |
 | Линтеры | Поддержанные родные JSON, GitLab Code Quality, Checkstyle XML; общий SARIF при реальном экспорте | Правило, location, message, severity, suppression, execution metadata | Парсер формата не доказывает поддержку всех правил и языков producer |
 | PVS-Studio / Qodana | M0 через поддержанный SARIF, у PVS через converter | Rule IDs, paths, severity и имеющееся baseline-evidence | Движок клиента и его лицензия не становятся нашей штатной поставкой |
-| SourceCraft AppSec | Существующий отдельный API-адаптер M0 | Scan ID/SHA/status, engine, группы findings и доступные поля | Enabled engine не доказывает полный file/package coverage |
+| SourceCraft AppSec | M1 по пилоту, отдельный API-адаптер | Scan ID/SHA/status, engine, группы findings и доступные поля | Enabled engine не доказывает полный file/package coverage |
 | GitLab security reports | M0 ingest JSON artifacts | Findings, scanner/rules, identifiers, scope, commit и scan status | Security JSON - отдельная schema, не SARIF; платный vulnerability API для этого импорта не обязателен |
 | Solar appScreener | M0 SARIF, M1 API по пилоту | Findings и статусы в доступной редакции | Набор exports/endpoints проверяется на конкретном инстансе |
 | CodeScoring SCA | M1: SBOM/Johnny output, API по контракту | Компоненты, resolved versions, vulnerabilities/policies при наличии | SBOM без vulnerabilities - inventory. SCA API не доказывает наличие TQI-метрик |

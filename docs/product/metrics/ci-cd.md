@@ -15,7 +15,7 @@
 | Сервис | Что читаем | Что получаем для метрик | Этап и существенная граница |
 |---|---|---|---|
 | **GitLab CI self-managed CE/EE**, GitLab.com | Pipelines; jobs **с include_retried=true**; trigger/child relations в доступном versioned API; artifacts; MR→pipeline | Статусы/attempts/allow_failure, duration/queued_duration, runner labels, tests/coverage/report manifests | **M0**. Пагинация всех jobs, parent/child pipeline не удваивать; security features и права на artifacts проверяются отдельно |
-| **SourceCraft CI** | Runs→workflows→tasks→cubes, даты, статусы, artifacts по опубликованному API | Длительность и результат на правильном уровне; расширенная детализация и PR links, если отданы | **M0 сохранить имеющееся; расширить отдельным contract test**. Документированные поля не гарантируют полноту retry history |
+| **SourceCraft CI** | Runs→workflows→tasks→cubes, даты, статусы, artifacts по опубликованному API | Длительность и результат на правильном уровне; расширенная детализация и PR links, если отданы | **M1 по пилоту**, новый адаптер с contract test. Документированные поля не гарантируют полноту retry history |
 | **Jenkins** | Core JSON API builds/result/timestamp/duration/queue; artifacts; test reports через установленный plugin | Базовая история, длительность, tests; step graph при подходящем plugin/collector | **M1**. Внутренний `retry{}` может быть невидим как отдельная попытка; `UNSTABLE` не success |
 | **GitHub Actions / GHES** | Workflow runs, run_attempt, jobs для **каждой попытки**, artifacts, checks/PR mapping | Attempts, status/conclusion, timings, matrix, test/coverage импорт | **M1**. Runner queue и pending/manual waits не выводить из одного timestamp без определения |
 | **GitVerse CI** | Workflows/runs/jobs/artifacts API при проверенном контракте | Аналог нормализованного CI model | **M1**. GitHub-подобный API не означает identical retry semantics |
@@ -241,7 +241,7 @@ craftpulse:
 
 ## План выпуска и приёмка
 
-**M0:** GitLab collector, generic upload, поддержанные JUnit/coverage parsers, complete attempt history, outcomes/cohorts, observed retry flips, allow_failure, missing reports, MR advisory и native SourceCraft preservation. **M1:** GitHub/Jenkins/российские CI по пилотам, очередь/DAG, устойчивое test identity, artifact/deploy events, основные delivery показатели при полных данных. **M2:** incident-aware пять DORA метрик полностью, billing и shadow test selection.
+**M0:** GitLab collector, generic upload, поддержанные JUnit/coverage parsers, complete attempt history, outcomes/cohorts, observed retry flips, allow_failure, missing reports и MR advisory. **M1:** GitHub/Jenkins/российские CI, включая SourceCraft CI, по пилотам, очередь/DAG, устойчивое test identity, artifact/deploy events, основные delivery показатели при полных данных. **M2:** incident-aware пять DORA метрик полностью, billing и shadow test selection.
 
 Приёмочный набор: pipeline с 3 attempts и последним pass; matrix с одинаковым job name; failed allowed job; canceled финальный шаг; pipeline без JUnit; пустой валидный JUnit; job infra failure без test failures; child pipeline; artifacts с другого SHA; expired artifact; неполная пагинация; workflow/nightly разной длины; одинаковый digest в разных tags; одно multi-region rollout; новая CVE после релиза; failed deploy и отдельный production incident. Для каждого ожидаются правильные числитель/знаменатель, data state и MR текст.
 
