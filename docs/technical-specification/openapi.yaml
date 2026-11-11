@@ -6117,6 +6117,7 @@ components:
         native_scope_id: {type: string, maxLength: 255}
         display_name: {type: string}
         area_id: {type: [string, 'null'], format: uuid, description: Область появляется после первого сбора.}
+        repository_scope_id: {type: [string, 'null'], format: uuid}
         history_from: {type: [string, 'null'], format: date-time}
     ConnectionScopeInput:
       type: object
@@ -6126,6 +6127,7 @@ components:
         kind: {type: string, enum: [tracker_project, repository, wiki_space, ci_project, analysis_project]}
         native_scope_id: {type: string, minLength: 1, maxLength: 255}
         history_from: {type: [string, 'null'], format: date-time, description: Начало загрузки истории; `null` - вся доступная история.}
+        repository_scope_id: {type: [string, 'null'], format: uuid, description: 'Для `ci_project` и `analysis_project` вне Git-хостинга (Jenkins, SonarQube) - область репозитория, к которой относятся их запуски и отчёты (раздел 13.5).'}
     Connection:
       type: object
       required: [id, name, provider, instance, status, adapter_kind, access_mode, credentials_set_at, sync_paused, paused_until, last_success_at, scopes, capabilities]
@@ -6464,6 +6466,8 @@ components:
       additionalProperties: false
       description: |
         Правило сопоставления (раздел 12.5.6). Значение без правила остаётся неизвестным и не даёт начала или завершения.
+        code_required_type отмечает ID типа задачи, для которого обязательна связь с MR (A20, T28);
+        native_value пуст, meaning - code_required. Без таких правил A20 и T28 не рассчитываются.
         Правила acceptance_gate, epic_field и business_epic_value доступны с M1; на M0
         их передача даёт 422 с not_allowed_value у rule_kind. acceptance_gate отмечает
         ID статуса приёмки отдельно от основного смысла этого статуса; native_value пуст.
@@ -6472,7 +6476,7 @@ components:
 
       required: [rule_kind, instance_id, native_ref, native_value, meaning, rank]
       properties:
-        rule_kind: {type: string, enum: [status, resolution, issue_type, size_field, size_value, team_field, team_value, acceptance_gate, epic_field, business_epic_value]}
+        rule_kind: {type: string, enum: [status, resolution, issue_type, code_required_type, size_field, size_value, team_field, team_value, acceptance_gate, epic_field, business_epic_value]}
         instance_id: {type: string, format: uuid}
         native_ref: {type: string, minLength: 1, maxLength: 255}
         native_value: {type: string, maxLength: 255, description: Пустая строка для правил без значения.}
@@ -7142,6 +7146,7 @@ components:
             outcome: {type: string, enum: [running, success, failed, canceled, skipped, unknown]}
             attempts: {type: integer}
             retried_jobs: {type: integer}
+            parent_pipeline_id: {type: [string, 'null'], format: uuid, description: 'Родительский pipeline у дочернего.'}
         publication:
           type: object
           required: [status, external_id, error_code, published_at]
@@ -7518,7 +7523,7 @@ components:
         scope: {$ref: '#/components/schemas/ExceptionScope'}
         effective_from: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
-        approval_required: {type: boolean}
+        approval_required: {type: boolean, description: 'На M0 - `true` для `accepted_risk` по находкам видов security, secret, dependency и iac (BR-012).'}
         external_authority: {type: [string, 'null']}
         external_ref: {type: [string, 'null']}
         author_user_id: {type: string, format: uuid}
