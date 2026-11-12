@@ -3,6 +3,8 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
@@ -18,6 +20,7 @@ import (
 type Handler struct {
 	fallback
 	session
+	organization
 }
 
 type fallback struct {
@@ -27,11 +30,15 @@ type fallback struct {
 type Deps struct {
 	Logins     usecase.Logins
 	Access     usecase.Access
+	Structure  usecase.Structure
 	Registerer prometheus.Registerer
 }
 
 func New(d Deps) *Handler {
-	return &Handler{session: newSession(d.Logins, d.Access, d.Registerer)}
+	return &Handler{
+		session:      newSession(d.Logins, d.Access, d.Registerer),
+		organization: organization{structure: d.Structure},
+	}
 }
 
 func ParameterError(c *gin.Context, err error, _ int) {
@@ -44,6 +51,14 @@ func RequestError(c *gin.Context, err error) {
 	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		response.Write(c, response.PayloadTooLarge)
 		return
+	}
+	// encoding/json reports a refused field only in the message: json: unknown field "name".
+	if quoted, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+		name, uerr := strconv.Unquote(quoted)
+		if uerr == nil {
+			response.WriteDetail(c, response.ValidationFailed, "", []entity.FieldError{{Field: name, Code: entity.FieldUnknownField}})
+			return
+		}
 	}
 	response.Write(c, response.MalformedRequest)
 }
@@ -62,6 +77,16 @@ func Error(c *gin.Context, err error) {
 		return
 	case errors.Is(err, entity.ErrForbidden):
 		response.Write(c, response.Forbidden)
+		return
+	case errors.Is(err, entity.ErrVersionConflict):
+		response.Write(c, response.VersionConflict)
+		return
+	case errors.Is(err, errMalformedPage):
+		response.Write(c, response.MalformedRequest)
+		return
+	}
+	if verr, ok := errors.AsType[*entity.ValidationError](err); ok {
+		response.WriteDetail(c, response.ValidationFailed, "", verr.Fields)
 		return
 	}
 	_ = c.Error(err)

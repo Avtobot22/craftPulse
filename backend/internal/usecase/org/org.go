@@ -10,14 +10,31 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 )
 
+type Auditor interface {
+	Record(ctx context.Context, e entity.AuditEvent) error
+}
+
+// Deps of the module; installation uses only Orgs, Tenants and Clock.
+type Deps struct {
+	Orgs    repo.OrgRepo
+	Tenants repo.TenantRepo
+	Tx      repo.Transactor
+	Auditor Auditor
+	Clock   clock.Clock
+	NewID   func() (entity.ID, error)
+}
+
 type UseCase struct {
 	orgs    repo.OrgRepo
 	tenants repo.TenantRepo
+	tx      repo.Transactor
+	auditor Auditor
 	clock   clock.Clock
+	newID   func() (entity.ID, error)
 }
 
-func New(orgs repo.OrgRepo, tenants repo.TenantRepo, c clock.Clock) *UseCase {
-	return &UseCase{orgs: orgs, tenants: tenants, clock: c}
+func New(d Deps) *UseCase {
+	return &UseCase{orgs: d.Orgs, tenants: d.Tenants, tx: d.Tx, auditor: d.Auditor, clock: d.Clock, newID: d.NewID}
 }
 
 // CreateOrganization runs inside the caller's organization transaction: the tenant row and the
@@ -139,13 +156,13 @@ func (u *UseCase) Profile(ctx context.Context, orgID, userID entity.ID, at time.
 		}
 		projects = append(projects, owned...)
 	}
-	if p.Areas.Teams, err = u.orgs.ActiveAreas(ctx, orgID, entity.AreaTeam, p.Whole, teams); err != nil {
+	if p.Areas.Teams, err = u.orgs.VisibleAreas(ctx, orgID, entity.AreaTeam, p.Whole, teams); err != nil {
 		return entity.Profile{}, err
 	}
-	if p.Areas.Projects, err = u.orgs.ActiveAreas(ctx, orgID, entity.AreaProject, p.Whole, projects); err != nil {
+	if p.Areas.Projects, err = u.orgs.VisibleAreas(ctx, orgID, entity.AreaProject, p.Whole, projects); err != nil {
 		return entity.Profile{}, err
 	}
-	if p.Areas.Services, err = u.orgs.ActiveAreas(ctx, orgID, entity.AreaService, p.Whole, services); err != nil {
+	if p.Areas.Services, err = u.orgs.VisibleAreas(ctx, orgID, entity.AreaService, p.Whole, services); err != nil {
 		return entity.Profile{}, err
 	}
 	return p, nil

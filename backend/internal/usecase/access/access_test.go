@@ -11,7 +11,10 @@ import (
 func TestDecide(t *testing.T) {
 	t.Parallel()
 	team, other := entity.ID{1}, entity.ID{2}
-	admin := entity.Profile{Whole: true, Roles: []entity.RoleAssignment{{Role: entity.RoleAdministrator}}}
+	admin := entity.Profile{
+		Whole: true, Roles: []entity.RoleAssignment{{Role: entity.RoleAdministrator}},
+		Areas: entity.Areas{Teams: []entity.Area{{ID: team}, {ID: other}}},
+	}
 	developer := entity.Profile{
 		Roles: []entity.RoleAssignment{{Role: entity.RoleDeveloper, TeamID: team}},
 		Areas: entity.Areas{Teams: []entity.Area{{ID: team}}},

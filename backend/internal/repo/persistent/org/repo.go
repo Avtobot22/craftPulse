@@ -170,38 +170,32 @@ func (r *Repo) TeamProjectIDs(ctx context.Context, orgID entity.ID, teamIDs []en
 	return fromUUIDs(ids), nil
 }
 
-func (r *Repo) ActiveAreas(ctx context.Context, orgID entity.ID, kind entity.AreaKind, whole bool, ids []entity.ID) ([]entity.Area, error) {
+// VisibleAreas returns every area for a whole-organization role and the active areas of ids otherwise.
+func (r *Repo) VisibleAreas(ctx context.Context, orgID entity.ID, kind entity.AreaKind, whole bool, ids []entity.ID) ([]entity.Area, error) {
 	q := New(postgres.Conn(ctx, r.pool))
+	org, uuids := uuid.UUID(orgID), toUUIDs(ids)
 	var (
-		rows []ListActiveTeamsRow
+		rows []ListVisibleTeamsRow
 		err  error
 	)
 	switch kind {
 	case entity.AreaTeam:
-		rows, err = q.ListActiveTeams(ctx, ListActiveTeamsParams{OrganizationID: uuid.UUID(orgID), Whole: whole, Ids: toUUIDs(ids)})
+		rows, err = q.ListVisibleTeams(ctx, ListVisibleTeamsParams{OrganizationID: org, Whole: whole, Ids: uuids})
 	case entity.AreaProject:
-		var pr []ListActiveProjectsRow
-		pr, err = q.ListActiveProjects(ctx, ListActiveProjectsParams{OrganizationID: uuid.UUID(orgID), Whole: whole, Ids: toUUIDs(ids)})
-		for _, p := range pr {
-			rows = append(rows, ListActiveTeamsRow(p))
-		}
+		var pr []ListVisibleProjectsRow
+		pr, err = q.ListVisibleProjects(ctx, ListVisibleProjectsParams{OrganizationID: org, Whole: whole, Ids: uuids})
+		rows = convert(pr, func(x ListVisibleProjectsRow) ListVisibleTeamsRow { return ListVisibleTeamsRow(x) })
 	case entity.AreaService:
-		var sr []ListActiveServicesRow
-		sr, err = q.ListActiveServices(ctx, ListActiveServicesParams{OrganizationID: uuid.UUID(orgID), Whole: whole, Ids: toUUIDs(ids)})
-		for _, s := range sr {
-			rows = append(rows, ListActiveTeamsRow(s))
-		}
+		var sr []ListVisibleServicesRow
+		sr, err = q.ListVisibleServices(ctx, ListVisibleServicesParams{OrganizationID: org, Whole: whole, Ids: uuids})
+		rows = convert(sr, func(x ListVisibleServicesRow) ListVisibleTeamsRow { return ListVisibleTeamsRow(x) })
 	default:
 		return nil, fmt.Errorf("org: unknown area kind %q", kind)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("org: list %ss: %w", kind, err)
 	}
-	areas := make([]entity.Area, len(rows))
-	for i, row := range rows {
-		areas[i] = entity.Area{ID: entity.ID(row.ID), Name: row.Name, Status: row.Status}
-	}
-	return areas, nil
+	return convert(rows, func(x ListVisibleTeamsRow) entity.Area { return area(x.ID, x.Name, x.Status) }), nil
 }
 
 func organization(row GetOrganizationRow) entity.Organization {
@@ -234,17 +228,21 @@ func text(s string) pgtype.Text {
 }
 
 func toUUIDs(ids []entity.ID) []uuid.UUID {
-	out := make([]uuid.UUID, len(ids))
-	for i, id := range ids {
-		out[i] = uuid.UUID(id)
-	}
-	return out
+	return convert(ids, func(id entity.ID) uuid.UUID { return uuid.UUID(id) })
 }
 
 func fromUUIDs(ids []uuid.UUID) []entity.ID {
-	out := make([]entity.ID, len(ids))
-	for i, id := range ids {
-		out[i] = entity.ID(id)
+	return convert(ids, func(id uuid.UUID) entity.ID { return entity.ID(id) })
+}
+
+func area(id uuid.UUID, name, status string) entity.Area {
+	return entity.Area{ID: entity.ID(id), Name: name, Status: status}
+}
+
+func convert[S, T any](in []S, f func(S) T) []T {
+	out := make([]T, len(in))
+	for i, x := range in {
+		out[i] = f(x)
 	}
 	return out
 }

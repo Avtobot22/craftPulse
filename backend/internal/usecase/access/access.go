@@ -57,15 +57,16 @@ func New(tx repo.Transactor, p Profiles, a Auditor, c clock.Clock) *UseCase {
 }
 
 // Authorize returns entity.ErrNotFound when the area is not visible to the subject and entity.ErrForbidden
-// when it is visible but no role grants the action (TZ 13.4); both are recorded in the audit.
-func (u *UseCase) Authorize(ctx context.Context, s entity.Subject, r entity.AccessRequest) error {
+// when it is visible but no role grants the action (TZ 13.4); both are recorded in the audit. On success it
+// returns the scope that read methods of modules take.
+func (u *UseCase) Authorize(ctx context.Context, s entity.Subject, r entity.AccessRequest) (entity.Scope, error) {
 	p, err := u.profile(ctx, s)
 	if err != nil {
-		return err
+		return entity.Scope{}, err
 	}
 	reason, denial := decide(p, r)
 	if denial == nil {
-		return nil
+		return scope(p), nil
 	}
 	err = u.auditor.RecordSeparately(ctx, entity.AuditEvent{
 		OrganizationID: s.OrganizationID,
@@ -80,9 +81,9 @@ func (u *UseCase) Authorize(ctx context.Context, s entity.Subject, r entity.Acce
 		Details:        map[string]any{"action": r.Action},
 	})
 	if err != nil {
-		return err
+		return entity.Scope{}, err
 	}
-	return denial
+	return entity.Scope{}, denial
 }
 
 // CurrentUser lists the actions the roles grant in at least one area; the server still checks each request.
@@ -133,8 +134,10 @@ func granted(p entity.Profile, action string) bool {
 	return false
 }
 
+// visible checks the area lists even for a whole-organization role: they hold every area of the organization,
+// so an ID of another organization or of nothing gives the same 404.
 func visible(p entity.Profile, a entity.AreaRef) bool {
-	if a.ID.IsZero() || p.Whole {
+	if a.ID.IsZero() {
 		return true
 	}
 	var areas []entity.Area
@@ -147,4 +150,15 @@ func visible(p entity.Profile, a entity.AreaRef) bool {
 		areas = p.Areas.Services
 	}
 	return slices.ContainsFunc(areas, func(x entity.Area) bool { return x.ID == a.ID })
+}
+
+func scope(p entity.Profile) entity.Scope {
+	ids := func(areas []entity.Area) []entity.ID {
+		out := make([]entity.ID, len(areas))
+		for i, a := range areas {
+			out[i] = a.ID
+		}
+		return out
+	}
+	return entity.Scope{Whole: p.Whole, Teams: ids(p.Areas.Teams), Projects: ids(p.Areas.Projects), Services: ids(p.Areas.Services)}
 }

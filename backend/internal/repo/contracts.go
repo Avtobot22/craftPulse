@@ -19,6 +19,7 @@ type Transactor interface {
 
 type TenantRepo interface {
 	CreateTenant(ctx context.Context, orgID entity.ID, at time.Time) error
+	NextSeq(ctx context.Context, orgID entity.ID) (int64, error)
 }
 
 // OrgRepo reads and writes tables under row-level security: every call runs in an organization transaction.
@@ -35,7 +36,24 @@ type OrgRepo interface {
 	ActiveRoles(ctx context.Context, orgID, userID entity.ID) ([]entity.RoleAssignment, error)
 	MemberTeamIDs(ctx context.Context, orgID, personID entity.ID, at time.Time) ([]entity.ID, error)
 	TeamProjectIDs(ctx context.Context, orgID entity.ID, teamIDs []entity.ID, at time.Time) ([]entity.ID, error)
-	ActiveAreas(ctx context.Context, orgID entity.ID, kind entity.AreaKind, whole bool, ids []entity.ID) ([]entity.Area, error)
+	VisibleAreas(ctx context.Context, orgID entity.ID, kind entity.AreaKind, whole bool, ids []entity.ID) ([]entity.Area, error)
+	StructureRepo
+}
+
+// StructureRepo is the confirmed structure of the organization (TZ 12.5.1).
+type StructureRepo interface {
+	LockStructureVersion(ctx context.Context, orgID entity.ID) (int64, error)
+	StructureVersion(ctx context.Context, orgID entity.ID) (int64, error)
+	SetStructureVersion(ctx context.Context, orgID entity.ID, version int64) error
+	ExistingPersons(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error)
+	AllAreas(ctx context.Context, orgID entity.ID, kind entity.AreaKind) ([]entity.Area, error)
+	CreateArea(ctx context.Context, orgID entity.ID, kind entity.AreaKind, a entity.Area, at time.Time) error
+	UpdateArea(ctx context.Context, orgID entity.ID, kind entity.AreaKind, a entity.Area) error
+	CurrentLinks(ctx context.Context, orgID entity.ID, kind entity.LinkKind, at time.Time) ([]entity.Link, error)
+	SupersedeLink(ctx context.Context, orgID entity.ID, kind entity.LinkKind, rowID entity.ID, seq int64, at time.Time) error
+	InsertLink(ctx context.Context, orgID entity.ID, kind entity.LinkKind, l entity.Link, seq int64) error
+	PageAreas(ctx context.Context, orgID entity.ID, kind entity.AreaKind, scope entity.Scope, f entity.AreaFilter,
+		p entity.PageRequest, at time.Time) ([]entity.Area, error)
 }
 
 // AuthRepo serves login routes, login attempts and sessions outside row-level security and provider

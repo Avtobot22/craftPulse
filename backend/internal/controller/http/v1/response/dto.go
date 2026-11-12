@@ -1,6 +1,8 @@
 package response
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
@@ -31,16 +33,17 @@ func CurrentUser(cu entity.CurrentUser) openapi.CurrentUser {
 			AssignedAt: r.AssignedAt.UTC(),
 		}
 	}
-	out.Areas.Teams = areas(p.Areas.Teams)
-	out.Areas.Projects = areas(p.Areas.Projects)
-	out.Areas.Services = areas(p.Areas.Services)
+	out.Areas.Teams = Areas(p.Areas.Teams)
+	out.Areas.Projects = Areas(p.Areas.Projects)
+	out.Areas.Services = Areas(p.Areas.Services)
 	out.Actions = cu.Actions
 	out.Session.ExpiresAt = cu.Session.ExpiresAt.UTC()
 	out.Session.IdleExpiresAt = cu.Session.IdleExpiresAt.UTC()
 	return out
 }
 
-func areas(in []entity.Area) []openapi.Team {
+// Areas maps teams, projects or services: the contract gives them one schema.
+func Areas(in []entity.Area) []openapi.Team {
 	out := make([]openapi.Team, len(in))
 	for i, a := range in {
 		out[i] = openapi.Team{Id: openapi_types.UUID(a.ID), Name: a.Name, Status: openapi.TeamStatus(a.Status)}
@@ -61,4 +64,38 @@ func optionalText(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func Structure(st entity.Structure) openapi.OrganizationStructure {
+	out := openapi.OrganizationStructure{
+		Version:      int(st.Version),
+		Teams:        Areas(st.Teams),
+		Projects:     Areas(st.Projects),
+		Services:     Areas(st.Services),
+		Components:   []openapi.Component{},
+		ProjectAreas: []openapi.ProjectAreaLink{},
+		TeamProjects: make([]openapi.TeamProjectLink, len(st.TeamProjects)),
+		TeamMembers:  make([]openapi.TeamMemberLink, len(st.TeamMembers)),
+	}
+	for i, l := range st.TeamProjects {
+		out.TeamProjects[i] = openapi.TeamProjectLink{
+			TeamId: openapi_types.UUID(l.From), ProjectId: openapi_types.UUID(l.To),
+			ValidFrom: l.ValidFrom.UTC(), ValidTo: optionalTime(l.ValidTo),
+		}
+	}
+	for i, l := range st.TeamMembers {
+		out.TeamMembers[i] = openapi.TeamMemberLink{
+			TeamId: openapi_types.UUID(l.From), PersonId: openapi_types.UUID(l.To),
+			ValidFrom: l.ValidFrom.UTC(), ValidTo: optionalTime(l.ValidTo),
+		}
+	}
+	return out
+}
+
+func optionalTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	u := t.UTC()
+	return &u
 }

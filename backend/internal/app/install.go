@@ -86,7 +86,7 @@ func newInstallation(pool *pgxpool.Pool, keyring *crypto.Keyring, store repo.Obj
 	return install.New(install.Deps{
 		Tx:            tx,
 		Repo:          installrepo.NewRepo(pool),
-		Organizations: org.New(orgrepo.NewRepo(pool), platform.NewRepo(pool), c),
+		Organizations: org.New(org.Deps{Orgs: orgrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Clock: c}),
 		Logins:        auth.New(auth.Deps{Repo: authrepo.NewRepo(pool), Keyring: keyring, Clock: c}),
 		Auditor:       audit.New(auditrepo.NewRepo(pool), tx, c),
 		Site:          probes,

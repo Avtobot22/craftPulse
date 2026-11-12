@@ -32,3 +32,12 @@ func (r *Repo) CreateTenant(ctx context.Context, orgID entity.ID, at time.Time) 
 	}
 	return nil
 }
+
+// NextSeq advances the knowledge counter of the organization; versions written in one change share the number.
+func (r *Repo) NextSeq(ctx context.Context, orgID entity.ID) (int64, error) {
+	seq, err := New(postgres.Conn(ctx, r.pool)).NextSeq(ctx, uuid.UUID(orgID))
+	if err != nil {
+		return 0, fmt.Errorf("platform: next seq: %w", err)
+	}
+	return seq, nil
+}

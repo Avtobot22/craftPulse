@@ -21,6 +21,14 @@ type Logins interface {
 
 // Access decides whether the subject may run the action of an operation (TZ 13.4).
 type Access interface {
-	Authorize(ctx context.Context, s entity.Subject, r entity.AccessRequest) error
+	Authorize(ctx context.Context, s entity.Subject, r entity.AccessRequest) (entity.Scope, error)
 	CurrentUser(ctx context.Context, s entity.Subject) (entity.CurrentUser, error)
+}
+
+// Structure is the org module for the confirmed structure of the organization (UC-02, FR-012).
+type Structure interface {
+	Structure(ctx context.Context, s entity.Subject) (entity.Structure, error)
+	ReplaceStructure(ctx context.Context, s entity.Subject, baseVersion int64, in entity.StructureInput) (entity.Structure, error)
+	ListAreas(ctx context.Context, s entity.Subject, scope entity.Scope, kind entity.AreaKind, f entity.AreaFilter,
+		p entity.PageRequest) (entity.Page, error)
 }

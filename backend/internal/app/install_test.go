@@ -180,7 +180,7 @@ func TestInstall_AuditFailureRollsBackOrganization(t *testing.T) {
 	uc := install.New(install.Deps{
 		Tx:            tx,
 		Repo:          installrepo.NewRepo(e.app),
-		Organizations: org.New(orgrepo.NewRepo(e.app), platform.NewRepo(e.app), c),
+		Organizations: org.New(org.Deps{Orgs: orgrepo.NewRepo(e.app), Tenants: platform.NewRepo(e.app), Clock: c}),
 		Logins:        auth.New(auth.Deps{Repo: authrepo.NewRepo(e.app), Keyring: e.keyring, Clock: c}),
 		Auditor:       failingAuditor{},
 		Clock:         c,
