@@ -24,20 +24,32 @@ import (
 
 	"github.com/Avtobot22/craftPulse/backend/config"
 	httpctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/http"
-	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/handler"
 	workerctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/worker"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/oidc"
 	"github.com/Avtobot22/craftPulse/backend/migrations"
+	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
 	"github.com/Avtobot22/craftPulse/backend/pkg/postgres"
 )
 
-const _shutdownTimeout = 10 * time.Second
+const (
+	_shutdownTimeout = 10 * time.Second
+	_providerTimeout = 10 * time.Second
+)
 
-func RunAPI(cfg config.Config, log zerolog.Logger) error {
+func RunAPI(cfg config.Config, site config.Site, log zerolog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	keys, err := cfg.MasterKeys.Decode()
+	if err != nil {
+		return fmt.Errorf("app: %w", err)
+	}
+	keyring, err := newKeyring(keys)
+	if err != nil {
+		return fmt.Errorf("app: %w", err)
+	}
 	pool, err := postgres.New(ctx, cfg.DB.URL, cfg.DB.Password.Value(), postgres.MaxConns(cfg.DB.MaxConns))
 	if err != nil {
 		return fmt.Errorf("app: %w", err)
@@ -47,7 +59,8 @@ func RunAPI(cfg config.Config, log zerolog.Logger) error {
 	gin.SetMode(gin.ReleaseMode)
 	reg := newRegistry()
 	probes := databaseProbes(pool)
-	router := httpctrl.NewRouter(log, reg, probes, handler.New())
+	idp := oidc.New(&http.Client{Timeout: _providerTimeout})
+	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg))
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Msg("api started")
 	return serve(ctx, log, probes.Ready, map[string]http.Handler{

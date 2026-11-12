@@ -10,7 +10,39 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const activateOrganization = `-- name: ActivateOrganization :exec
+UPDATE org.organization SET status = 'active', first_admin_user_id = $1
+WHERE organization_id = $2 AND status = 'setup'
+`
+
+type ActivateOrganizationParams struct {
+	UserID         uuid.NullUUID
+	OrganizationID uuid.UUID
+}
+
+func (q *Queries) ActivateOrganization(ctx context.Context, arg ActivateOrganizationParams) error {
+	_, err := q.db.Exec(ctx, activateOrganization, arg.UserID, arg.OrganizationID)
+	return err
+}
+
+const assignAdministrator = `-- name: AssignAdministrator :exec
+INSERT INTO org.role_assignment (organization_id, user_id, role, assigned_by, assigned_at)
+VALUES ($1, $2, 'administrator', $2, $3)
+`
+
+type AssignAdministratorParams struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+	At             time.Time
+}
+
+func (q *Queries) AssignAdministrator(ctx context.Context, arg AssignAdministratorParams) error {
+	_, err := q.db.Exec(ctx, assignAdministrator, arg.OrganizationID, arg.UserID, arg.At)
+	return err
+}
 
 const createOrganization = `-- name: CreateOrganization :exec
 INSERT INTO org.organization (organization_id, name, status, first_admin_issuer, first_admin_subject, structure_version, created_at)
@@ -35,5 +67,394 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 		arg.FirstAdminSubject,
 		arg.CreatedAt,
 	)
+	return err
+}
+
+const createUser = `-- name: CreateUser :exec
+INSERT INTO org.app_user (organization_id, issuer, subject, display_name, status, created_at)
+VALUES ($1, $2, $3, $4, 'active', $5)
+ON CONFLICT (organization_id, issuer, subject) DO NOTHING
+`
+
+type CreateUserParams struct {
+	OrganizationID uuid.UUID
+	Issuer         string
+	Subject        string
+	DisplayName    pgtype.Text
+	CreatedAt      time.Time
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
+	_, err := q.db.Exec(ctx, createUser,
+		arg.OrganizationID,
+		arg.Issuer,
+		arg.Subject,
+		arg.DisplayName,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const getOrganization = `-- name: GetOrganization :one
+SELECT organization_id, name, status, first_admin_issuer, first_admin_subject
+FROM org.organization WHERE organization_id = $1
+`
+
+type GetOrganizationRow struct {
+	OrganizationID    uuid.UUID
+	Name              string
+	Status            string
+	FirstAdminIssuer  string
+	FirstAdminSubject string
+}
+
+func (q *Queries) GetOrganization(ctx context.Context, organizationID uuid.UUID) (GetOrganizationRow, error) {
+	row := q.db.QueryRow(ctx, getOrganization, organizationID)
+	var i GetOrganizationRow
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.Name,
+		&i.Status,
+		&i.FirstAdminIssuer,
+		&i.FirstAdminSubject,
+	)
+	return i, err
+}
+
+const getUser = `-- name: GetUser :one
+SELECT id, issuer, subject, person_id, display_name, status
+FROM org.app_user WHERE organization_id = $1 AND id = $2
+`
+
+type GetUserParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type GetUserRow struct {
+	ID          uuid.UUID
+	Issuer      string
+	Subject     string
+	PersonID    uuid.NullUUID
+	DisplayName pgtype.Text
+	Status      string
+}
+
+func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (GetUserRow, error) {
+	row := q.db.QueryRow(ctx, getUser, arg.OrganizationID, arg.ID)
+	var i GetUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Issuer,
+		&i.Subject,
+		&i.PersonID,
+		&i.DisplayName,
+		&i.Status,
+	)
+	return i, err
+}
+
+const listActiveProjects = `-- name: ListActiveProjects :many
+SELECT id, name, status FROM org.project
+WHERE organization_id = $1 AND status = 'active'
+    AND ($2::bool OR id = ANY($3::uuid[]))
+ORDER BY name, id
+`
+
+type ListActiveProjectsParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+}
+
+type ListActiveProjectsRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) ListActiveProjects(ctx context.Context, arg ListActiveProjectsParams) ([]ListActiveProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveProjects, arg.OrganizationID, arg.Whole, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveProjectsRow
+	for rows.Next() {
+		var i ListActiveProjectsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveRoles = `-- name: ListActiveRoles :many
+SELECT role, team_id, project_id, service_id, assigned_at
+FROM org.role_assignment
+WHERE organization_id = $1 AND user_id = $2 AND revoked_at IS NULL
+ORDER BY assigned_at, id
+`
+
+type ListActiveRolesParams struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+}
+
+type ListActiveRolesRow struct {
+	Role       string
+	TeamID     uuid.NullUUID
+	ProjectID  uuid.NullUUID
+	ServiceID  uuid.NullUUID
+	AssignedAt time.Time
+}
+
+func (q *Queries) ListActiveRoles(ctx context.Context, arg ListActiveRolesParams) ([]ListActiveRolesRow, error) {
+	rows, err := q.db.Query(ctx, listActiveRoles, arg.OrganizationID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveRolesRow
+	for rows.Next() {
+		var i ListActiveRolesRow
+		if err := rows.Scan(
+			&i.Role,
+			&i.TeamID,
+			&i.ProjectID,
+			&i.ServiceID,
+			&i.AssignedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveServices = `-- name: ListActiveServices :many
+SELECT id, name, status FROM org.service
+WHERE organization_id = $1 AND status = 'active'
+    AND ($2::bool OR id = ANY($3::uuid[]))
+ORDER BY name, id
+`
+
+type ListActiveServicesParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+}
+
+type ListActiveServicesRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) ListActiveServices(ctx context.Context, arg ListActiveServicesParams) ([]ListActiveServicesRow, error) {
+	rows, err := q.db.Query(ctx, listActiveServices, arg.OrganizationID, arg.Whole, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveServicesRow
+	for rows.Next() {
+		var i ListActiveServicesRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveTeams = `-- name: ListActiveTeams :many
+SELECT id, name, status FROM org.team
+WHERE organization_id = $1 AND status = 'active'
+    AND ($2::bool OR id = ANY($3::uuid[]))
+ORDER BY name, id
+`
+
+type ListActiveTeamsParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+}
+
+type ListActiveTeamsRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) ListActiveTeams(ctx context.Context, arg ListActiveTeamsParams) ([]ListActiveTeamsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveTeams, arg.OrganizationID, arg.Whole, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveTeamsRow
+	for rows.Next() {
+		var i ListActiveTeamsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMemberTeamIDs = `-- name: ListMemberTeamIDs :many
+SELECT DISTINCT team_id FROM org.team_member
+WHERE organization_id = $1 AND person_id = $2
+    AND superseded_seq IS NULL AND valid @> $3::timestamptz
+`
+
+type ListMemberTeamIDsParams struct {
+	OrganizationID uuid.UUID
+	PersonID       uuid.UUID
+	At             time.Time
+}
+
+func (q *Queries) ListMemberTeamIDs(ctx context.Context, arg ListMemberTeamIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listMemberTeamIDs, arg.OrganizationID, arg.PersonID, arg.At)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var team_id uuid.UUID
+		if err := rows.Scan(&team_id); err != nil {
+			return nil, err
+		}
+		items = append(items, team_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTeamProjectIDs = `-- name: ListTeamProjectIDs :many
+SELECT DISTINCT project_id FROM org.team_project
+WHERE organization_id = $1 AND team_id = ANY($2::uuid[])
+    AND superseded_seq IS NULL AND valid @> $3::timestamptz
+`
+
+type ListTeamProjectIDsParams struct {
+	OrganizationID uuid.UUID
+	TeamIds        []uuid.UUID
+	At             time.Time
+}
+
+func (q *Queries) ListTeamProjectIDs(ctx context.Context, arg ListTeamProjectIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listTeamProjectIDs, arg.OrganizationID, arg.TeamIds, arg.At)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var project_id uuid.UUID
+		if err := rows.Scan(&project_id); err != nil {
+			return nil, err
+		}
+		items = append(items, project_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockOrganization = `-- name: LockOrganization :one
+SELECT organization_id, name, status, first_admin_issuer, first_admin_subject
+FROM org.organization WHERE organization_id = $1
+FOR UPDATE
+`
+
+type LockOrganizationRow struct {
+	OrganizationID    uuid.UUID
+	Name              string
+	Status            string
+	FirstAdminIssuer  string
+	FirstAdminSubject string
+}
+
+func (q *Queries) LockOrganization(ctx context.Context, organizationID uuid.UUID) (LockOrganizationRow, error) {
+	row := q.db.QueryRow(ctx, lockOrganization, organizationID)
+	var i LockOrganizationRow
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.Name,
+		&i.Status,
+		&i.FirstAdminIssuer,
+		&i.FirstAdminSubject,
+	)
+	return i, err
+}
+
+const lockUserByIdentity = `-- name: LockUserByIdentity :one
+SELECT id, issuer, subject, person_id, display_name, status
+FROM org.app_user
+WHERE organization_id = $1 AND issuer = $2 AND subject = $3
+FOR UPDATE
+`
+
+type LockUserByIdentityParams struct {
+	OrganizationID uuid.UUID
+	Issuer         string
+	Subject        string
+}
+
+type LockUserByIdentityRow struct {
+	ID          uuid.UUID
+	Issuer      string
+	Subject     string
+	PersonID    uuid.NullUUID
+	DisplayName pgtype.Text
+	Status      string
+}
+
+func (q *Queries) LockUserByIdentity(ctx context.Context, arg LockUserByIdentityParams) (LockUserByIdentityRow, error) {
+	row := q.db.QueryRow(ctx, lockUserByIdentity, arg.OrganizationID, arg.Issuer, arg.Subject)
+	var i LockUserByIdentityRow
+	err := row.Scan(
+		&i.ID,
+		&i.Issuer,
+		&i.Subject,
+		&i.PersonID,
+		&i.DisplayName,
+		&i.Status,
+	)
+	return i, err
+}
+
+const setUserDisplayName = `-- name: SetUserDisplayName :exec
+UPDATE org.app_user SET display_name = $3 WHERE organization_id = $1 AND id = $2
+`
+
+type SetUserDisplayNameParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	DisplayName    pgtype.Text
+}
+
+func (q *Queries) SetUserDisplayName(ctx context.Context, arg SetUserDisplayNameParams) error {
+	_, err := q.db.Exec(ctx, setUserDisplayName, arg.OrganizationID, arg.ID, arg.DisplayName)
 	return err
 }

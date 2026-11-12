@@ -10,7 +10,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.5.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
 	github.com/caarlos0/env/v11 v11.4.2
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/gin-gonic/gin v1.12.0
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
 	github.com/jackc/pgx/v5 v5.12.0
@@ -23,6 +25,8 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.45.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.45.0
+	go.yaml.in/yaml/v3 v3.0.6
+	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sync v0.25.0
 )
 
@@ -134,7 +138,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/mod v0.42.0 // indirect

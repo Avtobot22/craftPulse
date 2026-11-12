@@ -6,13 +6,12 @@ import (
 	"github.com/rs/zerolog"
 
 	v1 "github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1"
-	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/handler"
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/middleware"
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/response"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
 
-func NewRouter(log zerolog.Logger, reg prometheus.Registerer, probes health.Probes, h *handler.Handler) *gin.Engine {
+func NewRouter(log zerolog.Logger, reg prometheus.Registerer, probes health.Probes, api v1.Deps) *gin.Engine {
 	r := gin.New()
 	// Strict handlers receive *gin.Context as context.Context; this exposes the request values.
 	r.ContextWithFallback = true
@@ -25,11 +24,12 @@ func NewRouter(log zerolog.Logger, reg prometheus.Registerer, probes health.Prob
 	r.GET("/readyz", state)
 	r.GET("/version", state)
 
+	api.Metrics = middleware.NewMetrics(reg)
 	chain := make([]gin.HandlerFunc, 0, 4)
-	chain = append(chain, middleware.Correlate(log), middleware.Observe(middleware.NewMetrics(reg)), middleware.Recovery())
+	chain = append(chain, middleware.Correlate(log), middleware.Observe(api.Metrics), middleware.Recovery())
 	r.NoRoute(append(chain, func(c *gin.Context) { response.Write(c, response.NotFound) })...)
 
 	root := r.Group("", chain...)
-	v1.RegisterRoutes(root, root.Group("/api/v1"), h)
+	v1.RegisterRoutes(root, root.Group("/api/v1"), api)
 	return r
 }

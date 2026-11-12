@@ -12,6 +12,38 @@ import (
 	"github.com/google/uuid"
 )
 
+const createLoginAttempt = `-- name: CreateLoginAttempt :exec
+INSERT INTO auth.login_attempt (cookie_hash, organization_id, state, nonce, pkce_verifier, issuer, return_path, created_at, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+`
+
+type CreateLoginAttemptParams struct {
+	CookieHash     []byte
+	OrganizationID uuid.UUID
+	State          string
+	Nonce          string
+	PkceVerifier   string
+	Issuer         string
+	ReturnPath     string
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
+}
+
+func (q *Queries) CreateLoginAttempt(ctx context.Context, arg CreateLoginAttemptParams) error {
+	_, err := q.db.Exec(ctx, createLoginAttempt,
+		arg.CookieHash,
+		arg.OrganizationID,
+		arg.State,
+		arg.Nonce,
+		arg.PkceVerifier,
+		arg.Issuer,
+		arg.ReturnPath,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
 const createLoginRoute = `-- name: CreateLoginRoute :exec
 INSERT INTO auth.login_route (slug, organization_id) VALUES ($1, $2)
 `
@@ -52,6 +84,118 @@ func (q *Queries) CreateProviderRegistration(ctx context.Context, arg CreateProv
 	return err
 }
 
+const createSession = `-- name: CreateSession :exec
+INSERT INTO auth.session (organization_id, token_hash, user_id, created_at, last_activity_at, expires_at)
+VALUES ($1, $2, $3, $4, $4, $5)
+`
+
+type CreateSessionParams struct {
+	OrganizationID uuid.UUID
+	TokenHash      []byte
+	UserID         uuid.UUID
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
+}
+
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
+	_, err := q.db.Exec(ctx, createSession,
+		arg.OrganizationID,
+		arg.TokenHash,
+		arg.UserID,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
+const endSession = `-- name: EndSession :execrows
+UPDATE auth.session SET ended_at = $1::timestamptz, end_reason = $2::text
+WHERE organization_id = $3 AND id = $4 AND ended_at IS NULL
+`
+
+type EndSessionParams struct {
+	At             time.Time
+	Reason         string
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) EndSession(ctx context.Context, arg EndSessionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, endSession,
+		arg.At,
+		arg.Reason,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const endSessionByToken = `-- name: EndSessionByToken :exec
+UPDATE auth.session SET ended_at = $1::timestamptz, end_reason = $2::text
+WHERE token_hash = $3 AND ended_at IS NULL
+`
+
+type EndSessionByTokenParams struct {
+	At        time.Time
+	Reason    string
+	TokenHash []byte
+}
+
+func (q *Queries) EndSessionByToken(ctx context.Context, arg EndSessionByTokenParams) error {
+	_, err := q.db.Exec(ctx, endSessionByToken, arg.At, arg.Reason, arg.TokenHash)
+	return err
+}
+
+const endSessions = `-- name: EndSessions :exec
+UPDATE auth.session SET ended_at = $1::timestamptz, end_reason = $2::text
+WHERE organization_id = $3 AND id = ANY($4::uuid[]) AND ended_at IS NULL
+`
+
+type EndSessionsParams struct {
+	At             time.Time
+	Reason         string
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) EndSessions(ctx context.Context, arg EndSessionsParams) error {
+	_, err := q.db.Exec(ctx, endSessions,
+		arg.At,
+		arg.Reason,
+		arg.OrganizationID,
+		arg.Ids,
+	)
+	return err
+}
+
+const getActiveProviderRegistration = `-- name: GetActiveProviderRegistration :one
+SELECT issuer, client_id, client_secret_enc, key_version
+FROM auth.provider_registration
+WHERE organization_id = $1 AND status = 'active'
+`
+
+type GetActiveProviderRegistrationRow struct {
+	Issuer          string
+	ClientID        string
+	ClientSecretEnc []byte
+	KeyVersion      int32
+}
+
+func (q *Queries) GetActiveProviderRegistration(ctx context.Context, organizationID uuid.UUID) (GetActiveProviderRegistrationRow, error) {
+	row := q.db.QueryRow(ctx, getActiveProviderRegistration, organizationID)
+	var i GetActiveProviderRegistrationRow
+	err := row.Scan(
+		&i.Issuer,
+		&i.ClientID,
+		&i.ClientSecretEnc,
+		&i.KeyVersion,
+	)
+	return i, err
+}
+
 const getLoginRoute = `-- name: GetLoginRoute :one
 SELECT organization_id FROM auth.login_route WHERE slug = $1
 `
@@ -61,4 +205,127 @@ func (q *Queries) GetLoginRoute(ctx context.Context, slug string) (uuid.UUID, er
 	var organization_id uuid.UUID
 	err := row.Scan(&organization_id)
 	return organization_id, err
+}
+
+const getSessionByToken = `-- name: GetSessionByToken :one
+SELECT s.organization_id, s.id, s.user_id, s.created_at, s.last_activity_at, s.expires_at,
+    (s.ended_at IS NOT NULL)::bool AS ended, r.slug
+FROM auth.session s
+JOIN auth.login_route r ON r.organization_id = s.organization_id
+WHERE s.token_hash = $1
+`
+
+type GetSessionByTokenRow struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	UserID         uuid.UUID
+	CreatedAt      time.Time
+	LastActivityAt time.Time
+	ExpiresAt      time.Time
+	Ended          bool
+	Slug           string
+}
+
+func (q *Queries) GetSessionByToken(ctx context.Context, tokenHash []byte) (GetSessionByTokenRow, error) {
+	row := q.db.QueryRow(ctx, getSessionByToken, tokenHash)
+	var i GetSessionByTokenRow
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.UserID,
+		&i.CreatedAt,
+		&i.LastActivityAt,
+		&i.ExpiresAt,
+		&i.Ended,
+		&i.Slug,
+	)
+	return i, err
+}
+
+const listLiveSessions = `-- name: ListLiveSessions :many
+SELECT id FROM auth.session
+WHERE organization_id = $1 AND user_id = $2 AND ended_at IS NULL
+    AND expires_at > $3 AND last_activity_at > $4
+ORDER BY created_at, id
+`
+
+type ListLiveSessionsParams struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+	At             time.Time
+	IdleSince      time.Time
+}
+
+func (q *Queries) ListLiveSessions(ctx context.Context, arg ListLiveSessionsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listLiveSessions,
+		arg.OrganizationID,
+		arg.UserID,
+		arg.At,
+		arg.IdleSince,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const takeLoginAttempt = `-- name: TakeLoginAttempt :one
+DELETE FROM auth.login_attempt WHERE cookie_hash = $1
+RETURNING organization_id, state, nonce, pkce_verifier, issuer, return_path, created_at, expires_at
+`
+
+type TakeLoginAttemptRow struct {
+	OrganizationID uuid.UUID
+	State          string
+	Nonce          string
+	PkceVerifier   string
+	Issuer         string
+	ReturnPath     string
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
+}
+
+func (q *Queries) TakeLoginAttempt(ctx context.Context, cookieHash []byte) (TakeLoginAttemptRow, error) {
+	row := q.db.QueryRow(ctx, takeLoginAttempt, cookieHash)
+	var i TakeLoginAttemptRow
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.State,
+		&i.Nonce,
+		&i.PkceVerifier,
+		&i.Issuer,
+		&i.ReturnPath,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+	)
+	return i, err
+}
+
+const touchSession = `-- name: TouchSession :exec
+UPDATE auth.session SET last_activity_at = $1
+WHERE organization_id = $2 AND id = $3 AND ended_at IS NULL
+    AND last_activity_at < $1
+`
+
+type TouchSessionParams struct {
+	At             time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) error {
+	_, err := q.db.Exec(ctx, touchSession, arg.At, arg.OrganizationID, arg.ID)
+	return err
 }
