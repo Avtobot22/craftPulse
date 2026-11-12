@@ -1,0 +1,76 @@
+# Правила контракта адаптера и канонического пакета поверх рекомендованного набора Spectral (раздел 10.3 ТЗ).
+extends: ["spectral:oas"]
+rules:
+  # Неиспользуемые компоненты и серверы adapter.yaml проверяет Redocly; envelope.yaml содержит только схемы.
+  oas3-unused-component: off
+  oas3-api-servers: off
+  adapter-operation-id-camel:
+    description: operationId в camelCase.
+    severity: error
+    given: "$.paths[*][get,put,post,delete,patch].operationId"
+    then:
+      function: casing
+      functionOptions: {type: camel}
+  adapter-property-snake:
+    description: Поля схем в snake_case.
+    severity: error
+    given: "$.components.schemas..properties"
+    then:
+      field: "@key"
+      function: casing
+      functionOptions: {type: snake}
+  adapter-type-union:
+    description: Массив в type допускается только как пара «тип и null» - другие объединения не поддерживает генератор oapi-codegen.
+    severity: error
+    given: "$..type"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          anyOf:
+            - type: string
+            - type: object
+            - type: array
+              minItems: 2
+              maxItems: 2
+              contains: {const: "null"}
+  adapter-json-example:
+    description: У каждого тела запроса и ответа JSON есть пример, его проверяет Redocly.
+    severity: error
+    given: "$..content['application/json']"
+    then:
+      field: example
+      function: truthy
+  adapter-record-example:
+    description: У каждой схемы канонического пакета есть пример, его проверяет Redocly.
+    severity: error
+    given: "$.components.schemas[?(@['x-craftpulse-record'])]"
+    then:
+      field: example
+      function: truthy
+  adapter-record-declared:
+    description: Схема записи объявляет вид, версию и допустимые классы.
+    severity: error
+    given: "$.components.schemas[?(@property.match(/V[0-9]+$/))]"
+    then:
+      field: x-craftpulse-record
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          required: [kind, version, classes]
+          properties:
+            kind: {type: string, pattern: "^[a-z_]+$"}
+            version: {type: string, pattern: "^[0-9]+$"}
+            classes:
+              type: array
+              minItems: 1
+              items: {enum: [event, object, snapshot, file]}
+  adapter-error-code:
+    description: Ответы 4xx и 5xx операций ссылаются на общие ответы с AdapterError.
+    severity: error
+    resolved: false
+    given: "$.paths[*][get,put,post,delete,patch].responses[?(@property.match(/^[45]/))]"
+    then:
+      field: $ref
+      function: truthy

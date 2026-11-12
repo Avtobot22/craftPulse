@@ -1,0 +1,2870 @@
+{
+  "packages": {
+    "accounts": {
+      "versions": [
+        "1"
+      ],
+      "kinds": [
+        "account"
+      ]
+    },
+    "ci_runs": {
+      "versions": [
+        "1"
+      ],
+      "kinds": [
+        "ci_run",
+        "ci_attempt",
+        "report_file"
+      ]
+    },
+    "coverage": {
+      "versions": [
+        "1"
+      ],
+      "kinds": [
+        "report_file"
+      ]
+    },
+    "documents": {
+      "versions": [
+        "1"
+      ],
+      "kinds": [
+        "document"
+      ]
+    },
+    "findings": {
+      "versions": [
+        "1"
+      ],
+      "kinds": [
+        "finding",
+        "report_file"
+      ]
+    },
+    "junit": {
+      "versions": [
+        "1"
+      ],
+      "kinds": [
+        "report_file"
+      ]
+    },
+    "merge_requests": {
+      "versions": [
+        "1"
+      ],
+      "kinds": [
+        "merge_request",
+        "mr_revision",
+        "mr_event",
+        "account"
+      ]
+    },
+    "relations": {
+      "versions": [
+        "1"
+      ],
+      "kinds": [
+        "relation"
+      ]
+    },
+    "task_events": {
+      "versions": [
+        "1"
+      ],
+      "kinds": [
+        "task_event"
+      ]
+    },
+    "tasks": {
+      "versions": [
+        "1"
+      ],
+      "kinds": [
+        "task",
+        "task_status",
+        "task_resolution",
+        "task_type",
+        "task_field",
+        "account"
+      ]
+    }
+  },
+  "manifest": {
+    "types": [
+      "object"
+    ],
+    "properties": [
+      {
+        "name": "schema_id",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "enum": [
+            "tasks",
+            "task_events",
+            "relations",
+            "accounts",
+            "merge_requests",
+            "ci_runs",
+            "findings",
+            "junit",
+            "coverage",
+            "documents"
+          ]
+        }
+      },
+      {
+        "name": "schema_version",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "max_length": 16
+        }
+      },
+      {
+        "name": "source",
+        "schema": {
+          "types": [
+            "object"
+          ],
+          "properties": [
+            {
+              "name": "provider",
+              "schema": {
+                "types": [
+                  "string"
+                ],
+                "enum": [
+                  "jira_dc",
+                  "gitlab",
+                  "github",
+                  "jenkins",
+                  "sonarqube",
+                  "confluence_dc",
+                  "git",
+                  "universal",
+                  "client"
+                ]
+              }
+            },
+            {
+              "name": "instance_key",
+              "schema": {
+                "types": [
+                  "string"
+                ],
+                "min_length": 1,
+                "max_length": 512
+              }
+            },
+            {
+              "name": "edition",
+              "schema": {
+                "types": [
+                  "string",
+                  "null"
+                ],
+                "max_length": 64
+              }
+            },
+            {
+              "name": "version",
+              "schema": {
+                "types": [
+                  "string",
+                  "null"
+                ],
+                "max_length": 64
+              }
+            }
+          ],
+          "required": [
+            "provider",
+            "instance_key",
+            "edition",
+            "version"
+          ],
+          "closed": true
+        }
+      },
+      {
+        "name": "area",
+        "schema": {
+          "types": [
+            "object"
+          ],
+          "properties": [
+            {
+              "name": "kind",
+              "schema": {
+                "types": [
+                  "string"
+                ],
+                "enum": [
+                  "tracker_project",
+                  "repository",
+                  "wiki_space",
+                  "ci_project",
+                  "analysis_project"
+                ]
+              }
+            },
+            {
+              "name": "native_id",
+              "schema": {
+                "types": [
+                  "string"
+                ],
+                "min_length": 1,
+                "max_length": 255
+              }
+            },
+            {
+              "name": "key",
+              "schema": {
+                "types": [
+                  "string",
+                  "null"
+                ],
+                "max_length": 255
+              }
+            }
+          ],
+          "required": [
+            "kind",
+            "native_id"
+          ],
+          "closed": true
+        }
+      },
+      {
+        "name": "period",
+        "schema": {
+          "types": [
+            "object"
+          ],
+          "properties": [
+            {
+              "name": "from",
+              "schema": {
+                "types": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            {
+              "name": "to",
+              "schema": {
+                "types": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            }
+          ],
+          "required": [
+            "from",
+            "to"
+          ],
+          "closed": true
+        }
+      },
+      {
+        "name": "completeness",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ]
+        }
+      },
+      {
+        "name": "selection",
+        "schema": {
+          "types": [
+            "object"
+          ],
+          "properties": [
+            {
+              "name": "cursor",
+              "schema": {
+                "types": [
+                  "object",
+                  "null"
+                ],
+                "properties": [
+                  {
+                    "name": "modified_at",
+                    "schema": {
+                      "types": [
+                        "string"
+                      ],
+                      "format": "date-time"
+                    }
+                  },
+                  {
+                    "name": "native_id",
+                    "schema": {
+                      "types": [
+                        "string"
+                      ],
+                      "max_length": 255
+                    }
+                  }
+                ],
+                "required": [
+                  "modified_at",
+                  "native_id"
+                ],
+                "closed": true
+              }
+            },
+            {
+              "name": "next_cursor",
+              "schema": {
+                "types": [
+                  "object",
+                  "null"
+                ],
+                "properties": [
+                  {
+                    "name": "modified_at",
+                    "schema": {
+                      "types": [
+                        "string"
+                      ],
+                      "format": "date-time"
+                    }
+                  },
+                  {
+                    "name": "native_id",
+                    "schema": {
+                      "types": [
+                        "string"
+                      ],
+                      "max_length": 255
+                    }
+                  }
+                ],
+                "required": [
+                  "modified_at",
+                  "native_id"
+                ],
+                "closed": true
+              }
+            },
+            {
+              "name": "end",
+              "schema": {
+                "types": [
+                  "boolean"
+                ]
+              }
+            },
+            {
+              "name": "total_count",
+              "schema": {
+                "types": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            {
+              "name": "truncated",
+              "schema": {
+                "types": [
+                  "array"
+                ],
+                "items": {
+                  "types": [
+                    "object"
+                  ],
+                  "properties": [
+                    {
+                      "name": "record_kind",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "enum": [
+                          "task",
+                          "merge_request"
+                        ]
+                      }
+                    },
+                    {
+                      "name": "native_ns",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "max_length": 255
+                      }
+                    },
+                    {
+                      "name": "native_id",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "min_length": 1,
+                        "max_length": 255
+                      }
+                    },
+                    {
+                      "name": "history_from",
+                      "schema": {
+                        "types": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      }
+                    }
+                  ],
+                  "required": [
+                    "record_kind",
+                    "native_ns",
+                    "native_id",
+                    "history_from"
+                  ],
+                  "closed": true
+                }
+              }
+            }
+          ],
+          "required": [
+            "cursor",
+            "next_cursor",
+            "end",
+            "total_count",
+            "truncated"
+          ],
+          "closed": true
+        }
+      },
+      {
+        "name": "snapshot",
+        "schema": {
+          "types": [
+            "boolean"
+          ]
+        }
+      },
+      {
+        "name": "read_id",
+        "schema": {
+          "types": [
+            "string",
+            "null"
+          ],
+          "max_length": 255
+        }
+      },
+      {
+        "name": "producer",
+        "schema": {
+          "types": [
+            "object"
+          ],
+          "properties": [
+            {
+              "name": "name",
+              "schema": {
+                "types": [
+                  "string"
+                ],
+                "min_length": 1,
+                "max_length": 128
+              }
+            },
+            {
+              "name": "version",
+              "schema": {
+                "types": [
+                  "string"
+                ],
+                "min_length": 1,
+                "max_length": 64
+              }
+            }
+          ],
+          "required": [
+            "name",
+            "version"
+          ],
+          "closed": true
+        }
+      },
+      {
+        "name": "created_at",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "format": "date-time"
+        }
+      }
+    ],
+    "required": [
+      "schema_id",
+      "schema_version",
+      "source",
+      "area",
+      "period",
+      "completeness",
+      "selection",
+      "snapshot",
+      "read_id",
+      "producer",
+      "created_at"
+    ],
+    "closed": true
+  },
+  "record": {
+    "types": [
+      "object"
+    ],
+    "properties": [
+      {
+        "name": "record_class",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "enum": [
+            "event",
+            "object",
+            "snapshot",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "record_kind",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "enum": [
+            "task",
+            "task_event",
+            "task_status",
+            "task_resolution",
+            "task_type",
+            "task_field",
+            "relation",
+            "account",
+            "merge_request",
+            "mr_revision",
+            "mr_event",
+            "ci_run",
+            "ci_attempt",
+            "report_file",
+            "finding",
+            "document"
+          ]
+        }
+      },
+      {
+        "name": "payload_schema",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "pattern": "^[a-z_]+/[0-9]+$"
+        }
+      },
+      {
+        "name": "native_ns",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "max_length": 255
+        }
+      },
+      {
+        "name": "native_id",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "min_length": 1,
+          "max_length": 1024
+        }
+      },
+      {
+        "name": "source_revision",
+        "schema": {
+          "types": [
+            "string",
+            "null"
+          ],
+          "max_length": 255
+        }
+      },
+      {
+        "name": "event_time",
+        "schema": {
+          "types": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      {
+        "name": "observed_time",
+        "schema": {
+          "types": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      {
+        "name": "file",
+        "schema": {
+          "types": [
+            "object",
+            "null"
+          ],
+          "properties": [
+            {
+              "name": "path",
+              "schema": {
+                "types": [
+                  "string"
+                ],
+                "pattern": "^files/[A-Za-z0-9._/-]+$",
+                "max_length": 1024
+              }
+            },
+            {
+              "name": "sha256",
+              "schema": {
+                "types": [
+                  "string"
+                ],
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            {
+              "name": "size_bytes",
+              "schema": {
+                "types": [
+                  "integer"
+                ],
+                "minimum": 0
+              }
+            },
+            {
+              "name": "media_type",
+              "schema": {
+                "types": [
+                  "string"
+                ],
+                "max_length": 128
+              }
+            }
+          ],
+          "required": [
+            "path",
+            "sha256",
+            "size_bytes",
+            "media_type"
+          ],
+          "closed": true
+        }
+      },
+      {
+        "name": "payload",
+        "schema": {
+          "types": [
+            "object"
+          ]
+        }
+      }
+    ],
+    "required": [
+      "record_class",
+      "record_kind",
+      "payload_schema",
+      "native_ns",
+      "native_id",
+      "source_revision",
+      "event_time",
+      "observed_time",
+      "file",
+      "payload"
+    ],
+    "closed": true
+  },
+  "task_csv_row": {
+    "types": [
+      "object"
+    ],
+    "properties": [
+      {
+        "name": "native_id",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "min_length": 1,
+          "max_length": 255
+        }
+      },
+      {
+        "name": "project_native_id",
+        "schema": {
+          "types": [
+            "string"
+          ]
+        }
+      },
+      {
+        "name": "task_key",
+        "schema": {
+          "types": [
+            "string"
+          ]
+        }
+      },
+      {
+        "name": "title",
+        "schema": {
+          "types": [
+            "string"
+          ]
+        }
+      },
+      {
+        "name": "type_native_id",
+        "schema": {
+          "types": [
+            "string"
+          ]
+        }
+      },
+      {
+        "name": "status_native_id",
+        "schema": {
+          "types": [
+            "string"
+          ]
+        }
+      },
+      {
+        "name": "resolution_native_id",
+        "schema": {
+          "types": [
+            "string"
+          ]
+        }
+      },
+      {
+        "name": "created_at",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "format": "date-time"
+        }
+      },
+      {
+        "name": "updated_at",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "format": "date-time"
+        }
+      },
+      {
+        "name": "size",
+        "schema": {
+          "types": [
+            "string"
+          ]
+        }
+      },
+      {
+        "name": "team",
+        "schema": {
+          "types": [
+            "string"
+          ]
+        }
+      },
+      {
+        "name": "assignee_account_native_id",
+        "schema": {
+          "types": [
+            "string"
+          ]
+        }
+      },
+      {
+        "name": "parent_native_id",
+        "schema": {
+          "types": [
+            "string"
+          ]
+        }
+      }
+    ],
+    "required": [
+      "native_id",
+      "project_native_id",
+      "type_native_id",
+      "status_native_id",
+      "created_at"
+    ],
+    "closed": true
+  },
+  "records": [
+    {
+      "kind": "account",
+      "version": "1",
+      "classes": [
+        "snapshot",
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "login",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "display_name",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "email",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 320
+            }
+          },
+          {
+            "name": "account_kind",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "human",
+                "bot",
+                "system",
+                "unknown"
+              ]
+            }
+          },
+          {
+            "name": "active",
+            "schema": {
+              "types": [
+                "boolean"
+              ]
+            }
+          }
+        ],
+        "required": [
+          "login",
+          "display_name",
+          "account_kind",
+          "active"
+        ],
+        "closed": true
+      },
+      "example": {
+        "account_kind": "human",
+        "active": true,
+        "display_name": "Demo person 5",
+        "email": null,
+        "login": "demo-person-05"
+      }
+    },
+    {
+      "kind": "ci_attempt",
+      "version": "1",
+      "classes": [
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "run_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "job_key",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "job_name",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "config_fingerprint",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          {
+            "name": "attempt_no",
+            "schema": {
+              "types": [
+                "integer"
+              ],
+              "minimum": 1
+            }
+          },
+          {
+            "name": "native_status",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "outcome",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "running",
+                "success",
+                "failed",
+                "canceled",
+                "skipped",
+                "unknown"
+              ]
+            }
+          },
+          {
+            "name": "allow_failure",
+            "schema": {
+              "types": [
+                "boolean"
+              ]
+            }
+          },
+          {
+            "name": "failure_kind",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "runner_class",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "started_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "finished_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "duration_s",
+            "schema": {
+              "types": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        ],
+        "required": [
+          "run_native_id",
+          "job_key",
+          "job_name",
+          "config_fingerprint",
+          "attempt_no",
+          "native_status",
+          "outcome",
+          "allow_failure"
+        ],
+        "closed": true
+      },
+      "example": {
+        "allow_failure": false,
+        "attempt_no": 2,
+        "config_fingerprint": "3f6c2a1b9d8e7f6054a3b2c1d0e9f8a73f6c2a1b9d8e7f6054a3b2c1d0e9f8a7",
+        "duration_s": 120,
+        "failure_kind": null,
+        "finished_at": "2026-10-01T09:08:00+03:00",
+        "job_key": "test/go",
+        "job_name": "test",
+        "native_status": "success",
+        "outcome": "success",
+        "run_native_id": "5001",
+        "runner_class": "shared",
+        "started_at": "2026-10-01T09:06:00+03:00"
+      }
+    },
+    {
+      "kind": "ci_run",
+      "version": "1",
+      "classes": [
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "project_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "ref_name",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "sha",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "mr_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "parent_run_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "definition_version",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "native_status",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "outcome",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "running",
+                "success",
+                "failed",
+                "canceled",
+                "skipped",
+                "unknown"
+              ]
+            }
+          },
+          {
+            "name": "started_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "finished_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "updated_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          }
+        ],
+        "required": [
+          "project_native_id",
+          "ref_name",
+          "sha",
+          "native_status",
+          "outcome"
+        ],
+        "closed": true
+      },
+      "example": {
+        "definition_version": null,
+        "finished_at": "2026-10-01T09:12:00+03:00",
+        "mr_native_id": "9001",
+        "native_status": "failed",
+        "outcome": "failed",
+        "parent_run_native_id": null,
+        "project_native_id": "42",
+        "ref_name": "refs/merge-requests/7/head",
+        "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+        "started_at": "2026-10-01T09:05:00+03:00",
+        "updated_at": "2026-10-01T09:12:00+03:00"
+      }
+    },
+    {
+      "kind": "document",
+      "version": "1",
+      "classes": [
+        "object",
+        "snapshot"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "doc_format",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "markdown",
+                "openapi",
+                "confluence"
+              ]
+            }
+          },
+          {
+            "name": "version_ref",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "container_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "path",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 4096
+            }
+          },
+          {
+            "name": "page_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "title",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "restriction",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "acl_state",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "known",
+                "unknown"
+              ]
+            }
+          },
+          {
+            "name": "content_sha256",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          {
+            "name": "content_path",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^files/[A-Za-z0-9._/-]+$"
+            }
+          },
+          {
+            "name": "updated_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          }
+        ],
+        "required": [
+          "doc_format",
+          "version_ref",
+          "container_native_id",
+          "acl_state"
+        ],
+        "closed": true
+      },
+      "example": {
+        "acl_state": "known",
+        "container_native_id": "42",
+        "content_path": null,
+        "content_sha256": null,
+        "doc_format": "markdown",
+        "page_native_id": null,
+        "path": "docs/api/overview.md",
+        "restriction": null,
+        "title": "API overview",
+        "updated_at": "2026-04-22T15:40:00+03:00",
+        "version_ref": "d65d0505a6ba45eb2cac791d30c0a59bdb8c619d"
+      }
+    },
+    {
+      "kind": "finding",
+      "version": "1",
+      "classes": [
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "sha",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "producer",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 128
+            }
+          },
+          {
+            "name": "producer_version",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 64
+            }
+          },
+          {
+            "name": "rule_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "finding_kind",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "code",
+                "security",
+                "secret",
+                "dependency",
+                "iac",
+                "docs",
+                "openapi"
+              ]
+            }
+          },
+          {
+            "name": "path",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 4096
+            }
+          },
+          {
+            "name": "line_start",
+            "schema": {
+              "types": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          },
+          {
+            "name": "line_end",
+            "schema": {
+              "types": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          },
+          {
+            "name": "package_purl",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "native_severity",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "native_confidence",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "message",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 4096
+            }
+          }
+        ],
+        "required": [
+          "sha",
+          "producer",
+          "producer_version",
+          "rule_id",
+          "finding_kind"
+        ],
+        "closed": true
+      },
+      "example": {
+        "finding_kind": "code",
+        "line_end": 43,
+        "line_start": 43,
+        "message": "Error return value is not checked",
+        "native_confidence": null,
+        "native_severity": "error",
+        "package_purl": null,
+        "path": "internal/httpapi/handler.go",
+        "producer": "golangci-lint",
+        "producer_version": "2.15.0",
+        "rule_id": "errcheck",
+        "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"
+      }
+    },
+    {
+      "kind": "merge_request",
+      "version": "1",
+      "classes": [
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "project_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "iid",
+            "schema": {
+              "types": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          },
+          {
+            "name": "title",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "state",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "open",
+                "merged",
+                "closed"
+              ]
+            }
+          },
+          {
+            "name": "draft",
+            "schema": {
+              "types": [
+                "boolean"
+              ]
+            }
+          },
+          {
+            "name": "author_account_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "source_branch",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "target_branch",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "head_sha",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "base_sha",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "merge_base_sha",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "reviewer_field",
+            "schema": {
+              "types": [
+                "boolean"
+              ]
+            }
+          },
+          {
+            "name": "reviewer_account_native_ids",
+            "schema": {
+              "types": [
+                "array"
+              ],
+              "items": {
+                "types": [
+                  "string"
+                ],
+                "max_length": 255
+              }
+            }
+          },
+          {
+            "name": "opened_at",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ready_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "merged_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "closed_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "updated_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          }
+        ],
+        "required": [
+          "project_native_id",
+          "state",
+          "draft",
+          "source_branch",
+          "target_branch",
+          "head_sha",
+          "opened_at"
+        ],
+        "closed": true
+      },
+      "example": {
+        "author_account_native_id": "demo-person-05",
+        "base_sha": "34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971",
+        "closed_at": null,
+        "draft": false,
+        "head_sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+        "iid": 7,
+        "merge_base_sha": "34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971",
+        "merged_at": null,
+        "opened_at": "2026-10-01T09:00:00+03:00",
+        "project_native_id": "42",
+        "ready_at": "2026-10-01T09:00:00+03:00",
+        "reviewer_account_native_ids": [
+          "demo-person-03"
+        ],
+        "reviewer_field": true,
+        "source_branch": "feature/PA-21-shipping",
+        "state": "open",
+        "target_branch": "main",
+        "title": "Shipping fee",
+        "updated_at": "2026-10-02T11:00:00+03:00"
+      }
+    },
+    {
+      "kind": "mr_event",
+      "version": "1",
+      "classes": [
+        "event"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "mr_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "event_kind",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "ready",
+                "reviewer_assigned",
+                "reviewer_removed",
+                "review",
+                "comment",
+                "approval",
+                "head_pushed",
+                "merged",
+                "closed",
+                "reopened"
+              ]
+            }
+          },
+          {
+            "name": "actor_account_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "target_account_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "head_sha",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "review_state",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "approved",
+                "changes_requested",
+                "commented",
+                null
+              ]
+            }
+          }
+        ],
+        "required": [
+          "mr_native_id",
+          "event_kind"
+        ],
+        "closed": true
+      },
+      "example": {
+        "actor_account_native_id": "demo-person-03",
+        "event_kind": "review",
+        "head_sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+        "mr_native_id": "9001",
+        "review_state": "commented",
+        "target_account_native_id": null
+      }
+    },
+    {
+      "kind": "mr_revision",
+      "version": "1",
+      "classes": [
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "mr_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "head_sha",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "base_sha",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "start_sha",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "created_at",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "format": "date-time"
+            }
+          }
+        ],
+        "required": [
+          "mr_native_id",
+          "head_sha",
+          "base_sha",
+          "created_at"
+        ],
+        "closed": true
+      },
+      "example": {
+        "base_sha": "34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971",
+        "created_at": "2026-10-01T09:00:00+03:00",
+        "head_sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+        "mr_native_id": "9001",
+        "start_sha": "34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971"
+      }
+    },
+    {
+      "kind": "relation",
+      "version": "1",
+      "classes": [
+        "object",
+        "snapshot"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "link_type",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "from",
+            "schema": {
+              "types": [
+                "object"
+              ],
+              "properties": [
+                {
+                  "name": "object_kind",
+                  "schema": {
+                    "types": [
+                      "string"
+                    ],
+                    "enum": [
+                      "task",
+                      "merge_request",
+                      "ci_run",
+                      "document",
+                      "finding"
+                    ]
+                  }
+                },
+                {
+                  "name": "native_ns",
+                  "schema": {
+                    "types": [
+                      "string"
+                    ],
+                    "max_length": 255
+                  }
+                },
+                {
+                  "name": "native_id",
+                  "schema": {
+                    "types": [
+                      "string"
+                    ],
+                    "min_length": 1,
+                    "max_length": 1024
+                  }
+                },
+                {
+                  "name": "instance_key",
+                  "schema": {
+                    "types": [
+                      "string",
+                      "null"
+                    ],
+                    "max_length": 512
+                  }
+                }
+              ],
+              "required": [
+                "object_kind",
+                "native_ns",
+                "native_id"
+              ],
+              "closed": true
+            }
+          },
+          {
+            "name": "to",
+            "schema": {
+              "types": [
+                "object"
+              ],
+              "properties": [
+                {
+                  "name": "object_kind",
+                  "schema": {
+                    "types": [
+                      "string"
+                    ],
+                    "enum": [
+                      "task",
+                      "merge_request",
+                      "ci_run",
+                      "document",
+                      "finding"
+                    ]
+                  }
+                },
+                {
+                  "name": "native_ns",
+                  "schema": {
+                    "types": [
+                      "string"
+                    ],
+                    "max_length": 255
+                  }
+                },
+                {
+                  "name": "native_id",
+                  "schema": {
+                    "types": [
+                      "string"
+                    ],
+                    "min_length": 1,
+                    "max_length": 1024
+                  }
+                },
+                {
+                  "name": "instance_key",
+                  "schema": {
+                    "types": [
+                      "string",
+                      "null"
+                    ],
+                    "max_length": 512
+                  }
+                }
+              ],
+              "required": [
+                "object_kind",
+                "native_ns",
+                "native_id"
+              ],
+              "closed": true
+            }
+          },
+          {
+            "name": "method",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "explicit",
+                "branch_key",
+                "title_key",
+                "commit_key",
+                "import"
+              ]
+            }
+          }
+        ],
+        "required": [
+          "link_type",
+          "from",
+          "to",
+          "method"
+        ],
+        "closed": true
+      },
+      "example": {
+        "from": {
+          "instance_key": null,
+          "native_id": "20001",
+          "native_ns": "",
+          "object_kind": "task"
+        },
+        "link_type": "blocks",
+        "method": "explicit",
+        "to": {
+          "instance_key": null,
+          "native_id": "20002",
+          "native_ns": "",
+          "object_kind": "task"
+        }
+      }
+    },
+    {
+      "kind": "report_file",
+      "version": "1",
+      "classes": [
+        "file"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "report_kind",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "code",
+                "sast",
+                "sca",
+                "secrets",
+                "iac",
+                "image",
+                "junit",
+                "coverage",
+                "docs",
+                "openapi",
+                "sonar"
+              ]
+            }
+          },
+          {
+            "name": "report_format",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "envelope",
+                "sarif",
+                "gitlab_security",
+                "gitlab_code_quality",
+                "junit_xml",
+                "lcov",
+                "cobertura",
+                "jacoco",
+                "golangci_json",
+                "gitleaks_json",
+                "spectral_json",
+                "docs_json"
+              ]
+            }
+          },
+          {
+            "name": "sha",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "artifact_digest",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "run_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "attempt_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "producer",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 128
+            }
+          },
+          {
+            "name": "producer_version",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 64
+            }
+          },
+          {
+            "name": "profile_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 128
+            }
+          },
+          {
+            "name": "rules_hash",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          {
+            "name": "config_hash",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          {
+            "name": "db_version",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 128
+            }
+          },
+          {
+            "name": "started_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "finished_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "exit_class",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "success",
+                "findings",
+                "partial",
+                "failed",
+                "timeout",
+                "unknown"
+              ]
+            }
+          },
+          {
+            "name": "completeness",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "complete",
+                "partial",
+                "unknown"
+              ]
+            }
+          }
+        ],
+        "required": [
+          "report_kind",
+          "report_format",
+          "sha",
+          "artifact_digest",
+          "producer",
+          "producer_version"
+        ],
+        "closed": true
+      },
+      "example": {
+        "artifact_digest": null,
+        "attempt_native_id": "7002",
+        "completeness": "complete",
+        "config_hash": null,
+        "db_version": null,
+        "exit_class": "findings",
+        "finished_at": "2026-10-01T09:08:00+03:00",
+        "producer": "go test",
+        "producer_version": "go1.27.0",
+        "profile_id": "go-light",
+        "report_format": "junit_xml",
+        "report_kind": "junit",
+        "rules_hash": null,
+        "run_native_id": "5001",
+        "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+        "started_at": "2026-10-01T09:06:00+03:00"
+      }
+    },
+    {
+      "kind": "task",
+      "version": "1",
+      "classes": [
+        "object",
+        "snapshot"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "project_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "task_key",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "title",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "type_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "status_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "resolution_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "created_at",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "updated_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "version",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "size",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "team",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "assignee_account_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "parent_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "restriction",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "raw_fields",
+            "schema": {
+              "types": [
+                "object",
+                "null"
+              ],
+              "additional": {
+                "types": [
+                  "string",
+                  "null"
+                ],
+                "max_length": 1024
+              }
+            }
+          }
+        ],
+        "required": [
+          "project_native_id",
+          "type_native_id",
+          "status_native_id",
+          "created_at"
+        ],
+        "closed": true
+      },
+      "example": {
+        "assignee_account_native_id": "demo-person-05",
+        "created_at": "2026-02-02T09:00:00+03:00",
+        "parent_native_id": null,
+        "project_native_id": "10000",
+        "raw_fields": {
+          "customfield_10020": "Impediment"
+        },
+        "resolution_native_id": null,
+        "restriction": null,
+        "size": "S",
+        "status_native_id": "3",
+        "task_key": "PA-3",
+        "team": "team-1",
+        "title": "Blocked task",
+        "type_native_id": "10001",
+        "updated_at": "2026-03-04T10:00:00+03:00",
+        "version": null
+      }
+    },
+    {
+      "kind": "task_event",
+      "version": "1",
+      "classes": [
+        "event"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "task_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "event_kind",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "created",
+                "field_change",
+                "comment",
+                "link_change",
+                "moved"
+              ]
+            }
+          },
+          {
+            "name": "field_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "before_value",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "after_value",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "before_account_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "after_account_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "actor_account_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          }
+        ],
+        "required": [
+          "task_native_id",
+          "event_kind"
+        ],
+        "closed": true
+      },
+      "example": {
+        "actor_account_native_id": "demo-person-05",
+        "after_account_native_id": null,
+        "after_value": "3",
+        "before_account_native_id": null,
+        "before_value": "1",
+        "event_kind": "field_change",
+        "field_native_id": "status",
+        "task_native_id": "20001"
+      }
+    },
+    {
+      "kind": "task_field",
+      "version": "1",
+      "classes": [
+        "snapshot",
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "name",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "value_type",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "custom",
+            "schema": {
+              "types": [
+                "boolean"
+              ]
+            }
+          }
+        ],
+        "required": [
+          "name",
+          "value_type",
+          "custom"
+        ],
+        "closed": true
+      },
+      "example": {
+        "custom": true,
+        "name": "Flagged",
+        "value_type": "array"
+      }
+    },
+    {
+      "kind": "task_resolution",
+      "version": "1",
+      "classes": [
+        "snapshot",
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "name",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          }
+        ],
+        "required": [
+          "name"
+        ],
+        "closed": true
+      },
+      "example": {
+        "name": "Won't Do"
+      }
+    },
+    {
+      "kind": "task_status",
+      "version": "1",
+      "classes": [
+        "snapshot",
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "name",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "category",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "new",
+                "indeterminate",
+                "done",
+                "unknown"
+              ]
+            }
+          },
+          {
+            "name": "project_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          }
+        ],
+        "required": [
+          "name",
+          "category"
+        ],
+        "closed": true
+      },
+      "example": {
+        "category": "indeterminate",
+        "name": "In Progress",
+        "project_native_id": null
+      }
+    },
+    {
+      "kind": "task_type",
+      "version": "1",
+      "classes": [
+        "snapshot",
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "name",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "subtask",
+            "schema": {
+              "types": [
+                "boolean"
+              ]
+            }
+          }
+        ],
+        "required": [
+          "name",
+          "subtask"
+        ],
+        "closed": true
+      },
+      "example": {
+        "name": "Story",
+        "subtask": false
+      }
+    }
+  ]
+}
