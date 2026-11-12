@@ -7,8 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "lint": "redocly lint ../../docs/technical-specification/openapi.yaml --config ../../docs/technical-specification/redocly.yaml && spectral lint ../../docs/technical-specification/openapi.yaml --ruleset ../../docs/technical-specification/openapi.spectral.yaml --fail-severity=warn",
-    "check": "node check-contract.mjs && node operation-map.mjs && node negative-checks.mjs",
+    "lint": "redocly lint ../../docs/technical-specification/openapi.yaml --config ../../docs/technical-specification/redocly.yaml && spectral lint ../../docs/technical-specification/openapi.yaml --ruleset ../../docs/technical-specification/openapi.spectral.yaml --fail-severity=warn && redocly lint ../../docs/technical-specification/adapter.yaml ../../docs/technical-specification/envelope.yaml --config ../../docs/technical-specification/redocly.yaml && spectral lint ../../docs/technical-specification/adapter.yaml ../../docs/technical-specification/envelope.yaml --ruleset ../../docs/technical-specification/adapter.spectral.yaml --fail-severity=warn",
+    "check": "node check-contract.mjs && node check-adapter.mjs && node operation-map.mjs && node negative-checks.mjs",
     "verify": "npm run lint && npm run check",
     "map": "node operation-map.mjs --write",
     "docs": "redocly build-docs ../../docs/technical-specification/openapi.yaml --config ../../docs/technical-specification/redocly.yaml -o ../../build/openapi.html",
