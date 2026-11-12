@@ -4,8 +4,10 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 )
 
 const _keySize = 32
@@ -70,6 +72,34 @@ func (k *Keyring) Open(w WrappedKey, ciphertext, aad []byte) ([]byte, error) {
 		return nil, err
 	}
 	return open(aead, ciphertext, aad)
+}
+
+// SealEnvelope encrypts plaintext under a fresh data key and returns one blob with the wrapped key and the
+// ciphertext, for a column that has no separate key table; masterVersion names the key that wrapped it.
+func (k *Keyring) SealEnvelope(plaintext, aad []byte) (blob []byte, masterVersion uint32, err error) {
+	w := k.NewDataKey()
+	ciphertext, err := k.Seal(w, plaintext, aad)
+	if err != nil {
+		return nil, 0, err
+	}
+	n := len(w.Ciphertext)
+	if n > math.MaxUint16 {
+		return nil, 0, errors.New("crypto: wrapped data key is too long")
+	}
+	blob = binary.BigEndian.AppendUint16(make([]byte, 0, 2+n+len(ciphertext)), uint16(n))
+	blob = append(blob, w.Ciphertext...)
+	return append(blob, ciphertext...), w.MasterVersion, nil
+}
+
+func (k *Keyring) OpenEnvelope(blob []byte, masterVersion uint32, aad []byte) ([]byte, error) {
+	if len(blob) < 2 {
+		return nil, ErrDecrypt
+	}
+	n := int(binary.BigEndian.Uint16(blob))
+	if len(blob) < 2+n {
+		return nil, ErrDecrypt
+	}
+	return k.Open(WrappedKey{MasterVersion: masterVersion, Ciphertext: blob[2 : 2+n]}, blob[2+n:], aad)
 }
 
 func (k *Keyring) wrap(key []byte) WrappedKey {

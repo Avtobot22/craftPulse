@@ -38,4 +38,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE craftpulse_owner IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO craftpulse_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE craftpulse_owner IN SCHEMA public
     GRANT SELECT ON TABLES TO craftpulse_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE craftpulse_owner IN SCHEMA public
+    GRANT SELECT ON SEQUENCES TO craftpulse_backup;
 SQL
