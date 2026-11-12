@@ -9,12 +9,11 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	httpctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/http"
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/handler"
@@ -63,7 +62,7 @@ func TestApp_UnimplementedOperation(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
-	rec := f.do(t, httptest.NewRequest(http.MethodGet, "/api/v1/teams", nil))
+	rec := f.do(t, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/teams", http.NoBody))
 
 	p := decodeProblem(t, rec)
 	assert.Equal(t, http.StatusNotImplemented, rec.Code)
@@ -83,7 +82,7 @@ func TestApp_UnimplementedOperation(t *testing.T) {
 func TestApp_ErrorResponses(t *testing.T) {
 	t.Parallel()
 
-	oversized := httptest.NewRequest(http.MethodPost, "/api/v1/imports", strings.NewReader("{}"))
+	oversized := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/imports", strings.NewReader("{}"))
 	oversized.ContentLength = 25<<20 + 1
 	tests := []struct {
 		name       string
@@ -93,19 +92,19 @@ func TestApp_ErrorResponses(t *testing.T) {
 	}{
 		{
 			name:       "login is served from the site root",
-			giveReq:    httptest.NewRequest(http.MethodGet, "/o/acme/login", nil),
+			giveReq:    httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/o/acme/login", http.NoBody),
 			wantStatus: http.StatusNotImplemented,
 			wantCode:   "not_implemented",
 		},
 		{
 			name:       "unknown path",
-			giveReq:    httptest.NewRequest(http.MethodGet, "/api/v1/nothing", nil),
+			giveReq:    httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/nothing", http.NoBody),
 			wantStatus: http.StatusNotFound,
 			wantCode:   "not_found",
 		},
 		{
 			name:       "invalid parameter",
-			giveReq:    httptest.NewRequest(http.MethodGet, "/api/v1/teams?limit=MARKER", nil),
+			giveReq:    httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/teams?limit=MARKER", http.NoBody),
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "malformed_request",
 		},
@@ -133,11 +132,11 @@ func TestApp_ProcessStateAndMetrics(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
-	assert.Equal(t, http.StatusOK, f.do(t, httptest.NewRequest(http.MethodGet, "/livez", nil)).Code)
-	assert.Equal(t, http.StatusServiceUnavailable, f.do(t, httptest.NewRequest(http.MethodGet, "/readyz", nil)).Code)
-	f.do(t, httptest.NewRequest(http.MethodGet, "/api/v1/teams", nil))
+	assert.Equal(t, http.StatusOK, f.do(t, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/livez", http.NoBody)).Code)
+	assert.Equal(t, http.StatusServiceUnavailable, f.do(t, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", http.NoBody)).Code)
+	f.do(t, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/teams", http.NoBody))
 
 	rec := httptest.NewRecorder()
-	f.metrics.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	f.metrics.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", http.NoBody))
 	assert.Contains(t, rec.Body.String(), `craftpulse_api_requests_total{operation_id="listTeams",status="501"} 1`)
 }

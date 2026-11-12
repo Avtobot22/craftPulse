@@ -21,7 +21,8 @@ func TestRun_FinishesActiveRequestOnShutdown(t *testing.T) {
 		<-release
 		w.WriteHeader(http.StatusOK)
 	}), ReadHeaderTimeout: time.Second}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := ln.Addr().String()
 
@@ -30,8 +31,10 @@ func TestRun_FinishesActiveRequestOnShutdown(t *testing.T) {
 	go func() { served <- run(ctx, srv, ln) }()
 
 	response := make(chan int, 1)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+addr+"/", http.NoBody)
+	require.NoError(t, err)
 	go func() {
-		resp, err := http.Get("http://" + addr + "/")
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			response <- 0
 			return
@@ -43,7 +46,8 @@ func TestRun_FinishesActiveRequestOnShutdown(t *testing.T) {
 
 	cancel()
 	require.Eventually(t, func() bool {
-		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		dialer := net.Dialer{Timeout: 100 * time.Millisecond}
+		conn, err := dialer.DialContext(t.Context(), "tcp", addr)
 		if err != nil {
 			return true
 		}

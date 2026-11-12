@@ -46,5 +46,5 @@ func run(in, out string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(out, formatted, 0o644)
+	return os.WriteFile(out, formatted, 0o600)
 }

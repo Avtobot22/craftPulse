@@ -7,10 +7,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 func TestRecovery_HidesPanicDetails(t *testing.T) {
@@ -26,7 +25,7 @@ func TestRecovery_HidesPanicDetails(t *testing.T) {
 	)
 	rec := httptest.NewRecorder()
 
-	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/panic", nil))
+	e.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/panic", http.NoBody))
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"code":"internal_error"`)

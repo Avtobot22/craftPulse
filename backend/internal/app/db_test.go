@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 func runWithPostgres(m *testing.M) int {
 	ctx := context.Background()
 	env := map[string]string{}
-	var files []testcontainers.ContainerFile
+	files := make([]testcontainers.ContainerFile, 0, len(_passwords))
 	for role, password := range _passwords {
 		path := "/run/secrets/" + role
 		files = append(files, testcontainers.ContainerFile{Reader: strings.NewReader(password + "\n"), ContainerFilePath: path, FileMode: 0o644})
@@ -104,7 +104,7 @@ func psql(t *testing.T, db, sql string) {
 	require.Zero(t, code, out)
 }
 
-func exec(t *testing.T, cmd []string, opts ...tcexec.ProcessOption) (int, string) {
+func exec(t *testing.T, cmd []string, opts ...tcexec.ProcessOption) (exitCode int, output string) {
 	t.Helper()
 	code, r, err := _container.Exec(t.Context(), cmd, append(opts, tcexec.Multiplexed())...)
 	require.NoError(t, err)
@@ -115,7 +115,8 @@ func exec(t *testing.T, cmd []string, opts ...tcexec.ProcessOption) (int, string
 
 func count(t *testing.T, ctx context.Context, q interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
-}, sql string) int {
+}, sql string,
+) int {
 	t.Helper()
 	var n int
 	require.NoError(t, q.QueryRow(ctx, sql).Scan(&n))

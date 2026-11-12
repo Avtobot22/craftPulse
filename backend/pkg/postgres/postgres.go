@@ -64,7 +64,7 @@ func Conn(ctx context.Context, pool *pgxpool.Pool) DBTX {
 }
 
 func InOrgTx(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, fn func(ctx context.Context) error) error {
-	return inTx(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
+	return withTransaction(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, "SELECT set_config('craftpulse.org_id', $1, true)", orgID.String()); err != nil {
 			return fmt.Errorf("postgres: set organization: %w", err)
 		}
@@ -74,10 +74,10 @@ func InOrgTx(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, fn func(c
 
 // InTx serves tables outside row-level security (TZ 12.2), read before the organization is known.
 func InTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context) error) error {
-	return inTx(ctx, pool, func(ctx context.Context, _ pgx.Tx) error { return fn(ctx) })
+	return withTransaction(ctx, pool, func(ctx context.Context, _ pgx.Tx) error { return fn(ctx) })
 }
 
-func inTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
+func withTransaction(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("postgres: begin: %w", err)

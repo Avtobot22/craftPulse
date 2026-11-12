@@ -106,9 +106,17 @@ def main():
             if not successful:
                 raise RuntimeError("Run Repository CI successfully in a PR before enabling protection")
             jobs = gh_api(base + "/actions/runs/" + str(successful[0]["id"]) + "/jobs")
-            if not any(job["name"] == "repository-check" and job["conclusion"] == "success"
-                       for job in jobs["jobs"]):
-                raise RuntimeError("Successful repository-check job is required before protection")
+            required_checks = {
+                check["context"]
+                for rule in desired["rules"] if rule["type"] == "required_status_checks"
+                for check in rule["parameters"]["required_status_checks"]
+            }
+            successful_jobs = {job["name"] for job in jobs["jobs"]
+                               if job["conclusion"] == "success"}
+            missing = required_checks - successful_jobs
+            if missing:
+                raise RuntimeError("Successful required jobs are missing before protection: "
+                                   + ", ".join(sorted(missing)))
             endpoint = base + "/rulesets"
             if matching:
                 endpoint += "/" + str(matching[0]["id"])

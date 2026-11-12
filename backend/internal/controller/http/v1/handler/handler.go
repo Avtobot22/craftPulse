@@ -35,7 +35,7 @@ func RequestError(c *gin.Context, err error) {
 	response.Write(c, response.MalformedRequest)
 }
 
-func HandlerError(c *gin.Context, err error) {
+func Error(c *gin.Context, err error) {
 	if errors.Is(err, openapi.ErrNotImplemented) {
 		response.Write(c, response.NotImplemented)
 		return
