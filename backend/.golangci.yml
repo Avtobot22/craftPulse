@@ -269,7 +269,7 @@ linters:
             - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
               desc: "modules must be connected through interfaces in internal/app"
         repo-unknown-module:
-          files: ["**/internal/repo/**", "!**/internal/repo/{persistent/platform,persistent/org,persistent/install,persistent/auth,persistent/access,persistent/audit,persistent/connect,persistent/sync,persistent/ingest,persistent/normalize,persistent/link,persistent/process,persistent/calc,persistent/change,persistent/decision,persistent/docs,persistent/outbound,persistent/view,persistent/survey,queue,objstore,adapterapi}/**"]
+          files: ["**/internal/repo/**", "!**/internal/repo/{persistent/platform,persistent/org,persistent/install,persistent/auth,persistent/access,persistent/audit,persistent/connect,persistent/sync,persistent/ingest,persistent/normalize,persistent/link,persistent/process,persistent/calc,persistent/change,persistent/decision,persistent/docs,persistent/outbound,persistent/view,persistent/survey,queue,objstore,probe,adapterapi}/**"]
           deny:
             - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
               desc: "register new modules here before importing their own subpackages"
@@ -417,6 +417,13 @@ linters:
           files: ["**/internal/repo/objstore/**"]
           list-mode: lax
           allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/objstore$", "github.com/Avtobot22/craftPulse/backend/internal/repo/objstore/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-probe:
+          files: ["**/internal/repo/probe/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/probe$", "github.com/Avtobot22/craftPulse/backend/internal/repo/probe/"]
           deny:
             - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
               desc: "modules must be connected through interfaces in internal/app"
