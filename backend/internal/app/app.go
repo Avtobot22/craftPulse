@@ -128,8 +128,9 @@ func newRegistry() *prometheus.Registry {
 
 func serve(ctx context.Context, log zerolog.Logger, ready *health.Readiness, handlers map[string]http.Handler) error {
 	listeners := make(map[string]net.Listener, len(handlers))
+	var lc net.ListenConfig
 	for addr := range handlers {
-		ln, err := net.Listen("tcp", addr)
+		ln, err := lc.Listen(ctx, "tcp", addr)
 		if err != nil {
 			for _, l := range listeners {
 				_ = l.Close()

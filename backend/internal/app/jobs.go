@@ -120,7 +120,7 @@ func (w *watchdog) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.Tr
 	return ctx
 }
 
-func (w *watchdog) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
+func (*watchdog) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
 
 func (w *watchdog) arm() {
 	w.last.Store(time.Now().UnixNano())

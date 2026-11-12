@@ -1,0 +1,486 @@
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.27"
+  tests: true
+
+linters:
+  default: none
+  enable:
+    # корректность
+    - errcheck         # проверяет необработанные ошибки
+    - govet            # официальные vet-проверки
+    - staticcheck      # объединяет staticcheck + stylecheck + gosimple + unused
+    - errorlint        # правильное использование %w, errors.Is/As
+    - bodyclose        # http.Response.Body должен закрываться
+    - sqlclosecheck    # rows/stmt должны закрываться
+    - rowserrcheck     # после rows.Next() — проверка rows.Err()
+    - nilerr           # return nil вместо return err по ошибке
+    - exhaustive       # exhaustive switch на enum
+    - copyloopvar      # для Go 1.22+ — старая ловушка с loop-var
+    - contextcheck     # context передан вглубь
+    - noctx            # HTTP-запрос без context.Context
+    - unparam          # неиспользуемые параметры функции
+
+    # стиль
+    - revive           # современная замена golint
+    - gocritic         # широкий набор проверок
+    - misspell         # опечатки в комментариях
+    - tagliatelle      # консистентность struct tags
+    - whitespace       # лишние/недостающие пробелы
+    - dupword          # дубликаты слов в комментариях
+
+    # архитектура
+    - depguard         # запрет импортов по правилам
+
+    # производительность
+    - prealloc         # подсказывает make([]T, 0, n)
+    - perfsprint       # fmt.Sprintf где можно использовать strconv
+
+    # безопасность
+    - gosec            # security-anti-patterns
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        - (io.Closer).Close          # часто игнорируется явно
+        - (*os.File).Close
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment             # шумно, оптимизация ради 4 байт обычно не стоит того
+        - shadow                     # любим короткое shadowing err
+
+    staticcheck:
+      checks:
+        - all
+
+    revive:
+      severity: warning
+      rules:
+        - name: exported
+        - name: var-naming
+        - name: package-comments
+          disabled: true             # не требуем док. комментарий на пакет в каждом случае
+        - name: error-return
+        - name: error-naming
+        - name: if-return
+        - name: increment-decrement
+        - name: range
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+          disabled: true             # уже покрыто unparam
+        - name: redefines-builtin-id
+        - name: confusing-naming
+        - name: unused-receiver
+        - name: early-return
+        - name: receiver-naming
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - paramTypeCombine
+        - ifElseChain
+        - hugeParam                  # любим передавать структуры по значению, если они небольшие
+
+    tagliatelle:
+      case:
+        rules:
+          json: snake                # JSON-теги в snake_case
+          yaml: snake
+          env: upperSnake
+
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: "io/ioutil"
+              desc: "io/ioutil deprecated since Go 1.16, use io and os"
+            - pkg: "github.com/pkg/errors"
+              desc: "use stdlib errors + fmt.Errorf with %w"
+        pkg-isolation:
+          files: ["**/pkg/**"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/"
+              desc: "pkg must not depend on internal packages"
+        usecase-layers:
+          files: ["**/internal/usecase/**"]
+          deny:
+            - pkg: "github.com/gin-gonic/gin"
+              desc: "usecase must not depend on HTTP transport"
+            - pkg: "github.com/jackc/pgx"
+              desc: "usecase must use repository interfaces"
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/controller"
+              desc: "usecase must not depend on controllers"
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "usecase must use repository interfaces"
+        controller-isolation:
+          files: ["**/internal/controller/**"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo"
+              desc: "controller must use usecase interfaces"
+        adapter-isolation:
+          files: ["**/internal/adapter/**"]
+          list-mode: strict
+          allow:
+            - "$gostd"
+            - "github.com/Avtobot22/craftPulse/backend/pkg/envelope$"
+            - "github.com/Avtobot22/craftPulse/backend/pkg/envelope/"
+            - "github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk$"
+            - "github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk/"
+        usecase-unknown-module:
+          files: ["**/internal/usecase/**", "!**/internal/usecase/{org,install,auth,access,audit,connect,sync,ingest,normalize,link,process,calc,change,decision,docs,outbound,view,survey}/**"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "register new modules here before importing their own subpackages"
+        usecase-org:
+          files: ["**/internal/usecase/org/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/org$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/org/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-install:
+          files: ["**/internal/usecase/install/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/install$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/install/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-auth:
+          files: ["**/internal/usecase/auth/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/auth$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/auth/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-access:
+          files: ["**/internal/usecase/access/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/access$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/access/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-audit:
+          files: ["**/internal/usecase/audit/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/audit$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/audit/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-connect:
+          files: ["**/internal/usecase/connect/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/connect$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/connect/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-sync:
+          files: ["**/internal/usecase/sync/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/sync$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/sync/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-ingest:
+          files: ["**/internal/usecase/ingest/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/ingest$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/ingest/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-normalize:
+          files: ["**/internal/usecase/normalize/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/normalize$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/normalize/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-link:
+          files: ["**/internal/usecase/link/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/link$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/link/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-process:
+          files: ["**/internal/usecase/process/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/process$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/process/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-calc:
+          files: ["**/internal/usecase/calc/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/calc$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/calc/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-change:
+          files: ["**/internal/usecase/change/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/change$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/change/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-decision:
+          files: ["**/internal/usecase/decision/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/decision$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/decision/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-docs:
+          files: ["**/internal/usecase/docs/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/docs$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/docs/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-outbound:
+          files: ["**/internal/usecase/outbound/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/outbound$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/outbound/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-view:
+          files: ["**/internal/usecase/view/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/view$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/view/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        usecase-survey:
+          files: ["**/internal/usecase/survey/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/usecase/survey$", "github.com/Avtobot22/craftPulse/backend/internal/usecase/survey/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/usecase/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-unknown-module:
+          files: ["**/internal/repo/**", "!**/internal/repo/{persistent/platform,persistent/org,persistent/install,persistent/auth,persistent/access,persistent/audit,persistent/connect,persistent/sync,persistent/ingest,persistent/normalize,persistent/link,persistent/process,persistent/calc,persistent/change,persistent/decision,persistent/docs,persistent/outbound,persistent/view,persistent/survey,queue,objstore,probe,adapterapi}/**"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "register new modules here before importing their own subpackages"
+        repo-persistent-platform:
+          files: ["**/internal/repo/persistent/platform/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-org:
+          files: ["**/internal/repo/persistent/org/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/org$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/org/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-install:
+          files: ["**/internal/repo/persistent/install/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/install$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/install/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-auth:
+          files: ["**/internal/repo/persistent/auth/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/auth$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/auth/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-access:
+          files: ["**/internal/repo/persistent/access/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/access$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/access/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-audit:
+          files: ["**/internal/repo/persistent/audit/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-connect:
+          files: ["**/internal/repo/persistent/connect/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/connect$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/connect/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-sync:
+          files: ["**/internal/repo/persistent/sync/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/sync$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/sync/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-ingest:
+          files: ["**/internal/repo/persistent/ingest/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/ingest$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/ingest/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-normalize:
+          files: ["**/internal/repo/persistent/normalize/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/normalize$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/normalize/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-link:
+          files: ["**/internal/repo/persistent/link/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/link$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/link/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-process:
+          files: ["**/internal/repo/persistent/process/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/process$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/process/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-calc:
+          files: ["**/internal/repo/persistent/calc/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/calc$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/calc/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-change:
+          files: ["**/internal/repo/persistent/change/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/change$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/change/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-decision:
+          files: ["**/internal/repo/persistent/decision/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/decision$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/decision/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-docs:
+          files: ["**/internal/repo/persistent/docs/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/docs$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/docs/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-outbound:
+          files: ["**/internal/repo/persistent/outbound/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/outbound$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/outbound/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-view:
+          files: ["**/internal/repo/persistent/view/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/view$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/view/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-persistent-survey:
+          files: ["**/internal/repo/persistent/survey/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/survey$", "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/survey/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-queue:
+          files: ["**/internal/repo/queue/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/queue$", "github.com/Avtobot22/craftPulse/backend/internal/repo/queue/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-objstore:
+          files: ["**/internal/repo/objstore/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/objstore$", "github.com/Avtobot22/craftPulse/backend/internal/repo/objstore/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-probe:
+          files: ["**/internal/repo/probe/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/probe$", "github.com/Avtobot22/craftPulse/backend/internal/repo/probe/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+        repo-adapterapi:
+          files: ["**/internal/repo/adapterapi/**"]
+          list-mode: lax
+          allow: ["github.com/Avtobot22/craftPulse/backend/internal/repo/adapterapi$", "github.com/Avtobot22/craftPulse/backend/internal/repo/adapterapi/"]
+          deny:
+            - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
+              desc: "modules must be connected through interfaces in internal/app"
+
+    gosec:
+      excludes:
+        - G104                       # дубли с errcheck
+        - G304                       # file path provided as taint input — много false-positives
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    perfsprint:
+      strconcat: false               # не настаивай на a+b вместо Sprintf
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # тесты могут быть менее строгие
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - dupword
+          - unparam
+      # main.go — допускаем log.Fatal и Exit
+      - path: cmd/.+/main\.go
+        linters:
+          - revive
+        text: "exported function"
+
+formatters:
+  exclusions:
+    generated: strict
+  enable:
+    - gofumpt
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/Avtobot22/craftPulse/backend)
+      custom-order: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -25,7 +25,8 @@ func NewRouter(log zerolog.Logger, reg prometheus.Registerer, probes health.Prob
 	r.GET("/readyz", state)
 	r.GET("/version", state)
 
-	chain := []gin.HandlerFunc{middleware.Correlate(log), middleware.Observe(middleware.NewMetrics(reg)), middleware.Recovery()}
+	chain := make([]gin.HandlerFunc, 0, 4)
+	chain = append(chain, middleware.Correlate(log), middleware.Observe(middleware.NewMetrics(reg)), middleware.Recovery())
 	r.NoRoute(append(chain, func(c *gin.Context) { response.Write(c, response.NotFound) })...)
 
 	root := r.Group("", chain...)

@@ -110,8 +110,10 @@ func TestBackupRole(t *testing.T) {
 		}))
 	}
 
-	code, out := exec(t, []string{"pg_dump", "--enable-row-security", "--data-only", "-h", "localhost",
-		"-U", "craftpulse_backup", "-d", db.name, "-t", "platform.org_clock"},
+	code, out := exec(t, []string{
+		"pg_dump", "--enable-row-security", "--data-only", "-h", "localhost",
+		"-U", "craftpulse_backup", "-d", db.name, "-t", "platform.org_clock",
+	},
 		tcexec.WithEnv([]string{"PGPASSWORD=" + _passwords["craftpulse_backup"]}))
 	require.Zero(t, code, out)
 	for _, org := range orgs {

@@ -59,6 +59,53 @@ class GitHubSetupTest(unittest.TestCase):
             self.invoke(["protection", "--apply"], api)
         self.assertTrue(all(not args for _, args in seen))
 
+    def protection_api(self, jobs, seen):
+        desired = setup.load("main-ruleset.json")
+
+        def api(endpoint, *args):
+            seen.append((endpoint, args))
+            if endpoint.endswith("/rulesets?per_page=100&includes_parents=false"):
+                return [{"id": 42, "name": desired["name"]}]
+            if endpoint.endswith("/actions/runs?per_page=100"):
+                return {"workflow_runs": [{
+                    "id": 123, "path": ".github/workflows/repository.yml",
+                    "status": "completed", "conclusion": "success",
+                }]}
+            if endpoint.endswith("/actions/runs/123/jobs"):
+                return {"jobs": jobs}
+            if endpoint.endswith("/rulesets/42"):
+                return dict(desired, id=42)
+            return {"full_name": setup.REPOSITORY, "default_branch": "main", "permissions": {"admin": True}}
+
+        return api
+
+    def test_protection_requires_every_required_job_to_succeed(self):
+        for required in ["repository-check", "ci"]:
+            for conclusion in [None, "failure", "cancelled", "skipped", "missing"]:
+                with self.subTest(job=required, conclusion=conclusion):
+                    jobs = [{"name": name, "conclusion": "success"}
+                            for name in ["repository-check", "ci"] if name != required]
+                    if conclusion != "missing":
+                        jobs.append({"name": required, "conclusion": conclusion})
+                    seen = []
+                    with self.assertRaisesRegex(RuntimeError, required):
+                        self.invoke(["protection", "--apply"], self.protection_api(jobs, seen))
+                    self.assertTrue(all(not args for _, args in seen))
+
+    def test_protection_accepts_aggregate_success_and_skipped_backend(self):
+        jobs = [{"name": name, "conclusion": "success"} for name in ["repository-check", "ci"]]
+        jobs.append({"name": "backend", "conclusion": "skipped"})
+        seen = []
+        self.invoke(["protection", "--apply"], self.protection_api(jobs, seen))
+        mutations = [(endpoint, args) for endpoint, args in seen if args]
+        self.assertEqual([("repos/" + setup.REPOSITORY + "/rulesets/42",
+                           ("PUT", setup.load("main-ruleset.json")))], mutations)
+
+    def test_protection_dry_run_does_not_require_or_change_checks(self):
+        seen = []
+        self.invoke(["protection"], self.protection_api([], seen))
+        self.assertTrue(all(not args and "/actions/" not in endpoint for endpoint, args in seen))
+
     def test_ruleset_response_can_reorder_but_cannot_add_bypass(self):
         expected = {"bypass_actors": [], "rules": [{"type": "deletion"}, {"type": "non_fast_forward"}]}
         actual = {"id": 1, "bypass_actors": [], "rules": [{"type": "non_fast_forward"}, {"type": "deletion"}]}

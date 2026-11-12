@@ -12,9 +12,10 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
 
-func get(h http.Handler, path string) *httptest.ResponseRecorder {
+func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, http.NoBody))
 	return rec
 }
 
@@ -45,7 +46,7 @@ func TestReadyz(t *testing.T) {
 				ready.Drain()
 			}
 
-			rec := get(health.Handler(health.Probes{Ready: ready}), "/readyz")
+			rec := get(t, health.Handler(health.Probes{Ready: ready}), "/readyz")
 
 			assert.Equal(t, tt.wantStatus, rec.Code)
 		})
@@ -57,8 +58,8 @@ func TestLivezAndVersion(t *testing.T) {
 
 	h := health.Handler(health.Probes{Ready: &health.Readiness{}})
 
-	assert.Equal(t, http.StatusOK, get(h, "/livez").Code)
-	version := get(h, "/version")
+	assert.Equal(t, http.StatusOK, get(t, h, "/livez").Code)
+	version := get(t, h, "/version")
 	assert.Equal(t, http.StatusOK, version.Code)
 	assert.JSONEq(t, `{"commit_sha":"unknown","schema_version":null}`, version.Body.String())
 
@@ -67,6 +68,6 @@ func TestLivezAndVersion(t *testing.T) {
 		Live:          func(context.Context) error { return errors.New("stalled") },
 		SchemaVersion: func(context.Context) (int64, error) { return 3, nil },
 	})
-	assert.Equal(t, http.StatusServiceUnavailable, get(stalled, "/livez").Code)
-	assert.JSONEq(t, `{"commit_sha":"unknown","schema_version":3}`, get(stalled, "/version").Body.String())
+	assert.Equal(t, http.StatusServiceUnavailable, get(t, stalled, "/livez").Code)
+	assert.JSONEq(t, `{"commit_sha":"unknown","schema_version":3}`, get(t, stalled, "/version").Body.String())
 }

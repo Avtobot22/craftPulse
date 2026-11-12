@@ -15,7 +15,7 @@ func RegisterRoutes(root, api *gin.RouterGroup, h *handler.Handler) {
 		[]openapi.StrictMiddlewareFunc{middleware.Operation},
 		openapi.StrictGinServerOptions{
 			RequestErrorHandlerFunc:  handler.RequestError,
-			HandlerErrorFunc:         handler.HandlerError,
+			HandlerErrorFunc:         handler.Error,
 			ResponseErrorHandlerFunc: handler.ResponseError,
 		})
 	api.Use(middleware.LimitBody(_maxBodyBytes))
