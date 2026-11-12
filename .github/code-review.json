@@ -1,0 +1,10 @@
+{
+  "repository": "Avtobot22/craftPulse",
+  "owner": "Avtobot22",
+  "project_number": 4,
+  "project_title": "craftPulse",
+  "threshold": 70,
+  "first_issue": 75,
+  "areas": ["area:backend", "area:frontend", "area:api", "area:data", "area:infra"],
+  "assignees": ["Avtobot22"]
+}
