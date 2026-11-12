@@ -1,7 +1,9 @@
 *
-!backend/
-!docs/technical-specification/openapi.yaml
-backend/bin/
-backend/**/*.gen.go
-backend/**/.env
-backend/**/*_test.go
+!go.mod
+!go.sum
+!cmd/
+!config/
+!internal/
+!migrations/
+!pkg/
+**/*_test.go
