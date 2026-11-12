@@ -22,8 +22,10 @@ import (
 
 func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvider, c clock.Clock, siteURL string, reg prometheus.Registerer) v1.Deps {
 	tx := persistent.NewTransactor(pool)
-	orgs := org.New(orgrepo.NewRepo(pool), platform.NewRepo(pool), c)
 	auditor := audit.New(auditrepo.NewRepo(pool), tx, c)
+	orgs := org.New(org.Deps{
+		Orgs: orgrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Auditor: auditor, Clock: c, NewID: newID,
+	})
 	logins := auth.New(auth.Deps{
 		Repo:     authrepo.NewRepo(pool),
 		Tx:       tx,
@@ -36,7 +38,7 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 	})
 	decisions := access.New(tx, orgs, auditor, c)
 	return v1.Deps{
-		Handler:    handler.New(handler.Deps{Logins: logins, Access: decisions, Registerer: reg}),
+		Handler:    handler.New(handler.Deps{Logins: logins, Access: decisions, Structure: orgs, Registerer: reg}),
 		Logins:     logins,
 		Access:     decisions,
 		SiteOrigin: siteURL,

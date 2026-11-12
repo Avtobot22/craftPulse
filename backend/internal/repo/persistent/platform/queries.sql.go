@@ -35,3 +35,14 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) erro
 	_, err := q.db.Exec(ctx, createTenant, arg.OrganizationID, arg.Status, arg.CreatedAt)
 	return err
 }
+
+const nextSeq = `-- name: NextSeq :one
+UPDATE platform.org_clock SET last_seq = last_seq + 1 WHERE organization_id = $1 RETURNING last_seq
+`
+
+func (q *Queries) NextSeq(ctx context.Context, organizationID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, nextSeq, organizationID)
+	var last_seq int64
+	err := row.Scan(&last_seq)
+	return last_seq, err
+}

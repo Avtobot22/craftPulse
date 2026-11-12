@@ -8,10 +8,13 @@ import "errors"
 
 var ErrNotImplemented = errors.New("operation is not implemented")
 
-// Operation is a contract operation: Action is the x-craftpulse-action that access checks (TZ 13.4).
+// Operation is a contract operation: Action is the x-craftpulse-action that access checks (TZ 13.4),
+// Query lists the accepted query parameters, IfMatch marks a versioned change.
 type Operation struct {
-	ID     string
-	Action string
+	ID      string
+	Action  string
+	Query   []string
+	IfMatch bool
 }
 
 const ActionPublic = "public"

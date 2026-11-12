@@ -70,6 +70,75 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 	return err
 }
 
+const createProject = `-- name: CreateProject :exec
+INSERT INTO org.project (organization_id, id, name, status, created_at) VALUES ($1, $2, $3, $4, $5)
+`
+
+type CreateProjectParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	Name           string
+	Status         string
+	CreatedAt      time.Time
+}
+
+func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) error {
+	_, err := q.db.Exec(ctx, createProject,
+		arg.OrganizationID,
+		arg.ID,
+		arg.Name,
+		arg.Status,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const createService = `-- name: CreateService :exec
+INSERT INTO org.service (organization_id, id, name, status, created_at) VALUES ($1, $2, $3, $4, $5)
+`
+
+type CreateServiceParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	Name           string
+	Status         string
+	CreatedAt      time.Time
+}
+
+func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) error {
+	_, err := q.db.Exec(ctx, createService,
+		arg.OrganizationID,
+		arg.ID,
+		arg.Name,
+		arg.Status,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const createTeam = `-- name: CreateTeam :exec
+INSERT INTO org.team (organization_id, id, name, status, created_at) VALUES ($1, $2, $3, $4, $5)
+`
+
+type CreateTeamParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	Name           string
+	Status         string
+	CreatedAt      time.Time
+}
+
+func (q *Queries) CreateTeam(ctx context.Context, arg CreateTeamParams) error {
+	_, err := q.db.Exec(ctx, createTeam,
+		arg.OrganizationID,
+		arg.ID,
+		arg.Name,
+		arg.Status,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const createUser = `-- name: CreateUser :exec
 INSERT INTO org.app_user (organization_id, issuer, subject, display_name, status, created_at)
 VALUES ($1, $2, $3, $4, 'active', $5)
@@ -121,6 +190,17 @@ func (q *Queries) GetOrganization(ctx context.Context, organizationID uuid.UUID)
 	return i, err
 }
 
+const getStructureVersion = `-- name: GetStructureVersion :one
+SELECT structure_version FROM org.organization WHERE organization_id = $1
+`
+
+func (q *Queries) GetStructureVersion(ctx context.Context, organizationID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getStructureVersion, organizationID)
+	var structure_version int64
+	err := row.Scan(&structure_version)
+	return structure_version, err
+}
+
 const getUser = `-- name: GetUser :one
 SELECT id, issuer, subject, person_id, display_name, status
 FROM org.app_user WHERE organization_id = $1 AND id = $2
@@ -154,43 +234,58 @@ func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (GetUserRow, e
 	return i, err
 }
 
-const listActiveProjects = `-- name: ListActiveProjects :many
-SELECT id, name, status FROM org.project
-WHERE organization_id = $1 AND status = 'active'
-    AND ($2::bool OR id = ANY($3::uuid[]))
-ORDER BY name, id
+const insertTeamMember = `-- name: InsertTeamMember :exec
+INSERT INTO org.team_member (organization_id, team_id, person_id, valid, known_seq)
+VALUES ($1, $2, $3,
+    tstzrange($4::timestamptz, $5::timestamptz, '[)'), $6)
 `
 
-type ListActiveProjectsParams struct {
+type InsertTeamMemberParams struct {
 	OrganizationID uuid.UUID
-	Whole          bool
-	Ids            []uuid.UUID
+	TeamID         uuid.UUID
+	ToID           uuid.UUID
+	ValidFrom      time.Time
+	ValidTo        pgtype.Timestamptz
+	Seq            int64
 }
 
-type ListActiveProjectsRow struct {
-	ID     uuid.UUID
-	Name   string
-	Status string
+func (q *Queries) InsertTeamMember(ctx context.Context, arg InsertTeamMemberParams) error {
+	_, err := q.db.Exec(ctx, insertTeamMember,
+		arg.OrganizationID,
+		arg.TeamID,
+		arg.ToID,
+		arg.ValidFrom,
+		arg.ValidTo,
+		arg.Seq,
+	)
+	return err
 }
 
-func (q *Queries) ListActiveProjects(ctx context.Context, arg ListActiveProjectsParams) ([]ListActiveProjectsRow, error) {
-	rows, err := q.db.Query(ctx, listActiveProjects, arg.OrganizationID, arg.Whole, arg.Ids)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListActiveProjectsRow
-	for rows.Next() {
-		var i ListActiveProjectsRow
-		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+const insertTeamProject = `-- name: InsertTeamProject :exec
+INSERT INTO org.team_project (organization_id, team_id, project_id, valid, known_seq)
+VALUES ($1, $2, $3,
+    tstzrange($4::timestamptz, $5::timestamptz, '[)'), $6)
+`
+
+type InsertTeamProjectParams struct {
+	OrganizationID uuid.UUID
+	TeamID         uuid.UUID
+	ToID           uuid.UUID
+	ValidFrom      time.Time
+	ValidTo        pgtype.Timestamptz
+	Seq            int64
+}
+
+func (q *Queries) InsertTeamProject(ctx context.Context, arg InsertTeamProjectParams) error {
+	_, err := q.db.Exec(ctx, insertTeamProject,
+		arg.OrganizationID,
+		arg.TeamID,
+		arg.ToID,
+		arg.ValidFrom,
+		arg.ValidTo,
+		arg.Seq,
+	)
+	return err
 }
 
 const listActiveRoles = `-- name: ListActiveRoles :many
@@ -239,34 +334,25 @@ func (q *Queries) ListActiveRoles(ctx context.Context, arg ListActiveRolesParams
 	return items, nil
 }
 
-const listActiveServices = `-- name: ListActiveServices :many
-SELECT id, name, status FROM org.service
-WHERE organization_id = $1 AND status = 'active'
-    AND ($2::bool OR id = ANY($3::uuid[]))
-ORDER BY name, id
+const listAllProjects = `-- name: ListAllProjects :many
+SELECT id, name, status FROM org.project WHERE organization_id = $1 ORDER BY name, id
 `
 
-type ListActiveServicesParams struct {
-	OrganizationID uuid.UUID
-	Whole          bool
-	Ids            []uuid.UUID
-}
-
-type ListActiveServicesRow struct {
+type ListAllProjectsRow struct {
 	ID     uuid.UUID
 	Name   string
 	Status string
 }
 
-func (q *Queries) ListActiveServices(ctx context.Context, arg ListActiveServicesParams) ([]ListActiveServicesRow, error) {
-	rows, err := q.db.Query(ctx, listActiveServices, arg.OrganizationID, arg.Whole, arg.Ids)
+func (q *Queries) ListAllProjects(ctx context.Context, organizationID uuid.UUID) ([]ListAllProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listAllProjects, organizationID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListActiveServicesRow
+	var items []ListAllProjectsRow
 	for rows.Next() {
-		var i ListActiveServicesRow
+		var i ListAllProjectsRow
 		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
 			return nil, err
 		}
@@ -278,35 +364,154 @@ func (q *Queries) ListActiveServices(ctx context.Context, arg ListActiveServices
 	return items, nil
 }
 
-const listActiveTeams = `-- name: ListActiveTeams :many
-SELECT id, name, status FROM org.team
-WHERE organization_id = $1 AND status = 'active'
-    AND ($2::bool OR id = ANY($3::uuid[]))
-ORDER BY name, id
+const listAllServices = `-- name: ListAllServices :many
+SELECT id, name, status FROM org.service WHERE organization_id = $1 ORDER BY name, id
 `
 
-type ListActiveTeamsParams struct {
-	OrganizationID uuid.UUID
-	Whole          bool
-	Ids            []uuid.UUID
-}
-
-type ListActiveTeamsRow struct {
+type ListAllServicesRow struct {
 	ID     uuid.UUID
 	Name   string
 	Status string
 }
 
-func (q *Queries) ListActiveTeams(ctx context.Context, arg ListActiveTeamsParams) ([]ListActiveTeamsRow, error) {
-	rows, err := q.db.Query(ctx, listActiveTeams, arg.OrganizationID, arg.Whole, arg.Ids)
+func (q *Queries) ListAllServices(ctx context.Context, organizationID uuid.UUID) ([]ListAllServicesRow, error) {
+	rows, err := q.db.Query(ctx, listAllServices, organizationID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListActiveTeamsRow
+	var items []ListAllServicesRow
 	for rows.Next() {
-		var i ListActiveTeamsRow
+		var i ListAllServicesRow
 		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllTeams = `-- name: ListAllTeams :many
+SELECT id, name, status FROM org.team WHERE organization_id = $1 ORDER BY name, id
+`
+
+type ListAllTeamsRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) ListAllTeams(ctx context.Context, organizationID uuid.UUID) ([]ListAllTeamsRow, error) {
+	rows, err := q.db.Query(ctx, listAllTeams, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllTeamsRow
+	for rows.Next() {
+		var i ListAllTeamsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCurrentTeamMembers = `-- name: ListCurrentTeamMembers :many
+SELECT id, team_id, person_id AS to_id, lower(valid)::timestamptz AS valid_from,
+    coalesce(upper(valid), lower(valid))::timestamptz AS valid_to, upper_inf(valid)::bool AS open
+FROM org.team_member
+WHERE organization_id = $1 AND superseded_seq IS NULL AND valid @> $2::timestamptz
+ORDER BY team_id, person_id
+`
+
+type ListCurrentTeamMembersParams struct {
+	OrganizationID uuid.UUID
+	At             time.Time
+}
+
+type ListCurrentTeamMembersRow struct {
+	ID        uuid.UUID
+	TeamID    uuid.UUID
+	ToID      uuid.UUID
+	ValidFrom time.Time
+	ValidTo   time.Time
+	Open      bool
+}
+
+func (q *Queries) ListCurrentTeamMembers(ctx context.Context, arg ListCurrentTeamMembersParams) ([]ListCurrentTeamMembersRow, error) {
+	rows, err := q.db.Query(ctx, listCurrentTeamMembers, arg.OrganizationID, arg.At)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCurrentTeamMembersRow
+	for rows.Next() {
+		var i ListCurrentTeamMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamID,
+			&i.ToID,
+			&i.ValidFrom,
+			&i.ValidTo,
+			&i.Open,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCurrentTeamProjects = `-- name: ListCurrentTeamProjects :many
+SELECT id, team_id, project_id AS to_id, lower(valid)::timestamptz AS valid_from,
+    coalesce(upper(valid), lower(valid))::timestamptz AS valid_to, upper_inf(valid)::bool AS open
+FROM org.team_project
+WHERE organization_id = $1 AND superseded_seq IS NULL AND valid @> $2::timestamptz
+ORDER BY team_id, project_id
+`
+
+type ListCurrentTeamProjectsParams struct {
+	OrganizationID uuid.UUID
+	At             time.Time
+}
+
+type ListCurrentTeamProjectsRow struct {
+	ID        uuid.UUID
+	TeamID    uuid.UUID
+	ToID      uuid.UUID
+	ValidFrom time.Time
+	ValidTo   time.Time
+	Open      bool
+}
+
+func (q *Queries) ListCurrentTeamProjects(ctx context.Context, arg ListCurrentTeamProjectsParams) ([]ListCurrentTeamProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listCurrentTeamProjects, arg.OrganizationID, arg.At)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCurrentTeamProjectsRow
+	for rows.Next() {
+		var i ListCurrentTeamProjectsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamID,
+			&i.ToID,
+			&i.ValidFrom,
+			&i.ValidTo,
+			&i.Open,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -349,6 +554,35 @@ func (q *Queries) ListMemberTeamIDs(ctx context.Context, arg ListMemberTeamIDsPa
 	return items, nil
 }
 
+const listPersonIDs = `-- name: ListPersonIDs :many
+SELECT id FROM org.person WHERE organization_id = $1 AND id = ANY($2::uuid[])
+`
+
+type ListPersonIDsParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) ListPersonIDs(ctx context.Context, arg ListPersonIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listPersonIDs, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTeamProjectIDs = `-- name: ListTeamProjectIDs :many
 SELECT DISTINCT project_id FROM org.team_project
 WHERE organization_id = $1 AND team_id = ANY($2::uuid[])
@@ -381,6 +615,123 @@ func (q *Queries) ListTeamProjectIDs(ctx context.Context, arg ListTeamProjectIDs
 	return items, nil
 }
 
+const listVisibleProjects = `-- name: ListVisibleProjects :many
+SELECT id, name, status FROM org.project
+WHERE organization_id = $1
+    AND ($2::bool OR (status = 'active' AND id = ANY($3::uuid[])))
+ORDER BY name, id
+`
+
+type ListVisibleProjectsParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+}
+
+type ListVisibleProjectsRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) ListVisibleProjects(ctx context.Context, arg ListVisibleProjectsParams) ([]ListVisibleProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listVisibleProjects, arg.OrganizationID, arg.Whole, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVisibleProjectsRow
+	for rows.Next() {
+		var i ListVisibleProjectsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVisibleServices = `-- name: ListVisibleServices :many
+SELECT id, name, status FROM org.service
+WHERE organization_id = $1
+    AND ($2::bool OR (status = 'active' AND id = ANY($3::uuid[])))
+ORDER BY name, id
+`
+
+type ListVisibleServicesParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+}
+
+type ListVisibleServicesRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) ListVisibleServices(ctx context.Context, arg ListVisibleServicesParams) ([]ListVisibleServicesRow, error) {
+	rows, err := q.db.Query(ctx, listVisibleServices, arg.OrganizationID, arg.Whole, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVisibleServicesRow
+	for rows.Next() {
+		var i ListVisibleServicesRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVisibleTeams = `-- name: ListVisibleTeams :many
+SELECT id, name, status FROM org.team
+WHERE organization_id = $1
+    AND ($2::bool OR (status = 'active' AND id = ANY($3::uuid[])))
+ORDER BY name, id
+`
+
+type ListVisibleTeamsParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+}
+
+type ListVisibleTeamsRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) ListVisibleTeams(ctx context.Context, arg ListVisibleTeamsParams) ([]ListVisibleTeamsRow, error) {
+	rows, err := q.db.Query(ctx, listVisibleTeams, arg.OrganizationID, arg.Whole, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVisibleTeamsRow
+	for rows.Next() {
+		var i ListVisibleTeamsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockOrganization = `-- name: LockOrganization :one
 SELECT organization_id, name, status, first_admin_issuer, first_admin_subject
 FROM org.organization WHERE organization_id = $1
@@ -406,6 +757,17 @@ func (q *Queries) LockOrganization(ctx context.Context, organizationID uuid.UUID
 		&i.FirstAdminSubject,
 	)
 	return i, err
+}
+
+const lockStructureVersion = `-- name: LockStructureVersion :one
+SELECT structure_version FROM org.organization WHERE organization_id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockStructureVersion(ctx context.Context, organizationID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, lockStructureVersion, organizationID)
+	var structure_version int64
+	err := row.Scan(&structure_version)
+	return structure_version, err
 }
 
 const lockUserByIdentity = `-- name: LockUserByIdentity :one
@@ -444,6 +806,354 @@ func (q *Queries) LockUserByIdentity(ctx context.Context, arg LockUserByIdentity
 	return i, err
 }
 
+const pageProjectsAsc = `-- name: PageProjectsAsc :many
+SELECT p.id, p.name, p.status FROM org.project p
+WHERE p.organization_id = $1
+    AND ($2::bool OR p.id = ANY($3::uuid[]))
+    AND ($4::uuid IS NULL OR p.id IN (
+        SELECT tp.project_id FROM org.team_project tp
+        WHERE tp.organization_id = $1 AND tp.team_id = $4
+            AND tp.superseded_seq IS NULL AND tp.valid @> $5::timestamptz))
+    AND (NOT $6::bool OR (p.name, p.id) > ($7::text, $8::uuid))
+ORDER BY p.name, p.id
+LIMIT $9
+`
+
+type PageProjectsAscParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+	TeamID         uuid.NullUUID
+	At             time.Time
+	After          bool
+	AfterName      string
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageProjectsAscRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) PageProjectsAsc(ctx context.Context, arg PageProjectsAscParams) ([]PageProjectsAscRow, error) {
+	rows, err := q.db.Query(ctx, pageProjectsAsc,
+		arg.OrganizationID,
+		arg.Whole,
+		arg.Ids,
+		arg.TeamID,
+		arg.At,
+		arg.After,
+		arg.AfterName,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageProjectsAscRow
+	for rows.Next() {
+		var i PageProjectsAscRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageProjectsDesc = `-- name: PageProjectsDesc :many
+SELECT p.id, p.name, p.status FROM org.project p
+WHERE p.organization_id = $1
+    AND ($2::bool OR p.id = ANY($3::uuid[]))
+    AND ($4::uuid IS NULL OR p.id IN (
+        SELECT tp.project_id FROM org.team_project tp
+        WHERE tp.organization_id = $1 AND tp.team_id = $4
+            AND tp.superseded_seq IS NULL AND tp.valid @> $5::timestamptz))
+    AND (NOT $6::bool OR (p.name, p.id) < ($7::text, $8::uuid))
+ORDER BY p.name DESC, p.id DESC
+LIMIT $9
+`
+
+type PageProjectsDescParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+	TeamID         uuid.NullUUID
+	At             time.Time
+	After          bool
+	AfterName      string
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageProjectsDescRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) PageProjectsDesc(ctx context.Context, arg PageProjectsDescParams) ([]PageProjectsDescRow, error) {
+	rows, err := q.db.Query(ctx, pageProjectsDesc,
+		arg.OrganizationID,
+		arg.Whole,
+		arg.Ids,
+		arg.TeamID,
+		arg.At,
+		arg.After,
+		arg.AfterName,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageProjectsDescRow
+	for rows.Next() {
+		var i PageProjectsDescRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageServicesAsc = `-- name: PageServicesAsc :many
+SELECT id, name, status FROM org.service
+WHERE organization_id = $1
+    AND ($2::bool OR id = ANY($3::uuid[]))
+    AND (NOT $4::bool OR (name, id) > ($5::text, $6::uuid))
+ORDER BY name, id
+LIMIT $7
+`
+
+type PageServicesAscParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+	After          bool
+	AfterName      string
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageServicesAscRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) PageServicesAsc(ctx context.Context, arg PageServicesAscParams) ([]PageServicesAscRow, error) {
+	rows, err := q.db.Query(ctx, pageServicesAsc,
+		arg.OrganizationID,
+		arg.Whole,
+		arg.Ids,
+		arg.After,
+		arg.AfterName,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageServicesAscRow
+	for rows.Next() {
+		var i PageServicesAscRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageServicesDesc = `-- name: PageServicesDesc :many
+SELECT id, name, status FROM org.service
+WHERE organization_id = $1
+    AND ($2::bool OR id = ANY($3::uuid[]))
+    AND (NOT $4::bool OR (name, id) < ($5::text, $6::uuid))
+ORDER BY name DESC, id DESC
+LIMIT $7
+`
+
+type PageServicesDescParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+	After          bool
+	AfterName      string
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageServicesDescRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) PageServicesDesc(ctx context.Context, arg PageServicesDescParams) ([]PageServicesDescRow, error) {
+	rows, err := q.db.Query(ctx, pageServicesDesc,
+		arg.OrganizationID,
+		arg.Whole,
+		arg.Ids,
+		arg.After,
+		arg.AfterName,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageServicesDescRow
+	for rows.Next() {
+		var i PageServicesDescRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageTeamsAsc = `-- name: PageTeamsAsc :many
+SELECT id, name, status FROM org.team
+WHERE organization_id = $1
+    AND ($2::bool OR id = ANY($3::uuid[]))
+    AND (NOT $4::bool OR (name, id) > ($5::text, $6::uuid))
+ORDER BY name, id
+LIMIT $7
+`
+
+type PageTeamsAscParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+	After          bool
+	AfterName      string
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageTeamsAscRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) PageTeamsAsc(ctx context.Context, arg PageTeamsAscParams) ([]PageTeamsAscRow, error) {
+	rows, err := q.db.Query(ctx, pageTeamsAsc,
+		arg.OrganizationID,
+		arg.Whole,
+		arg.Ids,
+		arg.After,
+		arg.AfterName,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageTeamsAscRow
+	for rows.Next() {
+		var i PageTeamsAscRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageTeamsDesc = `-- name: PageTeamsDesc :many
+SELECT id, name, status FROM org.team
+WHERE organization_id = $1
+    AND ($2::bool OR id = ANY($3::uuid[]))
+    AND (NOT $4::bool OR (name, id) < ($5::text, $6::uuid))
+ORDER BY name DESC, id DESC
+LIMIT $7
+`
+
+type PageTeamsDescParams struct {
+	OrganizationID uuid.UUID
+	Whole          bool
+	Ids            []uuid.UUID
+	After          bool
+	AfterName      string
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageTeamsDescRow struct {
+	ID     uuid.UUID
+	Name   string
+	Status string
+}
+
+func (q *Queries) PageTeamsDesc(ctx context.Context, arg PageTeamsDescParams) ([]PageTeamsDescRow, error) {
+	rows, err := q.db.Query(ctx, pageTeamsDesc,
+		arg.OrganizationID,
+		arg.Whole,
+		arg.Ids,
+		arg.After,
+		arg.AfterName,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageTeamsDescRow
+	for rows.Next() {
+		var i PageTeamsDescRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setStructureVersion = `-- name: SetStructureVersion :exec
+UPDATE org.organization SET structure_version = $2 WHERE organization_id = $1
+`
+
+type SetStructureVersionParams struct {
+	OrganizationID   uuid.UUID
+	StructureVersion int64
+}
+
+func (q *Queries) SetStructureVersion(ctx context.Context, arg SetStructureVersionParams) error {
+	_, err := q.db.Exec(ctx, setStructureVersion, arg.OrganizationID, arg.StructureVersion)
+	return err
+}
+
 const setUserDisplayName = `-- name: SetUserDisplayName :exec
 UPDATE org.app_user SET display_name = $3 WHERE organization_id = $1 AND id = $2
 `
@@ -456,5 +1166,112 @@ type SetUserDisplayNameParams struct {
 
 func (q *Queries) SetUserDisplayName(ctx context.Context, arg SetUserDisplayNameParams) error {
 	_, err := q.db.Exec(ctx, setUserDisplayName, arg.OrganizationID, arg.ID, arg.DisplayName)
+	return err
+}
+
+const supersedeTeamMember = `-- name: SupersedeTeamMember :exec
+UPDATE org.team_member SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = $4 AND superseded_seq IS NULL
+`
+
+type SupersedeTeamMemberParams struct {
+	Seq            int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) SupersedeTeamMember(ctx context.Context, arg SupersedeTeamMemberParams) error {
+	_, err := q.db.Exec(ctx, supersedeTeamMember,
+		arg.Seq,
+		arg.At,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
+}
+
+const supersedeTeamProject = `-- name: SupersedeTeamProject :exec
+UPDATE org.team_project SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = $4 AND superseded_seq IS NULL
+`
+
+type SupersedeTeamProjectParams struct {
+	Seq            int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) SupersedeTeamProject(ctx context.Context, arg SupersedeTeamProjectParams) error {
+	_, err := q.db.Exec(ctx, supersedeTeamProject,
+		arg.Seq,
+		arg.At,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
+}
+
+const updateProject = `-- name: UpdateProject :exec
+UPDATE org.project SET name = $3, status = $4 WHERE organization_id = $1 AND id = $2
+`
+
+type UpdateProjectParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	Name           string
+	Status         string
+}
+
+func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) error {
+	_, err := q.db.Exec(ctx, updateProject,
+		arg.OrganizationID,
+		arg.ID,
+		arg.Name,
+		arg.Status,
+	)
+	return err
+}
+
+const updateService = `-- name: UpdateService :exec
+UPDATE org.service SET name = $3, status = $4 WHERE organization_id = $1 AND id = $2
+`
+
+type UpdateServiceParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	Name           string
+	Status         string
+}
+
+func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) error {
+	_, err := q.db.Exec(ctx, updateService,
+		arg.OrganizationID,
+		arg.ID,
+		arg.Name,
+		arg.Status,
+	)
+	return err
+}
+
+const updateTeam = `-- name: UpdateTeam :exec
+UPDATE org.team SET name = $3, status = $4 WHERE organization_id = $1 AND id = $2
+`
+
+type UpdateTeamParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	Name           string
+	Status         string
+}
+
+func (q *Queries) UpdateTeam(ctx context.Context, arg UpdateTeamParams) error {
+	_, err := q.db.Exec(ctx, updateTeam,
+		arg.OrganizationID,
+		arg.ID,
+		arg.Name,
+		arg.Status,
+	)
 	return err
 }

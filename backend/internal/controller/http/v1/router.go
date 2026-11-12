@@ -1,7 +1,10 @@
 package v1
 
 import (
+	"sync"
+
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/handler"
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/middleware"
@@ -10,6 +13,8 @@ import (
 )
 
 const _maxBodyBytes = 25 << 20
+
+var _strictJSON sync.Once
 
 type Deps struct {
 	Handler *handler.Handler
@@ -21,6 +26,8 @@ type Deps struct {
 }
 
 func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
+	// An unknown field of a body is refused (contract: 422 unknown_field); gin keeps the switch global.
+	_strictJSON.Do(func() { binding.EnableDecoderDisallowUnknownFields = true })
 	strict := openapi.NewStrictHandlerWithOptions(d.Handler, nil,
 		openapi.StrictGinServerOptions{
 			RequestErrorHandlerFunc:  handler.RequestError,
@@ -31,6 +38,7 @@ func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
 		middleware.Operation(openapi.Operations),
 		middleware.Authenticate(d.Logins, d.SiteOrigin),
 		middleware.Authorize(d.Access, d.Metrics),
+		middleware.Contract(),
 	}
 	api.Use(guard...)
 	api.Use(middleware.LimitBody(_maxBodyBytes))

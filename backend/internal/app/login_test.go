@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,11 +32,13 @@ import (
 )
 
 const (
-	_site       = "https://craftpulse.test"
-	_adminSub   = "17"
-	_otherSub   = "42"
-	_demoClient = "demo-client"
-	_demoSecret = _secretMarker + "-demo"
+	_site        = "https://craftpulse.test"
+	_adminSub    = "17"
+	_otherSub    = "42"
+	_demoClient  = "demo-client"
+	_demoSecret  = _secretMarker + "-demo"
+	_otherClient = "other-client"
+	_otherSecret = _secretMarker + "-other"
 )
 
 type loginEnv struct {
@@ -47,6 +50,8 @@ type loginEnv struct {
 	metrics http.Handler
 	logs    *bytes.Buffer
 	orgID   entity.ID
+	otherID entity.ID
+	keyring *crypto.Keyring
 	// secrets collects every token, state, nonce and code seen in the test; none may reach logs or audit.
 	secrets []string
 }
@@ -60,19 +65,26 @@ func newLoginEnv(t *testing.T) *loginEnv {
 	e := &loginEnv{
 		app:   db.pool(t, "craftpulse_app"),
 		owner: db.pool(t, "craftpulse_owner"),
-		idp:   newTestIDP(t, map[string]string{_demoClient: _demoSecret}),
+		idp:   newTestIDP(t, map[string]string{_demoClient: _demoSecret, _otherClient: _otherSecret}),
 		clock: clock.NewManual(_now),
 		logs:  &bytes.Buffer{},
 	}
 	applied, err := newInstallation(e.app, keyring, storeProbe{}, probe.New(e.idp.srv.Client()), e.clock).Apply(t.Context(), entity.InstallParams{
-		Organizations: []entity.NewOrganization{{
-			Slug: "demo", Name: "Demo",
-			Provider:          entity.OIDCProvider{Issuer: e.idp.issuer(), ClientID: _demoClient, ClientSecret: _demoSecret},
-			FirstAdminSubject: _adminSub,
-		}},
+		Organizations: []entity.NewOrganization{
+			{
+				Slug: "demo", Name: "Demo",
+				Provider:          entity.OIDCProvider{Issuer: e.idp.issuer(), ClientID: _demoClient, ClientSecret: _demoSecret},
+				FirstAdminSubject: _adminSub,
+			},
+			{
+				Slug: "other", Name: "Other",
+				Provider:          entity.OIDCProvider{Issuer: e.idp.issuer(), ClientID: _otherClient, ClientSecret: _otherSecret},
+				FirstAdminSubject: _adminSub,
+			},
+		},
 	})
 	require.NoError(t, err)
-	e.orgID = applied[0].ID
+	e.orgID, e.otherID, e.keyring = applied[0].ID, applied[1].ID, keyring
 
 	reg := prometheus.NewRegistry()
 	api := newAPI(e.app, keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg)
@@ -91,7 +103,12 @@ func newBrowser() *browser { return &browser{cookies: map[string]string{}} }
 
 func (e *loginEnv) do(t *testing.T, b *browser, method, target string, header http.Header) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequestWithContext(t.Context(), method, target, http.NoBody)
+	return e.send(t, b, method, target, header, http.NoBody)
+}
+
+func (e *loginEnv) send(t *testing.T, b *browser, method, target string, header http.Header, body io.Reader) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), method, target, body)
 	for k, v := range header {
 		req.Header[k] = v
 	}
@@ -115,7 +132,12 @@ func (e *loginEnv) do(t *testing.T, b *browser, method, target string, header ht
 // startLogin opens the login address and returns what the provider received.
 func (e *loginEnv) startLogin(t *testing.T, b *browser, returnTo string) string {
 	t.Helper()
-	target := "/o/demo/login"
+	return e.startLoginTo(t, b, "demo", returnTo)
+}
+
+func (e *loginEnv) startLoginTo(t *testing.T, b *browser, slug, returnTo string) string {
+	t.Helper()
+	target := "/o/" + slug + "/login"
 	if returnTo != "" {
 		target += "?return_to=" + url.QueryEscape(returnTo)
 	}
@@ -126,17 +148,27 @@ func (e *loginEnv) startLogin(t *testing.T, b *browser, returnTo string) string 
 
 func (e *loginEnv) callback(t *testing.T, b *browser, a approval, extra url.Values) *httptest.ResponseRecorder {
 	t.Helper()
+	return e.callbackTo(t, b, "demo", a, extra)
+}
+
+func (e *loginEnv) callbackTo(t *testing.T, b *browser, slug string, a approval, extra url.Values) *httptest.ResponseRecorder {
+	t.Helper()
 	q := url.Values{"code": {a.code}, "state": {a.state}, "iss": {e.idp.issuer()}}
 	for k, v := range extra {
 		q[k] = v
 	}
 	e.secrets = append(e.secrets, a.code, a.state, a.nonce)
-	return e.do(t, b, http.MethodGet, "/o/demo/callback?"+q.Encode(), nil)
+	return e.do(t, b, http.MethodGet, "/o/"+slug+"/callback?"+q.Encode(), nil)
 }
 
 func (e *loginEnv) login(t *testing.T, b *browser, subject string, edit ...func(*grant)) *httptest.ResponseRecorder {
 	t.Helper()
-	return e.callback(t, b, e.idp.approve(t, e.startLogin(t, b, "/teams?tab=1"), subject, edit...), nil)
+	return e.loginTo(t, b, "demo", subject, edit...)
+}
+
+func (e *loginEnv) loginTo(t *testing.T, b *browser, slug, subject string, edit ...func(*grant)) *httptest.ResponseRecorder {
+	t.Helper()
+	return e.callbackTo(t, b, slug, e.idp.approve(t, e.startLoginTo(t, b, slug, "/teams?tab=1"), subject, edit...), nil)
 }
 
 func (e *loginEnv) me(t *testing.T, b *browser) (*httptest.ResponseRecorder, currentUser) {
@@ -242,7 +274,7 @@ func (e *loginEnv) assertNoSecrets(t *testing.T) {
 		audit.WriteString(d)
 	}
 	rows.Close()
-	for _, s := range append(e.secrets, "MARKER-access-token", "MARKER-refresh-token", _demoSecret) {
+	for _, s := range append(e.secrets, "MARKER-access-token", "MARKER-refresh-token", _demoSecret, _otherSecret) {
 		if s == "" {
 			continue
 		}
@@ -298,7 +330,7 @@ func TestLogin_FirstAdministrator(t *testing.T) {
 	e.evidence(t, again)
 	require.Equal(t, http.StatusFound, again.Code)
 	assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM org.role_assignment"), "a repeated login does not assign the role again")
-	assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM org.organization"))
+	assert.Equal(t, 2, count(t, t.Context(), e.owner, "SELECT count(*) FROM org.organization"))
 	sessions = e.sessions(t)
 	require.Len(t, sessions, 2)
 	assert.Equal(t, "replaced", sessions[0].EndReason, "the browser keeps one session")
@@ -323,7 +355,7 @@ func TestLogin_OnlyDeclaredAccountBecomesAdministrator(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newLoginEnv(t)
 			if tt.giveSetup != "" {
-				_, err := e.owner.Exec(t.Context(), tt.giveSetup)
+				_, err := e.owner.Exec(t.Context(), tt.giveSetup+" WHERE organization_id = $1", uuid.UUID(e.orgID))
 				require.NoError(t, err)
 			}
 			b := newBrowser()
@@ -337,7 +369,7 @@ func TestLogin_OnlyDeclaredAccountBecomesAdministrator(t *testing.T) {
 			assert.Empty(t, e.sessions(t))
 			assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM org.role_assignment"))
 			assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM org.app_user"))
-			assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM org.organization WHERE status = 'setup'"))
+			assert.Equal(t, 2, count(t, t.Context(), e.owner, "SELECT count(*) FROM org.organization WHERE status = 'setup'"))
 			login := e.audit(t, "session.login")
 			require.Len(t, login, 1)
 			assert.Equal(t, auditRow{Operation: "session.login", Outcome: "denied", Reason: "organization_not_configured"},
@@ -567,7 +599,10 @@ func TestAccess_RolesApplyToNextRequest(t *testing.T) {
 	require.Len(t, cu.Areas.Teams, 1)
 	assert.Equal(t, teams[0], cu.Areas.Teams[0].ID)
 	assert.Contains(t, cu.Actions, "org.read")
-	assert.Equal(t, http.StatusNotImplemented, e.do(t, b, http.MethodGet, "/api/v1/teams", nil).Code, "the new role applies to the next request")
+	listed := e.do(t, b, http.MethodGet, "/api/v1/teams", nil)
+	assert.Equal(t, http.StatusOK, listed.Code, "the new role applies to the next request")
+	assert.Contains(t, listed.Body.String(), teams[0].String())
+	assert.NotContains(t, listed.Body.String(), teams[1].String())
 	visible := e.do(t, b, http.MethodGet, "/api/v1/teams/"+teams[0].String()+"/report", nil)
 	assert.Equal(t, http.StatusForbidden, visible.Code, "the team is visible, report.read is not granted yet")
 	assert.Equal(t, "forbidden", problemCode(t, visible))
