@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "craftPulse demo dataset settings v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "team_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mapping": {
+      "type": "object",
+      "properties": {
+        "version_no": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "confirmed_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirmed_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rule_kind": {
+                "enum": [
+                  "status",
+                  "resolution",
+                  "issue_type",
+                  "code_required_type",
+                  "size_field",
+                  "size_value",
+                  "team_field",
+                  "team_value",
+                  "blocked_flag"
+                ]
+              },
+              "instance_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "native_ref": {
+                "type": "string",
+                "minLength": 1
+              },
+              "native_value": {
+                "type": "string"
+              },
+              "meaning": {
+                "type": "string",
+                "minLength": 1
+              },
+              "rank": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              }
+            },
+            "required": [
+              "rule_kind",
+              "instance_id",
+              "native_ref",
+              "native_value",
+              "meaning",
+              "rank"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "version_no",
+        "confirmed_at",
+        "confirmed_by",
+        "rules"
+      ],
+      "additionalProperties": false
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "task_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size_label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version_no": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "basis": {
+            "enum": [
+              "manual",
+              "historical_p85"
+            ]
+          },
+          "confirmed_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirmed_by": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "team_id",
+          "task_type",
+          "size_label",
+          "version_no",
+          "duration_seconds",
+          "basis",
+          "confirmed_at",
+          "confirmed_by"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reopen": {
+      "type": "object",
+      "properties": {
+        "metric_id": {
+          "const": "T23"
+        },
+        "definition_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "window_days": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "metric_id",
+        "definition_version",
+        "window_days"
+      ],
+      "additionalProperties": false
+    },
+    "preview_task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 10,
+      "maxItems": 10,
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "organization_id",
+    "team_id",
+    "mapping",
+    "targets",
+    "reopen",
+    "preview_task_ids"
+  ],
+  "additionalProperties": false
+}
