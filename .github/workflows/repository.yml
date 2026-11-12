@@ -25,6 +25,7 @@ jobs:
       pull-requests: read
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
+      dataset: ${{ steps.filter.outputs.dataset }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,6 +41,11 @@ jobs:
               - 'deploy/postgres/**'
               - 'docs/technical-specification/openapi.yaml'
               - '.github/workflows/repository.yml'
+              - '.github/workflows/go-check.yml'
+            dataset:
+              - 'demo-dataset/**'
+              - '.github/workflows/repository.yml'
+              - '.github/workflows/go-check.yml'
 
   repository-check:
     name: repository-check
@@ -76,54 +82,24 @@ jobs:
     name: backend
     needs: detect
     if: github.event_name == 'workflow_dispatch' || needs.detect.outputs.backend == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: backend
-    env:
-      CGO_ENABLED: '1'
-      GOTOOLCHAIN: local
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
-      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          version: v2.15.0
-          working-directory: backend
-          args: --timeout=5m
-      - name: Check formatting
-        run: golangci-lint fmt --diff
-      - name: Check generated code
-        run: |
-          go generate ./...
-          git diff --exit-code
-          untracked=$(git ls-files --others --exclude-standard)
-          if [ -n "$untracked" ]; then
-            printf 'Generation produced untracked files:\n%s\n' "$untracked"
-            exit 1
-          fi
-      - name: Vet backend
-        run: go vet ./...
-      - name: Test backend with PostgreSQL 18 and SeaweedFS
-        run: go test -race ./...
-      - name: Check vulnerabilities
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
-      - name: Build craftpulse-server image
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-        run: docker build --build-arg COMMIT_SHA="$COMMIT_SHA" -t "craftpulse-server:$COMMIT_SHA" -f Dockerfile .
+    uses: ./.github/workflows/go-check.yml
+    with:
+      module: backend
+      cache: true
+      check-generated: true
+      image: craftpulse-server
+
+  dataset:
+    name: demo-dataset
+    needs: detect
+    if: github.event_name == 'workflow_dispatch' || needs.detect.outputs.dataset == 'true'
+    uses: ./.github/workflows/go-check.yml
+    with:
+      module: demo-dataset
 
   ci:
     name: ci
-    needs: [detect, repository-check, backend]
+    needs: [detect, repository-check, backend, dataset]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -134,6 +110,8 @@ jobs:
           REPOSITORY: ${{ needs.repository-check.result }}
           BACKEND: ${{ needs.backend.result }}
           BACKEND_CHANGED: ${{ needs.detect.outputs.backend }}
+          DATASET: ${{ needs.dataset.result }}
+          DATASET_CHANGED: ${{ needs.detect.outputs.dataset }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           [ "$DETECT" = success ] || { echo "detect: $DETECT"; exit 1; }
@@ -144,4 +122,11 @@ jobs:
               [ "$BACKEND_CHANGED" = false ] && [ "$EVENT_NAME" != workflow_dispatch ] || exit 1
               ;;
             *) echo "backend: $BACKEND"; exit 1 ;;
+          esac
+          case "$DATASET" in
+            success) ;;
+            skipped)
+              [ "$DATASET_CHANGED" = false ] && [ "$EVENT_NAME" != workflow_dispatch ] || exit 1
+              ;;
+            *) echo "demo-dataset: $DATASET"; exit 1 ;;
           esac
