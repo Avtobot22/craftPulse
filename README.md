@@ -57,13 +57,16 @@ docker build -t craftpulse-server:local -f Dockerfile .
 
 Границы слоёв проверяет depguard в `backend/.golangci.yml`. Для сценариев и репозиториев перечислены модули из раздела 10.3 ТЗ: разрешён импорт собственных подпакетов, а связи между модулями передаются через интерфейсы в `internal/app`. Новый модуль нужно добавить в эти правила; для неизвестных модулей импорты других сценариев и реализаций репозиториев запрещены по умолчанию.
 
-Workflow `Repository` запускается на каждом PR и push в `main`. `repository-check` выполняется всегда, `backend` - при изменениях `backend/`, `deploy/postgres/`, `openapi.yaml` или самого workflow. Ручной запуск выполняет backend полностью. Итоговый job `ci` требует успешные `detect` и `repository-check`, а пропуск `backend` принимает только для незатронутого backend. Устаревшие прогоны отменяются только на PR; каждый push в `main` проверяется отдельно. Образ собирается без публикации.
+Workflow `Repository` запускается на каждом PR и push в `main`. `repository-check` выполняется всегда, `backend` - при изменениях `backend/`, `deploy/postgres/` или `openapi.yaml`, а `demo-dataset` - при изменениях `demo-dataset/`. Обе Go-проверки используют общий workflow `go-check.yml`: линтер, форматирование, vet, тесты с детектором гонок, проверку уязвимостей и сборку. Backend дополнительно проверяет генерацию и собирает Docker-образ без публикации.
+
+Изменение `repository.yml` или `go-check.yml`, как и ручной запуск, включает обе Go-проверки. Итоговый job `ci` требует успешные `detect` и `repository-check`, а пропуск Go-проверки принимает только для незатронутого модуля. Устаревшие прогоны отменяются только на PR; каждый push в `main` проверяется отдельно.
 
 ## Документация и работа команды
 
 - [Документация продукта](docs/README.md)
 - [Видение продукта](docs/product/vision.md)
 - [Метрики](docs/product/metrics.md)
+- [Набор данных показа и независимая сверка](demo-dataset/README.md)
 - [Работа над задачами и PR](CONTRIBUTING.md)
 - [Доска, настройки и автоматизация GitHub](docs/github-workflow.md)
 - [Подготовка автоматизации зависимостей с Copilot](docs/copilot-automation.md)
