@@ -1,0 +1,35 @@
+package order
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestSubtotal(t *testing.T) {
+	o := Order{Lines: []Line{{SKU: "a", Quantity: 2, UnitPrice: 500}, {SKU: "b", Quantity: 1, UnitPrice: 250}}}
+	got, err := o.Subtotal()
+	if err != nil || got != 1250 {
+		t.Fatalf("Subtotal() = %d, %v; want 1250", got, err)
+	}
+}
+
+func TestTotalWithDiscount(t *testing.T) {
+	o := Order{Lines: []Line{{SKU: "a", Quantity: 2, UnitPrice: 500}}, DiscountPercent: 10}
+	got, err := o.Total()
+	if err != nil || got != 900 {
+		t.Fatalf("Total() = %d, %v; want 900", got, err)
+	}
+}
+
+func TestEmptyOrder(t *testing.T) {
+	if _, err := (Order{}).Total(); !errors.Is(err, ErrEmpty) {
+		t.Fatalf("Total() error = %v, want ErrEmpty", err)
+	}
+}
+
+func TestNonPositiveQuantity(t *testing.T) {
+	o := Order{Lines: []Line{{SKU: "a", Quantity: 0, UnitPrice: 500}}}
+	if _, err := o.Subtotal(); err == nil {
+		t.Fatal("Subtotal() accepted a zero quantity")
+	}
+}

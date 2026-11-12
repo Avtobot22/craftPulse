@@ -1,0 +1,19 @@
+package config
+
+import "testing"
+
+func TestLoadDefaults(t *testing.T) {
+	t.Setenv("ORDERS_ADDR", "")
+	if got := Load().Addr; got != ":8080" {
+		t.Fatalf("Addr = %q, want :8080", got)
+	}
+}
+
+func TestLoadFromEnvironment(t *testing.T) {
+	t.Setenv("ORDERS_ADDR", ":9090")
+	t.Setenv("ORDERS_PARTNER_KEY", "from-env")
+	cfg := Load()
+	if cfg.Addr != ":9090" || cfg.PartnerAPIKey != "from-env" {
+		t.Fatalf("Load() = %+v", cfg)
+	}
+}

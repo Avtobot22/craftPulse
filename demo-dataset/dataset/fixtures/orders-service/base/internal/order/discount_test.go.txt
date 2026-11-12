@@ -1,0 +1,30 @@
+package order
+
+import "testing"
+
+func TestApplyDiscount(t *testing.T) {
+	tests := []struct {
+		name        string
+		giveAmount  int64
+		givePercent int
+		want        int64
+	}{
+		{name: "no discount", giveAmount: 1000, givePercent: 0, want: 1000},
+		{name: "ten percent", giveAmount: 1000, givePercent: 10, want: 900},
+		{name: "full discount", giveAmount: 1000, givePercent: 100, want: 0},
+		{name: "negative percent", giveAmount: 1000, givePercent: -5, want: 1000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ApplyDiscount(tt.giveAmount, tt.givePercent); got != tt.want {
+				t.Fatalf("ApplyDiscount() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyDiscountRoundsHalfUp(t *testing.T) {
+	if got := ApplyDiscount(1050, 5); got != 998 {
+		t.Fatalf("ApplyDiscount(1050, 5) = %d, want 998", got)
+	}
+}

@@ -1,0 +1,12 @@
+package order
+
+// ApplyDiscount reduces amount by percent; half a kopeck is rounded up.
+func ApplyDiscount(amount int64, percent int) int64 {
+	if percent <= 0 {
+		return amount
+	}
+	if percent >= 100 {
+		return 0
+	}
+	return amount * int64(100-percent) / 100
+}

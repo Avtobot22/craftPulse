@@ -1,0 +1,16 @@
+package export
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestWriteCSV(t *testing.T) {
+	var b strings.Builder
+	if err := WriteCSV(&b, []Row{{EmployeeID: "e-1", Amount: 150000}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := b.String(), "employee_id,amount\ne-1,150000\n"; got != want {
+		t.Fatalf("WriteCSV() = %q, want %q", got, want)
+	}
+}

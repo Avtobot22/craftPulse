@@ -1,0 +1,16 @@
+package order
+
+const (
+	// FreeShippingFrom is the order total in kopecks from which delivery is free.
+	FreeShippingFrom int64 = 300000
+	// StandardShipping is the delivery fee in kopecks for smaller orders.
+	StandardShipping int64 = 29900
+)
+
+// ShippingFee returns the delivery fee for an order total.
+func ShippingFee(total int64) int64 {
+	if total >= FreeShippingFrom {
+		return 0
+	}
+	return StandardShipping
+}

@@ -1,0 +1,12 @@
+package status
+
+import "testing"
+
+func TestHealthy(t *testing.T) {
+	if !Healthy(map[string]bool{"db": true}) {
+		t.Fatal("all checks passed")
+	}
+	if Healthy(map[string]bool{"db": true, "queue": false}) {
+		t.Fatal("one check failed")
+	}
+}

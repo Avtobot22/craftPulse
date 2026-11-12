@@ -1,0 +1,41 @@
+package httpapi
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestCreateQuote(t *testing.T) {
+	body := `{"id":"o-1","lines":[{"sku":"a","quantity":2,"unit_price":500}],"discount_percent":10}`
+	rec := httptest.NewRecorder()
+	NewHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/quotes", strings.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got quote
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.OrderID != "o-1" || got.Total != 900 {
+		t.Fatalf("quote = %+v", got)
+	}
+}
+
+func TestCreateQuoteRejectsEmptyOrder(t *testing.T) {
+	rec := httptest.NewRecorder()
+	NewHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/quotes", strings.NewReader(`{"id":"o-2"}`)))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", rec.Code)
+	}
+}
+
+func TestReportTitle(t *testing.T) {
+	rec := httptest.NewRecorder()
+	NewHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/reports/monthly-revenue/title", nil))
+	if got := rec.Body.String(); got != "Monthly Revenue" {
+		t.Fatalf("title = %q", got)
+	}
+}

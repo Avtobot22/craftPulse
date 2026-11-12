@@ -1,0 +1,9 @@
+package report
+
+import "strings"
+
+// Title turns a report slug such as "monthly-revenue" into a heading.
+func Title(slug string) string {
+	words := strings.ReplaceAll(strings.TrimSpace(slug), "-", " ")
+	return strings.Title(words) //nolint:staticcheck // slugs are ASCII; keeps the legacy report headings
+}
