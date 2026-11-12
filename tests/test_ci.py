@@ -27,7 +27,8 @@ class AggregateCITest(unittest.TestCase):
 
     def run_gate(self, **overrides):
         env = dict(os.environ, DETECT="success", REPOSITORY="success", BACKEND="success",
-                   BACKEND_CHANGED="true", EVENT_NAME="pull_request")
+                   BACKEND_CHANGED="true", DATASET="success", DATASET_CHANGED="true",
+                   EVENT_NAME="pull_request")
         env.update(overrides)
         return subprocess.run([BASH, "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", self.command],
                               env=env, cwd=ROOT, capture_output=True, text=True).returncode
@@ -36,10 +37,17 @@ class AggregateCITest(unittest.TestCase):
         self.assertEqual(0, self.run_gate())
 
     def test_docs_only_pr_can_skip_backend(self):
+        self.assertEqual(0, self.run_gate(BACKEND="skipped", BACKEND_CHANGED="false",
+                                          DATASET="skipped", DATASET_CHANGED="false"))
+
+    def test_dataset_only_pr_can_skip_backend(self):
         self.assertEqual(0, self.run_gate(BACKEND="skipped", BACKEND_CHANGED="false"))
 
+    def test_backend_only_pr_can_skip_dataset(self):
+        self.assertEqual(0, self.run_gate(DATASET="skipped", DATASET_CHANGED="false"))
+
     def test_required_checks_cannot_be_skipped_failed_or_cancelled(self):
-        for job in ["DETECT", "REPOSITORY", "BACKEND"]:
+        for job in ["DETECT", "REPOSITORY", "BACKEND", "DATASET"]:
             for result in ["failure", "cancelled", "skipped", ""]:
                 with self.subTest(job=job, result=result):
                     self.assertNotEqual(0, self.run_gate(**{job: result}))
@@ -52,6 +60,13 @@ class AggregateCITest(unittest.TestCase):
 
     def test_manual_run_cannot_skip_backend(self):
         self.assertNotEqual(0, self.run_gate(BACKEND="skipped", BACKEND_CHANGED="false",
+                                           EVENT_NAME="workflow_dispatch"))
+
+    def test_unknown_detection_output_cannot_skip_dataset(self):
+        self.assertNotEqual(0, self.run_gate(DATASET="skipped", DATASET_CHANGED=""))
+
+    def test_manual_run_cannot_skip_dataset(self):
+        self.assertNotEqual(0, self.run_gate(DATASET="skipped", DATASET_CHANGED="false",
                                            EVENT_NAME="workflow_dispatch"))
 
 
