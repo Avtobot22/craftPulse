@@ -2086,6 +2086,7 @@ func (e MappingPreviewTasksOutcome) Valid() bool {
 // Defines values for MappingRuleRuleKind.
 const (
 	AcceptanceGate    MappingRuleRuleKind = "acceptance_gate"
+	BlockedFlag       MappingRuleRuleKind = "blocked_flag"
 	BusinessEpicValue MappingRuleRuleKind = "business_epic_value"
 	CodeRequiredType  MappingRuleRuleKind = "code_required_type"
 	EpicField         MappingRuleRuleKind = "epic_field"
@@ -2102,6 +2103,8 @@ const (
 func (e MappingRuleRuleKind) Valid() bool {
 	switch e {
 	case AcceptanceGate:
+		return true
+	case BlockedFlag:
 		return true
 	case BusinessEpicValue:
 		return true
@@ -6458,6 +6461,9 @@ type MappingPreviewTasksOutcome string
 // MappingRule Правило сопоставления (раздел 12.5.6). Значение без правила остаётся неизвестным и не даёт начала или завершения.
 // code_required_type отмечает ID типа задачи, для которого обязательна связь с MR (A20, T28);
 // native_value пуст, meaning - code_required. Без таких правил A20 и T28 не рассчитываются.
+// blocked_flag задаёт ID поля-флага в native_ref и его значение в native_value, при котором
+// начатая задача заблокирована (T13, T15); meaning - blocked. Интервалы флага объединяются
+// с интервалами статусов со смыслом blocked, перекрытия не суммируются (BR-005).
 // Правила acceptance_gate, epic_field и business_epic_value доступны с M1; на M0
 // их передача даёт 422 с not_allowed_value у rule_kind. acceptance_gate отмечает
 // ID статуса приёмки отдельно от основного смысла этого статуса; native_value пуст.
@@ -6468,7 +6474,7 @@ type MappingPreviewTasksOutcome string
 type MappingRule struct {
 	InstanceId openapi_types.UUID `json:"instance_id"`
 
-	// Meaning Для `status` - `intake`, `active`, `wait`, `blocked`, `done`, `cancelled`, `duplicate`, `ignored`; для `resolution` - `accepted`, `cancelled`, `duplicate`, `ignored`; для `size_value` и `issue_type` - метка; для `team_value` - ID команды. С M1: acceptance_gate - acceptance, epic_field - parent_epic, business_epic_value - business_epic. Эти правила не заменяют обычное правило status.
+	// Meaning Для `status` - `intake`, `active`, `wait`, `blocked`, `done`, `cancelled`, `duplicate`, `ignored`; для `resolution` - `accepted`, `cancelled`, `duplicate`, `ignored`; для `size_value` и `issue_type` - метка; для `team_value` - ID команды; для `blocked_flag` - `blocked`. С M1: acceptance_gate - acceptance, epic_field - parent_epic, business_epic_value - business_epic. Эти правила не заменяют обычное правило status.
 	Meaning   string `json:"meaning"`
 	NativeRef string `json:"native_ref"`
 

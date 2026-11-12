@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -80,6 +81,73 @@ func TestCompareCLI(t *testing.T) {
 		t.Fatal("comparison did not fail")
 	}
 	if !strings.Contains(output.String(), "differences: 3") {
+		t.Fatal(output.String())
+	}
+}
+
+func TestGenerateTasksCLI(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	objects := filepath.Join(dir, "objects")
+	sources := filepath.Join(dir, "sources")
+	for _, d := range []string{objects, sources} {
+		if err := os.Mkdir(d, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outputs := func(run string) []string {
+		return []string{filepath.Join(dir, run+"-model.json"), filepath.Join(dir, run+"-tasks.json"),
+			filepath.Join(objects, run+"-tasks.json"), filepath.Join(dir, run+"-settings.json")}
+	}
+	var output bytes.Buffer
+	for _, name := range []string{"first", "second"} {
+		paths := outputs(name)
+		args := []string{"generate", "--seed", "21", "--out", paths[0], "--tasks", paths[1], "--task-objects", paths[2], "--settings", paths[3]}
+		if err := run(args, &output); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, first := range outputs("first") {
+		left, err := os.ReadFile(first)
+		if err != nil {
+			t.Fatal(err)
+		}
+		right, err := os.ReadFile(outputs("second")[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(left, right) {
+			t.Fatalf("%s is not byte deterministic", filepath.Base(first))
+		}
+	}
+	var tasks dataset.TaskFile
+	if err := dataset.ReadJSON(outputs("first")[1], &tasks); err != nil {
+		t.Fatal(err)
+	}
+	var settings dataset.Settings
+	if err := dataset.ReadJSON(outputs("first")[3], &settings); err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks.Tasks) != 101 || len(settings.PreviewTaskIDs) != 10 {
+		t.Fatal("generated files do not decode back")
+	}
+	if err := os.Remove(outputs("second")[2]); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "manifest.json")
+	if err := run([]string{"manifest", "--model", outputs("first")[0], "--sources", sources, "--objects", objects, "--out", path}, &output); err != nil {
+		t.Fatal(err)
+	}
+	var manifest dataset.Manifest
+	if err := dataset.ReadJSON(path, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range manifest.Variants {
+		if v.VariantID == "blocked" && !slices.Contains(v.ObjectIDs, "org-1/jira-dc-1/PA-3") {
+			t.Fatal("the manifest does not take the task variants")
+		}
+	}
+	if !strings.Contains(output.String(), "tasks SHA-256:") {
 		t.Fatal(output.String())
 	}
 }

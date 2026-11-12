@@ -29,25 +29,16 @@ func run(args []string, output io.Writer) error {
 		seed := flags.Uint64("seed", 21, "deterministic seed")
 		asOf := flags.String("as-of", "2026-12-01T00:00:00Z", "exclusive UTC end and as-of")
 		path := flags.String("out", "model.json", "output model")
+		tasksPath := flags.String("tasks", "", "output task model; empty skips it")
+		objectsPath := flags.String("task-objects", "", "output object file of the tasks for manifest; empty skips it")
+		settingsPath := flags.String("settings", "", "output demo settings; empty skips it")
 		if err := flags.Parse(args[1:]); err != nil {
 			return fmt.Errorf("invalid generate arguments")
 		}
 		if flags.NArg() != 0 {
 			return fmt.Errorf("unexpected generate arguments")
 		}
-		model, err := dataset.Generate(*seed, *asOf)
-		if err != nil {
-			return err
-		}
-		if err := dataset.WriteJSON(*path, model); err != nil {
-			return err
-		}
-		hash, err := dataset.Hash(model)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(output, "model SHA-256:", hash)
-		return err
+		return generate(output, *seed, *asOf, *path, *tasksPath, *objectsPath, *settingsPath)
 	case "compare":
 		if len(args) != 3 {
 			return fmt.Errorf("usage: dataset compare expected.json actual.json")
@@ -106,6 +97,43 @@ func run(args []string, output io.Writer) error {
 	default:
 		return fmt.Errorf("unknown command; use generate, compare or manifest")
 	}
+}
+
+// generate builds every part before writing any file, so a failed check leaves no partial output.
+func generate(output io.Writer, seed uint64, asOf, modelPath, tasksPath, objectsPath, settingsPath string) error {
+	model, err := dataset.Generate(seed, asOf)
+	if err != nil {
+		return err
+	}
+	tasks, err := dataset.GenerateTasks(model)
+	if err != nil {
+		return err
+	}
+	settings, err := dataset.GenerateSettings(tasks)
+	if err != nil {
+		return err
+	}
+	objects := tasks.Objects()
+	parts := []struct {
+		name, path string
+		value      any
+	}{{"model", modelPath, model}, {"tasks", tasksPath, tasks}, {"task objects", objectsPath, objects}, {"settings", settingsPath, settings}}
+	for _, part := range parts {
+		if part.path == "" {
+			continue
+		}
+		if err := dataset.WriteJSON(part.path, part.value); err != nil {
+			return err
+		}
+		hash, err := dataset.Hash(part.value)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(output, "%s SHA-256: %s\n", part.name, hash); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func readParts[T any](directory string) ([]T, error) {
