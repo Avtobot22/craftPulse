@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
@@ -33,6 +34,8 @@ type Config struct {
 	HTTPAddr    string `env:"HTTP_ADDR" envDefault:":8080"`
 	MetricsAddr string `env:"METRICS_ADDR" envDefault:":9090"`
 	DB          DB
+	ObjectStore ObjectStore
+	MasterKeys  MasterKeys
 }
 
 type DB struct {
@@ -41,8 +44,66 @@ type DB struct {
 	MaxConns int32  `env:"DATABASE_MAX_CONNS" envDefault:"10"`
 }
 
+type ObjectStore struct {
+	Endpoint        string `env:"OBJECT_STORE_ENDPOINT,required,notEmpty"`
+	Region          string `env:"OBJECT_STORE_REGION" envDefault:"us-east-1"`
+	Bucket          string `env:"OBJECT_STORE_BUCKET,required,notEmpty"`
+	AccessKeyID     string `env:"OBJECT_STORE_ACCESS_KEY_ID,required,notEmpty"`
+	SecretAccessKey Secret `env:"OBJECT_STORE_SECRET_ACCESS_KEY_FILE,file,required,notEmpty"`
+}
+
+// MasterKeys are the core keys of pkg/crypto (TZ 14.2): files with base64 of 32 bytes. The previous key
+// is set only during rotation, until data keys are rewrapped by the current one.
+type MasterKeys struct {
+	CurrentVersion  uint32 `env:"CORE_MASTER_KEY_VERSION,required"`
+	Current         Secret `env:"CORE_MASTER_KEY_FILE,file,required,notEmpty"`
+	PreviousVersion uint32 `env:"CORE_PREVIOUS_MASTER_KEY_VERSION"`
+	Previous        Secret `env:"CORE_PREVIOUS_MASTER_KEY_FILE,file"`
+}
+
+type MasterKey struct {
+	Version uint32
+	Key     []byte
+}
+
+// Decode returns the current key first, then the previous one if it is set.
+func (m MasterKeys) Decode() ([]MasterKey, error) {
+	keys := []MasterKey{{Version: m.CurrentVersion}}
+	if m.Previous != "" {
+		keys = append(keys, MasterKey{Version: m.PreviousVersion})
+	}
+	var errs []error
+	for i, s := range []Secret{m.Current, m.Previous}[:len(keys)] {
+		key, err := base64.StdEncoding.DecodeString(s.Value())
+		if err != nil || len(key) != 32 {
+			errs = append(errs, fmt.Errorf("master key version %d must be base64 of 32 bytes", keys[i].Version))
+		}
+		keys[i].Key = key
+	}
+	return keys, errors.Join(errs...)
+}
+
+func (m MasterKeys) validate() error {
+	var errs []error
+	if m.CurrentVersion == 0 {
+		errs = append(errs, errors.New("CORE_MASTER_KEY_VERSION must be positive"))
+	}
+	if (m.Previous == "") != (m.PreviousVersion == 0) {
+		errs = append(errs, errors.New("CORE_PREVIOUS_MASTER_KEY_FILE and CORE_PREVIOUS_MASTER_KEY_VERSION are set together"))
+	}
+	if m.Previous != "" && m.PreviousVersion == m.CurrentVersion {
+		errs = append(errs, errors.New("CORE_PREVIOUS_MASTER_KEY_VERSION must differ from CORE_MASTER_KEY_VERSION"))
+	}
+	if m.Current != "" {
+		if _, err := m.Decode(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func (c Config) Secrets() []string {
-	return []string{c.DB.Password.Value()}
+	return []string{c.DB.Password.Value(), c.ObjectStore.SecretAccessKey.Value(), c.MasterKeys.Current.Value(), c.MasterKeys.Previous.Value()}
 }
 
 func Load(environ map[string]string) (Config, error) {
@@ -60,6 +121,10 @@ func Load(environ map[string]string) (Config, error) {
 	if cfg.DB.URL != "" {
 		errs = append(errs, validateDatabaseURL(cfg.DB.URL))
 	}
+	if cfg.ObjectStore.Endpoint != "" {
+		errs = append(errs, validateHTTPURL("OBJECT_STORE_ENDPOINT", cfg.ObjectStore.Endpoint))
+	}
+	errs = append(errs, cfg.MasterKeys.validate())
 	if err := errors.Join(errs...); err != nil {
 		return Config{}, fmt.Errorf("invalid configuration: %w", err)
 	}
@@ -73,6 +138,14 @@ func validateDatabaseURL(raw string) error {
 	}
 	if _, has := u.User.Password(); has || u.Query().Has("password") {
 		return errors.New("DATABASE_URL must not contain a password, use DATABASE_PASSWORD_FILE")
+	}
+	return nil
+}
+
+func validateHTTPURL(name, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return fmt.Errorf("%s must be an http(s) URL without credentials", name)
 	}
 	return nil
 }

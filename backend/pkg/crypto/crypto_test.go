@@ -64,3 +64,41 @@ func TestNewKeyring_RejectsShortKey(t *testing.T) {
 	_, err := crypto.NewKeyring(crypto.MasterKey{Version: 1, Key: []byte("short")})
 	assert.Error(t, err)
 }
+
+func TestKeyring_Envelope(t *testing.T) {
+	t.Parallel()
+	k, err := crypto.NewKeyring(crypto.MasterKey{Version: 2, Key: key(2)}, crypto.MasterKey{Version: 1, Key: key(1)})
+	require.NoError(t, err)
+	aad := []byte("org-a")
+
+	blob, version, err := k.SealEnvelope([]byte("client-secret"), aad)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(2), version)
+	assert.NotContains(t, string(blob), "client-secret")
+
+	got, err := k.OpenEnvelope(blob, version, aad)
+	require.NoError(t, err)
+	assert.Equal(t, "client-secret", string(got))
+
+	for name, open := range map[string]func() ([]byte, error){
+		"other context": func() ([]byte, error) { return k.OpenEnvelope(blob, version, []byte("org-b")) },
+		"modified blob": func() ([]byte, error) {
+			b := bytes.Clone(blob)
+			b[len(b)-1] ^= 1
+			return k.OpenEnvelope(b, version, aad)
+		},
+		"truncated blob":    func() ([]byte, error) { return k.OpenEnvelope(blob[:1], version, aad) },
+		"wrong key version": func() ([]byte, error) { return k.OpenEnvelope(blob, 1, aad) },
+	} {
+		_, err := open()
+		assert.Error(t, err, name)
+	}
+
+	old, err := crypto.NewKeyring(crypto.MasterKey{Version: 1, Key: key(1)})
+	require.NoError(t, err)
+	oldBlob, oldVersion, err := old.SealEnvelope([]byte("client-secret"), aad)
+	require.NoError(t, err)
+	got, err = k.OpenEnvelope(oldBlob, oldVersion, aad)
+	require.NoError(t, err, "a blob wrapped by the previous master key still opens")
+	assert.Equal(t, "client-secret", string(got))
+}

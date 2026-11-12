@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -45,6 +46,21 @@ type txKey struct{}
 func TxFrom(ctx context.Context) (pgx.Tx, bool) {
 	tx, ok := ctx.Value(txKey{}).(pgx.Tx)
 	return tx, ok
+}
+
+// DBTX is the query surface shared by the pool and a transaction, the same as in sqlc code.
+type DBTX interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// Conn returns the transaction of ctx, or the pool when the call runs outside one.
+func Conn(ctx context.Context, pool *pgxpool.Pool) DBTX {
+	if tx, ok := TxFrom(ctx); ok {
+		return tx
+	}
+	return pool
 }
 
 func InOrgTx(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, fn func(ctx context.Context) error) error {

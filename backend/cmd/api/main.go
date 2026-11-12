@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 
 	"github.com/caarlos0/env/v11"
@@ -14,20 +15,35 @@ const _service = "api"
 
 func main() {
 	boot := logger.Default(_service)
-	cfg, err := config.Load(env.ToMap(os.Environ()))
+	command := ""
+	if len(os.Args) > 1 {
+		command = os.Args[1]
+	}
+	environ := env.ToMap(os.Environ())
+	cfg, err := config.Load(environ)
+	var in config.Install
+	if command == "install" {
+		var inErr error
+		in, inErr = config.LoadInstall(environ)
+		err = errors.Join(err, inErr)
+	}
 	if err != nil {
 		boot.Fatal().Err(err).Msg("config")
 	}
-	log, err := logger.New(os.Stdout, cfg.LogLevel, _service, cfg.Secrets())
+	log, err := logger.New(os.Stdout, cfg.LogLevel, _service, append(cfg.Secrets(), in.Secrets()...))
 	if err != nil {
 		boot.Fatal().Err(err).Msg("logger")
 	}
 
-	run := app.RunAPI
-	if len(os.Args) > 1 && os.Args[1] == "migrate" {
-		run = app.RunMigrate
+	switch command {
+	case "migrate":
+		err = app.RunMigrate(cfg, log)
+	case "install":
+		err = app.RunInstall(cfg, in, log)
+	default:
+		err = app.RunAPI(cfg, log)
 	}
-	if err := run(cfg, log); err != nil {
+	if err != nil {
 		log.Fatal().Err(err).Msg("api stopped with error")
 	}
 }

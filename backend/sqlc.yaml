@@ -1,4 +1,14 @@
 version: "2"
+overrides:
+  go:
+    overrides:
+      - db_type: uuid
+        go_type: github.com/google/uuid.UUID
+      - db_type: uuid
+        nullable: true
+        go_type: github.com/google/uuid.NullUUID
+      - db_type: timestamptz
+        go_type: time.Time
 sql:
   - engine: postgresql
     schema: migrations/core
@@ -8,8 +18,40 @@ sql:
         package: platform
         out: internal/repo/persistent/platform
         sql_package: pgx/v5
-        overrides:
-          - db_type: uuid
-            go_type: github.com/google/uuid.UUID
-          - db_type: timestamptz
-            go_type: time.Time
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
+    queries: internal/repo/persistent/org/queries.sql
+    gen:
+      go:
+        package: org
+        out: internal/repo/persistent/org
+        sql_package: pgx/v5
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
+    queries: internal/repo/persistent/auth/queries.sql
+    gen:
+      go:
+        package: auth
+        out: internal/repo/persistent/auth
+        sql_package: pgx/v5
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
+    queries: internal/repo/persistent/audit/queries.sql
+    gen:
+      go:
+        package: audit
+        out: internal/repo/persistent/audit
+        sql_package: pgx/v5
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
+    queries: internal/repo/persistent/install/queries.sql
+    gen:
+      go:
+        package: install
+        out: internal/repo/persistent/install
+        sql_package: pgx/v5
+        omit_unused_structs: true
