@@ -61,3 +61,22 @@ func validate(details map[string]any) error {
 	}
 	return nil
 }
+
+// ListEvents reads the journal of the subject's organization, newest first (TZ 13.8).
+func (u *UseCase) ListEvents(ctx context.Context, s entity.Subject, q entity.AuditQuery) (entity.AuditPage, error) {
+	var page entity.AuditPage
+	err := u.tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
+		events, err := u.repo.PageEvents(ctx, s.OrganizationID, q)
+		if err != nil {
+			return err
+		}
+		if len(events) > q.Limit {
+			events = events[:q.Limit]
+			last := events[len(events)-1]
+			page.Next = &entity.AuditKey{OccurredAt: last.OccurredAt, ID: last.ID}
+		}
+		page.Items = events
+		return nil
+	})
+	return page, err
+}

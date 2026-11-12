@@ -123,7 +123,7 @@ func TestApp_UnimplementedOperation(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, fakeAccess{})
 
-	rec := f.do(t, withSession(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/users", http.NoBody)))
+	rec := f.do(t, withSession(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/connections", http.NoBody)))
 
 	p := decodeProblem(t, rec)
 	assert.Equal(t, http.StatusNotImplemented, rec.Code)
@@ -137,7 +137,7 @@ func TestApp_UnimplementedOperation(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(f.logs.Bytes(), &entry))
 	assert.Equal(t, p.CorrelationID.String(), entry.CorrelationID)
-	assert.Equal(t, "listUsers", entry.OperationID)
+	assert.Equal(t, "listConnections", entry.OperationID)
 }
 
 func TestApp_ErrorResponses(t *testing.T) {
@@ -186,7 +186,7 @@ func TestApp_ErrorResponses(t *testing.T) {
 		},
 		{
 			name:       "invalid parameter",
-			giveReq:    withSession(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/users?limit=MARKER", http.NoBody)),
+			giveReq:    withSession(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/connections?limit=MARKER", http.NoBody)),
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "malformed_request",
 		},
@@ -229,11 +229,11 @@ func TestApp_ProcessStateAndMetrics(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, f.do(t, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/livez", http.NoBody)).Code)
 	assert.Equal(t, http.StatusServiceUnavailable, f.do(t, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", http.NoBody)).Code)
-	f.do(t, withSession(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/users", http.NoBody)))
+	f.do(t, withSession(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/connections", http.NoBody)))
 
 	rec := httptest.NewRecorder()
 	f.metrics.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", http.NoBody))
-	assert.Contains(t, rec.Body.String(), `craftpulse_api_requests_total{operation_id="listUsers",status="501"} 1`)
+	assert.Contains(t, rec.Body.String(), `craftpulse_api_requests_total{operation_id="listConnections",status="501"} 1`)
 }
 
 func TestApp_OriginOfChangingRequest(t *testing.T) {

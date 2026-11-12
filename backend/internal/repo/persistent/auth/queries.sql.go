@@ -171,6 +171,31 @@ func (q *Queries) EndSessions(ctx context.Context, arg EndSessionsParams) error 
 	return err
 }
 
+const endUserSessions = `-- name: EndUserSessions :execrows
+UPDATE auth.session SET ended_at = $1::timestamptz, end_reason = $2::text
+WHERE organization_id = $3 AND user_id = $4 AND ended_at IS NULL
+`
+
+type EndUserSessionsParams struct {
+	At             time.Time
+	Reason         string
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+}
+
+func (q *Queries) EndUserSessions(ctx context.Context, arg EndUserSessionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, endUserSessions,
+		arg.At,
+		arg.Reason,
+		arg.OrganizationID,
+		arg.UserID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getActiveProviderRegistration = `-- name: GetActiveProviderRegistration :one
 SELECT issuer, client_id, client_secret_enc, key_version
 FROM auth.provider_registration
@@ -279,6 +304,25 @@ func (q *Queries) ListLiveSessions(ctx context.Context, arg ListLiveSessionsPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const revokeUserAPIKeys = `-- name: RevokeUserAPIKeys :execrows
+UPDATE auth.api_key SET revoked_at = $1::timestamptz
+WHERE organization_id = $2 AND owner_user_id = $3 AND revoked_at IS NULL
+`
+
+type RevokeUserAPIKeysParams struct {
+	At             time.Time
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+}
+
+func (q *Queries) RevokeUserAPIKeys(ctx context.Context, arg RevokeUserAPIKeysParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeUserAPIKeys, arg.At, arg.OrganizationID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const takeLoginAttempt = `-- name: TakeLoginAttempt :one

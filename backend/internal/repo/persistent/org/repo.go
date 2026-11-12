@@ -140,6 +140,7 @@ func (r *Repo) ActiveRoles(ctx context.Context, orgID, userID entity.ID) ([]enti
 	roles := make([]entity.RoleAssignment, len(rows))
 	for i, row := range rows {
 		roles[i] = entity.RoleAssignment{
+			ID:         entity.ID(row.ID),
 			Role:       entity.Role(row.Role),
 			TeamID:     entity.ID(row.TeamID.UUID),
 			ProjectID:  entity.ID(row.ProjectID.UUID),
@@ -216,6 +217,7 @@ func user(row GetUserRow) entity.User {
 		PersonID:    entity.ID(row.PersonID.UUID),
 		DisplayName: row.DisplayName.String,
 		Status:      entity.UserStatus(row.Status),
+		CreatedAt:   row.CreatedAt,
 	}
 }
 

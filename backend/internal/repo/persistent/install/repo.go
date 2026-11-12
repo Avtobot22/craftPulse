@@ -2,10 +2,12 @@ package install
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -74,4 +76,37 @@ func (r *Repo) DatabaseFacts(ctx context.Context) (entity.DatabaseFacts, error) 
 	}
 	f.ExpectedSchema = migrations.Latest()
 	return f, nil
+}
+
+// LatestProtocol returns the protocol of the last installation check with the result of each check.
+func (r *Repo) LatestProtocol(ctx context.Context) (entity.Protocol, bool, error) {
+	q := New(postgres.Conn(ctx, r.pool))
+	row, err := q.GetLatestProtocol(ctx)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.Protocol{}, false, nil
+	}
+	if err != nil {
+		return entity.Protocol{}, false, fmt.Errorf("install: get latest protocol: %w", err)
+	}
+	checks, err := q.ListCheckResults(ctx, row.ID)
+	if err != nil {
+		return entity.Protocol{}, false, fmt.Errorf("install: list check results: %w", err)
+	}
+	p := entity.Protocol{
+		ID:         entity.ID(row.ID),
+		StartedAt:  row.StartedAt,
+		FinishedAt: row.FinishedAt.Time,
+		ReleaseSHA: row.ReleaseSha,
+		Outcome:    entity.ProtocolOutcome(row.Outcome),
+		Checks:     make([]entity.CheckResult, len(checks)),
+	}
+	for i, c := range checks {
+		p.Checks[i] = entity.CheckResult{
+			Kind:    entity.CheckKind(c.CheckKind),
+			Outcome: entity.CheckOutcome(c.Outcome),
+			Reason:  c.ReasonCode.String,
+			Detail:  c.Detail.String,
+		}
+	}
+	return p, true, nil
 }

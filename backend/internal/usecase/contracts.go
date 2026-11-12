@@ -32,3 +32,23 @@ type Structure interface {
 	ListAreas(ctx context.Context, s entity.Subject, scope entity.Scope, kind entity.AreaKind, f entity.AreaFilter,
 		p entity.PageRequest) (entity.Page, error)
 }
+
+// Users is the org module for the administration of users (TZ 7.2, 7.7).
+type Users interface {
+	ListUsers(ctx context.Context, s entity.Subject, req entity.UserListRequest) (entity.UserPage, error)
+	UserRoles(ctx context.Context, s entity.Subject, userID entity.ID) (entity.RoleSet, error)
+	ReplaceUserRoles(ctx context.Context, s entity.Subject, userID entity.ID, baseVersion int64, roles []entity.RoleAssignment) (entity.RoleSet, error)
+	BlockUser(ctx context.Context, s entity.Subject, userID entity.ID) error
+	UnblockUser(ctx context.Context, s entity.Subject, userID entity.ID) error
+	EndUserSessions(ctx context.Context, s entity.Subject, userID entity.ID) error
+}
+
+// AuditLog reads the audit journal of the organization (TZ 13.8).
+type AuditLog interface {
+	ListEvents(ctx context.Context, s entity.Subject, q entity.AuditQuery) (entity.AuditPage, error)
+}
+
+// Protocols reads the installation check protocol (FR-011).
+type Protocols interface {
+	LatestProtocol(ctx context.Context) (entity.Protocol, error)
+}

@@ -44,6 +44,36 @@ func (q *Queries) AssignAdministrator(ctx context.Context, arg AssignAdministrat
 	return err
 }
 
+const assignRole = `-- name: AssignRole :exec
+INSERT INTO org.role_assignment (organization_id, user_id, role, team_id, project_id, service_id, assigned_by, assigned_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type AssignRoleParams struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+	Role           string
+	TeamID         uuid.NullUUID
+	ProjectID      uuid.NullUUID
+	ServiceID      uuid.NullUUID
+	AssignedBy     uuid.UUID
+	AssignedAt     time.Time
+}
+
+func (q *Queries) AssignRole(ctx context.Context, arg AssignRoleParams) error {
+	_, err := q.db.Exec(ctx, assignRole,
+		arg.OrganizationID,
+		arg.UserID,
+		arg.Role,
+		arg.TeamID,
+		arg.ProjectID,
+		arg.ServiceID,
+		arg.AssignedBy,
+		arg.AssignedAt,
+	)
+	return err
+}
+
 const createOrganization = `-- name: CreateOrganization :exec
 INSERT INTO org.organization (organization_id, name, status, first_admin_issuer, first_admin_subject, structure_version, created_at)
 VALUES ($1, $2, $3, $4, $5, 0, $6)
@@ -202,7 +232,7 @@ func (q *Queries) GetStructureVersion(ctx context.Context, organizationID uuid.U
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, issuer, subject, person_id, display_name, status
+SELECT id, issuer, subject, person_id, display_name, status, created_at
 FROM org.app_user WHERE organization_id = $1 AND id = $2
 `
 
@@ -218,6 +248,7 @@ type GetUserRow struct {
 	PersonID    uuid.NullUUID
 	DisplayName pgtype.Text
 	Status      string
+	CreatedAt   time.Time
 }
 
 func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (GetUserRow, error) {
@@ -230,6 +261,7 @@ func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (GetUserRow, e
 		&i.PersonID,
 		&i.DisplayName,
 		&i.Status,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -289,7 +321,7 @@ func (q *Queries) InsertTeamProject(ctx context.Context, arg InsertTeamProjectPa
 }
 
 const listActiveRoles = `-- name: ListActiveRoles :many
-SELECT role, team_id, project_id, service_id, assigned_at
+SELECT id, role, team_id, project_id, service_id, assigned_at
 FROM org.role_assignment
 WHERE organization_id = $1 AND user_id = $2 AND revoked_at IS NULL
 ORDER BY assigned_at, id
@@ -301,6 +333,7 @@ type ListActiveRolesParams struct {
 }
 
 type ListActiveRolesRow struct {
+	ID         uuid.UUID
 	Role       string
 	TeamID     uuid.NullUUID
 	ProjectID  uuid.NullUUID
@@ -318,6 +351,7 @@ func (q *Queries) ListActiveRoles(ctx context.Context, arg ListActiveRolesParams
 	for rows.Next() {
 		var i ListActiveRolesRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.Role,
 			&i.TeamID,
 			&i.ProjectID,
@@ -583,6 +617,93 @@ func (q *Queries) ListPersonIDs(ctx context.Context, arg ListPersonIDsParams) ([
 	return items, nil
 }
 
+const listProjectIDs = `-- name: ListProjectIDs :many
+SELECT id FROM org.project WHERE organization_id = $1 AND id = ANY($2::uuid[])
+`
+
+type ListProjectIDsParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) ListProjectIDs(ctx context.Context, arg ListProjectIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listProjectIDs, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listServiceIDs = `-- name: ListServiceIDs :many
+SELECT id FROM org.service WHERE organization_id = $1 AND id = ANY($2::uuid[])
+`
+
+type ListServiceIDsParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) ListServiceIDs(ctx context.Context, arg ListServiceIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listServiceIDs, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTeamIDs = `-- name: ListTeamIDs :many
+SELECT id FROM org.team WHERE organization_id = $1 AND id = ANY($2::uuid[])
+`
+
+type ListTeamIDsParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) ListTeamIDs(ctx context.Context, arg ListTeamIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listTeamIDs, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTeamProjectIDs = `-- name: ListTeamProjectIDs :many
 SELECT DISTINCT project_id FROM org.team_project
 WHERE organization_id = $1 AND team_id = ANY($2::uuid[])
@@ -770,8 +891,44 @@ func (q *Queries) LockStructureVersion(ctx context.Context, organizationID uuid.
 	return structure_version, err
 }
 
+const lockUser = `-- name: LockUser :one
+SELECT id, issuer, subject, person_id, display_name, status, created_at
+FROM org.app_user WHERE organization_id = $1 AND id = $2
+FOR UPDATE
+`
+
+type LockUserParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type LockUserRow struct {
+	ID          uuid.UUID
+	Issuer      string
+	Subject     string
+	PersonID    uuid.NullUUID
+	DisplayName pgtype.Text
+	Status      string
+	CreatedAt   time.Time
+}
+
+func (q *Queries) LockUser(ctx context.Context, arg LockUserParams) (LockUserRow, error) {
+	row := q.db.QueryRow(ctx, lockUser, arg.OrganizationID, arg.ID)
+	var i LockUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Issuer,
+		&i.Subject,
+		&i.PersonID,
+		&i.DisplayName,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const lockUserByIdentity = `-- name: LockUserByIdentity :one
-SELECT id, issuer, subject, person_id, display_name, status
+SELECT id, issuer, subject, person_id, display_name, status, created_at
 FROM org.app_user
 WHERE organization_id = $1 AND issuer = $2 AND subject = $3
 FOR UPDATE
@@ -790,6 +947,7 @@ type LockUserByIdentityRow struct {
 	PersonID    uuid.NullUUID
 	DisplayName pgtype.Text
 	Status      string
+	CreatedAt   time.Time
 }
 
 func (q *Queries) LockUserByIdentity(ctx context.Context, arg LockUserByIdentityParams) (LockUserByIdentityRow, error) {
@@ -802,6 +960,7 @@ func (q *Queries) LockUserByIdentity(ctx context.Context, arg LockUserByIdentity
 		&i.PersonID,
 		&i.DisplayName,
 		&i.Status,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1140,6 +1299,296 @@ func (q *Queries) PageTeamsDesc(ctx context.Context, arg PageTeamsDescParams) ([
 	return items, nil
 }
 
+const pageUsersByCreatedAsc = `-- name: PageUsersByCreatedAsc :many
+SELECT id, issuer, subject, person_id, display_name, status, created_at FROM org.app_user
+WHERE organization_id = $1
+    AND ($2::text IS NULL OR status = $2)
+    AND (NOT $3::bool OR (created_at, id) > ($4::timestamptz, $5::uuid))
+ORDER BY created_at, id
+LIMIT $6
+`
+
+type PageUsersByCreatedAscParams struct {
+	OrganizationID uuid.UUID
+	Status         pgtype.Text
+	After          bool
+	AfterAt        time.Time
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageUsersByCreatedAscRow struct {
+	ID          uuid.UUID
+	Issuer      string
+	Subject     string
+	PersonID    uuid.NullUUID
+	DisplayName pgtype.Text
+	Status      string
+	CreatedAt   time.Time
+}
+
+func (q *Queries) PageUsersByCreatedAsc(ctx context.Context, arg PageUsersByCreatedAscParams) ([]PageUsersByCreatedAscRow, error) {
+	rows, err := q.db.Query(ctx, pageUsersByCreatedAsc,
+		arg.OrganizationID,
+		arg.Status,
+		arg.After,
+		arg.AfterAt,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageUsersByCreatedAscRow
+	for rows.Next() {
+		var i PageUsersByCreatedAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Issuer,
+			&i.Subject,
+			&i.PersonID,
+			&i.DisplayName,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageUsersByCreatedDesc = `-- name: PageUsersByCreatedDesc :many
+SELECT id, issuer, subject, person_id, display_name, status, created_at FROM org.app_user
+WHERE organization_id = $1
+    AND ($2::text IS NULL OR status = $2)
+    AND (NOT $3::bool OR (created_at, id) < ($4::timestamptz, $5::uuid))
+ORDER BY created_at DESC, id DESC
+LIMIT $6
+`
+
+type PageUsersByCreatedDescParams struct {
+	OrganizationID uuid.UUID
+	Status         pgtype.Text
+	After          bool
+	AfterAt        time.Time
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageUsersByCreatedDescRow struct {
+	ID          uuid.UUID
+	Issuer      string
+	Subject     string
+	PersonID    uuid.NullUUID
+	DisplayName pgtype.Text
+	Status      string
+	CreatedAt   time.Time
+}
+
+func (q *Queries) PageUsersByCreatedDesc(ctx context.Context, arg PageUsersByCreatedDescParams) ([]PageUsersByCreatedDescRow, error) {
+	rows, err := q.db.Query(ctx, pageUsersByCreatedDesc,
+		arg.OrganizationID,
+		arg.Status,
+		arg.After,
+		arg.AfterAt,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageUsersByCreatedDescRow
+	for rows.Next() {
+		var i PageUsersByCreatedDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Issuer,
+			&i.Subject,
+			&i.PersonID,
+			&i.DisplayName,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageUsersByNameAsc = `-- name: PageUsersByNameAsc :many
+SELECT id, issuer, subject, person_id, display_name, status, created_at FROM org.app_user
+WHERE organization_id = $1
+    AND ($2::text IS NULL OR status = $2)
+    AND (NOT $3::bool OR (coalesce(display_name, ''), id) > ($4::text, $5::uuid))
+ORDER BY coalesce(display_name, ''), id
+LIMIT $6
+`
+
+type PageUsersByNameAscParams struct {
+	OrganizationID uuid.UUID
+	Status         pgtype.Text
+	After          bool
+	AfterName      string
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageUsersByNameAscRow struct {
+	ID          uuid.UUID
+	Issuer      string
+	Subject     string
+	PersonID    uuid.NullUUID
+	DisplayName pgtype.Text
+	Status      string
+	CreatedAt   time.Time
+}
+
+func (q *Queries) PageUsersByNameAsc(ctx context.Context, arg PageUsersByNameAscParams) ([]PageUsersByNameAscRow, error) {
+	rows, err := q.db.Query(ctx, pageUsersByNameAsc,
+		arg.OrganizationID,
+		arg.Status,
+		arg.After,
+		arg.AfterName,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageUsersByNameAscRow
+	for rows.Next() {
+		var i PageUsersByNameAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Issuer,
+			&i.Subject,
+			&i.PersonID,
+			&i.DisplayName,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageUsersByNameDesc = `-- name: PageUsersByNameDesc :many
+SELECT id, issuer, subject, person_id, display_name, status, created_at FROM org.app_user
+WHERE organization_id = $1
+    AND ($2::text IS NULL OR status = $2)
+    AND (NOT $3::bool OR (coalesce(display_name, ''), id) < ($4::text, $5::uuid))
+ORDER BY coalesce(display_name, '') DESC, id DESC
+LIMIT $6
+`
+
+type PageUsersByNameDescParams struct {
+	OrganizationID uuid.UUID
+	Status         pgtype.Text
+	After          bool
+	AfterName      string
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageUsersByNameDescRow struct {
+	ID          uuid.UUID
+	Issuer      string
+	Subject     string
+	PersonID    uuid.NullUUID
+	DisplayName pgtype.Text
+	Status      string
+	CreatedAt   time.Time
+}
+
+func (q *Queries) PageUsersByNameDesc(ctx context.Context, arg PageUsersByNameDescParams) ([]PageUsersByNameDescRow, error) {
+	rows, err := q.db.Query(ctx, pageUsersByNameDesc,
+		arg.OrganizationID,
+		arg.Status,
+		arg.After,
+		arg.AfterName,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageUsersByNameDescRow
+	for rows.Next() {
+		var i PageUsersByNameDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Issuer,
+			&i.Subject,
+			&i.PersonID,
+			&i.DisplayName,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeRole = `-- name: RevokeRole :exec
+UPDATE org.role_assignment SET revoked_at = $1::timestamptz, revoked_by = $2::uuid
+WHERE organization_id = $3 AND id = $4 AND revoked_at IS NULL
+`
+
+type RevokeRoleParams struct {
+	At             time.Time
+	RevokedBy      uuid.UUID
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) RevokeRole(ctx context.Context, arg RevokeRoleParams) error {
+	_, err := q.db.Exec(ctx, revokeRole,
+		arg.At,
+		arg.RevokedBy,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
+}
+
+const roleSetVersion = `-- name: RoleSetVersion :one
+SELECT (count(*) + count(revoked_at))::bigint FROM org.role_assignment WHERE organization_id = $1 AND user_id = $2
+`
+
+type RoleSetVersionParams struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+}
+
+func (q *Queries) RoleSetVersion(ctx context.Context, arg RoleSetVersionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, roleSetVersion, arg.OrganizationID, arg.UserID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const setStructureVersion = `-- name: SetStructureVersion :exec
 UPDATE org.organization SET structure_version = $2 WHERE organization_id = $1
 `
@@ -1166,6 +1615,28 @@ type SetUserDisplayNameParams struct {
 
 func (q *Queries) SetUserDisplayName(ctx context.Context, arg SetUserDisplayNameParams) error {
 	_, err := q.db.Exec(ctx, setUserDisplayName, arg.OrganizationID, arg.ID, arg.DisplayName)
+	return err
+}
+
+const setUserStatus = `-- name: SetUserStatus :exec
+UPDATE org.app_user SET status = $1, blocked_at = $2
+WHERE organization_id = $3 AND id = $4
+`
+
+type SetUserStatusParams struct {
+	Status         string
+	BlockedAt      pgtype.Timestamptz
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) SetUserStatus(ctx context.Context, arg SetUserStatusParams) error {
+	_, err := q.db.Exec(ctx, setUserStatus,
+		arg.Status,
+		arg.BlockedAt,
+		arg.OrganizationID,
+		arg.ID,
+	)
 	return err
 }
 

@@ -21,6 +21,7 @@ type Handler struct {
 	fallback
 	session
 	organization
+	administration
 }
 
 type fallback struct {
@@ -31,13 +32,17 @@ type Deps struct {
 	Logins     usecase.Logins
 	Access     usecase.Access
 	Structure  usecase.Structure
+	Users      usecase.Users
+	Audit      usecase.AuditLog
+	Protocols  usecase.Protocols
 	Registerer prometheus.Registerer
 }
 
 func New(d Deps) *Handler {
 	return &Handler{
-		session:      newSession(d.Logins, d.Access, d.Registerer),
-		organization: organization{structure: d.Structure},
+		session:        newSession(d.Logins, d.Access, d.Registerer),
+		organization:   organization{structure: d.Structure},
+		administration: administration{users: d.Users, audit: d.Audit, protocols: d.Protocols},
 	}
 }
 

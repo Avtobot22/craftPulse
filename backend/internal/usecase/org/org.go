@@ -16,25 +16,30 @@ type Auditor interface {
 
 // Deps of the module; installation uses only Orgs, Tenants and Clock.
 type Deps struct {
-	Orgs    repo.OrgRepo
-	Tenants repo.TenantRepo
-	Tx      repo.Transactor
-	Auditor Auditor
-	Clock   clock.Clock
-	NewID   func() (entity.ID, error)
+	Orgs        repo.OrgRepo
+	Tenants     repo.TenantRepo
+	Tx          repo.Transactor
+	Auditor     Auditor
+	Credentials Credentials
+	Clock       clock.Clock
+	NewID       func() (entity.ID, error)
 }
 
 type UseCase struct {
-	orgs    repo.OrgRepo
-	tenants repo.TenantRepo
-	tx      repo.Transactor
-	auditor Auditor
-	clock   clock.Clock
-	newID   func() (entity.ID, error)
+	orgs        repo.OrgRepo
+	tenants     repo.TenantRepo
+	tx          repo.Transactor
+	auditor     Auditor
+	credentials Credentials
+	clock       clock.Clock
+	newID       func() (entity.ID, error)
 }
 
 func New(d Deps) *UseCase {
-	return &UseCase{orgs: d.Orgs, tenants: d.Tenants, tx: d.Tx, auditor: d.Auditor, clock: d.Clock, newID: d.NewID}
+	return &UseCase{
+		orgs: d.Orgs, tenants: d.Tenants, tx: d.Tx, auditor: d.Auditor, credentials: d.Credentials,
+		clock: d.Clock, newID: d.NewID,
+	}
 }
 
 // CreateOrganization runs inside the caller's organization transaction: the tenant row and the

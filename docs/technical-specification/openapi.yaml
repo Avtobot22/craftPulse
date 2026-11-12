@@ -927,7 +927,7 @@ paths:
               schema: {$ref: '#/components/schemas/AuditEventPage'}
               example:
                 data:
-                  - {id: 0193a5b0-ffff-7000-8000-000000000001, occurred_at: '2026-11-08T10:05:00Z', actor_kind: user, actor_id: 0193a5b0-1111-7000-8000-000000000002, operation: getTask, object_kind: task, object_id: 0193a5b0-f000-7000-8000-000000000009, outcome: denied, reason_code: outside_scope, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+                  - {id: 0193a5b0-ffff-7000-8000-000000000001, occurred_at: '2026-11-08T10:05:00Z', actor_kind: user, actor_id: 0193a5b0-1111-7000-8000-000000000002, operation: getTask, object_kind: task, object_id: 0193a5b0-f000-7000-8000-000000000009, outcome: denied, reason_code: outside_scope, base_version: null, new_version: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
                 next_cursor: null
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -6048,7 +6048,7 @@ components:
               reason_code: {type: [string, 'null']}
     AuditEvent:
       type: object
-      required: [id, occurred_at, actor_kind, actor_id, operation, object_kind, object_id, outcome, reason_code, correlation_id]
+      required: [id, occurred_at, actor_kind, actor_id, operation, object_kind, object_id, outcome, reason_code, base_version, new_version, correlation_id]
       properties:
         id: {type: string, format: uuid}
         occurred_at: {type: string, format: date-time}
@@ -6059,6 +6059,8 @@ components:
         object_id: {type: [string, 'null'], format: uuid}
         outcome: {type: string, enum: [succeeded, denied, failed]}
         reason_code: {type: [string, 'null']}
+        base_version: {type: [string, 'null'], description: 'Версия объекта до изменения: структуры, набора ролей, политики (раздел 13.8). `null` - у события нет версии.'}
+        new_version: {type: [string, 'null'], description: Версия объекта после изменения.}
         correlation_id: {type: string, format: uuid}
     AuditEventPage:
       type: object
