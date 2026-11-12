@@ -5,6 +5,7 @@
 !.env.*.example
 *.pem
 *.key
+/deploy/gitlab/secrets.sops.json
 
 # Dependencies, builds and caches
 node_modules/

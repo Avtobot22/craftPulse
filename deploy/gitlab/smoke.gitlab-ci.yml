@@ -1,0 +1,16 @@
+stages: [smoke]
+
+stand-connectivity:
+  stage: smoke
+  image:
+    name: curlimages/curl:8.17.0@sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40
+    entrypoint: [""]
+  tags: [cp87-test]
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - test -n "$CRAFTPULSE_URL"
+    - test -n "$EXPECTED_RUNNER_ID"
+    - test "$CI_RUNNER_ID" = "$EXPECTED_RUNNER_ID"
+    - curl --fail --silent --show-error --output /dev/null --proto '=https' --max-time 30 --cacert /etc/craftpulse-ca/ca-bundle.crt "$CRAFTPULSE_URL"
+    - echo "HTTPS to craftPulse verified on runner $CI_RUNNER_ID"
