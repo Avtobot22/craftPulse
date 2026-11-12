@@ -149,3 +149,23 @@ func validateHTTPURL(name, raw string) error {
 	}
 	return nil
 }
+
+// Site is the address api serves (TZ 13.1, 13.2): the provider returns the browser to it, and a changing
+// request with the session cookie must carry it as Origin.
+type Site struct {
+	URL string `env:"SITE_URL,required,notEmpty"`
+}
+
+func LoadSite(environ map[string]string) (Site, error) {
+	var s Site
+	if err := env.ParseWithOptions(&s, env.Options{Environment: environ}); err != nil {
+		return Site{}, fmt.Errorf("invalid site: %w", err)
+	}
+	u, err := url.Parse(s.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return Site{}, errors.New("invalid site: SITE_URL must be an http(s) origin without path, query and credentials")
+	}
+	s.URL = u.Scheme + "://" + u.Host
+	return s, nil
+}

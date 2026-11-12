@@ -21,11 +21,20 @@ func main() {
 	}
 	environ := env.ToMap(os.Environ())
 	cfg, err := config.Load(environ)
-	var in config.Install
-	if command == "install" {
+	var (
+		in   config.Install
+		site config.Site
+	)
+	switch command {
+	case "install":
 		var inErr error
 		in, inErr = config.LoadInstall(environ)
 		err = errors.Join(err, inErr)
+	case "migrate":
+	default:
+		var siteErr error
+		site, siteErr = config.LoadSite(environ)
+		err = errors.Join(err, siteErr)
 	}
 	if err != nil {
 		boot.Fatal().Err(err).Msg("config")
@@ -41,7 +50,7 @@ func main() {
 	case "install":
 		err = app.RunInstall(cfg, in, log)
 	default:
-		err = app.RunAPI(cfg, log)
+		err = app.RunAPI(cfg, site, log)
 	}
 	if err != nil {
 		log.Fatal().Err(err).Msg("api stopped with error")

@@ -20,6 +20,9 @@ type Problem struct {
 
 var (
 	MalformedRequest = Problem{http.StatusBadRequest, "malformed_request", "Malformed request"}
+	AuthRequired     = Problem{http.StatusUnauthorized, "auth_required", "Authentication required"}
+	Forbidden        = Problem{http.StatusForbidden, "forbidden", "Action is not allowed"}
+	OriginRejected   = Problem{http.StatusForbidden, "origin_rejected", "Request origin is not allowed"}
 	NotFound         = Problem{http.StatusNotFound, "not_found", "Not found"}
 	PayloadTooLarge  = Problem{http.StatusRequestEntityTooLarge, "payload_too_large", "Payload is too large"}
 	InternalError    = Problem{http.StatusInternalServerError, "internal_error", "Internal server error"}

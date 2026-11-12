@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"runtime/debug"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 
-	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/openapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/response"
 	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
 )
@@ -91,14 +89,5 @@ func LimitBody(limit int64) gin.HandlerFunc {
 		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		c.Next()
-	}
-}
-
-// Operation labels the request; oapi-codegen passes the Go method name, not the operationId.
-func Operation(f openapi.StrictHandlerFunc, method string) openapi.StrictHandlerFunc {
-	op := strings.ToLower(method[:1]) + method[1:]
-	return func(c *gin.Context, request any) (any, error) {
-		c.Set(_operationKey, op)
-		return f(c, request)
 	}
 }

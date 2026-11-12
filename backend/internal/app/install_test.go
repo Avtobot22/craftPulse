@@ -181,7 +181,7 @@ func TestInstall_AuditFailureRollsBackOrganization(t *testing.T) {
 		Tx:            tx,
 		Repo:          installrepo.NewRepo(e.app),
 		Organizations: org.New(orgrepo.NewRepo(e.app), platform.NewRepo(e.app), c),
-		Logins:        auth.New(authrepo.NewRepo(e.app), e.keyring, c),
+		Logins:        auth.New(auth.Deps{Repo: authrepo.NewRepo(e.app), Keyring: e.keyring, Clock: c}),
 		Auditor:       failingAuditor{},
 		Clock:         c,
 		NewID:         newID,

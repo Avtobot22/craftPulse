@@ -122,3 +122,32 @@ func TestLoad_MasterKeys(t *testing.T) {
 		assert.NotContains(t, err.Error(), _masterKey, name)
 	}
 }
+
+func TestLoadSite(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		give    string
+		want    string
+		wantErr bool
+	}{
+		{give: "https://craftpulse.example", want: "https://craftpulse.example"},
+		{give: "https://craftpulse.example/", want: "https://craftpulse.example"},
+		{give: "https://craftpulse.example/app", wantErr: true},
+		{give: "ftp://craftpulse.example", wantErr: true},
+		{give: "", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.give, func(t *testing.T) {
+			t.Parallel()
+
+			site, err := config.LoadSite(map[string]string{"SITE_URL": tt.give})
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, site.URL)
+		})
+	}
+}
