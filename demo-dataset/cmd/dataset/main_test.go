@@ -151,3 +151,45 @@ func TestGenerateTasksCLI(t *testing.T) {
 		t.Fatal(output.String())
 	}
 }
+
+func TestGenerateReposCLI(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	objects := filepath.Join(dir, "objects")
+	sources := filepath.Join(dir, "sources")
+	for _, d := range []string{objects, sources} {
+		if err := os.Mkdir(d, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	modelPath := filepath.Join(dir, "model.json")
+	reposPath := filepath.Join(dir, "repos.json")
+	var output bytes.Buffer
+	args := []string{"generate", "--out", modelPath, "--repos", reposPath, "--repo-objects", filepath.Join(objects, "repos.json"), "--repo-dir", filepath.Join(dir, "out")}
+	if err := run(args, &output); err != nil {
+		t.Fatal(err)
+	}
+	var repos dataset.RepoFile
+	if err := dataset.ReadJSON(reposPath, &repos); err != nil {
+		t.Fatal(err)
+	}
+	for _, repo := range repos.Repositories {
+		if !strings.Contains(output.String(), repo.ID+" head: "+repo.Head) {
+			t.Fatalf("output lacks the head of %s", repo.ID)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "out", repo.BarePath, "HEAD")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, patch := range repos.Patches {
+		if _, err := os.Stat(filepath.Join(dir, "out", patch.Path)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := run([]string{"manifest", "--model", modelPath, "--sources", sources, "--objects", objects, "--out", filepath.Join(dir, "manifest.json")}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(args, &output); err == nil {
+		t.Fatal("a second run must not overwrite the repositories")
+	}
+}

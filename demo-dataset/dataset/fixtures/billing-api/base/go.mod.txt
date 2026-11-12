@@ -1,0 +1,3 @@
+module demo.invalid/billing
+
+go 1.22

@@ -1,0 +1,479 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "craftPulse demo dataset repositories v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "period": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "additionalProperties": false
+    },
+    "as_of": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "instance_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "area_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bare_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default_branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "restricted": {
+            "type": "boolean"
+          },
+          "language": {
+            "type": "string",
+            "minLength": 1
+          },
+          "head": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "head_tree": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "lines": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20000
+          },
+          "doc_roots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sha": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "tree": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "parents": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  }
+                },
+                "author_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "author_time": {
+                  "type": "object",
+                  "properties": {
+                    "utc": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+                    },
+                    "original_offset": {
+                      "type": "string",
+                      "pattern": "^(Z|[+-]\\d{2}:\\d{2})$"
+                    }
+                  },
+                  "required": [
+                    "utc",
+                    "original_offset"
+                  ],
+                  "additionalProperties": false
+                },
+                "committer_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "commit_time": {
+                  "type": "object",
+                  "properties": {
+                    "utc": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+                    },
+                    "original_offset": {
+                      "type": "string",
+                      "pattern": "^(Z|[+-]\\d{2}:\\d{2})$"
+                    }
+                  },
+                  "required": [
+                    "utc",
+                    "original_offset"
+                  ],
+                  "additionalProperties": false
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "sha",
+                "tree",
+                "parents",
+                "author_id",
+                "author_time",
+                "committer_id",
+                "commit_time",
+                "message",
+                "files"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "format": {
+                  "enum": [
+                    "markdown",
+                    "openapi"
+                  ]
+                },
+                "owner": {
+                  "type": "string"
+                },
+                "spec_valid": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "anchors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "links": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "line": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "target": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "anchor": {
+                        "type": "string"
+                      },
+                      "broken": {
+                        "enum": [
+                          "",
+                          "file",
+                          "anchor"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "line",
+                      "target",
+                      "path",
+                      "anchor",
+                      "broken"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "format",
+                "owner",
+                "spec_valid",
+                "anchors",
+                "links"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unowned_documents": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "broken_links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "document": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "target": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "enum": [
+                    "file",
+                    "anchor"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "document",
+                "line",
+                "target",
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "invalid_specs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "defects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "enum": [
+                    "test",
+                    "lint",
+                    "security"
+                  ]
+                },
+                "tool": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "rule": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "exception": {
+                  "type": "string"
+                },
+                "fixed_by_step": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "tool",
+                "rule",
+                "file",
+                "line",
+                "exception",
+                "fixed_by_step"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "instance_id",
+          "area_id",
+          "path",
+          "bare_path",
+          "default_branch",
+          "restricted",
+          "language",
+          "head",
+          "head_tree",
+          "lines",
+          "doc_roots",
+          "commits",
+          "documents",
+          "unowned_documents",
+          "broken_links",
+          "invalid_specs",
+          "defects"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "patches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "step": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "repository_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "base": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "result_tree": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "fixes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "id",
+          "step",
+          "repository_id",
+          "path",
+          "sha256",
+          "base",
+          "result_tree",
+          "files",
+          "fixes"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "seed",
+    "period",
+    "as_of",
+    "repositories",
+    "patches"
+  ],
+  "additionalProperties": false
+}

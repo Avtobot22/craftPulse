@@ -1,0 +1,26 @@
+package pricing
+
+import "fmt"
+
+// Tier sets the unit price in kopecks from a minimum quantity.
+type Tier struct {
+	From      int
+	UnitPrice int64
+}
+
+// Price returns the amount for quantity using the last tier that applies.
+func Price(tiers []Tier, quantity int) (int64, error) {
+	if quantity <= 0 {
+		return 0, fmt.Errorf("quantity must be positive, got %d", quantity)
+	}
+	var unit int64 = -1
+	for _, tier := range tiers {
+		if quantity >= tier.From {
+			unit = tier.UnitPrice
+		}
+	}
+	if unit < 0 {
+		return 0, fmt.Errorf("no tier for quantity %d", quantity)
+	}
+	return unit * int64(quantity), nil
+}

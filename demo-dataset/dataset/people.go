@@ -31,7 +31,7 @@ func generatePeople(rng *rand.Rand) []Person {
 			person.Roles = roles[i-1]
 		}
 		if i == 4 {
-			person.DeniedAreas = []string{"org-1/github-1/repo-2", "org-1/confluence-dc-1/wiki-space"}
+			person.DeniedAreas = []string{"org-1/github-1/repo-2", "org-1/gitlab-1/restricted-repo", "org-1/confluence-dc-1/wiki-space"}
 		}
 		for _, instance := range []string{"jira-dc-1", "confluence-dc-1", "gitlab-1", "github-1"} {
 			person.Accounts = append(person.Accounts, Account{InstanceID: instance, Login: fmt.Sprintf("demo-person-%02d", i), ExpectedPersonID: person.ID})

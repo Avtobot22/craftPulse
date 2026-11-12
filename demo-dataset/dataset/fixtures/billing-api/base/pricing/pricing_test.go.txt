@@ -1,0 +1,33 @@
+package pricing
+
+import "testing"
+
+func TestPrice(t *testing.T) {
+	tiers := []Tier{{From: 1, UnitPrice: 1000}, {From: 10, UnitPrice: 900}, {From: 100, UnitPrice: 800}}
+	tests := []struct {
+		name         string
+		giveQuantity int
+		want         int64
+	}{
+		{name: "first tier", giveQuantity: 3, want: 3000},
+		{name: "second tier", giveQuantity: 10, want: 9000},
+		{name: "third tier", giveQuantity: 150, want: 120000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Price(tiers, tt.giveQuantity)
+			if err != nil || got != tt.want {
+				t.Fatalf("Price() = %d, %v; want %d", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestPriceRejectsInvalidQuantity(t *testing.T) {
+	if _, err := Price([]Tier{{From: 1, UnitPrice: 1}}, 0); err == nil {
+		t.Fatal("Price() accepted zero quantity")
+	}
+	if _, err := Price([]Tier{{From: 5, UnitPrice: 1}}, 2); err == nil {
+		t.Fatal("Price() accepted quantity below the first tier")
+	}
+}

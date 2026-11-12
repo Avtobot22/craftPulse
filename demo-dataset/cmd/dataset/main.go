@@ -28,17 +28,21 @@ func run(args []string, output io.Writer) error {
 	case "generate":
 		seed := flags.Uint64("seed", 21, "deterministic seed")
 		asOf := flags.String("as-of", "2026-12-01T00:00:00Z", "exclusive UTC end and as-of")
-		path := flags.String("out", "model.json", "output model")
-		tasksPath := flags.String("tasks", "", "output task model; empty skips it")
-		objectsPath := flags.String("task-objects", "", "output object file of the tasks for manifest; empty skips it")
-		settingsPath := flags.String("settings", "", "output demo settings; empty skips it")
+		var out outputs
+		flags.StringVar(&out.model, "out", "model.json", "output model")
+		flags.StringVar(&out.tasks, "tasks", "", "output task model; empty skips it")
+		flags.StringVar(&out.taskObjects, "task-objects", "", "output object file of the tasks for manifest; empty skips it")
+		flags.StringVar(&out.settings, "settings", "", "output demo settings; empty skips it")
+		flags.StringVar(&out.repos, "repos", "", "output repository model; empty skips it")
+		flags.StringVar(&out.repoObjects, "repo-objects", "", "output object file of repositories and Git documents; empty skips it")
+		flags.StringVar(&out.repoDir, "repo-dir", "", "directory for bare repositories and patches; empty skips it")
 		if err := flags.Parse(args[1:]); err != nil {
 			return fmt.Errorf("invalid generate arguments")
 		}
 		if flags.NArg() != 0 {
 			return fmt.Errorf("unexpected generate arguments")
 		}
-		return generate(output, *seed, *asOf, *path, *tasksPath, *objectsPath, *settingsPath)
+		return generate(output, *seed, *asOf, out)
 	case "compare":
 		if len(args) != 3 {
 			return fmt.Errorf("usage: dataset compare expected.json actual.json")
@@ -99,8 +103,12 @@ func run(args []string, output io.Writer) error {
 	}
 }
 
+type outputs struct {
+	model, tasks, taskObjects, settings, repos, repoObjects, repoDir string
+}
+
 // generate builds every part before writing any file, so a failed check leaves no partial output.
-func generate(output io.Writer, seed uint64, asOf, modelPath, tasksPath, objectsPath, settingsPath string) error {
+func generate(output io.Writer, seed uint64, asOf string, out outputs) error {
 	model, err := dataset.Generate(seed, asOf)
 	if err != nil {
 		return err
@@ -113,11 +121,17 @@ func generate(output io.Writer, seed uint64, asOf, modelPath, tasksPath, objects
 	if err != nil {
 		return err
 	}
-	objects := tasks.Objects()
+	repos, err := dataset.GenerateRepos(model)
+	if err != nil {
+		return err
+	}
 	parts := []struct {
 		name, path string
 		value      any
-	}{{"model", modelPath, model}, {"tasks", tasksPath, tasks}, {"task objects", objectsPath, objects}, {"settings", settingsPath, settings}}
+	}{
+		{"model", out.model, model}, {"tasks", out.tasks, tasks}, {"task objects", out.taskObjects, tasks.Objects()},
+		{"settings", out.settings, settings}, {"repositories", out.repos, repos.File}, {"repository objects", out.repoObjects, repos.File.Objects()},
+	}
 	for _, part := range parts {
 		if part.path == "" {
 			continue
@@ -130,6 +144,17 @@ func generate(output io.Writer, seed uint64, asOf, modelPath, tasksPath, objects
 			return err
 		}
 		if _, err := fmt.Fprintf(output, "%s SHA-256: %s\n", part.name, hash); err != nil {
+			return err
+		}
+	}
+	if out.repoDir == "" {
+		return nil
+	}
+	if err := repos.Write(out.repoDir); err != nil {
+		return err
+	}
+	for _, repo := range repos.File.Repositories {
+		if _, err := fmt.Fprintf(output, "%s head: %s\n", repo.ID, repo.Head); err != nil {
 			return err
 		}
 	}

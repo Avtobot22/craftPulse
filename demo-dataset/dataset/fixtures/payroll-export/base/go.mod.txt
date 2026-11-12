@@ -1,0 +1,3 @@
+module demo.invalid/payroll
+
+go 1.22

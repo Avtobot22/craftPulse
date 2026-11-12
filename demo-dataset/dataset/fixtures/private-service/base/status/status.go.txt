@@ -1,0 +1,11 @@
+package status
+
+// Healthy reports whether every named check passed.
+func Healthy(checks map[string]bool) bool {
+	for _, ok := range checks {
+		if !ok {
+			return false
+		}
+	}
+	return true
+}

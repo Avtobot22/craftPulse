@@ -1,0 +1,30 @@
+package order
+
+import "testing"
+
+func TestShippingFee(t *testing.T) {
+	tests := []struct {
+		name      string
+		giveTotal int64
+		want      int64
+	}{
+		{name: "small order", giveTotal: 1000, want: StandardShipping},
+		{name: "threshold", giveTotal: FreeShippingFrom, want: 0},
+		{name: "large order", giveTotal: FreeShippingFrom + 1, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ShippingFee(tt.giveTotal); got != tt.want {
+				t.Fatalf("ShippingFee(%d) = %d, want %d", tt.giveTotal, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPayable(t *testing.T) {
+	o := Order{Lines: []Line{{SKU: "a", Quantity: 2, UnitPrice: 500}}, DiscountPercent: 10}
+	got, err := o.Payable()
+	if err != nil || got != 900+StandardShipping {
+		t.Fatalf("Payable() = %d, %v; want %d", got, err, 900+StandardShipping)
+	}
+}
