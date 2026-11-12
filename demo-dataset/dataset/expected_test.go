@@ -73,6 +73,9 @@ func TestDecodeAndValidateRejectMalformedExpected(t *testing.T) {
 		mutate func(map[string]any)
 	}{
 		{name: "missing nullable value", mutate: func(record map[string]any) { delete(record, "value") }},
+		{name: "null map value", mutate: func(record map[string]any) { record["scope"] = map[string]any{"team_id": nil} }},
+		{name: "null filter element", mutate: func(record map[string]any) { record["filters"] = map[string]any{"team": []any{nil}} }},
+		{name: "case alias", mutate: func(record map[string]any) { record["Value"] = 123 }},
 		{name: "quoted number", mutate: func(record map[string]any) { record["value"] = "123" }},
 		{name: "quoted numerator", mutate: func(record map[string]any) { record["numerator"] = "123" }},
 		{name: "missing n", mutate: func(record map[string]any) { delete(record, "n") }},

@@ -104,6 +104,12 @@ func validateWindow(window Window) error {
 }
 
 func requiredFields(data []byte, shape reflect.Type) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		if shape.Kind() == reflect.Pointer || shape.Kind() == reflect.Interface {
+			return nil
+		}
+		return fmt.Errorf("unexpected null value")
+	}
 	for shape.Kind() == reflect.Pointer {
 		shape = shape.Elem()
 	}
@@ -124,6 +130,15 @@ func requiredFields(data []byte, shape reflect.Type) error {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(data, &fields); err != nil || fields == nil {
 			return fmt.Errorf("expected object")
+		}
+		allowed := make(map[string]bool, shape.NumField())
+		for i := 0; i < shape.NumField(); i++ {
+			allowed[strings.Split(shape.Field(i).Tag.Get("json"), ",")[0]] = true
+		}
+		for name := range fields {
+			if !allowed[name] {
+				return fmt.Errorf("unknown JSON field")
+			}
 		}
 		for i := 0; i < shape.NumField(); i++ {
 			field := shape.Field(i)
