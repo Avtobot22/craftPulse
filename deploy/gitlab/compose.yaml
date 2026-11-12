@@ -1,0 +1,47 @@
+name: craftpulse-gitlab
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:19.5.5-ce.0@sha256:392e6bd5bf118ae520e4038261a5ae39aea05de0d2299a162b4c822a9684cf9b
+    hostname: ${GITLAB_HOSTNAME:?Set the GitLab DNS name}
+    restart: unless-stopped
+    shm_size: 256m
+    cpus: 1.5
+    mem_limit: 2300m
+    memswap_limit: 3300m
+    environment:
+      GITLAB_HOSTNAME: ${GITLAB_HOSTNAME:?Set the GitLab DNS name}
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url "https://#{ENV.fetch('GITLAB_HOSTNAME')}"
+        letsencrypt['enable'] = false
+        nginx['listen_port'] = 80
+        nginx['listen_https'] = false
+        nginx['proxy_set_headers'] = { 'Host' => '$$http_host', 'X-Real-IP' => '$$remote_addr', 'X-Forwarded-For' => '$$proxy_add_x_forwarded_for', 'X-Forwarded-Proto' => 'https', 'X-Forwarded-Ssl' => 'on' }
+        gitlab_rails['initial_root_password'] = File.read('/run/secrets/root_password').strip
+        gitlab_rails['gitlab_shell_ssh_port'] = 2222
+        puma['worker_processes'] = 0
+        sidekiq['concurrency'] = 5
+        prometheus_monitoring['enable'] = false
+        gitlab_kas['enable'] = false
+        gitlab_rails['env'] = { 'MALLOC_CONF' => 'dirty_decay_ms:1000,muzzy_decay_ms:1000' }
+        gitaly['env'] = { 'MALLOC_CONF' => 'dirty_decay_ms:1000,muzzy_decay_ms:1000', 'GITALY_COMMAND_SPAWN_MAX_PARALLEL' => '2' }
+        registry['enable'] = false
+    ports:
+      - "127.0.0.1:${GITLAB_HTTP_PORT:-8181}:80"
+      - "127.0.0.1:2222:22"
+    volumes:
+      - ${GITLAB_DATA_DIR:?Set an absolute data directory}/config:/etc/gitlab
+      - ${GITLAB_DATA_DIR:?Set an absolute data directory}/logs:/var/log/gitlab
+      - ${GITLAB_DATA_DIR:?Set an absolute data directory}/data:/var/opt/gitlab
+    secrets:
+      - root_password
+    healthcheck:
+      test: [CMD, /opt/gitlab/bin/gitlab-healthcheck, --fail, --max-time, "10"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 10m
+
+secrets:
+  root_password:
+    file: ${GITLAB_ROOT_PASSWORD_FILE:?Set the root password file}

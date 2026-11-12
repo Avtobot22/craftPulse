@@ -1,0 +1,11 @@
+name: craftpulse-gitlab-runner
+
+services:
+  runner:
+    image: gitlab/gitlab-runner:v19.5.0@sha256:f1c76f915d7f70d8b3e25cac58da3d87d3d10106dda82ee780409440e1dc1ccc
+    restart: unless-stopped
+    cpus: 0.25
+    mem_limit: 128m
+    volumes:
+      - ${RUNNER_CONFIG_DIR:?Set an absolute config directory}:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
