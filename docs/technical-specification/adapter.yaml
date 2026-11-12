@@ -356,7 +356,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/FindPublishedResult'}
-              example: {found: true, external_id: '77001', external_url: 'https://gitlab.example.test/demo/orders-service/-/merge_requests/7#note_77001'}
+              example: {found: true, checked_at: null, external_id: '77001', external_url: 'https://gitlab.example.test/demo/orders-service/-/merge_requests/7#note_77001'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/SourceForbidden'}
@@ -721,6 +721,7 @@ components:
       required: [found, external_id, external_url]
       properties:
         found: {type: boolean}
+        checked_at: {type: [string, 'null'], format: date-time}
         external_id: {type: [string, 'null'], maxLength: 255}
         external_url: {type: [string, 'null'], format: uri}
     WebhookInput:
