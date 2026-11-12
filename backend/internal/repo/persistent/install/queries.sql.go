@@ -47,6 +47,31 @@ func (q *Queries) FinishProtocol(ctx context.Context, arg FinishProtocolParams) 
 	return err
 }
 
+const getLatestProtocol = `-- name: GetLatestProtocol :one
+SELECT id, started_at, finished_at, release_sha, outcome FROM install.protocol ORDER BY started_at DESC, id DESC LIMIT 1
+`
+
+type GetLatestProtocolRow struct {
+	ID         uuid.UUID
+	StartedAt  time.Time
+	FinishedAt pgtype.Timestamptz
+	ReleaseSha string
+	Outcome    string
+}
+
+func (q *Queries) GetLatestProtocol(ctx context.Context) (GetLatestProtocolRow, error) {
+	row := q.db.QueryRow(ctx, getLatestProtocol)
+	var i GetLatestProtocolRow
+	err := row.Scan(
+		&i.ID,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ReleaseSha,
+		&i.Outcome,
+	)
+	return i, err
+}
+
 const insertCheckResult = `-- name: InsertCheckResult :exec
 INSERT INTO install.check_result (protocol_id, check_kind, outcome, reason_code, detail)
 VALUES ($1, $2, $3, $4, $5)
@@ -69,4 +94,40 @@ func (q *Queries) InsertCheckResult(ctx context.Context, arg InsertCheckResultPa
 		arg.Detail,
 	)
 	return err
+}
+
+const listCheckResults = `-- name: ListCheckResults :many
+SELECT check_kind, outcome, reason_code, detail FROM install.check_result WHERE protocol_id = $1 ORDER BY check_kind
+`
+
+type ListCheckResultsRow struct {
+	CheckKind  string
+	Outcome    string
+	ReasonCode pgtype.Text
+	Detail     pgtype.Text
+}
+
+func (q *Queries) ListCheckResults(ctx context.Context, protocolID uuid.UUID) ([]ListCheckResultsRow, error) {
+	rows, err := q.db.Query(ctx, listCheckResults, protocolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCheckResultsRow
+	for rows.Next() {
+		var i ListCheckResultsRow
+		if err := rows.Scan(
+			&i.CheckKind,
+			&i.Outcome,
+			&i.ReasonCode,
+			&i.Detail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

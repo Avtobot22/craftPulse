@@ -5045,16 +5045,22 @@ type AttemptPage struct {
 
 // AuditEvent defines model for AuditEvent.
 type AuditEvent struct {
-	ActorId       *openapi_types.UUID `json:"actor_id"`
-	ActorKind     AuditEventActorKind `json:"actor_kind"`
-	CorrelationId openapi_types.UUID  `json:"correlation_id"`
-	Id            openapi_types.UUID  `json:"id"`
-	ObjectId      *openapi_types.UUID `json:"object_id"`
-	ObjectKind    *string             `json:"object_kind"`
-	OccurredAt    time.Time           `json:"occurred_at"`
-	Operation     string              `json:"operation"`
-	Outcome       AuditEventOutcome   `json:"outcome"`
-	ReasonCode    *string             `json:"reason_code"`
+	ActorId   *openapi_types.UUID `json:"actor_id"`
+	ActorKind AuditEventActorKind `json:"actor_kind"`
+
+	// BaseVersion Версия объекта до изменения: структуры, набора ролей, политики (раздел 13.8). `null` - у события нет версии.
+	BaseVersion   *string            `json:"base_version"`
+	CorrelationId openapi_types.UUID `json:"correlation_id"`
+	Id            openapi_types.UUID `json:"id"`
+
+	// NewVersion Версия объекта после изменения.
+	NewVersion *string             `json:"new_version"`
+	ObjectId   *openapi_types.UUID `json:"object_id"`
+	ObjectKind *string             `json:"object_kind"`
+	OccurredAt time.Time           `json:"occurred_at"`
+	Operation  string              `json:"operation"`
+	Outcome    AuditEventOutcome   `json:"outcome"`
+	ReasonCode *string             `json:"reason_code"`
 }
 
 // AuditEventActorKind defines model for AuditEvent.ActorKind.

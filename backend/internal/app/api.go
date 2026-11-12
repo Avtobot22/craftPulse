@@ -10,11 +10,13 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	auditrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit"
 	authrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/auth"
+	installrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/install"
 	orgrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/org"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/access"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/auth"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/install"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/org"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 	"github.com/Avtobot22/craftPulse/backend/pkg/crypto"
@@ -22,12 +24,14 @@ import (
 
 func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvider, c clock.Clock, siteURL string, reg prometheus.Registerer) v1.Deps {
 	tx := persistent.NewTransactor(pool)
+	sessions := authrepo.NewRepo(pool)
 	auditor := audit.New(auditrepo.NewRepo(pool), tx, c)
 	orgs := org.New(org.Deps{
-		Orgs: orgrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Auditor: auditor, Clock: c, NewID: newID,
+		Orgs: orgrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Auditor: auditor,
+		Credentials: auth.NewCredentials(sessions), Clock: c, NewID: newID,
 	})
 	logins := auth.New(auth.Deps{
-		Repo:     authrepo.NewRepo(pool),
+		Repo:     sessions,
 		Tx:       tx,
 		Provider: idp,
 		Keyring:  keyring,
@@ -38,7 +42,10 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 	})
 	decisions := access.New(tx, orgs, auditor, c)
 	return v1.Deps{
-		Handler:    handler.New(handler.Deps{Logins: logins, Access: decisions, Structure: orgs, Registerer: reg}),
+		Handler: handler.New(handler.Deps{
+			Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
+			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg,
+		}),
 		Logins:     logins,
 		Access:     decisions,
 		SiteOrigin: siteURL,

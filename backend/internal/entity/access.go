@@ -26,6 +26,7 @@ const (
 
 // RoleAssignment has at most one of the area IDs; all zero means the whole organization.
 type RoleAssignment struct {
+	ID         ID
 	Role       Role
 	TeamID     ID
 	ProjectID  ID
@@ -40,6 +41,15 @@ const (
 	AreaProject AreaKind = "project"
 	AreaService AreaKind = "service"
 )
+
+// RoleSet is the active roles of a user; Version grows with every assignment and revocation.
+type RoleSet struct {
+	Version int64
+	Roles   []RoleAssignment
+}
+
+// MaxRoles is the limit of one role set in the contract (RoleAssignmentListInput).
+const MaxRoles = 200
 
 // AreaRef is the area a request addresses; the zero value is the organization itself.
 type AreaRef struct {

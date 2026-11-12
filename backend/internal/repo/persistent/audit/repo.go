@@ -58,3 +58,45 @@ func nullID(id entity.ID) uuid.NullUUID {
 func text(s string) pgtype.Text {
 	return pgtype.Text{String: s, Valid: s != ""}
 }
+
+// PageEvents reads one page more than q.Limit, newest first.
+func (r *Repo) PageEvents(ctx context.Context, orgID entity.ID, q entity.AuditQuery) ([]entity.AuditEvent, error) {
+	if q.Limit < 1 || q.Limit >= 1<<30 {
+		return nil, fmt.Errorf("audit: page limit %d is out of range", q.Limit)
+	}
+	arg := PageEventsParams{
+		OrganizationID: uuid.UUID(orgID),
+		ActorID:        nullID(q.ActorID),
+		Outcome:        text(string(q.Outcome)),
+		OccurredAfter:  pgtype.Timestamptz{Time: q.From, Valid: !q.From.IsZero()},
+		OccurredBefore: pgtype.Timestamptz{Time: q.To, Valid: !q.To.IsZero()},
+		RowLimit:       int32(q.Limit + 1), //nolint:gosec // bounded by the check above
+	}
+	if q.After != nil {
+		arg.After, arg.AfterAt, arg.AfterID = true, q.After.OccurredAt, uuid.UUID(q.After.ID)
+	}
+	rows, err := New(postgres.Conn(ctx, r.pool)).PageEvents(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("audit: page events: %w", err)
+	}
+	events := make([]entity.AuditEvent, len(rows))
+	for i := range rows {
+		row := &rows[i]
+		events[i] = entity.AuditEvent{
+			ID:             entity.ID(row.ID),
+			OrganizationID: orgID,
+			OccurredAt:     row.OccurredAt,
+			ActorKind:      entity.ActorKind(row.ActorKind),
+			ActorID:        entity.ID(row.ActorID.UUID),
+			Operation:      row.Operation,
+			ObjectKind:     row.ObjectKind.String,
+			ObjectID:       entity.ID(row.ObjectID.UUID),
+			Outcome:        entity.AuditOutcome(row.Outcome),
+			ReasonCode:     row.ReasonCode.String,
+			BaseVersion:    row.BaseVersion.String,
+			NewVersion:     row.NewVersion.String,
+			CorrelationID:  entity.ID(row.CorrelationID),
+		}
+	}
+	return events, nil
+}

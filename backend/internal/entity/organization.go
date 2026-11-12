@@ -1,6 +1,9 @@
 package entity
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 type OrgStatus string
 
@@ -62,6 +65,34 @@ type User struct {
 	PersonID    ID
 	DisplayName string
 	Status      UserStatus
+	CreatedAt   time.Time
+}
+
+type UserSort int
+
+const (
+	UserByName UserSort = iota + 1
+	UserByCreated
+)
+
+// UserKey is the position of a page: the sort value and the ID of the last user.
+type UserKey struct {
+	Name      string
+	CreatedAt time.Time
+	ID        ID
+}
+
+type UserListRequest struct {
+	Status UserStatus
+	Sort   UserSort
+	Desc   bool
+	Limit  int
+	After  *UserKey
+}
+
+type UserPage struct {
+	Items []User
+	Next  *UserKey
 }
 
 // SignIn is the user of a confirmed login; FirstAdministrator marks the login that assigned the role (FR-064).

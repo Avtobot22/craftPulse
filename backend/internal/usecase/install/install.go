@@ -206,3 +206,15 @@ func fromProbe(kind entity.CheckKind, target string, err error) entity.CheckResu
 	}
 	return entity.CheckResult{Kind: kind, Outcome: entity.CheckFailed, Reason: entity.ReasonUnavailable, Detail: err.Error()}
 }
+
+// LatestProtocol returns the protocol of the last installation check; without one it is entity.ErrNotFound.
+func (u *UseCase) LatestProtocol(ctx context.Context) (entity.Protocol, error) {
+	p, found, err := u.d.Repo.LatestProtocol(ctx)
+	if err != nil {
+		return entity.Protocol{}, err
+	}
+	if !found {
+		return entity.Protocol{}, entity.ErrNotFound
+	}
+	return p, nil
+}

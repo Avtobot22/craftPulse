@@ -16,7 +16,7 @@ UPDATE org.organization SET status = 'active', first_admin_user_id = sqlc.arg(us
 WHERE organization_id = sqlc.arg(organization_id) AND status = 'setup';
 
 -- name: LockUserByIdentity :one
-SELECT id, issuer, subject, person_id, display_name, status
+SELECT id, issuer, subject, person_id, display_name, status, created_at
 FROM org.app_user
 WHERE organization_id = $1 AND issuer = $2 AND subject = $3
 FOR UPDATE;
@@ -30,15 +30,24 @@ ON CONFLICT (organization_id, issuer, subject) DO NOTHING;
 UPDATE org.app_user SET display_name = $3 WHERE organization_id = $1 AND id = $2;
 
 -- name: GetUser :one
-SELECT id, issuer, subject, person_id, display_name, status
+SELECT id, issuer, subject, person_id, display_name, status, created_at
 FROM org.app_user WHERE organization_id = $1 AND id = $2;
+
+-- name: LockUser :one
+SELECT id, issuer, subject, person_id, display_name, status, created_at
+FROM org.app_user WHERE organization_id = $1 AND id = $2
+FOR UPDATE;
+
+-- name: SetUserStatus :exec
+UPDATE org.app_user SET status = sqlc.arg(status), blocked_at = sqlc.narg(blocked_at)
+WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id);
 
 -- name: AssignAdministrator :exec
 INSERT INTO org.role_assignment (organization_id, user_id, role, assigned_by, assigned_at)
 VALUES (sqlc.arg(organization_id), sqlc.arg(user_id), 'administrator', sqlc.arg(user_id), sqlc.arg(at));
 
 -- name: ListActiveRoles :many
-SELECT role, team_id, project_id, service_id, assigned_at
+SELECT id, role, team_id, project_id, service_id, assigned_at
 FROM org.role_assignment
 WHERE organization_id = $1 AND user_id = $2 AND revoked_at IS NULL
 ORDER BY assigned_at, id;
@@ -197,3 +206,55 @@ WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND supe
 INSERT INTO org.team_member (organization_id, team_id, person_id, valid, known_seq)
 VALUES (sqlc.arg(organization_id), sqlc.arg(team_id), sqlc.arg(to_id),
     tstzrange(sqlc.arg(valid_from)::timestamptz, sqlc.narg(valid_to)::timestamptz, '[)'), sqlc.arg(seq));
+
+-- name: RoleSetVersion :one
+SELECT (count(*) + count(revoked_at))::bigint FROM org.role_assignment WHERE organization_id = $1 AND user_id = $2;
+
+-- name: RevokeRole :exec
+UPDATE org.role_assignment SET revoked_at = sqlc.arg(at)::timestamptz, revoked_by = sqlc.arg(revoked_by)::uuid
+WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND revoked_at IS NULL;
+
+-- name: AssignRole :exec
+INSERT INTO org.role_assignment (organization_id, user_id, role, team_id, project_id, service_id, assigned_by, assigned_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+
+-- name: ListTeamIDs :many
+SELECT id FROM org.team WHERE organization_id = $1 AND id = ANY(sqlc.arg(ids)::uuid[]);
+
+-- name: ListProjectIDs :many
+SELECT id FROM org.project WHERE organization_id = $1 AND id = ANY(sqlc.arg(ids)::uuid[]);
+
+-- name: ListServiceIDs :many
+SELECT id FROM org.service WHERE organization_id = $1 AND id = ANY(sqlc.arg(ids)::uuid[]);
+
+-- name: PageUsersByNameAsc :many
+SELECT id, issuer, subject, person_id, display_name, status, created_at FROM org.app_user
+WHERE organization_id = sqlc.arg(organization_id)
+    AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
+    AND (NOT sqlc.arg(after)::bool OR (coalesce(display_name, ''), id) > (sqlc.arg(after_name)::text, sqlc.arg(after_id)::uuid))
+ORDER BY coalesce(display_name, ''), id
+LIMIT sqlc.arg(row_limit);
+
+-- name: PageUsersByNameDesc :many
+SELECT id, issuer, subject, person_id, display_name, status, created_at FROM org.app_user
+WHERE organization_id = sqlc.arg(organization_id)
+    AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
+    AND (NOT sqlc.arg(after)::bool OR (coalesce(display_name, ''), id) < (sqlc.arg(after_name)::text, sqlc.arg(after_id)::uuid))
+ORDER BY coalesce(display_name, '') DESC, id DESC
+LIMIT sqlc.arg(row_limit);
+
+-- name: PageUsersByCreatedAsc :many
+SELECT id, issuer, subject, person_id, display_name, status, created_at FROM org.app_user
+WHERE organization_id = sqlc.arg(organization_id)
+    AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
+    AND (NOT sqlc.arg(after)::bool OR (created_at, id) > (sqlc.arg(after_at)::timestamptz, sqlc.arg(after_id)::uuid))
+ORDER BY created_at, id
+LIMIT sqlc.arg(row_limit);
+
+-- name: PageUsersByCreatedDesc :many
+SELECT id, issuer, subject, person_id, display_name, status, created_at FROM org.app_user
+WHERE organization_id = sqlc.arg(organization_id)
+    AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
+    AND (NOT sqlc.arg(after)::bool OR (created_at, id) < (sqlc.arg(after_at)::timestamptz, sqlc.arg(after_id)::uuid))
+ORDER BY created_at DESC, id DESC
+LIMIT sqlc.arg(row_limit);

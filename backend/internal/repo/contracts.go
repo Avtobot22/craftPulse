@@ -38,6 +38,18 @@ type OrgRepo interface {
 	TeamProjectIDs(ctx context.Context, orgID entity.ID, teamIDs []entity.ID, at time.Time) ([]entity.ID, error)
 	VisibleAreas(ctx context.Context, orgID entity.ID, kind entity.AreaKind, whole bool, ids []entity.ID) ([]entity.Area, error)
 	StructureRepo
+	UserRepo
+}
+
+// UserRepo is the administration of users: roles and blocking (TZ 7.2, 7.7).
+type UserRepo interface {
+	LockUser(ctx context.Context, orgID, userID entity.ID) (entity.User, error)
+	SetUserStatus(ctx context.Context, orgID, userID entity.ID, status entity.UserStatus, blockedAt time.Time) error
+	RoleSetVersion(ctx context.Context, orgID, userID entity.ID) (int64, error)
+	RevokeRole(ctx context.Context, orgID, assignmentID, by entity.ID, at time.Time) error
+	AssignRole(ctx context.Context, orgID, userID entity.ID, ra entity.RoleAssignment, by entity.ID, at time.Time) error
+	ExistingAreas(ctx context.Context, orgID entity.ID, kind entity.AreaKind, ids []entity.ID) ([]entity.ID, error)
+	PageUsers(ctx context.Context, orgID entity.ID, req entity.UserListRequest) ([]entity.User, error)
 }
 
 // StructureRepo is the confirmed structure of the organization (TZ 12.5.1).
@@ -72,6 +84,8 @@ type AuthRepo interface {
 	EndSession(ctx context.Context, orgID, sessionID entity.ID, at time.Time, reason entity.SessionEndReason) (bool, error)
 	LiveSessions(ctx context.Context, orgID, userID entity.ID, at, idleSince time.Time) ([]entity.ID, error)
 	EndSessions(ctx context.Context, orgID entity.ID, ids []entity.ID, at time.Time, reason entity.SessionEndReason) error
+	EndUserSessions(ctx context.Context, orgID, userID entity.ID, at time.Time, reason entity.SessionEndReason) (int64, error)
+	RevokeUserAPIKeys(ctx context.Context, orgID, userID entity.ID, at time.Time) (int64, error)
 }
 
 // IdentityProvider is the OpenID Connect client; errors are *entity.LoginError with the failure class.
@@ -82,6 +96,7 @@ type IdentityProvider interface {
 
 type AuditRepo interface {
 	InsertEvent(ctx context.Context, e entity.AuditEvent) error
+	PageEvents(ctx context.Context, orgID entity.ID, q entity.AuditQuery) ([]entity.AuditEvent, error)
 }
 
 type InstallRepo interface {
@@ -89,6 +104,7 @@ type InstallRepo interface {
 	AddCheckResult(ctx context.Context, protocolID entity.ID, r entity.CheckResult) error
 	FinishProtocol(ctx context.Context, protocolID entity.ID, finishedAt time.Time, outcome entity.ProtocolOutcome) error
 	DatabaseFacts(ctx context.Context) (entity.DatabaseFacts, error)
+	LatestProtocol(ctx context.Context) (entity.Protocol, bool, error)
 }
 
 // SiteProbe and IdentityProviderProbe return *entity.CheckFailure when the component is not usable.

@@ -2,8 +2,10 @@ package auth
 
 import (
 	"context"
+	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo"
 	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
 )
 
@@ -64,4 +66,22 @@ func (u *UseCase) Logout(ctx context.Context, s entity.Subject) error {
 			CorrelationID:  entity.ID(logger.CorrelationID(ctx)),
 		})
 	})
+}
+
+// Credentials ends sessions and disables API keys of a user for the org module, in the caller's
+// transaction (TZ 13.2). It needs only the repository, so org and auth do not depend on each other.
+type Credentials struct {
+	repo repo.AuthRepo
+}
+
+func NewCredentials(r repo.AuthRepo) *Credentials {
+	return &Credentials{repo: r}
+}
+
+func (c *Credentials) EndUserSessions(ctx context.Context, orgID, userID entity.ID, reason entity.SessionEndReason, at time.Time) (int64, error) {
+	return c.repo.EndUserSessions(ctx, orgID, userID, at, reason)
+}
+
+func (c *Credentials) RevokeUserAPIKeys(ctx context.Context, orgID, userID entity.ID, at time.Time) (int64, error) {
+	return c.repo.RevokeUserAPIKeys(ctx, orgID, userID, at)
 }

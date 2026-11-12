@@ -32,6 +32,7 @@ var (
 
 // AuditEvent is one record of audit.event (TZ 13.8); zero IDs and empty strings are stored as NULL.
 type AuditEvent struct {
+	ID             ID
 	OrganizationID ID
 	OccurredAt     time.Time
 	ActorKind      ActorKind
@@ -46,4 +47,24 @@ type AuditEvent struct {
 	NewVersion     string
 	CorrelationID  ID
 	Details        map[string]any
+}
+
+type AuditKey struct {
+	OccurredAt time.Time
+	ID         ID
+}
+
+// AuditQuery reads the journal newest first; From is inclusive and To exclusive.
+type AuditQuery struct {
+	ActorID ID
+	Outcome AuditOutcome
+	From    time.Time
+	To      time.Time
+	Limit   int
+	After   *AuditKey
+}
+
+type AuditPage struct {
+	Items []AuditEvent
+	Next  *AuditKey
 }

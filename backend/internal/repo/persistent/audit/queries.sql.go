@@ -55,3 +55,87 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) error 
 	)
 	return err
 }
+
+const pageEvents = `-- name: PageEvents :many
+SELECT id, occurred_at, actor_kind, actor_id, operation, object_kind, object_id, outcome, reason_code,
+    base_version, new_version, correlation_id
+FROM audit.event
+WHERE organization_id = $1
+    AND ($2::uuid IS NULL OR actor_id = $2)
+    AND ($3::text IS NULL OR outcome = $3)
+    AND ($4::timestamptz IS NULL OR occurred_at >= $4)
+    AND ($5::timestamptz IS NULL OR occurred_at < $5)
+    AND (NOT $6::bool OR (occurred_at, id) < ($7::timestamptz, $8::uuid))
+ORDER BY occurred_at DESC, id DESC
+LIMIT $9
+`
+
+type PageEventsParams struct {
+	OrganizationID uuid.UUID
+	ActorID        uuid.NullUUID
+	Outcome        pgtype.Text
+	OccurredAfter  pgtype.Timestamptz
+	OccurredBefore pgtype.Timestamptz
+	After          bool
+	AfterAt        time.Time
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageEventsRow struct {
+	ID            uuid.UUID
+	OccurredAt    time.Time
+	ActorKind     string
+	ActorID       uuid.NullUUID
+	Operation     string
+	ObjectKind    pgtype.Text
+	ObjectID      uuid.NullUUID
+	Outcome       string
+	ReasonCode    pgtype.Text
+	BaseVersion   pgtype.Text
+	NewVersion    pgtype.Text
+	CorrelationID uuid.UUID
+}
+
+func (q *Queries) PageEvents(ctx context.Context, arg PageEventsParams) ([]PageEventsRow, error) {
+	rows, err := q.db.Query(ctx, pageEvents,
+		arg.OrganizationID,
+		arg.ActorID,
+		arg.Outcome,
+		arg.OccurredAfter,
+		arg.OccurredBefore,
+		arg.After,
+		arg.AfterAt,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageEventsRow
+	for rows.Next() {
+		var i PageEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.ActorKind,
+			&i.ActorID,
+			&i.Operation,
+			&i.ObjectKind,
+			&i.ObjectID,
+			&i.Outcome,
+			&i.ReasonCode,
+			&i.BaseVersion,
+			&i.NewVersion,
+			&i.CorrelationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

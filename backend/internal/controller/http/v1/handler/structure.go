@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -132,19 +133,29 @@ func (h *organization) list(ctx context.Context, kind entity.AreaKind, f entity.
 // cursorData is opaque to the client; it binds the position to the list and the order it came from.
 type cursorData struct {
 	Kind string    `json:"k"`
+	Sort string    `json:"s,omitempty"`
 	Desc bool      `json:"d"`
-	Name string    `json:"n"`
+	Name string    `json:"n,omitempty"`
+	At   time.Time `json:"t,omitzero"`
 	ID   uuid.UUID `json:"i"`
 }
 
-func pageRequest(kind entity.AreaKind, limit *int, cursor, sort *string) (entity.PageRequest, error) {
-	p := entity.PageRequest{Limit: _defaultLimit}
-	if limit != nil {
-		if *limit < 1 || *limit > _maxLimit {
-			return p, errMalformedPage
-		}
-		p.Limit = *limit
+func pageLimit(limit *int) (int, error) {
+	if limit == nil {
+		return _defaultLimit, nil
 	}
+	if *limit < 1 || *limit > _maxLimit {
+		return 0, errMalformedPage
+	}
+	return *limit, nil
+}
+
+func pageRequest(kind entity.AreaKind, limit *int, cursor, sort *string) (entity.PageRequest, error) {
+	n, err := pageLimit(limit)
+	if err != nil {
+		return entity.PageRequest{}, err
+	}
+	p := entity.PageRequest{Limit: n}
 	if sort != nil {
 		switch *sort {
 		case "name":

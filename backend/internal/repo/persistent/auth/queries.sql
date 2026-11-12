@@ -54,3 +54,11 @@ ORDER BY created_at, id;
 -- name: EndSessions :exec
 UPDATE auth.session SET ended_at = sqlc.arg(at)::timestamptz, end_reason = sqlc.arg(reason)::text
 WHERE organization_id = sqlc.arg(organization_id) AND id = ANY(sqlc.arg(ids)::uuid[]) AND ended_at IS NULL;
+
+-- name: EndUserSessions :execrows
+UPDATE auth.session SET ended_at = sqlc.arg(at)::timestamptz, end_reason = sqlc.arg(reason)::text
+WHERE organization_id = sqlc.arg(organization_id) AND user_id = sqlc.arg(user_id) AND ended_at IS NULL;
+
+-- name: RevokeUserAPIKeys :execrows
+UPDATE auth.api_key SET revoked_at = sqlc.arg(at)::timestamptz
+WHERE organization_id = sqlc.arg(organization_id) AND owner_user_id = sqlc.arg(user_id) AND revoked_at IS NULL;

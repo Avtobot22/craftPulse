@@ -213,3 +213,24 @@ func (r *Repo) EndSessions(ctx context.Context, orgID entity.ID, ids []entity.ID
 	}
 	return nil
 }
+
+// EndUserSessions ends every session of the user that is still open and reports how many.
+func (r *Repo) EndUserSessions(ctx context.Context, orgID, userID entity.ID, at time.Time, reason entity.SessionEndReason) (int64, error) {
+	n, err := New(postgres.Conn(ctx, r.pool)).EndUserSessions(ctx, EndUserSessionsParams{
+		At: at, Reason: string(reason), OrganizationID: uuid.UUID(orgID), UserID: uuid.UUID(userID),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("auth: end user sessions: %w", err)
+	}
+	return n, nil
+}
+
+func (r *Repo) RevokeUserAPIKeys(ctx context.Context, orgID, userID entity.ID, at time.Time) (int64, error) {
+	n, err := New(postgres.Conn(ctx, r.pool)).RevokeUserAPIKeys(ctx, RevokeUserAPIKeysParams{
+		At: at, OrganizationID: uuid.UUID(orgID), UserID: uuid.UUID(userID),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("auth: revoke API keys: %w", err)
+	}
+	return n, nil
+}
