@@ -55,3 +55,12 @@ sql:
         out: internal/repo/persistent/install
         sql_package: pgx/v5
         omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
+    queries: internal/repo/persistent/connect/queries.sql
+    gen:
+      go:
+        package: connect
+        out: internal/repo/persistent/connect
+        sql_package: pgx/v5
+        omit_unused_structs: true

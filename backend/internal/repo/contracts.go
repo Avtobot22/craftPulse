@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -126,4 +127,29 @@ type UploadTokenRepo interface {
 	UploadTokenByHash(context.Context, []byte) (entity.UploadToken, error)
 	RevokeUploadToken(context.Context, entity.ID, entity.ID, time.Time) (bool, error)
 	PageUploadTokens(context.Context, entity.ID, entity.ID, int, *entity.AuditKey) ([]entity.UploadToken, error)
+}
+
+// ConnectRepo is the connect schema under row-level security: every call runs in an organization transaction.
+type ConnectRepo interface {
+	EnsureInstance(ctx context.Context, orgID entity.ID, provider entity.Provider, key string) (entity.SourceInstance, error)
+	Instance(ctx context.Context, orgID, id entity.ID) (entity.SourceInstance, error)
+	CreateConnection(ctx context.Context, c entity.Connection) error
+	Connection(ctx context.Context, orgID, id entity.ID) (entity.Connection, error)
+	PauseConnection(ctx context.Context, orgID, id entity.ID, until time.Time) error
+	MarkAccessLost(ctx context.Context, orgID, id entity.ID, at time.Time) (bool, error)
+	AddScope(ctx context.Context, orgID, connectionID, instanceID entity.ID, s entity.NewScope, at time.Time) (entity.ID, error)
+	Scopes(ctx context.Context, orgID, connectionID entity.ID) ([]entity.ConnectionScope, error)
+	SetScopeArea(ctx context.Context, orgID, scopeID, areaID entity.ID) (bool, error)
+	Capabilities(ctx context.Context, orgID, connectionID entity.ID) ([]entity.Capability, error)
+}
+
+// AdapterClient is the transport of adapter.yaml for connect; every error is *entity.AdapterError.
+type AdapterClient interface {
+	PutCredentials(ctx context.Context, t entity.AdapterTarget, in entity.CredentialsInput) error
+	DeleteCredentials(ctx context.Context, t entity.AdapterTarget, f entity.CredentialsFilter) error
+	Probe(ctx context.Context, t entity.AdapterTarget, in entity.ProbeInput) (entity.ProbeResult, error)
+	// Fetch returns the package stream; closing it ends the call.
+	Fetch(ctx context.Context, t entity.AdapterTarget, in entity.FetchInput) (io.ReadCloser, error)
+	Manifest(ctx context.Context, t entity.AdapterTarget, in entity.ManifestInput) (entity.ManifestPage, error)
+	CheckAccess(ctx context.Context, t entity.AdapterTarget, in entity.SourceAccessInput) (entity.SourceAccessResult, error)
 }
