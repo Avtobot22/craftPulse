@@ -258,3 +258,26 @@ WHERE organization_id = sqlc.arg(organization_id)
     AND (NOT sqlc.arg(after)::bool OR (created_at, id) < (sqlc.arg(after_at)::timestamptz, sqlc.arg(after_id)::uuid))
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg(row_limit);
+
+-- name: DescribeSourceAccounts :exec
+INSERT INTO org.source_account (organization_id, instance_id, native_account_id, login, display_name, email, proposed_kind, first_seen_at)
+SELECT sqlc.arg(organization_id)::uuid, sqlc.arg(instance_id)::uuid, (sqlc.arg(native_ids)::text[])[i],
+    NULLIF((sqlc.arg(logins)::text[])[i], ''), NULLIF((sqlc.arg(display_names)::text[])[i], ''),
+    NULLIF((sqlc.arg(emails)::text[])[i], ''), (sqlc.arg(kinds)::text[])[i], sqlc.arg(seen_at)::timestamptz
+FROM generate_subscripts(sqlc.arg(native_ids)::text[], 1) AS i
+ORDER BY 3
+ON CONFLICT (organization_id, instance_id, native_account_id) DO UPDATE
+SET login = EXCLUDED.login, display_name = EXCLUDED.display_name, email = EXCLUDED.email, proposed_kind = EXCLUDED.proposed_kind
+WHERE org.source_account.anonymized_at IS NULL;
+
+-- name: ReferSourceAccounts :exec
+INSERT INTO org.source_account (organization_id, instance_id, native_account_id, proposed_kind, first_seen_at)
+SELECT sqlc.arg(organization_id)::uuid, sqlc.arg(instance_id)::uuid, t.native_id, 'unknown', sqlc.arg(seen_at)::timestamptz
+FROM unnest(sqlc.arg(native_ids)::text[]) AS t (native_id)
+ORDER BY t.native_id
+ON CONFLICT (organization_id, instance_id, native_account_id) DO NOTHING;
+
+-- name: SourceAccountIDs :many
+SELECT id, native_account_id FROM org.source_account
+WHERE organization_id = sqlc.arg(organization_id) AND instance_id = sqlc.arg(instance_id)
+    AND native_account_id = ANY (sqlc.arg(native_ids)::text[]);

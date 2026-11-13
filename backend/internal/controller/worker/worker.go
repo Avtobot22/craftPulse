@@ -21,6 +21,7 @@ type Deps struct {
 	Probes     usecase.ProbeRunner
 	Packages   usecase.PackageProcessor
 	Collection usecase.Collector
+	Normalizer usecase.Normalizer
 }
 
 // Register adds the handlers of the job kinds; the count matters: River refuses to fetch jobs without a
@@ -30,7 +31,17 @@ func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &packageWorker{packages: d.Packages})
 	river.AddWorker(w, &pageWorker{collector: d.Collection})
 	river.AddWorker(w, &historyWorker{collector: d.Collection})
-	return 4
+	river.AddWorker(w, &normalizeWorker{normalizer: d.Normalizer})
+	return 5
+}
+
+type normalizeWorker struct {
+	river.WorkerDefaults[entity.NormalizeBatchJob]
+	normalizer usecase.Normalizer
+}
+
+func (w *normalizeWorker) Work(ctx context.Context, job *river.Job[entity.NormalizeBatchJob]) error {
+	return w.normalizer.RunBatch(ctx, job.Args, completeIn(job))
 }
 
 type pageWorker struct {

@@ -116,8 +116,9 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	_, rights := newOrgAccess(pool, clock.System{})
-	packages, err := newIngest(pool, newObjectStore(cfg.ObjectStore), connections, rights, clock.System{}, reg)
+	orgs, rights := newOrgAccess(pool, clock.System{})
+	store := newObjectStore(cfg.ObjectStore)
+	packages, err := newIngest(pool, store, connections, rights, clock.System{}, reg)
 	if err != nil {
 		return err
 	}
@@ -125,8 +126,12 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
+	normalizer, err := newNormalize(pool, store, packages, orgs, clock.System{})
+	if err != nil {
+		return err
+	}
 	workers := river.NewWorkers()
-	kinds := workerctrl.Register(workers, workerctrl.Deps{Probes: connections, Packages: packages, Collection: collection})
+	kinds := workerctrl.Register(workers, workerctrl.Deps{Probes: connections, Packages: packages, Collection: collection, Normalizer: normalizer})
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Int("job_kinds", kinds).Msg("worker started")
 	g, gctx := errgroup.WithContext(ctx)

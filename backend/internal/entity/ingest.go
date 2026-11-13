@@ -97,6 +97,8 @@ type PreparedPackage struct {
 	Records []IngestRecord
 	// Duplicate is set when a stored package with the same hash was found before the transaction.
 	Duplicate bool
+	// ObservedVia is how sync read the page; the channel decides it when empty.
+	ObservedVia ObservedVia
 }
 
 type ReceiptFilter struct {

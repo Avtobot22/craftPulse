@@ -194,6 +194,43 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 	return err
 }
 
+const describeSourceAccounts = `-- name: DescribeSourceAccounts :exec
+INSERT INTO org.source_account (organization_id, instance_id, native_account_id, login, display_name, email, proposed_kind, first_seen_at)
+SELECT $1::uuid, $2::uuid, ($3::text[])[i],
+    NULLIF(($4::text[])[i], ''), NULLIF(($5::text[])[i], ''),
+    NULLIF(($6::text[])[i], ''), ($7::text[])[i], $8::timestamptz
+FROM generate_subscripts($3::text[], 1) AS i
+ORDER BY 3
+ON CONFLICT (organization_id, instance_id, native_account_id) DO UPDATE
+SET login = EXCLUDED.login, display_name = EXCLUDED.display_name, email = EXCLUDED.email, proposed_kind = EXCLUDED.proposed_kind
+WHERE org.source_account.anonymized_at IS NULL
+`
+
+type DescribeSourceAccountsParams struct {
+	OrganizationID uuid.UUID
+	InstanceID     uuid.UUID
+	NativeIds      []string
+	Logins         []string
+	DisplayNames   []string
+	Emails         []string
+	Kinds          []string
+	SeenAt         time.Time
+}
+
+func (q *Queries) DescribeSourceAccounts(ctx context.Context, arg DescribeSourceAccountsParams) error {
+	_, err := q.db.Exec(ctx, describeSourceAccounts,
+		arg.OrganizationID,
+		arg.InstanceID,
+		arg.NativeIds,
+		arg.Logins,
+		arg.DisplayNames,
+		arg.Emails,
+		arg.Kinds,
+		arg.SeenAt,
+	)
+	return err
+}
+
 const getOrganization = `-- name: GetOrganization :one
 SELECT organization_id, name, status, first_admin_issuer, first_admin_subject
 FROM org.organization WHERE organization_id = $1
@@ -1551,6 +1588,31 @@ func (q *Queries) PageUsersByNameDesc(ctx context.Context, arg PageUsersByNameDe
 	return items, nil
 }
 
+const referSourceAccounts = `-- name: ReferSourceAccounts :exec
+INSERT INTO org.source_account (organization_id, instance_id, native_account_id, proposed_kind, first_seen_at)
+SELECT $1::uuid, $2::uuid, t.native_id, 'unknown', $3::timestamptz
+FROM unnest($4::text[]) AS t (native_id)
+ORDER BY t.native_id
+ON CONFLICT (organization_id, instance_id, native_account_id) DO NOTHING
+`
+
+type ReferSourceAccountsParams struct {
+	OrganizationID uuid.UUID
+	InstanceID     uuid.UUID
+	SeenAt         time.Time
+	NativeIds      []string
+}
+
+func (q *Queries) ReferSourceAccounts(ctx context.Context, arg ReferSourceAccountsParams) error {
+	_, err := q.db.Exec(ctx, referSourceAccounts,
+		arg.OrganizationID,
+		arg.InstanceID,
+		arg.SeenAt,
+		arg.NativeIds,
+	)
+	return err
+}
+
 const revokeRole = `-- name: RevokeRole :exec
 UPDATE org.role_assignment SET revoked_at = $1::timestamptz, revoked_by = $2::uuid
 WHERE organization_id = $3 AND id = $4 AND revoked_at IS NULL
@@ -1638,6 +1700,43 @@ func (q *Queries) SetUserStatus(ctx context.Context, arg SetUserStatusParams) er
 		arg.ID,
 	)
 	return err
+}
+
+const sourceAccountIDs = `-- name: SourceAccountIDs :many
+SELECT id, native_account_id FROM org.source_account
+WHERE organization_id = $1 AND instance_id = $2
+    AND native_account_id = ANY ($3::text[])
+`
+
+type SourceAccountIDsParams struct {
+	OrganizationID uuid.UUID
+	InstanceID     uuid.UUID
+	NativeIds      []string
+}
+
+type SourceAccountIDsRow struct {
+	ID              uuid.UUID
+	NativeAccountID string
+}
+
+func (q *Queries) SourceAccountIDs(ctx context.Context, arg SourceAccountIDsParams) ([]SourceAccountIDsRow, error) {
+	rows, err := q.db.Query(ctx, sourceAccountIDs, arg.OrganizationID, arg.InstanceID, arg.NativeIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SourceAccountIDsRow
+	for rows.Next() {
+		var i SourceAccountIDsRow
+		if err := rows.Scan(&i.ID, &i.NativeAccountID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const supersedeTeamMember = `-- name: SupersedeTeamMember :exec
