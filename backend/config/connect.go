@@ -26,6 +26,9 @@ type Adapters struct {
 	ClientCAFile          string            `env:"CLIENT_ADAPTER_CA_FILE"`
 	InstallationNetworks  []netip.Prefix    `env:"INSTALLATION_NETWORKS"`
 	ClientPrivateNetworks []netip.Prefix    `env:"CLIENT_ADAPTER_PRIVATE_NETWORKS"`
+	// SourcePrivateNetworks are the private networks of sources an in-contour installation allows; the
+	// address of a source is checked against them when it is saved.
+	SourcePrivateNetworks []netip.Prefix `env:"SOURCE_PRIVATE_NETWORKS"`
 	// ServiceKeys are read from ServiceKeysDir by provider.
 	ServiceKeys map[string]Secret `env:"-"`
 }
@@ -42,8 +45,8 @@ func (a Adapters) Secrets() []string {
 func LoadAdapters(environ map[string]string) (Adapters, error) {
 	var a Adapters
 	errs := []error{env.ParseWithOptions(&a, env.Options{Environment: environ})}
-	if len(a.ClientPrivateNetworks) > 0 && len(a.InstallationNetworks) == 0 {
-		errs = append(errs, errors.New("INSTALLATION_NETWORKS is required when CLIENT_ADAPTER_PRIVATE_NETWORKS is set"))
+	if (len(a.ClientPrivateNetworks) > 0 || len(a.SourcePrivateNetworks) > 0) && len(a.InstallationNetworks) == 0 {
+		errs = append(errs, errors.New("INSTALLATION_NETWORKS is required when private networks are allowed"))
 	}
 	if len(a.Builtin) > 0 {
 		if a.InternalCAFile == "" {

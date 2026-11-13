@@ -60,3 +60,21 @@ type UploadTokens interface {
 	AuthenticateUpload(context.Context, string) (entity.Subject, error)
 	RejectExposedUpload(context.Context, string) error
 }
+
+// Connections is the connect module for administrators (UC-04, UI-09, UI-10, UI-17).
+type Connections interface {
+	ListAdapters() []entity.AdapterInfo
+	List(ctx context.Context, s entity.Subject, f entity.ConnectionFilter) (entity.ConnectionPage, error)
+	Create(ctx context.Context, s entity.Subject, in entity.ConnectionInput) (entity.ConnectionState, error)
+	State(ctx context.Context, orgID, connectionID entity.ID) (entity.ConnectionState, error)
+	Update(ctx context.Context, s entity.Subject, connectionID entity.ID, baseVersion int, p entity.ConnectionPatch) (entity.ConnectionState, error)
+	Delete(ctx context.Context, s entity.Subject, connectionID entity.ID) error
+	StartProbe(ctx context.Context, s entity.Subject, connectionID entity.ID) (entity.Probe, error)
+	GetProbe(ctx context.Context, s entity.Subject, connectionID, probeID entity.ID) (entity.Probe, error)
+	Activate(ctx context.Context, s entity.Subject, connectionID entity.ID, baseVersion int, probeID entity.ID) (entity.ConnectionState, error)
+}
+
+// ProbeRunner runs the job of a probe; *entity.RetryLaterError asks to run it again later.
+type ProbeRunner interface {
+	RunProbe(ctx context.Context, orgID, connectionID, probeID entity.ID) error
+}

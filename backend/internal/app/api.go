@@ -13,6 +13,7 @@ import (
 	installrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/install"
 	orgrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/org"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/access"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/auth"
@@ -22,7 +23,9 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/crypto"
 )
 
-func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvider, c clock.Clock, siteURL string, reg prometheus.Registerer) v1.Deps {
+func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvider, c clock.Clock, siteURL string, reg prometheus.Registerer,
+	connections usecase.Connections,
+) v1.Deps {
 	tx := persistent.NewTransactor(pool)
 	sessions := authrepo.NewRepo(pool)
 	auditor := audit.New(auditrepo.NewRepo(pool), tx, c)
@@ -45,7 +48,7 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 	return v1.Deps{
 		Handler: handler.New(handler.Deps{
 			UploadTokens: logins, Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
-			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg,
+			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg, Connections: connections,
 		}),
 		UploadTokens: logins,
 		Logins:       logins,
