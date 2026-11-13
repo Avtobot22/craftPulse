@@ -38,7 +38,7 @@ type fakeSource struct {
 
 func (f *fakeSource) Probe(ctx context.Context, call adaptersdk.Call, in adaptersdk.ProbeInput) (adaptersdk.ProbeResult, error) {
 	if f.probe == nil {
-		return adaptersdk.ProbeResult{Provider: adaptersdk.ProbeResultProviderJiraDc, InstanceKey: "jira.example.test"}, nil
+		return adaptersdk.ProbeResult{Provider: adaptersdk.ProbeResultProviderJiraCloud, InstanceKey: "jira.example.test"}, nil
 	}
 	return f.probe(ctx, call, in)
 }
@@ -139,7 +139,7 @@ func TestHandler_ServiceKey(t *testing.T) {
 	for name, auth := range map[string]string{
 		"missing": "", "wrong": "Bearer not-the-key", "basic scheme": "Basic " + _serviceKey, "prefix of key": "Bearer service-key",
 	} {
-		resp, body := h.call(http.MethodPost, "/probe", map[string]any{"base_url": "https://jira.example.test", "scopes": []any{}},
+		resp, body := h.call(http.MethodPost, "/probe", map[string]any{"base_url": "https://example.atlassian.net", "scopes": []any{}},
 			func(r *http.Request) { r.Header.Set("Authorization", auth) })
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, name)
 		e := adapterError(t, body)
@@ -147,7 +147,7 @@ func TestHandler_ServiceKey(t *testing.T) {
 		assert.Equal(t, "corr-test-1", e.CorrelationId, name)
 	}
 	for name, key := range map[string]string{"current": _serviceKey, "previous during rotation": _previousKey} {
-		resp, body := h.call(http.MethodPost, "/probe", map[string]any{"base_url": "https://jira.example.test", "scopes": []any{}},
+		resp, body := h.call(http.MethodPost, "/probe", map[string]any{"base_url": "https://example.atlassian.net", "scopes": []any{}},
 			func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+key) })
 		assert.Equal(t, http.StatusOK, resp.StatusCode, name+": "+string(body))
 	}
@@ -156,7 +156,7 @@ func TestHandler_ServiceKey(t *testing.T) {
 func TestHandler_RefusesUnsupportedContractVersion(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, adaptersdk.NewStore(nil, nil), &fakeSource{})
-	resp, body := h.call(http.MethodPost, "/probe", map[string]any{"base_url": "https://jira.example.test", "scopes": []any{}},
+	resp, body := h.call(http.MethodPost, "/probe", map[string]any{"base_url": "https://example.atlassian.net", "scopes": []any{}},
 		func(r *http.Request) { r.Header.Set("X-Craftpulse-Contract-Version", "2") })
 	assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
 	assert.Equal(t, adaptersdk.AdapterErrorCodeUnsupportedContractVersion, adapterError(t, body).Code)
@@ -235,11 +235,11 @@ func TestPutCredentials_KeepsPreviousUntilProbeSucceeds(t *testing.T) {
 		if fail {
 			return adaptersdk.ProbeResult{}, adaptersdk.NewError(adaptersdk.AdapterErrorCodeAuth, "source returned 401")
 		}
-		return adaptersdk.ProbeResult{Provider: adaptersdk.ProbeResultProviderJiraDc, InstanceKey: "jira.example.test"}, nil
+		return adaptersdk.ProbeResult{Provider: adaptersdk.ProbeResultProviderJiraCloud, InstanceKey: "jira.example.test"}, nil
 	}}
 	h := newHarness(t, store, src)
 	probe := func() int {
-		resp, _ := h.call(http.MethodPost, "/probe", map[string]any{"base_url": "https://jira.example.test", "scopes": []any{}})
+		resp, _ := h.call(http.MethodPost, "/probe", map[string]any{"base_url": "https://example.atlassian.net", "scopes": []any{}})
 		return resp.StatusCode
 	}
 
@@ -258,7 +258,7 @@ func TestPutCredentials_KeepsPreviousUntilProbeSucceeds(t *testing.T) {
 		resp, _ := h.call(http.MethodDelete, "/credentials?purpose=collect", nil)
 		assert.Equal(t, http.StatusNoContent, resp.StatusCode, "a repeated delete answers the same")
 	}
-	resp, body := h.call(http.MethodPost, "/probe", map[string]any{"base_url": "https://jira.example.test", "scopes": []any{}})
+	resp, body := h.call(http.MethodPost, "/probe", map[string]any{"base_url": "https://example.atlassian.net", "scopes": []any{}})
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	assert.Equal(t, adaptersdk.AdapterErrorCodeAuth, adapterError(t, body).Code, "deleted credentials are not set")
 }

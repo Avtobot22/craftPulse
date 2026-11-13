@@ -122,7 +122,7 @@ func TestGenerateTasks_EveryTaskVariantHasTasks(t *testing.T) {
 		marked[v.VariantID] = v.ObjectIDs
 	}
 	for _, v := range m.Variants {
-		if !slices.Contains(v.Sources, "jira_dc") && !slices.Contains(v.Sources, "universal") {
+		if !slices.Contains(v.Sources, "jira_cloud") && !slices.Contains(v.Sources, "universal") {
 			continue
 		}
 		if len(marked[v.ID]) == 0 {
@@ -139,7 +139,7 @@ func TestGenerateTasks_FlowVariants(t *testing.T) {
 	m, file := tasks(t, 21)
 	asOf, _ := time.Parse(time.RFC3339, m.AsOf)
 	from, _ := time.Parse(time.RFC3339, m.Period.From)
-	const jira, imp = "jira-dc-1", "universal-1"
+	const jira, imp = "jira-cloud-1", "universal-1"
 
 	if task := byKey(t, file, jira, "PA-1"); task.Events[0].Initial.Status != dataset.StatusInProgress {
 		t.Error("created-active: the task is created in work")

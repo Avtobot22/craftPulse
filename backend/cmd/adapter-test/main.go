@@ -1,4 +1,4 @@
-// Command adapter-test serves recorded Jira DC answers with faults from TEST_ADAPTER_SCENARIO_FILE. It is
+// Command adapter-test serves recorded Jira Cloud answers with faults from TEST_ADAPTER_SCENARIO_FILE. It is
 // for tests and the local stand only and is not part of a release image.
 package main
 

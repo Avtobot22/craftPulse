@@ -117,7 +117,7 @@ type slowSource struct {
 func (s *slowSource) Probe(context.Context, adaptersdk.Call, adaptersdk.ProbeInput) (adaptersdk.ProbeResult, error) {
 	close(s.started)
 	<-s.release
-	return adaptersdk.ProbeResult{Provider: adaptersdk.ProbeResultProviderJiraDc, InstanceKey: "jira.example.test"}, nil
+	return adaptersdk.ProbeResult{Provider: adaptersdk.ProbeResultProviderJiraCloud, InstanceKey: "jira.example.test"}, nil
 }
 
 func writeCertificate(t *testing.T) (certFile, keyFile string, roots *x509.CertPool) {
@@ -195,7 +195,7 @@ func TestServeAdapter_FinishesCallsInFlightOnShutdown(t *testing.T) {
 	response := make(chan int, 1)
 	go func() {
 		req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://"+addr+"/v1/connections/"+uuid.NewString()+"/probe",
-			strings.NewReader(`{"base_url":"https://jira.example.test","scopes":[]}`))
+			strings.NewReader(`{"base_url":"https://example.atlassian.net","scopes":[]}`))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+_adapterKey)
 		req.Header.Set("X-Craftpulse-Organization", uuid.NewString())

@@ -71,7 +71,7 @@ func GenerateSettings(tasks *TaskFile) (*Settings, error) {
 		Mapping: MappingSettings{VersionNo: 1, ConfirmedAt: "2026-01-05T09:00:00Z", ConfirmedBy: owner},
 		Reopen:  ReopenWindow{MetricID: "T23", DefinitionVersion: "1", WindowDays: 30},
 	}
-	for _, instance := range []string{"jira-dc-1", "universal-1"} {
+	for _, instance := range []string{"jira-cloud-1", "universal-1"} {
 		s.Mapping.Rules = append(s.Mapping.Rules, mappingRules(instance)...)
 	}
 	v1, v2 := "2026-02-01T09:00:00Z", "2026-07-01T09:00:00Z"
@@ -85,7 +85,7 @@ func GenerateSettings(tasks *TaskFile) (*Settings, error) {
 	s.Targets = append(s.Targets, TargetVersion{TeamID: "team-1", TaskType: "Story", SizeLabel: "S", VersionNo: 2,
 		DurationSeconds: 4 * _day, Basis: "manual", ConfirmedAt: v2, ConfirmedBy: manager})
 	for _, key := range _previewTasks {
-		s.PreviewTaskIDs = append(s.PreviewTaskIDs, org+"/jira-dc-1/"+key)
+		s.PreviewTaskIDs = append(s.PreviewTaskIDs, org+"/jira-cloud-1/"+key)
 	}
 	if err := ValidateSettings(s, tasks); err != nil {
 		return nil, err

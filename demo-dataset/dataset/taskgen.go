@@ -463,8 +463,8 @@ func (g *taskGen) importProject(p TaskProject) []Task {
 		tasks = append(tasks, task)
 	}
 
-	// The import project uses the key of a Jira DC task: two identities, no automatic link (V-17).
-	h := g.newHistory(p, "PA-7", "Imported task with the key of a Jira DC task")
+	// The import project uses the key of a Jira Cloud task: two identities, no automatic link (V-17).
+	h := g.newHistory(p, "PA-7", "Imported task with the key of a Jira Cloud task")
 	h.create(day(5, 6), TaskFields{Status: StatusBacklog, Type: "Story", Size: "S", Team: "Platform"})
 	h.move(day(5, 7), StatusInProgress)
 	h.finish(day(5, 15), StatusDone, ResolutionDone)

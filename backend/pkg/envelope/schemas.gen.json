@@ -140,12 +140,12 @@
                   "string"
                 ],
                 "enum": [
-                  "jira_dc",
+                  "jira_cloud",
+                  "confluence_cloud",
                   "gitlab",
                   "github",
                   "jenkins",
                   "sonarqube",
-                  "confluence_dc",
                   "git",
                   "universal",
                   "client"

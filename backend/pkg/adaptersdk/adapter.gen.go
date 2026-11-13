@@ -440,14 +440,14 @@ func (e ProbeResultAccessMode) Valid() bool {
 
 // Defines values for ProbeResultProvider.
 const (
-	ProbeResultProviderClient       ProbeResultProvider = "client"
-	ProbeResultProviderConfluenceDc ProbeResultProvider = "confluence_dc"
-	ProbeResultProviderGit          ProbeResultProvider = "git"
-	ProbeResultProviderGithub       ProbeResultProvider = "github"
-	ProbeResultProviderGitlab       ProbeResultProvider = "gitlab"
-	ProbeResultProviderJenkins      ProbeResultProvider = "jenkins"
-	ProbeResultProviderJiraDc       ProbeResultProvider = "jira_dc"
-	ProbeResultProviderSonarqube    ProbeResultProvider = "sonarqube"
+	ProbeResultProviderClient          ProbeResultProvider = "client"
+	ProbeResultProviderConfluenceCloud ProbeResultProvider = "confluence_cloud"
+	ProbeResultProviderGit             ProbeResultProvider = "git"
+	ProbeResultProviderGithub          ProbeResultProvider = "github"
+	ProbeResultProviderGitlab          ProbeResultProvider = "gitlab"
+	ProbeResultProviderJenkins         ProbeResultProvider = "jenkins"
+	ProbeResultProviderJiraCloud       ProbeResultProvider = "jira_cloud"
+	ProbeResultProviderSonarqube       ProbeResultProvider = "sonarqube"
 )
 
 // Valid indicates whether the value is a known member of the ProbeResultProvider enum.
@@ -455,7 +455,7 @@ func (e ProbeResultProvider) Valid() bool {
 	switch e {
 	case ProbeResultProviderClient:
 		return true
-	case ProbeResultProviderConfluenceDc:
+	case ProbeResultProviderConfluenceCloud:
 		return true
 	case ProbeResultProviderGit:
 		return true
@@ -465,7 +465,7 @@ func (e ProbeResultProvider) Valid() bool {
 		return true
 	case ProbeResultProviderJenkins:
 		return true
-	case ProbeResultProviderJiraDc:
+	case ProbeResultProviderJiraCloud:
 		return true
 	case ProbeResultProviderSonarqube:
 		return true

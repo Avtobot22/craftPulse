@@ -130,9 +130,9 @@ func taskProjects() []TaskProject {
 		}
 	}
 	return []TaskProject{
-		project("jira-project-a", "org-1", "jira-dc-1", "PA", "Demo project A", false),
-		project("jira-project-b", "org-1", "jira-dc-1", "PB", "Demo project B", false),
+		project("jira-project-a", "org-1", "jira-cloud-1", "PA", "Demo project A", false),
+		project("jira-project-b", "org-1", "jira-cloud-1", "PB", "Demo project B", false),
 		project("import-project", "org-1", "universal-1", "IMP", "Demo import project", false),
-		project("private-project", "org-2", "jira-dc-1", "SEC", "Other organization project", true),
+		project("private-project", "org-2", "jira-cloud-1", "SEC", "Other organization project", true),
 	}
 }

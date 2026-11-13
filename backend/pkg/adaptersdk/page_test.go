@@ -28,7 +28,7 @@ const _adapterMemoryLimit = 48 << 20
 func taskManifest() *envelope.Manifest {
 	return &envelope.Manifest{
 		SchemaId: envelope.ManifestSchemaIdTasks, SchemaVersion: "1",
-		Source:       envelope.Source{Provider: envelope.SourceProviderJiraDc, InstanceKey: "jira.example.test"},
+		Source:       envelope.Source{Provider: envelope.SourceProviderJiraCloud, InstanceKey: "jira.example.test"},
 		Area:         envelope.AreaRef{Kind: envelope.AreaRefKindTrackerProject, NativeId: "10000"},
 		Completeness: envelope.ManifestCompletenessComplete,
 		Selection:    envelope.Selection{End: true, Truncated: []envelope.TruncatedHistory{}},

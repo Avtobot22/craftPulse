@@ -10,10 +10,9 @@
 
 | Сервис | Этап и состояние | Что получаем | Метрики | Обязательные ограничения |
 |---|---|---|---|---|
-| Jira Server/Data Center | M0, новый продуктовый адаптер; скрипт исследования не адаптер | Issues, status/resolution dictionaries, paginated history по проверенной версии, field schema, links, project/board/sprint API при доступности | Почти все T при настроенной семантике; release/DoD только с внешними данными | Не путать Server/DC с Cloud API. История из `expand=changelog` проверяется на truncation. Права и customfield ids scoped к instance. [Изученная REST 9.17](../../research/sources.md#ref-084) |
+| Jira Cloud | M0, новый продуктовый адаптер; скрипт исследования не адаптер | Issues, status/resolution dictionaries, paginated history по проверенной версии, field schema, links, project/board/sprint API при доступности | Почти все T при настроенной семантике; release/DoD только с внешними данными | REST v3 и accountId. История из `expand=changelog` проверяется на truncation. Права и customfield ids scoped к instance. [REST v3](../../research/sources.md#ref-085), [changelogs](../../research/sources.md#ref-086) |
 | Redmine | M1, следующий приоритет для Micha | Issues со `status_id=*`, detail `include=journals`, relations, custom fields, versions | T01–T18, T23–T24/T28–T34/T38–T42 по данным | Default list только открытые задачи; полный backfill нужен явно. Sprint plugin и estimates mapping отдельны. [REST](../../research/sources.md#ref-091) |
 | Яндекс Трекер | M1 | Issues, очереди, статусы/типы, changelog и links; поля/оценки по схеме клиента | Поток, blockers, связность, полевая аналитика | Changelog пагинация через Link; категории и custom workflow нельзя копировать из Jira. Sprint/history capability подтверждать. [История](../../research/sources.md#ref-090) |
-| Jira Cloud | M1, отдельный адаптер | v3 issues + changelogs; Agile board/sprint resources | T-метрики по permissions и доступной истории | Cursor/token endpoints меняются; pinned connector contract. Старый sprint-issues endpoint deprecated. [Issues](../../research/sources.md#ref-086), [sprint API](../../research/sources.md#ref-088) |
 | GitLab Issues | M1 | Issues, labels, milestones, links, resource state events, notes; EE capabilities отдельно | Базовый flow и связи с MR | Label ≠ универсальный workflow. Sprint и weight могут зависеть от edition; milestone не автоматически спринт. [State events](../../research/sources.md#ref-080) |
 | GitHub Issues / Projects | M1 Issues; M2 Projects | Timeline, issue state, links; project fields/history только в проверенном adapter scope | Базовый flow; T19–T22 только при исторических данных плана | PR также issue: раздельные сущности, общие API не означают двойной throughput. [Timeline](../../research/sources.md#ref-082) |
 | SourceCraft Issues | M1 по пилоту | Status/timestamps/labels/comments facts; история переходов - только после проверки API | Snapshot diagnostics; T01/T02/T03/T12/T38 частично | Нельзя получить cycle time или старый WIP из текущего статуса |
@@ -161,9 +160,9 @@ Drill-down числа содержит исходную выборку task ids,
 
 ## Реализация и приёмка
 
-M0: Jira DC + GitLab + generic import; event store, workflow mapping, full open backlog, as-of flow, T01–T05/T07–T15/T18/T28/T38–T42, ежедневная панель и export. Один источник сначала позволяет проверить правильность engine.
+M0: Jira Cloud + GitLab + generic import; event store, workflow mapping, full open backlog, as-of flow, T01–T05/T07–T15/T18/T28/T38–T42, ежедневная панель и export. Один источник сначала позволяет проверить правильность engine.
 
-M1: Redmine первым под прямой cross-tracker пилот; Яндекс Трекер/SourceCraft и Jira Cloud по выбранному коммерческому сегменту; sprint historical reconstruction, DoD и delivery evidence. M0 закрывает один законченный сквозной срез; следующие адаптеры принимаются отдельно. M2: прочие трекеры и backtested forecasting.
+M1: Redmine первым под прямой cross-tracker пилот; Яндекс Трекер/SourceCraft по выбранному коммерческому сегменту; sprint historical reconstruction, DoD и delivery evidence. M0 закрывает один законченный сквозной срез; следующие адаптеры принимаются отдельно. M2: прочие трекеры и backtested forecasting.
 
 Приёмочные сценарии: создана сразу в active; создана в intake с неправильной категорией; blocked→active без завершения; done→reopened; cancelled/duplicate; изменился размер/команда; история обрезана; миграция проекта; старый open task без updates; две одинаковые задачи из разных instance; mirrored tasks; add/remove/re-add в sprint; task done до старта или после конца; событие в +05:30; повтор/late webhook; скрытая задача по ACL. Все ожидаемые значения фиксируются в проверяемых примерах, а не только в красивом dashboard.
 

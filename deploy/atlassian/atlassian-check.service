@@ -1,0 +1,24 @@
+[Unit]
+Description=craftPulse Atlassian OAuth acceptance stand
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nikita
+Group=nikita
+WorkingDirectory=/opt/craftpulse/atlassian-check
+ExecStart=/opt/craftpulse/atlassian-check/atlassian-check -config /opt/craftpulse/atlassian-check/config.json serve
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/craftpulse/atlassian-check/data
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
