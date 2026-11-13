@@ -177,3 +177,24 @@ type AdapterClient interface {
 	Manifest(ctx context.Context, t entity.AdapterTarget, in entity.ManifestInput) (entity.ManifestPage, error)
 	CheckAccess(ctx context.Context, t entity.AdapterTarget, in entity.SourceAccessInput) (entity.SourceAccessResult, error)
 }
+
+// IngestRepo is the journal of intake under row-level security.
+type IngestRepo interface {
+	SaveReceipt(ctx context.Context, r entity.Receipt) error
+	Receipt(ctx context.Context, orgID, id entity.ID) (entity.Receipt, error)
+	LockReceipt(ctx context.Context, orgID, id entity.ID) (entity.Receipt, error)
+	FirstReceiptOfHash(ctx context.Context, orgID entity.ID, hash []byte) (entity.ID, bool, error)
+	LockPackageHash(ctx context.Context, orgID entity.ID, hash []byte) error
+	AcceptRecords(ctx context.Context, orgID, receiptID entity.ID, recs []entity.IngestRecord) ([]bool, error)
+	AcceptedRecords(ctx context.Context, orgID entity.ID, recs []entity.IngestRecord) ([]entity.IngestRecord, error)
+	InsertRecords(ctx context.Context, orgID, receiptID entity.ID, recs []entity.IngestRecord) error
+	InsertConflicts(ctx context.Context, orgID, receiptID entity.ID, recs []entity.IngestRecord, at time.Time) error
+	Records(ctx context.Context, orgID, receiptID entity.ID) ([]entity.IngestRecord, error)
+}
+
+// ObjectStore keeps packages; Get of a missing object is entity.ErrNotFound and Delete of one succeeds.
+type ObjectStore interface {
+	Put(ctx context.Context, key string, r io.Reader) error
+	Get(ctx context.Context, key string) (io.ReadCloser, error)
+	Delete(ctx context.Context, key string) error
+}

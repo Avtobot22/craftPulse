@@ -9,8 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/riverqueue/river"
-	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/Avtobot22/craftPulse/backend/config"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -74,9 +72,9 @@ func appendPEM(pool *x509.CertPool, path string) error {
 
 // newConnect inserts its jobs with a client of its own: api only inserts, worker also takes them.
 func newConnect(pool *pgxpool.Pool, keyring *crypto.Keyring, adapters *adapterapi.Caller, c clock.Clock) (*connect.UseCase, error) {
-	jobs, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	jobs, err := riverInsertClient(pool)
 	if err != nil {
-		return nil, fmt.Errorf("app: river insert client: %w", err)
+		return nil, err
 	}
 	tx := persistent.NewTransactor(pool)
 	return connect.New(connect.Deps{

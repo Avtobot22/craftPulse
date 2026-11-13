@@ -11,9 +11,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+
+	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
 
-var ErrNotFound = errors.New("objstore: object not found")
+// ErrNotFound is also entity.ErrNotFound, so modules check it without knowing the store.
+var ErrNotFound = fmt.Errorf("objstore: object not found: %w", entity.ErrNotFound)
 
 type Config struct {
 	Endpoint        string
@@ -61,6 +64,30 @@ func (s *Store) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("objstore: get %s: %w", key, err)
 	}
 	return out.Body, nil
+}
+
+// Delete removes the object; a missing object is not an error, so a repeated delete succeeds.
+func (s *Store) Delete(ctx context.Context, key string) error {
+	if _, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)}); err != nil {
+		return fmt.Errorf("objstore: delete %s: %w", key, err)
+	}
+	return nil
+}
+
+// List returns the keys under the prefix.
+func (s *Store) List(ctx context.Context, prefix string) ([]string, error) {
+	var keys []string
+	p := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{Bucket: aws.String(s.bucket), Prefix: aws.String(prefix)})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("objstore: list %s: %w", prefix, err)
+		}
+		for _, o := range page.Contents {
+			keys = append(keys, aws.ToString(o.Key))
+		}
+	}
+	return keys, nil
 }
 
 func (s *Store) Check(ctx context.Context) error {

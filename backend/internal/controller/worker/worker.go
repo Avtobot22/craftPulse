@@ -14,14 +14,25 @@ import (
 const _minSnooze = time.Second
 
 type Deps struct {
-	Probes usecase.ProbeRunner
+	Probes   usecase.ProbeRunner
+	Packages usecase.PackageProcessor
 }
 
 // Register adds the handlers of the job kinds; the count matters: River refuses to fetch jobs without a
 // registered kind.
 func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &probeWorker{runner: d.Probes})
-	return 1
+	river.AddWorker(w, &packageWorker{packages: d.Packages})
+	return 2
+}
+
+type packageWorker struct {
+	river.WorkerDefaults[entity.IngestPackageJob]
+	packages usecase.PackageProcessor
+}
+
+func (w *packageWorker) Work(ctx context.Context, job *river.Job[entity.IngestPackageJob]) error {
+	return w.packages.ProcessPackage(ctx, job.Args.OrganizationID, job.Args.ReceiptID)
 }
 
 type probeWorker struct {

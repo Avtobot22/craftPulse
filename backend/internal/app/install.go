@@ -17,7 +17,6 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/cli"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo"
-	"github.com/Avtobot22/craftPulse/backend/internal/repo/objstore"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	auditrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit"
 	authrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/auth"
@@ -66,13 +65,7 @@ func RunInstall(cfg config.Config, in config.Install, log zerolog.Logger) error 
 	defer pool.Close()
 
 	httpClient := &http.Client{Timeout: _probeTimeout}
-	uc := newInstallation(pool, keyring, objstore.New(objstore.Config{
-		Endpoint:        cfg.ObjectStore.Endpoint,
-		Region:          cfg.ObjectStore.Region,
-		Bucket:          cfg.ObjectStore.Bucket,
-		AccessKeyID:     cfg.ObjectStore.AccessKeyID,
-		SecretAccessKey: cfg.ObjectStore.SecretAccessKey.Value(),
-	}), probe.New(httpClient), clock.System{})
+	uc := newInstallation(pool, keyring, newObjectStore(cfg.ObjectStore), probe.New(httpClient), clock.System{})
 	return cli.Install(ctx, uc, installParams(in, sha), log)
 }
 
