@@ -255,6 +255,9 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 	a.mu.Unlock()
 	feed, feedErr := a.feed(cfg, schema, in.Scope)
 	feed = inPeriod(feed, in.Period.From, in.Period.To)
+	if len(in.ObjectKeys) == 0 && schema == "tasks" {
+		feed = cfg.paged(feed)
+	}
 
 	var selected []entry
 	start := 0

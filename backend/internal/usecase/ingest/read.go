@@ -233,3 +233,6 @@ func (u *UseCase) Accepted(ctx context.Context, orgID, receiptID entity.ID) (ent
 	slices.SortFunc(recs, func(a, b entity.IngestRecord) int { return a.No - b.No })
 	return rc, recs, nil
 }
+
+// AffectedMetrics are the metrics whose data a schema of the envelope carries.
+func (*UseCase) AffectedMetrics(schemaID string) []string { return AffectedMetrics(schemaID) }

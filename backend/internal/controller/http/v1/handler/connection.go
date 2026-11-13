@@ -15,7 +15,11 @@ import (
 
 const _connectionCursor = "connection"
 
-type connections struct{ uc usecase.Connections }
+type connections struct {
+	uc         usecase.Connections
+	sync       usecase.SyncStatus
+	operations usecase.Operations
+}
 
 func (h *connections) ListAdapters(context.Context, openapi.ListAdaptersRequestObject) (openapi.ListAdaptersResponseObject, error) {
 	adapters := h.uc.ListAdapters()
@@ -73,6 +77,9 @@ func (h *connections) ListConnections(ctx context.Context, req openapi.ListConne
 	for i := range page.Items {
 		out.Data = append(out.Data, connectionBody(page.Items[i]))
 	}
+	if err := h.withLastSuccess(ctx, s.OrganizationID, out.Data); err != nil {
+		return nil, err
+	}
 	if page.Next != nil {
 		c := encodeCursor(cursorData{Kind: _connectionCursor, Name: string(f.Status), At: page.Next.OccurredAt, ID: uuid.UUID(page.Next.ID)})
 		out.NextCursor = &c
@@ -122,7 +129,11 @@ func (h *connections) GetConnection(ctx context.Context, req openapi.GetConnecti
 		return nil, err
 	}
 	tag := etag(int64(st.Connection.RowVersion))
-	return openapi.GetConnection200JSONResponse{Body: connectionBody(st), Headers: openapi.GetConnection200ResponseHeaders{ETag: &tag}}, nil
+	body := []openapi.Connection{connectionBody(st)}
+	if err := h.withLastSuccess(ctx, s.OrganizationID, body); err != nil {
+		return nil, err
+	}
+	return openapi.GetConnection200JSONResponse{Body: body[0], Headers: openapi.GetConnection200ResponseHeaders{ETag: &tag}}, nil
 }
 
 func (h *connections) UpdateConnection(ctx context.Context, req openapi.UpdateConnectionRequestObject) (openapi.UpdateConnectionResponseObject, error) {

@@ -23,6 +23,8 @@ type Transactor interface {
 type TenantRepo interface {
 	CreateTenant(ctx context.Context, orgID entity.ID, at time.Time) error
 	NextSeq(ctx context.Context, orgID entity.ID) (int64, error)
+	// ActiveTenants reads the registry outside row-level security, for the scheduler of every organization.
+	ActiveTenants(ctx context.Context) ([]entity.ID, error)
 }
 
 // OrgRepo reads and writes tables under row-level security: every call runs in an organization transaction.
@@ -222,6 +224,23 @@ type SyncRepo interface {
 	// AcquireLease takes or renews the lease; false means another holder has it until it runs out.
 	AcquireLease(ctx context.Context, orgID, connectionID entity.ID, holder string, until, now time.Time) (bool, error)
 	ReleaseLease(ctx context.Context, orgID, connectionID entity.ID, holder string) error
+	LeaseHeld(ctx context.Context, orgID, connectionID entity.ID, now time.Time) (bool, error)
+	// States lists the states of a connection, or of the organization when connectionID is zero.
+	States(ctx context.Context, orgID, connectionID entity.ID) ([]entity.SyncState, error)
+
+	// StartReconcile writes a running reconciliation; false when one of the data kind already runs.
+	StartReconcile(ctx context.Context, orgID, connectionID entity.ID, dataKind string, at time.Time) (entity.ID, bool, error)
+	RunningReconcile(ctx context.Context, orgID, connectionID entity.ID, dataKind string) (entity.ReconcileRun, bool, error)
+	Reconcile(ctx context.Context, orgID, runID entity.ID) (entity.ReconcileRun, bool, error)
+	// LastReconcile is the latest reconciliation of a connection, of one data kind when dataKind is set.
+	LastReconcile(ctx context.Context, orgID, connectionID entity.ID, dataKind string) (entity.ReconcileRun, bool, error)
+	FinishReconcile(ctx context.Context, orgID entity.ID, run entity.ReconcileRun) error
+
+	AddDirtyKeys(ctx context.Context, orgID, connectionID entity.ID, keys []entity.DirtyKey, at time.Time) error
+	DirtyKeys(ctx context.Context, orgID, connectionID entity.ID, limit int) ([]entity.DirtyKey, error)
+	// DeleteDirtyKeys removes the keys read, except those added again after the read started.
+	DeleteDirtyKeys(ctx context.Context, orgID, connectionID entity.ID, hashes [][]byte, readStarted time.Time) error
+	CountDirtyKeys(ctx context.Context, orgID, connectionID entity.ID) (int, error)
 }
 
 // NormalizeRepo is the normalize schema under row-level security: canonical facts in versions of knowledge.
@@ -253,4 +272,15 @@ type NormalizeRepo interface {
 	SupersedeDictionaryEntries(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
 	InsertDictionaryEntries(ctx context.Context, orgID entity.ID, entries []entity.DictionaryEntry) error
 	Dictionary(ctx context.Context, orgID, areaID entity.ID, kind entity.DictionaryKind) ([]entity.DictionaryEntry, error)
+}
+
+// ViewRepo keeps the public descriptors of runs users asked for (TZ 12.5.8).
+type ViewRepo interface {
+	// CreateOperation writes a queued descriptor; false when the same user has an active one of the resource.
+	CreateOperation(ctx context.Context, op entity.Operation) (bool, error)
+	// ActiveOperation locks the active descriptor of a user for the resource of op.
+	ActiveOperation(ctx context.Context, op entity.Operation) (entity.Operation, bool, error)
+	Operation(ctx context.Context, orgID, id entity.ID) (entity.Operation, bool, error)
+	// UpdateOperation moves an active descriptor to its new status; a finished one does not change.
+	UpdateOperation(ctx context.Context, op entity.Operation) error
 }

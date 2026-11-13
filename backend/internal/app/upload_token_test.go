@@ -207,7 +207,7 @@ func TestUploadTokens_ConcurrentIssueRespectsTwoSlots(t *testing.T) {
 	admin := e.admin(t, "demo")
 	project := e.tokenProject(t, e.orgID)
 	reg := prometheus.NewRegistry()
-	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, nil, nil)
+	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, apiModules{})
 	e.router = httpctrl.NewRouter(zerolog.New(zerolog.SyncWriter(e.logs)), reg, health.Probes{Ready: &health.Readiness{}}, api)
 	start := make(chan struct{})
 	responses := make(chan *httptest.ResponseRecorder, 6)

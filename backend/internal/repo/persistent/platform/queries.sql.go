@@ -12,6 +12,30 @@ import (
 	"github.com/google/uuid"
 )
 
+const activeTenants = `-- name: ActiveTenants :many
+SELECT organization_id FROM platform.tenant WHERE status = 'active' ORDER BY organization_id
+`
+
+func (q *Queries) ActiveTenants(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, activeTenants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var organization_id uuid.UUID
+		if err := rows.Scan(&organization_id); err != nil {
+			return nil, err
+		}
+		items = append(items, organization_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createOrgClock = `-- name: CreateOrgClock :exec
 INSERT INTO platform.org_clock (organization_id, last_seq, reproducible_from_seq) VALUES ($1, 0, 0)
 `

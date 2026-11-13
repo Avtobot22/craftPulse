@@ -65,7 +65,7 @@ func newImportsEnv(t *testing.T) *importsEnv {
 	uc, err := newIngest(e.app, sharedStore(t), conn, rights, e.clock, reg)
 	require.NoError(t, err)
 	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}},
-		newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, conn, uc))
+		newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, apiModules{connections: conn, intake: uc}))
 	return &importsEnv{loginEnv: e, uc: uc, admin: e.admin(t, "demo"), project: e.tokenProject(t, e.orgID)}
 }
 

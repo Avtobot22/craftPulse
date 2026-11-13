@@ -41,15 +41,17 @@ type Deps struct {
 	Protocols    usecase.Protocols
 	Connections  usecase.Connections
 	Intake       usecase.Intake
+	Sync         usecase.SyncStatus
+	Operations   usecase.Operations
 	Registerer   prometheus.Registerer
 }
 
 func New(d Deps) *Handler {
 	return &Handler{
 		uploads:        uploads{tokens: d.UploadTokens},
-		connections:    connections{uc: d.Connections},
+		connections:    connections{uc: d.Connections, sync: d.Sync, operations: d.Operations},
 		intake:         intake{uc: d.Intake},
-		session:        newSession(d.Logins, d.Access, d.Registerer),
+		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),
 		organization:   organization{structure: d.Structure},
 		administration: administration{users: d.Users, audit: d.Audit, protocols: d.Protocols},
 	}

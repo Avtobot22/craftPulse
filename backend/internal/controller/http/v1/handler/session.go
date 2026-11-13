@@ -18,18 +18,19 @@ import (
 )
 
 type session struct {
-	logins   usecase.Logins
-	access   usecase.Access
-	failures *prometheus.CounterVec
+	logins     usecase.Logins
+	access     usecase.Access
+	operations usecase.Operations
+	failures   *prometheus.CounterVec
 }
 
-func newSession(logins usecase.Logins, access usecase.Access, reg prometheus.Registerer) session {
+func newSession(logins usecase.Logins, access usecase.Access, operations usecase.Operations, reg prometheus.Registerer) session {
 	failures := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "craftpulse_auth_login_failures_total",
 		Help: "Failed logins by provider issuer and failure class.",
 	}, []string{"provider", "reason"})
 	reg.MustRegister(failures)
-	return session{logins: logins, access: access, failures: failures}
+	return session{logins: logins, access: access, operations: operations, failures: failures}
 }
 
 func (h *session) StartLogin(ctx context.Context, req openapi.StartLoginRequestObject) (openapi.StartLoginResponseObject, error) {

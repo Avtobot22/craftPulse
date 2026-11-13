@@ -42,6 +42,160 @@ func (q *Queries) AcquireLease(ctx context.Context, arg AcquireLeaseParams) (str
 	return holder, err
 }
 
+const countDirtyKeys = `-- name: CountDirtyKeys :one
+SELECT count(*) FROM sync.dirty_key WHERE organization_id = $1 AND connection_id = $2
+`
+
+type CountDirtyKeysParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+}
+
+func (q *Queries) CountDirtyKeys(ctx context.Context, arg CountDirtyKeysParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDirtyKeys, arg.OrganizationID, arg.ConnectionID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteDirtyKeys = `-- name: DeleteDirtyKeys :execrows
+DELETE FROM sync.dirty_key WHERE organization_id = $1 AND connection_id = $2
+    AND key_hash = ANY ($3::bytea[]) AND added_at <= $4
+`
+
+type DeleteDirtyKeysParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	KeyHashes      [][]byte
+	ReadStartedAt  time.Time
+}
+
+func (q *Queries) DeleteDirtyKeys(ctx context.Context, arg DeleteDirtyKeysParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDirtyKeys,
+		arg.OrganizationID,
+		arg.ConnectionID,
+		arg.KeyHashes,
+		arg.ReadStartedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const dirtyKeys = `-- name: DirtyKeys :many
+SELECT key_hash, object_kind, native_ref, added_at FROM sync.dirty_key
+WHERE organization_id = $1 AND connection_id = $2
+ORDER BY key_hash
+LIMIT $3
+`
+
+type DirtyKeysParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	RowLimit       int32
+}
+
+type DirtyKeysRow struct {
+	KeyHash    []byte
+	ObjectKind string
+	NativeRef  string
+	AddedAt    time.Time
+}
+
+func (q *Queries) DirtyKeys(ctx context.Context, arg DirtyKeysParams) ([]DirtyKeysRow, error) {
+	rows, err := q.db.Query(ctx, dirtyKeys, arg.OrganizationID, arg.ConnectionID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DirtyKeysRow
+	for rows.Next() {
+		var i DirtyKeysRow
+		if err := rows.Scan(
+			&i.KeyHash,
+			&i.ObjectKind,
+			&i.NativeRef,
+			&i.AddedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const finishReconcile = `-- name: FinishReconcile :exec
+UPDATE sync.reconcile_run SET as_of = $1, started_at = $2, finished_at = $3::timestamptz, expected_count = $4,
+    observed_count = $5, missing_count = $6, changed_count = $7,
+    outcome = $8, reason_code = $9
+WHERE organization_id = $10 AND id = $11 AND outcome = 'running'
+`
+
+type FinishReconcileParams struct {
+	AsOf           time.Time
+	StartedAt      time.Time
+	FinishedAt     time.Time
+	ExpectedCount  pgtype.Int4
+	ObservedCount  pgtype.Int4
+	MissingCount   pgtype.Int4
+	ChangedCount   pgtype.Int4
+	Outcome        string
+	ReasonCode     pgtype.Text
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) FinishReconcile(ctx context.Context, arg FinishReconcileParams) error {
+	_, err := q.db.Exec(ctx, finishReconcile,
+		arg.AsOf,
+		arg.StartedAt,
+		arg.FinishedAt,
+		arg.ExpectedCount,
+		arg.ObservedCount,
+		arg.MissingCount,
+		arg.ChangedCount,
+		arg.Outcome,
+		arg.ReasonCode,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
+}
+
+const getReconcile = `-- name: GetReconcile :one
+SELECT organization_id, id, connection_id, data_kind, as_of, started_at, finished_at, expected_count, observed_count, missing_count, changed_count, outcome, reason_code FROM sync.reconcile_run WHERE organization_id = $1 AND id = $2
+`
+
+type GetReconcileParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) GetReconcile(ctx context.Context, arg GetReconcileParams) (SyncReconcileRun, error) {
+	row := q.db.QueryRow(ctx, getReconcile, arg.OrganizationID, arg.ID)
+	var i SyncReconcileRun
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.ConnectionID,
+		&i.DataKind,
+		&i.AsOf,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ExpectedCount,
+		&i.ObservedCount,
+		&i.MissingCount,
+		&i.ChangedCount,
+		&i.Outcome,
+		&i.ReasonCode,
+	)
+	return i, err
+}
+
 const getState = `-- name: GetState :one
 SELECT organization_id, connection_id, data_kind, phase, cursor, checkpoint_at, failed_cursor, last_attempt_at, last_outcome, last_error_code, last_success_at, watermark, history_from, completeness FROM sync.state WHERE organization_id = $1 AND connection_id = $2 AND data_kind = $3
 `
@@ -74,6 +228,110 @@ func (q *Queries) GetState(ctx context.Context, arg GetStateParams) (SyncState, 
 	return i, err
 }
 
+const lastReconcile = `-- name: LastReconcile :one
+SELECT organization_id, id, connection_id, data_kind, as_of, started_at, finished_at, expected_count, observed_count, missing_count, changed_count, outcome, reason_code FROM sync.reconcile_run WHERE organization_id = $1 AND connection_id = $2
+    AND (NOT $3::bool OR data_kind = $4::text)
+ORDER BY started_at DESC, id DESC
+LIMIT 1
+`
+
+type LastReconcileParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	OneKind        bool
+	DataKind       string
+}
+
+func (q *Queries) LastReconcile(ctx context.Context, arg LastReconcileParams) (SyncReconcileRun, error) {
+	row := q.db.QueryRow(ctx, lastReconcile,
+		arg.OrganizationID,
+		arg.ConnectionID,
+		arg.OneKind,
+		arg.DataKind,
+	)
+	var i SyncReconcileRun
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.ConnectionID,
+		&i.DataKind,
+		&i.AsOf,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ExpectedCount,
+		&i.ObservedCount,
+		&i.MissingCount,
+		&i.ChangedCount,
+		&i.Outcome,
+		&i.ReasonCode,
+	)
+	return i, err
+}
+
+const leaseHeld = `-- name: LeaseHeld :one
+SELECT EXISTS (SELECT 1 FROM sync.lease WHERE organization_id = $1 AND connection_id = $2 AND lease_until >= $3::timestamptz)
+`
+
+type LeaseHeldParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	Now            time.Time
+}
+
+func (q *Queries) LeaseHeld(ctx context.Context, arg LeaseHeldParams) (bool, error) {
+	row := q.db.QueryRow(ctx, leaseHeld, arg.OrganizationID, arg.ConnectionID, arg.Now)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const listStates = `-- name: ListStates :many
+SELECT organization_id, connection_id, data_kind, phase, cursor, checkpoint_at, failed_cursor, last_attempt_at, last_outcome, last_error_code, last_success_at, watermark, history_from, completeness FROM sync.state WHERE organization_id = $1
+    AND (NOT $2::bool OR connection_id = $3::uuid)
+ORDER BY connection_id, data_kind
+`
+
+type ListStatesParams struct {
+	OrganizationID uuid.UUID
+	OneConnection  bool
+	ConnectionID   uuid.UUID
+}
+
+func (q *Queries) ListStates(ctx context.Context, arg ListStatesParams) ([]SyncState, error) {
+	rows, err := q.db.Query(ctx, listStates, arg.OrganizationID, arg.OneConnection, arg.ConnectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SyncState
+	for rows.Next() {
+		var i SyncState
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ConnectionID,
+			&i.DataKind,
+			&i.Phase,
+			&i.Cursor,
+			&i.CheckpointAt,
+			&i.FailedCursor,
+			&i.LastAttemptAt,
+			&i.LastOutcome,
+			&i.LastErrorCode,
+			&i.LastSuccessAt,
+			&i.Watermark,
+			&i.HistoryFrom,
+			&i.Completeness,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const releaseLease = `-- name: ReleaseLease :exec
 DELETE FROM sync.lease WHERE organization_id = $1 AND connection_id = $2 AND holder = $3
 `
@@ -87,6 +345,38 @@ type ReleaseLeaseParams struct {
 func (q *Queries) ReleaseLease(ctx context.Context, arg ReleaseLeaseParams) error {
 	_, err := q.db.Exec(ctx, releaseLease, arg.OrganizationID, arg.ConnectionID, arg.Holder)
 	return err
+}
+
+const runningReconcile = `-- name: RunningReconcile :one
+SELECT organization_id, id, connection_id, data_kind, as_of, started_at, finished_at, expected_count, observed_count, missing_count, changed_count, outcome, reason_code FROM sync.reconcile_run
+WHERE organization_id = $1 AND connection_id = $2 AND data_kind = $3 AND outcome = 'running'
+`
+
+type RunningReconcileParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	DataKind       string
+}
+
+func (q *Queries) RunningReconcile(ctx context.Context, arg RunningReconcileParams) (SyncReconcileRun, error) {
+	row := q.db.QueryRow(ctx, runningReconcile, arg.OrganizationID, arg.ConnectionID, arg.DataKind)
+	var i SyncReconcileRun
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.ConnectionID,
+		&i.DataKind,
+		&i.AsOf,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ExpectedCount,
+		&i.ObservedCount,
+		&i.MissingCount,
+		&i.ChangedCount,
+		&i.Outcome,
+		&i.ReasonCode,
+	)
+	return i, err
 }
 
 const saveState = `-- name: SaveState :exec
@@ -137,4 +427,30 @@ func (q *Queries) SaveState(ctx context.Context, arg SaveStateParams) error {
 		arg.Completeness,
 	)
 	return err
+}
+
+const startReconcile = `-- name: StartReconcile :one
+INSERT INTO sync.reconcile_run (organization_id, connection_id, data_kind, as_of, started_at, outcome)
+VALUES ($1, $2, $3, $4, $4, 'running')
+ON CONFLICT (organization_id, connection_id, data_kind) WHERE outcome = 'running' DO NOTHING
+RETURNING id
+`
+
+type StartReconcileParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	DataKind       string
+	At             time.Time
+}
+
+func (q *Queries) StartReconcile(ctx context.Context, arg StartReconcileParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, startReconcile,
+		arg.OrganizationID,
+		arg.ConnectionID,
+		arg.DataKind,
+		arg.At,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }

@@ -93,6 +93,7 @@ func (ca *testCA) serverTLS(t *testing.T, notAfter time.Time, names ...string) (
 // adapterServer serves h over TLS and counts the calls of the contract that reach it.
 type adapterServer struct {
 	*httptest.Server
+	src  *testadapter.Adapter
 	db   adapterDB
 	hits atomic.Int64
 	mu   sync.Mutex
@@ -129,7 +130,7 @@ func testAdapter(t *testing.T, tlsCfg *tls.Config, scenario testadapter.Config, 
 	})
 	require.NoError(t, err)
 	srv := serveTLSAdapter(t, tlsCfg, h)
-	srv.db = db
+	srv.db, srv.src = db, src
 	return srv
 }
 
