@@ -2499,21 +2499,25 @@ func (e ProjectOverviewSourcesCompleteness) Valid() bool {
 
 // Defines values for Provider.
 const (
-	ProviderClient       Provider = "client"
-	ProviderConfluenceDc Provider = "confluence_dc"
-	ProviderGit          Provider = "git"
-	ProviderGithub       Provider = "github"
-	ProviderGitlab       Provider = "gitlab"
-	ProviderJenkins      Provider = "jenkins"
-	ProviderJiraDc       Provider = "jira_dc"
-	ProviderSonarqube    Provider = "sonarqube"
-	ProviderUniversal    Provider = "universal"
+	ProviderClient          Provider = "client"
+	ProviderConfluenceCloud Provider = "confluence_cloud"
+	ProviderConfluenceDc    Provider = "confluence_dc"
+	ProviderGit             Provider = "git"
+	ProviderGithub          Provider = "github"
+	ProviderGitlab          Provider = "gitlab"
+	ProviderJenkins         Provider = "jenkins"
+	ProviderJiraCloud       Provider = "jira_cloud"
+	ProviderJiraDc          Provider = "jira_dc"
+	ProviderSonarqube       Provider = "sonarqube"
+	ProviderUniversal       Provider = "universal"
 )
 
 // Valid indicates whether the value is a known member of the Provider enum.
 func (e Provider) Valid() bool {
 	switch e {
 	case ProviderClient:
+		return true
+	case ProviderConfluenceCloud:
 		return true
 	case ProviderConfluenceDc:
 		return true
@@ -2524,6 +2528,8 @@ func (e Provider) Valid() bool {
 	case ProviderGitlab:
 		return true
 	case ProviderJenkins:
+		return true
+	case ProviderJiraCloud:
 		return true
 	case ProviderJiraDc:
 		return true

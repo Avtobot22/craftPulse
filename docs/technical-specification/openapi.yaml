@@ -241,7 +241,7 @@ paths:
     get:
       operationId: listSourceLinks
       summary: Список подключений, которым нужен доступ пользователя
-      description: Подключения с режимом проверки прав токеном пользователя, например Confluence DC (раздел 13.5), и состояние связи пользователя с каждым.
+      description: Подключения с режимом проверки прав токеном пользователя, например Confluence Cloud (раздел 13.5), и состояние связи пользователя с каждым.
       tags: [credentials]
       x-craftpulse-action: profile.manage
       x-craftpulse-delivery: M0
@@ -254,7 +254,7 @@ paths:
               schema: {$ref: '#/components/schemas/SourceLinkList'}
               example:
                 data:
-                  - {connection_id: 0193a5b0-5555-7000-8000-000000000003, provider: confluence_dc, display_name: Confluence, state: not_linked, linked_at: null}
+                  - {connection_id: 0193a5b0-5555-7000-8000-000000000003, provider: confluence_cloud, display_name: Confluence, state: not_linked, linked_at: null}
         '401': {$ref: '#/components/responses/Unauthorized'}
   /me/source-links/{connection_id}/authorization:
     post:
@@ -274,7 +274,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AuthorizationRedirect'}
-              example: {authorization_url: 'https://wiki.example/rest/oauth2/latest/authorize?client_id=cp&response_type=code&scope=READ&state=Zm9v'}
+              example: {authorization_url: 'https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=example-client-id&response_type=code&scope=read%3Aspace%3Aconfluence%20read%3Apage%3Aconfluence%20read%3Acontent-details%3Aconfluence%20offline_access&redirect_uri=https%3A%2F%2Fcraftpulse.example%2Fsource-links%2Fcallback&state=example-random-user-bound-state&prompt=consent'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -673,7 +673,7 @@ paths:
                 data:
                   - id: 0193a5b0-9999-7000-8000-000000000001
                     instance_id: 0193a5b0-aaaa-7000-8000-000000000001
-                    provider: jira_dc
+                    provider: jira_cloud
                     native_account_id: JIRAUSER10021
                     login: asmirnova
                     display_name: Анна Смирнова
@@ -949,7 +949,7 @@ paths:
               schema: {$ref: '#/components/schemas/AdapterList'}
               example:
                 data:
-                  - {provider: jira_dc, display_name: Jira Data Center, editions: [data_center, server], contract_versions: ['1'], data_kinds: [tasks, accounts, permissions], scope_kinds: [tracker_project], credential_fields: [{name: username, label: Логин служебной учётной записи, required: true, secret: false}, {name: token, label: Personal access token служебной учётной записи, required: true, secret: true}]}
+                  - {provider: jira_cloud, display_name: Jira Cloud, editions: [cloud], contract_versions: ['1'], data_kinds: [tasks, accounts, permissions], scope_kinds: [tracker_project], credential_fields: [{name: email, label: Email служебной учётной записи Atlassian, required: true, secret: false}, {name: token, label: API token служебной учётной записи Atlassian, required: true, secret: true}]}
                   - {provider: gitlab, display_name: GitLab self-managed, editions: [ce, ee], contract_versions: ['1'], data_kinds: [merge_requests, ci, reports, accounts, permissions], scope_kinds: [repository], credential_fields: [{name: read_token, label: Токен чтения API и репозитория, required: true, secret: true}, {name: write_token, label: Токен бота для комментария MR, required: false, secret: true}, {name: webhook_secret, label: Секрет подписи webhook, required: false, secret: true}]}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -976,8 +976,8 @@ paths:
                 data:
                   - id: 0193a5b0-5555-7000-8000-000000000001
                     name: Jira основной
-                    provider: jira_dc
-                    instance: {id: 0193a5b0-aaaa-7000-8000-000000000001, base_url: 'https://jira.example', edition: data_center, source_version: 9.12.15}
+                    provider: jira_cloud
+                    instance: {id: 0193a5b0-aaaa-7000-8000-000000000001, base_url: 'https://example.atlassian.net', edition: cloud, source_version: '1001.0.0-SNAPSHOT'}
                     status: active
                     adapter_kind: builtin
                     access_mode: service_account
@@ -1012,12 +1012,12 @@ paths:
             schema: {$ref: '#/components/schemas/ConnectionCreate'}
             example:
               name: Jira основной
-              provider: jira_dc
-              base_url: 'https://jira.example'
+              provider: jira_cloud
+              base_url: 'https://example.atlassian.net'
               adapter_kind: builtin
               adapter_url: null
               adapter_key: null
-              credentials: {username: svc-craftpulse, token: example-token-not-a-secret}
+              credentials: {email: svc-craftpulse@example.org, token: example-token-not-a-secret}
               scopes: [{kind: tracker_project, native_scope_id: '10200', history_from: '2026-01-01T00:00:00Z'}]
       responses:
         '201':
@@ -1031,8 +1031,8 @@ paths:
               example:
                 id: 0193a5b0-5555-7000-8000-000000000001
                 name: Jira основной
-                provider: jira_dc
-                instance: {id: 0193a5b0-aaaa-7000-8000-000000000001, base_url: 'https://jira.example', edition: null, source_version: null}
+                provider: jira_cloud
+                instance: {id: 0193a5b0-aaaa-7000-8000-000000000001, base_url: 'https://example.atlassian.net', edition: null, source_version: null}
                 status: draft
                 adapter_kind: builtin
                 access_mode: service_account
@@ -1069,8 +1069,8 @@ paths:
               example:
                 id: 0193a5b0-5555-7000-8000-000000000001
                 name: Jira основной
-                provider: jira_dc
-                instance: {id: 0193a5b0-aaaa-7000-8000-000000000001, base_url: 'https://jira.example', edition: data_center, source_version: 9.12.15}
+                provider: jira_cloud
+                instance: {id: 0193a5b0-aaaa-7000-8000-000000000001, base_url: 'https://example.atlassian.net', edition: cloud, source_version: '1001.0.0-SNAPSHOT'}
                 status: active
                 adapter_kind: builtin
                 access_mode: service_account
@@ -1117,8 +1117,8 @@ paths:
               example:
                 id: 0193a5b0-5555-7000-8000-000000000001
                 name: Jira основной
-                provider: jira_dc
-                instance: {id: 0193a5b0-aaaa-7000-8000-000000000001, base_url: 'https://jira.example', edition: data_center, source_version: 9.12.15}
+                provider: jira_cloud
+                instance: {id: 0193a5b0-aaaa-7000-8000-000000000001, base_url: 'https://example.atlassian.net', edition: cloud, source_version: '1001.0.0-SNAPSHOT'}
                 status: active
                 adapter_kind: builtin
                 access_mode: service_account
@@ -1195,7 +1195,7 @@ paths:
       description: |
         Статус пробы и проверенные возможности с причинами недоступных. Пока проба идёт,
         `retry_after_seconds` подсказывает, когда спросить снова. Неверная редакция
-        (Jira Cloud на адаптере DC) - исход `failed` с `edition_mismatch` (V-12).
+        (неподдержанная редакция источника) - исход `failed` с `edition_mismatch` (V-12).
 
         Проба другого подключения или удалённого подключения и истёкшая проба дают одинаковый
         404. Изменение настроек или учётных данных во время пробы делает её результат
@@ -1220,8 +1220,8 @@ paths:
                 status: succeeded
                 started_at: '2026-11-08T10:01:00Z'
                 finished_at: '2026-11-08T10:01:14Z'
-                edition: data_center
-                source_version: 9.12.15
+                edition: cloud
+                source_version: '1001.0.0-SNAPSHOT'
                 contract_version: '1'
                 capabilities:
                   - {capability: read_current, state: verified, reason_code: null, checked_at: '2026-11-08T10:01:14Z'}
@@ -1277,8 +1277,8 @@ paths:
               example:
                 id: 0193a5b0-5555-7000-8000-000000000001
                 name: Jira основной
-                provider: jira_dc
-                instance: {id: 0193a5b0-aaaa-7000-8000-000000000001, base_url: 'https://jira.example', edition: data_center, source_version: 9.12.15}
+                provider: jira_cloud
+                instance: {id: 0193a5b0-aaaa-7000-8000-000000000001, base_url: 'https://example.atlassian.net', edition: cloud, source_version: '1001.0.0-SNAPSHOT'}
                 status: active
                 adapter_kind: builtin
                 access_mode: service_account
@@ -1706,7 +1706,7 @@ paths:
               example:
                 instances:
                   - instance_id: 0193a5b0-aaaa-7000-8000-000000000001
-                    provider: jira_dc
+                    provider: jira_cloud
                     statuses: [{native_id: '1', name: Open, source_category: new}, {native_id: '3', name: In Progress, source_category: indeterminate}, {native_id: '10001', name: Intake, source_category: indeterminate}]
                     resolutions: [{native_id: '10000', name: Done}, {native_id: '10002', name: Duplicate}]
                     issue_types: [{native_id: '10004', name: Bug}]
@@ -1750,7 +1750,7 @@ paths:
               example:
                 as_of: '2026-11-08T00:00:00Z'
                 tasks:
-                  - task: {kind: task, id: 0193a5b0-f000-7000-8000-000000000001, display_key: CORE-12, title: Ошибка экспорта, source_url: 'https://jira.example/browse/CORE-12'}
+                  - task: {kind: task, id: 0193a5b0-f000-7000-8000-000000000001, display_key: CORE-12, title: Ошибка экспорта, source_url: 'https://example.atlassian.net/browse/CORE-12'}
                     started_at: '2026-10-02T09:00:00Z'
                     completed_at: '2026-10-05T15:00:00Z'
                     outcome: completed
@@ -2359,7 +2359,7 @@ paths:
               schema: { $ref: '#/components/schemas/CohortPage' }
               example:
                 data:
-                  - { object: { kind: task, id: 0193a5b0-f000-7000-8000-000000000001, display_key: CORE-12, title: Ошибка экспорта, source_url: 'https://jira.example/browse/CORE-12' }, item_no: 0, role: numerator, value: 259200, reason_code: null, basis_deleted: false }
+                  - { object: { kind: task, id: 0193a5b0-f000-7000-8000-000000000001, display_key: CORE-12, title: Ошибка экспорта, source_url: 'https://example.atlassian.net/browse/CORE-12' }, item_no: 0, role: numerator, value: 259200, reason_code: null, basis_deleted: false }
                 next_cursor: null
                 access_limited: false
                 access_notes: []
@@ -2562,7 +2562,7 @@ paths:
                 wip: {state: ASSESSED, value: 12, unit: count, numerator: null, denominator: null, n: 12, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: null}
                 over_target: {state: ASSESSED, value: 3, unit: count, numerator: null, denominator: null, n: 3, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: null}
                 awaiting_review: {state: ASSESSED, value: 2, unit: count, numerator: null, denominator: null, n: 2, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: null}
-                sources: [{connection_id: 0193a5b0-5555-7000-8000-000000000001, provider: jira_dc, last_success_at: '2026-11-08T03:12:00Z', completeness: complete}]
+                sources: [{connection_id: 0193a5b0-5555-7000-8000-000000000001, provider: jira_cloud, last_success_at: '2026-11-08T03:12:00Z', completeness: complete}]
                 access_limited: false
                 access_notes: []
         '400': {$ref: '#/components/responses/BadRequest'}
@@ -2600,7 +2600,7 @@ paths:
               example:
                 data:
                   - id: 0193a5b0-e1e1-7000-8000-000000000001
-                    object: {kind: task, id: 0193a5b0-f000-7000-8000-000000000002, display_key: CORE-15, title: Перенести отчёт, source_url: 'https://jira.example/browse/CORE-15'}
+                    object: {kind: task, id: 0193a5b0-f000-7000-8000-000000000002, display_key: CORE-15, title: Перенести отчёт, source_url: 'https://example.atlassian.net/browse/CORE-15'}
                     event_kind: field_change
                     field: status
                     before_value: Open
@@ -2645,7 +2645,7 @@ paths:
               schema: {$ref: '#/components/schemas/TaskPage'}
               example:
                 data:
-                  - {id: 0193a5b0-f000-7000-8000-000000000002, key: CORE-15, title: Перенести отчёт, project_id: 0193a5b0-4444-7000-8000-000000000001, status: {native_id: '3', name: In Progress, meaning: active}, task_type: Story, size_label: M, team_id: 0193a5b0-3333-7000-8000-000000000001, age_seconds: 518400, over_target: true, updated_at: '2026-11-07T14:00:00Z', source_url: 'https://jira.example/browse/CORE-15'}
+                  - {id: 0193a5b0-f000-7000-8000-000000000002, key: CORE-15, title: Перенести отчёт, project_id: 0193a5b0-4444-7000-8000-000000000001, status: {native_id: '3', name: In Progress, meaning: active}, task_type: Story, size_label: M, team_id: 0193a5b0-3333-7000-8000-000000000001, age_seconds: 518400, over_target: true, updated_at: '2026-11-07T14:00:00Z', source_url: 'https://example.atlassian.net/browse/CORE-15'}
                 next_cursor: null
                 access_limited: false
                 access_notes: []
@@ -2684,7 +2684,7 @@ paths:
                 age_seconds: 518400
                 over_target: true
                 updated_at: '2026-11-07T14:00:00Z'
-                source_url: 'https://jira.example/browse/CORE-15'
+                source_url: 'https://example.atlassian.net/browse/CORE-15'
                 target: {duration_seconds: 432000, version_no: 1}
                 blocked_intervals: [{from: '2026-11-03T10:00:00Z', to: '2026-11-04T10:00:00Z'}]
                 observations:
@@ -2724,7 +2724,7 @@ paths:
               example:
                 data:
                   - id: 0193a5b0-e1e1-7000-8000-000000000002
-                    object: {kind: task, id: 0193a5b0-f000-7000-8000-000000000002, display_key: CORE-15, title: Перенести отчёт, source_url: 'https://jira.example/browse/CORE-15'}
+                    object: {kind: task, id: 0193a5b0-f000-7000-8000-000000000002, display_key: CORE-15, title: Перенести отчёт, source_url: 'https://example.atlassian.net/browse/CORE-15'}
                     event_kind: field_change
                     field: status
                     before_value: In Progress
@@ -3725,7 +3725,7 @@ paths:
               schema: {$ref: '#/components/schemas/MirrorCandidatePage'}
               example:
                 data:
-                  - {left: {kind: task, id: 0193a5b0-f000-7000-8000-000000000010, display_key: CORE-40, title: Отчёт, source_url: 'https://jira.example/browse/CORE-40'}, right: {kind: task, id: 0193a5b0-f000-7000-8000-000000000011, display_key: '#812', title: Отчёт, source_url: 'https://redmine.example/issues/812'}, basis: explicit_link}
+                  - {left: {kind: task, id: 0193a5b0-f000-7000-8000-000000000010, display_key: CORE-40, title: Отчёт, source_url: 'https://example.atlassian.net/browse/CORE-40'}, right: {kind: task, id: 0193a5b0-f000-7000-8000-000000000011, display_key: '#812', title: Отчёт, source_url: 'https://redmine.example/issues/812'}, basis: explicit_link}
                 next_cursor: null
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -4083,7 +4083,7 @@ paths:
               example:
                 epic_id: 0193a5b0-f000-7000-8000-000000000030
                 items:
-                  - {task: {kind: task, id: 0193a5b0-f000-7000-8000-000000000002, display_key: CORE-15, title: Перенести отчёт, source_url: 'https://jira.example/browse/CORE-15'}, last_confirmed_link: merge_request, gap_reason: deployment_missing, links: []}
+                  - {task: {kind: task, id: 0193a5b0-f000-7000-8000-000000000002, display_key: CORE-15, title: Перенести отчёт, source_url: 'https://example.atlassian.net/browse/CORE-15'}, last_confirmed_link: merge_request, gap_reason: deployment_missing, links: []}
                 access_limited: false
                 access_notes: []
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -4274,7 +4274,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/TechDebtDraft'}
-              example: {"id":"0193a5b0-e9e9-7000-8000-000000000001","finding_ids":["0193a5b0-e2e2-7000-8000-000000000001"],"tracker_area_id":"0193a5b0-8888-7000-8000-000000000002","issue_type":"Task","title":"Устранить SQL-инъекцию в repo.go","body":"Находка правила go.lang.security.audit.sqli в services/billing/repo.go:88","status":"succeeded","external_task":{"kind":"task","id":"0193a5b0-f000-7000-8000-000000000040","display_key":"CORE-88","title":"Устранить SQL-инъекцию в repo.go","source_url":"https://jira.example/browse/CORE-88"},"error_code":null,"retry_after_seconds":null}
+              example: {"id":"0193a5b0-e9e9-7000-8000-000000000001","finding_ids":["0193a5b0-e2e2-7000-8000-000000000001"],"tracker_area_id":"0193a5b0-8888-7000-8000-000000000002","issue_type":"Task","title":"Устранить SQL-инъекцию в repo.go","body":"Находка правила go.lang.security.audit.sqli в services/billing/repo.go:88","status":"succeeded","external_task":{"kind":"task","id":"0193a5b0-f000-7000-8000-000000000040","display_key":"CORE-88","title":"Устранить SQL-инъекцию в repo.go","source_url":"https://example.atlassian.net/browse/CORE-88"},"error_code":null,"retry_after_seconds":null}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
   /tech-debt-drafts/{draft_id}/confirmation:
@@ -4912,7 +4912,7 @@ paths:
                       id: 0193a5b0-f7f7-7000-8000-000000000001
                       display_key: INC-12
                       title: Ошибки оплаты
-                      source_url: https://jira.example/browse/INC-12
+                      source_url: https://example.atlassian.net/browse/INC-12
                     link_id: 0193a5b0-c0c0-7000-8000-000000000009
                     deployment:
                       kind: deployment
@@ -4965,7 +4965,7 @@ paths:
                         id: 0193a5b0-f7f7-7000-8000-000000000002
                         display_key: INC-11
                         title: Отказ после выпуска
-                        source_url: https://jira.example/browse/INC-11
+                        source_url: https://example.atlassian.net/browse/INC-11
                       link_id: 0193a5b0-c0c0-7000-8000-000000000010
                       started_at: 2026-10-10T00:00:00Z
                       restored_at: 2026-10-11T00:00:00Z
@@ -4982,7 +4982,7 @@ paths:
                         id: 0193a5b0-f7f7-7000-8000-000000000002
                         display_key: INC-11
                         title: Отказ после выпуска
-                        source_url: https://jira.example/browse/INC-11
+                        source_url: https://example.atlassian.net/browse/INC-11
                       link_id: 0193a5b0-c0c0-7000-8000-000000000011
                       started_at: 2026-10-10T00:00:00Z
                       restored_at: 2026-10-11T00:00:00Z
@@ -5121,7 +5121,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/TransferPage'}
               example:
-                data: [{task: {kind: task, id: 0193a5b0-f000-7000-8000-000000000050, display_key: CORE-60, title: Миграция платежей, source_url: 'https://jira.example/browse/CORE-60'}, from_team_id: 0193a5b0-3333-7000-8000-000000000001, to_team_id: 0193a5b0-3333-7000-8000-000000000002, effective_at: '2026-10-11T00:00:00Z', wait_seconds: 172800}]
+                data: [{task: {kind: task, id: 0193a5b0-f000-7000-8000-000000000050, display_key: CORE-60, title: Миграция платежей, source_url: 'https://example.atlassian.net/browse/CORE-60'}, from_team_id: 0193a5b0-3333-7000-8000-000000000001, to_team_id: 0193a5b0-3333-7000-8000-000000000002, effective_at: '2026-10-11T00:00:00Z', wait_seconds: 172800}]
                 history_from: '2026-01-01T00:00:00Z'
                 next_cursor: null
                 access_limited: false
@@ -5892,7 +5892,7 @@ components:
     Provider:
       type: string
       description: Вид источника. Клиент показывает неизвестное значение как «другой источник».
-      enum: [jira_dc, gitlab, github, jenkins, sonarqube, confluence_dc, git, universal, client]
+      enum: [jira_cloud, gitlab, github, jenkins, sonarqube, confluence_cloud, git, universal, client, jira_dc, confluence_dc]
     SourceAccount:
       type: object
       required: [id, instance_id, provider, native_account_id, login, display_name, proposed_kind, assignment, proposals]

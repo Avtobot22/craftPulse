@@ -8,13 +8,13 @@
 
 | Подключение | Что читаем | Какой результат открывает | Граница |
 |---|---|---|---|
-| Jira Server/Data Center | Issues, справочники статусов и исходов, schema полей, история переходов/полей, links в проверенной версии | T01-T05, T07-T15, T18, T23, T28, T38-T42 в пределах данных | Cloud - другой адаптер. `expand=changelog` проверяется на полноту; исходы и поля сопоставляются по instance-scoped IDs |
+| Jira Cloud | Issues, справочники статусов и исходов, schema полей, история переходов/полей, links в проверенной версии | T01-T05, T07-T15, T18, T23, T28, T38-T42 в пределах данных | REST v3, accountId, `/search/jql` и отдельная пагинация changelog; исходы и поля сопоставляются по instance-scoped IDs |
 | GitLab self-managed CE/EE | Git, metadata/default branch, MR, head/base SHA, human notes/review и связи | A01-A07/A10/A18/A20/A22 и контекст C-метрик при необходимых отчётах | Clone сам по себе не читает MR; note не всегда review. Публикация требует отдельного write-доступа |
 | GitLab CI | Pipelines, jobs со всеми attempts, статусы/allow_failure, timestamps, artifacts и reports | I01-I13, тесты и coverage при отчётах, сводка MR | Пагинация всех jobs, parent/child и matrix не удваиваются; полный expected graph не угадывается |
 | Универсальный импорт | Задачи и события истории, явные relations, findings, JUnit, coverage и manifests | Поддержанные метрики без нового native API-коннектора | CSV текущих задач даёт snapshot; прошлый WIP из него не восстанавливается |
 | Git-документация, опция | Выбранные Markdown roots, owners, локальные links/anchors, OpenAPI | Тонкий D-профиль M0 | Scope и аудитория задаются явно; произвольный проектный build не запускается ради чтения текста |
 
-На стенде MVP дополнительно подключаются GitHub.com с GitHub Actions, Jenkins в пределах build API, SonarQube Server/Community Build и Confluence DC в выбранной области. Состав стенда и объём каждого адаптера задаёт [раздел 2 требований MVP](../technical-specification/mvp-scope.md#2-интеграции-и-штатная-реализация). У клиента эти адаптеры включаются, если он работает на этом стеке; этапы в таблицах ниже относятся к клиентским поставкам.
+На стенде MVP дополнительно подключаются GitHub.com с GitHub Actions, Jenkins в пределах build API, SonarQube Server/Community Build и Confluence Cloud в выбранной области. Состав стенда и объём каждого адаптера задаёт [раздел 2 требований MVP](../technical-specification/mvp-scope.md#2-интеграции-и-штатная-реализация). У клиента эти адаптеры включаются, если он работает на этом стеке; этапы в таблицах ниже относятся к клиентским поставкам.
 
 Для начального flow-отчёта не требуется внедрять все сканеры и все технические M0-профили. Их подключение образует отдельный законченный сценарий MR и анализа. Порядок - в [видении](vision.md#ход-разработки).
 
@@ -37,7 +37,6 @@
 |---|---|---|---|
 | Redmine | Первый следующий адаптер M1 | Открытые и закрытые issues, journals, relations, custom fields и версии | Default list только открытых недостаточен для backfill; sprint plugin и estimates mapping отдельны |
 | Яндекс Трекер | M1 | Changelog с пагинацией, очереди, типы/статусы, поля/оценки и links | История и workflow не копируются из Jira; sprint capabilities проверяются |
-| Jira Cloud | M1, отдельный адаптер | Issues/changelog и Agile metadata на своей версии API | DC endpoints и модель пагинации не переносятся автоматически |
 | GitLab Issues / GitHub Issues | M1 для базового flow | Состояния, timeline, поля и связи | Label не задаёт универсальный workflow; GitHub PR не удваивает issue-throughput |
 | SourceCraft Issues | M1 по пилоту | Status, timestamps, labels, comments и история переходов при её наличии в API | Текущий status не даёт cycle time и старый WIP |
 | YouTrack / Kaiten | M2 | Подтверждённые activities/перемещения, поля и история | Схемы workflow, categories и пагинация проверяются по версии |
@@ -81,7 +80,7 @@
 | Источник | Этап | Что открывает | Ограничение |
 |---|---|---|---|
 | Выбранные Git roots | M0 | Inventory, owner, локальные ссылки, API-spec validation и task/doc relations | На старте Markdown; остальные parser profiles подключаются отдельно |
-| Confluence DC / Cloud | M1, два адаптера | Pages, body, versions, labels, структура и доступные ограничения | Разные API и pagination. Один restrictions response не доказывает effective ACL всех пользователей |
+| Confluence Cloud | M1; выбранная область на стенде MVP | Pages, body, versions, labels, структура и доступные ограничения | REST v2 для страниц и версий, v1 для ограничений; OAuth 2.0 (3LO). Один restrictions response не доказывает effective ACL всех пользователей |
 | Яндекс Wiki | M1 кандидат по пилоту | Страницы и дерево в разрешённой области | API может быть выключен; UI-history не гарантирует API-архив версий |
 | Backstage / TechDocs | M1 импорт каталога, M2 native adapter | Service refs, owner/lifecycle и doc references | Каталог не заменяет исходный ACL и не доказывает качество текста |
 | Файлы / S3 export | M1 | Выбранные документы с manifest, hash, owner и извлекаемым текстом | Без metadata не появляется история review/авторства |

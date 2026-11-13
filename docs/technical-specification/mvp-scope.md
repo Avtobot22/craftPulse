@@ -78,12 +78,12 @@ PM получает подготовленный контекст для раз�
 | Область | Обязательный набор MVP | Минимум работающего поведения | Что отложено |
 |---|---|---|---|
 | Git и активность | Прямые GitLab self-managed и GitHub.com; Git SSH/HTTPS для дерева и diff | Репозиторий, MR/PR, base/head, автор, draft/ready, назначение reviewer, human review/response, ссылки, один обновляемый комментарий | GHES, GitVerse, GitFlic, Bitbucket; расширенные эпизоды ревью и ownership - M1/M2 |
-| Задачи | Прямой Jira Data Center; универсальный импорт задач с историей | Открытые и закрытые задачи, переходы, исходы, изменения доступных полей, links, подтверждённый mapping; одинаковые core-расчёты в отдельных проектах | Redmine - первый следующий адаптер M1; Jira Cloud и Яндекс Трекер - по следующему пилоту; YouTrack/Kaiten - по пилоту. Mirrors/conflict resolution и общий cross-tracker throughput - M1 |
+| Задачи | Прямой Jira Cloud; универсальный импорт задач с историей | Открытые и закрытые задачи, переходы, исходы, изменения доступных полей, links, подтверждённый mapping; одинаковые core-расчёты в отдельных проектах | Redmine - первый следующий адаптер M1; Jira Cloud и Яндекс Трекер - по следующему пилоту; YouTrack/Kaiten - по пилоту. Mirrors/conflict resolution и общий cross-tracker throughput - M1 |
 | CI | Прямые GitLab CI, GitHub Actions; ограниченный Jenkins build API | Runs/jobs/доступные attempts, timestamps, native outcome, artifacts; Jenkins дополнительно принимает execution manifest из шага CI | Jenkins не обещает восстановить внутренние retry из summary build. TeamCity, произвольные plugins/graphs и CD - M1/M2 |
 | Тесты и покрытие | Импорт JUnit XML, LCOV, Cobertura и JaCoCo XML выбранных диалектов | Test executions и line/branch facts с привязкой к SHA; явные missing/partial; один CLI/контейнер передачи | Выполнение тестов craftPulse, автоматический выбор тестов, все диалекты форматов и patch coverage без надёжного mapping |
 | Качество кода | Штатные Go/Python/JS/TS-профили; прямой SonarQube Server/Community Build | Структура функций, дубли, lint-findings; Sonar measures/issues/rules и analysis revision, только подтверждённые возможности редакции | SonarQube Cloud, CodeScene, CodeScoring TQI; полный набор PR-функций всех редакций Sonar |
 | Безопасность | Штатные Opengrep + Trivy + Gitleaks CLI; импорт SARIF 2.1.0 и выбранных GitLab security JSON | Findings с rule/package/location, native severity, producer/config/DB, scope и статусом исполнения; redaction до передачи | Direct API коммерческих SAST/SCA, DAST, reachability, runtime, image scan, переоценка выпущенных SBOM - отдельные M1/M2-срезы |
-| Документация | Git Markdown/OpenAPI; прямой Confluence DC в выбранной области | Roots, явный owner, документ/version/hash, локальные links/anchors; Git OpenAPI validation. Wiki - inventory, текст и source URL в разрешённой области | Cloud-вариант Confluence, Яндекс Wiki, Drive/Notion/SharePoint, вложения/макросы и семантический AI-аудит - M1/M2 |
+| Документация | Git Markdown/OpenAPI; прямой Confluence Cloud в выбранной области | Roots, явный owner, документ/version/hash, локальные links/anchors; Git OpenAPI validation. Wiki - inventory, текст и source URL в разрешённой области | Cloud-вариант Confluence, Яндекс Wiki, Drive/Notion/SharePoint, вложения/макросы и семантический AI-аудит - M1/M2 |
 | Все области | Универсальный импорт с manifest | Те же identities, состояние данных, расчёты и раскрытие, что у API-пути | Импорт текущего CSV не выдаётся за историю или native integration |
 
 ### Что поставляет craftPulse
@@ -116,7 +116,7 @@ PM получает подготовленный контекст для раз�
 | F-31 в advisory-части; UC-25/UC-26 | Advisory по умолчанию, раздельные scan error, import error и наличие findings | Настраиваемый blocking gate, bypass policy и законченный UC-31 - M1 | Можно оценить сигнал без смены процесса команды; AC-07/10 |
 | F-34/F-43; UC-28 | Локальное code/security exception: автор, причина, project/rule/object scope, срок; истечение возвращает finding в применимую выборку | Двусторонний triage и doc exceptions - M1 | Сигнал можно обработать, accepted не означает fixed; AC-13 |
 | F-60/F-61; UC-36/UC-37 в выбранном профиле | Git root, owner, broken local link/anchor, невалидная OpenAPI spec; документ и версия из Confluence, ограничения доступа | Docs impact F-62/UC-38, полный handover F-23/F-63/UC-24 - M1/M2 | Конкретная проверка документации в общей сводке; AC-09/12 |
-| F-21; UC-23 | В MVP не входит | Прямой Redmine, объединение одного проекта из двух трекеров, mirrors и конфликты - M1 | В MVP используется Jira DC и универсальный импорт; AC-02/06 проверяют их identities и повторы |
+| F-21; UC-23 | В MVP не входит | Прямой Redmine, объединение одного проекта из двух трекеров, mirrors и конфликты - M1 | В MVP используется Jira Cloud и универсальный импорт; AC-02/06 проверяют их identities и повторы |
 | F-15/F-20/F-37/F-38, F-17 выше уровня команды; UC-16-UC-18, UC-22, UC-32-UC-35 | В MVP не демонстрируются как законченные возможности | Возвраты с приёмки/production, frozen sprint, DoD, initiatives, delivery, business, hotspots и создание техдолга - последующие M0/M1-срезы по каталогам; прогноз/DAST/test selection - M2 | Сохранить ограниченный сценарий и не считать зелёный CI выпуском |
 
 ## 4. Правила результата
@@ -135,11 +135,11 @@ PM получает подготовленный контекст для раз�
 
 ## 5. Показ от начала до решения
 
-Основной путь выполняется на Jira DC + GitLab self-managed + GitLab CI и штатном Go-профиле. Подготовленные задачи, commit history и тестовый дефект допустимы. Backend сам читает API, восстанавливает историю, считает показатели и строит выдачу. Числа в интерфейсе и MR не прошиваются вручную.
+Основной путь выполняется на Jira Cloud + GitLab self-managed + GitLab CI и штатном Go-профиле. Подготовленные задачи, commit history и тестовый дефект допустимы. Backend сам читает API, восстанавливает историю, считает показатели и строит выдачу. Числа в интерфейсе и MR не прошиваются вручную.
 
 | Шаг / роль | Вход и действие | Ответ приложения и наблюдение | Связь |
 |---|---|---|---|
-| 0. Администратор | Восстановить начальный snapshot стенда, проверить source-версии и manifest, войти через GitLab | Видна выбранная команда и только разрешённые проекты; время набора/сборки указано | UC-01-UC-03 |
+| 0. Администратор | Восстановить локальную часть стенда, проверить Cloud-конфигурацию и manifest, войти через GitLab | Видна выбранная команда и только разрешённые проекты; время набора/сборки указано | UC-01-UC-03 |
 | 1. Администратор | Добавить test credentials Jira/GitLab, выбрать projects/repos и период; запустить пробное чтение | Capabilities, история, права, доступные reports и публикация показаны до подтверждения | UC-04 |
 | 2. Администратор и владелец процесса | Загрузить историю; подтвердить preview workflow на 10 задачах, size/type/team и целевые сроки | Сохранились версии mapping и целевых сроков; загрузка и сверка закончились либо показывают конкретные пробелы | UC-05/UC-07/UC-09/UC-10 |
 | 3. Руководитель | Выбрать команду, период, тип/размер и недельный/месячный масштаб; открыть графики входа/выхода, WIP, скорости, targets и переоткрытий | Формула, список задач и интервалы совпали с контрольным расчётом; blocked входит в полный WIP, unknown виден | UC-09/UC-11/UC-13/UC-15 |
@@ -155,7 +155,7 @@ PM получает подготовленный контекст для раз�
 | Параметр | Требование к стенду |
 |---|---|
 | Среда | Один изолированный контур craftPulse: Go backend, React/TypeScript frontend, PostgreSQL, worker и runner. Source instances и runner учитываются отдельно от ресурсов приложения |
-| Область | Две тестовые организации для проверки изоляции; одна рабочая команда, два task-проекта Jira DC и отдельный fixture универсального импорта; GitLab и GitHub repos, отдельный закрытый repo/документ |
+| Область | Две тестовые организации для проверки изоляции; одна рабочая команда, два task-проекта Jira Cloud и отдельный fixture универсального импорта; GitLab и GitHub repos, отдельный закрытый repo/документ |
 | История | За выбранный период, с недельной или месячной детализацией; для длинной динамики - с начала года при доступной истории. Загружаются предыстория начала задач и весь текущий open backlog без фильтра по updated. Неполный прошлый период обозначается явно |
 | Данные показа | 100 задач, не меньше 20 с полным completion/start; 10 MR/PR, 20 CI runs с разными исходами, 50 Git-документов и 10 wiki-страниц |
 | Варианты | Создана сразу active; intake в категории active; blocked; cancelled/duplicate; done→reopen→done; смена size/team; старый open; неполная history page; одинаковые ключи разных instances; bot-response; ambiguous link; head без scan; reports другого SHA |
@@ -165,7 +165,7 @@ PM получает подготовленный контекст для раз�
 | Manifest | Source URL/edition/version, точные queries/scopes, границы backfill, completeness/pages/cursors, source IDs/SHA, event/observed times, mapping/calculation/parser versions, tool/rules/config/DB hashes, ожидаемые значения и hashes очищенных файлов |
 | Время | Период и дату состояния выбирают перед проверкой и сохраняют в manifest. Длительности считаются по календарному времени, отображение - UTC; исходный offset сохраняется. Повтор расчёта использует те же период и дату состояния |
 
-Совместимость адаптеров проверяется на тестовых instances Jira DC, GitLab, Jenkins/plugins, SonarQube и Confluence с зафиксированными версиями. GitHub.com проверяется с закреплённой API version. Поддержка распространяется на проверенные версии и возможности редакций.
+Jira Cloud REST v3 и Confluence Cloud REST v2/v1 проверяются на тестовом Atlassian-сайте с записанными Cloud ID, API и наблюдаемой сборкой SaaS. Версии GitLab, Jenkins/plugins и SonarQube фиксируются отдельно. GitHub.com проверяется с закреплённой API version. Поддержка распространяется на проверенные версии и возможности редакций.
 
 ## 7. Приёмка и свидетельства
 
