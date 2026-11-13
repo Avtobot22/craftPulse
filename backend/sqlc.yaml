@@ -64,3 +64,12 @@ sql:
         out: internal/repo/persistent/connect
         sql_package: pgx/v5
         omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
+    queries: internal/repo/persistent/ingest/queries.sql
+    gen:
+      go:
+        package: ingest
+        out: internal/repo/persistent/ingest
+        sql_package: pgx/v5
+        omit_unused_structs: true

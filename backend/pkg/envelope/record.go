@@ -1,6 +1,7 @@
 package envelope
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -24,14 +25,19 @@ func (c *checker) checkRecord(no int, line []byte) {
 		c.result.Records = append(c.result.Records, result)
 		return
 	}
-	c.addRecord(result, record)
+	c.addRecord(result, record, line)
 }
 
 // addRecord validates a decoded record and keeps its result; file references are resolved by checkFiles.
-func (c *checker) addRecord(result RecordResult, record map[string]any) {
+func (c *checker) addRecord(result RecordResult, record map[string]any, line []byte) {
+	result.Class, _ = record["record_class"].(string)
 	result.Kind, _ = record["record_kind"].(string)
+	result.PayloadSchema, _ = record["payload_schema"].(string)
 	result.NativeNS, _ = record["native_ns"].(string)
 	result.NativeID, _ = record["native_id"].(string)
+	if rev, ok := record["source_revision"].(string); ok {
+		result.SourceRevision = &rev
+	}
 	rule, rejection := c.recordRule(record)
 	if rejection == nil {
 		result.Hash, rejection = recordHash(record, rule)
@@ -40,6 +46,12 @@ func (c *checker) addRecord(result RecordResult, record map[string]any) {
 	c.result.Records = append(c.result.Records, result)
 	if rejection != nil {
 		return
+	}
+	if c.lines != nil {
+		if line == nil {
+			line, _ = json.Marshal(record) // decoded JSON values encode back
+		}
+		c.lines[result.No] = bytes.Clone(line)
 	}
 	index := len(c.result.Records) - 1
 	if file, ok := record["file"].(map[string]any); ok {
@@ -187,5 +199,5 @@ func (c *checker) addCSVRow(no int, header, row []string) {
 		"record_class": classSnapshot, "record_kind": "task", "payload_schema": "task/1",
 		"native_ns": "", "native_id": id, "source_revision": nil, "event_time": nil,
 		"observed_time": nil, "file": nil, "payload": cells,
-	})
+	}, nil)
 }

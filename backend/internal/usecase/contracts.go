@@ -78,3 +78,8 @@ type Connections interface {
 type ProbeRunner interface {
 	RunProbe(ctx context.Context, orgID, connectionID, probeID entity.ID) error
 }
+
+// PackageProcessor runs the job of a quarantined package.
+type PackageProcessor interface {
+	ProcessPackage(ctx context.Context, orgID, receiptID entity.ID) error
+}

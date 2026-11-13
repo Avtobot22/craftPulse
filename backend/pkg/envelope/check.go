@@ -36,6 +36,7 @@ const (
 	ReasonDuplicateEntry           = "duplicate_entry"
 	ReasonLimitExceeded            = "limit_exceeded"
 	ReasonInvalidCSV               = "invalid_csv"
+	ReasonUnsafeXML                = "unsafe_xml"
 )
 
 // Reasons for rejecting one record.
@@ -84,12 +85,15 @@ func (r *Rejection) Error() string {
 
 // RecordResult is the outcome of one record; No counts lines of records.jsonl or data rows of records.csv.
 type RecordResult struct {
-	No        int
-	Kind      string
-	NativeNS  string
-	NativeID  string
-	Hash      string
-	Rejection *Rejection
+	No             int
+	Class          string
+	Kind           string
+	PayloadSchema  string
+	NativeNS       string
+	NativeID       string
+	SourceRevision *string
+	Hash           string
+	Rejection      *Rejection
 }
 
 // Result of Check. Envelope is set when the whole package is rejected; Records are then not reported.
@@ -116,6 +120,8 @@ type fileEntry struct {
 }
 
 type checker struct {
+	// lines keeps the record of every accepted number when the package is cleaned.
+	lines      map[int][]byte
 	limits     Limits
 	manifest   map[string]any
 	rule       packageRule
@@ -254,9 +260,13 @@ func (c *checker) readEntry(tr *tar.Reader, header *tar.Header) *Rejection {
 		return c.readTasksCSV(tr)
 	case strings.HasPrefix(name, FilesDir):
 		h := sha256.New()
-		size, err := io.Copy(h, tr)
+		guard := &xmlGuard{r: tr}
+		size, err := io.Copy(h, guard)
 		if err != nil {
 			return &Rejection{ReasonInvalidArchive, "cannot read " + name}
+		}
+		if guard.found {
+			return &Rejection{ReasonUnsafeXML, name + " declares a document type or an entity"}
 		}
 		c.files[name] = fileEntry{sha256: hex.EncodeToString(h.Sum(nil)), size: size}
 		return nil
@@ -341,6 +351,36 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	if c.n > c.limit {
 		c.exceeded = true
 		return n, errors.New("package is larger than the limit")
+	}
+	return n, err
+}
+
+// xmlGuard finds a document type or entity declaration in a file that starts as XML: a parser of a
+// report could expand its entities or fetch an external one.
+type xmlGuard struct {
+	r                   io.Reader
+	decided, xml, found bool
+	tail                []byte
+}
+
+var _xmlDeclarations = [][]byte{[]byte("<!doctype"), []byte("<!entity")}
+
+func (g *xmlGuard) Read(p []byte) (int, error) {
+	n, err := g.r.Read(p)
+	chunk := p[:n]
+	if !g.decided {
+		if trimmed := bytes.TrimLeft(chunk, " \t\r\n\ufeff"); len(trimmed) > 0 {
+			g.decided, g.xml = true, trimmed[0] == '<'
+		}
+	}
+	if g.xml && !g.found && n > 0 {
+		window := bytes.ToLower(append(g.tail, chunk...))
+		for _, d := range _xmlDeclarations {
+			if bytes.Contains(window, d) {
+				g.found = true
+			}
+		}
+		g.tail = append(g.tail[:0], window[max(0, len(window)-len("<!doctype")):]...)
 	}
 	return n, err
 }
