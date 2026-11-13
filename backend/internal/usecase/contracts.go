@@ -65,6 +65,7 @@ type UploadTokens interface {
 // Connections is the connect module for administrators (UC-04, UI-09, UI-10, UI-17).
 type Connections interface {
 	ListAdapters() []entity.AdapterInfo
+	Instance(ctx context.Context, orgID, id entity.ID) (entity.SourceInstance, error)
 	List(ctx context.Context, s entity.Subject, f entity.ConnectionFilter) (entity.ConnectionPage, error)
 	Create(ctx context.Context, s entity.Subject, in entity.ConnectionInput) (entity.ConnectionState, error)
 	State(ctx context.Context, orgID, connectionID entity.ID) (entity.ConnectionState, error)
@@ -120,4 +121,12 @@ type Operations interface {
 // Normalizer runs the job normalize.batch; complete ends the job in the transaction of its part.
 type Normalizer interface {
 	RunBatch(ctx context.Context, job entity.NormalizeBatchJob, complete func(context.Context) error) error
+}
+
+// Accounts is the org module for the accounts of sources, the people they are linked to and the
+// confirmation of links (UC-08, FR-018).
+type Accounts interface {
+	ListPersons(ctx context.Context, s entity.Subject, f entity.PersonFilter) (entity.PersonPage, error)
+	ListSourceAccounts(ctx context.Context, s entity.Subject, f entity.SourceAccountFilter) (entity.SourceAccountPage, error)
+	AssignAccounts(ctx context.Context, s entity.Subject, key entity.ID, items []entity.AssignmentRequest) ([]entity.AssignmentOutcome, error)
 }

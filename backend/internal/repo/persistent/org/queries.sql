@@ -281,3 +281,78 @@ ON CONFLICT (organization_id, instance_id, native_account_id) DO NOTHING;
 SELECT id, native_account_id FROM org.source_account
 WHERE organization_id = sqlc.arg(organization_id) AND instance_id = sqlc.arg(instance_id)
     AND native_account_id = ANY (sqlc.arg(native_ids)::text[]);
+
+-- name: PagePersons :many
+SELECT id, display_name, kind FROM org.person
+WHERE organization_id = sqlc.arg(organization_id)
+    AND (sqlc.narg(kind)::text IS NULL OR kind = sqlc.narg(kind))
+    AND (NOT sqlc.arg(after)::bool OR id > sqlc.arg(after_id)::uuid)
+ORDER BY id
+LIMIT sqlc.arg(row_limit);
+
+-- name: InsertPerson :one
+INSERT INTO org.person (organization_id, display_name, kind, created_at)
+VALUES (sqlc.arg(organization_id), sqlc.narg(display_name), sqlc.arg(kind), sqlc.arg(created_at))
+RETURNING id;
+
+-- name: PageSourceAccounts :many
+SELECT a.id, a.instance_id, a.native_account_id, a.login, a.display_name, a.email, a.proposed_kind,
+    x.id AS assignment_id, x.person_id, x.actor_kind, x.known_seq, x.confirmed_by, x.confirmed_at, x.confirmation_id
+FROM org.source_account a
+LEFT JOIN org.account_assignment x
+    ON x.organization_id = a.organization_id AND x.source_account_id = a.id AND x.superseded_seq IS NULL
+WHERE a.organization_id = sqlc.arg(organization_id)
+    AND (sqlc.narg(instance_id)::uuid IS NULL OR a.instance_id = sqlc.narg(instance_id))
+    AND (sqlc.narg(assigned)::bool IS NULL OR (x.id IS NOT NULL) = sqlc.narg(assigned))
+    AND (NOT sqlc.arg(after)::bool OR a.id > sqlc.arg(after_id)::uuid)
+ORDER BY a.id
+LIMIT sqlc.arg(row_limit);
+
+-- name: AccountProposals :many
+SELECT DISTINCT a.id AS source_account_id, x.person_id::uuid AS person_id,
+    CASE WHEN a.login IS NOT NULL AND lower(o.login) = lower(a.login) THEN 'login_match' ELSE 'email_match' END::text AS basis
+FROM org.source_account a
+JOIN org.source_account o ON o.organization_id = a.organization_id AND o.id <> a.id
+    AND ((a.login IS NOT NULL AND lower(o.login) = lower(a.login)) OR (a.email IS NOT NULL AND lower(o.email) = lower(a.email)))
+JOIN org.account_assignment x ON x.organization_id = o.organization_id AND x.source_account_id = o.id
+    AND x.superseded_seq IS NULL AND x.person_id IS NOT NULL
+WHERE a.organization_id = sqlc.arg(organization_id) AND a.id = ANY (sqlc.arg(ids)::uuid[])
+ORDER BY 1, 2, 3;
+
+-- name: SourceAccountsByID :many
+SELECT id, instance_id, native_account_id, login, display_name, email, proposed_kind FROM org.source_account
+WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(ids)::uuid[]);
+
+-- name: LockCurrentAssignments :many
+SELECT * FROM org.account_assignment
+WHERE organization_id = sqlc.arg(organization_id) AND source_account_id = ANY (sqlc.arg(ids)::uuid[]) AND superseded_seq IS NULL
+ORDER BY id
+FOR UPDATE;
+
+-- name: AssignmentsByConfirmation :many
+SELECT * FROM org.account_assignment
+WHERE organization_id = sqlc.arg(organization_id) AND confirmation_id = ANY (sqlc.arg(ids)::uuid[]);
+
+-- name: SupersedeAssignments :exec
+UPDATE org.account_assignment SET superseded_seq = sqlc.arg(known_seq)::bigint, superseded_at = sqlc.arg(at)::timestamptz
+WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: InsertAssignment :one
+INSERT INTO org.account_assignment (organization_id, source_account_id, person_id, actor_kind, known_seq, confirmed_by, confirmed_at,
+    confirmation_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id;
+
+-- name: AssignmentAt :one
+SELECT * FROM org.account_assignment
+WHERE organization_id = sqlc.arg(organization_id) AND source_account_id = sqlc.arg(source_account_id)
+    AND known_seq <= sqlc.arg(known_seq) AND (superseded_seq IS NULL OR superseded_seq > sqlc.arg(known_seq));
+
+-- name: UserSourceAccount :one
+SELECT a.id, a.native_account_id FROM org.app_user u
+JOIN org.account_assignment x ON x.organization_id = u.organization_id AND x.person_id = u.person_id
+    AND x.superseded_seq IS NULL AND x.actor_kind = 'human'
+JOIN org.source_account a ON a.organization_id = x.organization_id AND a.id = x.source_account_id
+WHERE u.organization_id = sqlc.arg(organization_id) AND u.id = sqlc.arg(user_id) AND a.instance_id = sqlc.arg(instance_id)
+ORDER BY x.confirmed_at DESC, x.id DESC
+LIMIT 1;

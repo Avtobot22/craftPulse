@@ -31,6 +31,7 @@ var (
 	PayloadTooLarge      = Problem{http.StatusRequestEntityTooLarge, "payload_too_large", "Payload is too large"}
 	UnsupportedMedia     = Problem{http.StatusUnsupportedMediaType, "unsupported_media_type", "Unsupported media type"}
 	ValidationFailed     = Problem{http.StatusUnprocessableEntity, "validation_failed", "Validation failed"}
+	IdempotencyKeyReused = Problem{http.StatusUnprocessableEntity, "idempotency_key_reused", "Idempotency key was used with another request"}
 	PreconditionRequired = Problem{http.StatusPreconditionRequired, "precondition_required", "If-Match header is required"}
 	InternalError        = Problem{http.StatusInternalServerError, "internal_error", "Internal server error"}
 	ServiceUnavailable   = Problem{http.StatusServiceUnavailable, "service_unavailable", "Service temporarily unavailable"}
