@@ -13,6 +13,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const accountProposals = `-- name: AccountProposals :many
+SELECT DISTINCT a.id AS source_account_id, x.person_id::uuid AS person_id,
+    CASE WHEN a.login IS NOT NULL AND lower(o.login) = lower(a.login) THEN 'login_match' ELSE 'email_match' END::text AS basis
+FROM org.source_account a
+JOIN org.source_account o ON o.organization_id = a.organization_id AND o.id <> a.id
+    AND ((a.login IS NOT NULL AND lower(o.login) = lower(a.login)) OR (a.email IS NOT NULL AND lower(o.email) = lower(a.email)))
+JOIN org.account_assignment x ON x.organization_id = o.organization_id AND x.source_account_id = o.id
+    AND x.superseded_seq IS NULL AND x.person_id IS NOT NULL
+WHERE a.organization_id = $1 AND a.id = ANY ($2::uuid[])
+ORDER BY 1, 2, 3
+`
+
+type AccountProposalsParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+type AccountProposalsRow struct {
+	SourceAccountID uuid.UUID
+	PersonID        uuid.UUID
+	Basis           string
+}
+
+func (q *Queries) AccountProposals(ctx context.Context, arg AccountProposalsParams) ([]AccountProposalsRow, error) {
+	rows, err := q.db.Query(ctx, accountProposals, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccountProposalsRow
+	for rows.Next() {
+		var i AccountProposalsRow
+		if err := rows.Scan(&i.SourceAccountID, &i.PersonID, &i.Basis); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const activateOrganization = `-- name: ActivateOrganization :exec
 UPDATE org.organization SET status = 'active', first_admin_user_id = $1
 WHERE organization_id = $2 AND status = 'setup'
@@ -72,6 +115,79 @@ func (q *Queries) AssignRole(ctx context.Context, arg AssignRoleParams) error {
 		arg.AssignedAt,
 	)
 	return err
+}
+
+const assignmentAt = `-- name: AssignmentAt :one
+SELECT organization_id, id, source_account_id, person_id, actor_kind, known_seq, superseded_seq, superseded_at, confirmed_by, confirmed_at, confirmation_id FROM org.account_assignment
+WHERE organization_id = $1 AND source_account_id = $2
+    AND known_seq <= $3 AND (superseded_seq IS NULL OR superseded_seq > $3)
+`
+
+type AssignmentAtParams struct {
+	OrganizationID  uuid.UUID
+	SourceAccountID uuid.UUID
+	KnownSeq        int64
+}
+
+func (q *Queries) AssignmentAt(ctx context.Context, arg AssignmentAtParams) (OrgAccountAssignment, error) {
+	row := q.db.QueryRow(ctx, assignmentAt, arg.OrganizationID, arg.SourceAccountID, arg.KnownSeq)
+	var i OrgAccountAssignment
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.SourceAccountID,
+		&i.PersonID,
+		&i.ActorKind,
+		&i.KnownSeq,
+		&i.SupersededSeq,
+		&i.SupersededAt,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.ConfirmationID,
+	)
+	return i, err
+}
+
+const assignmentsByConfirmation = `-- name: AssignmentsByConfirmation :many
+SELECT organization_id, id, source_account_id, person_id, actor_kind, known_seq, superseded_seq, superseded_at, confirmed_by, confirmed_at, confirmation_id FROM org.account_assignment
+WHERE organization_id = $1 AND confirmation_id = ANY ($2::uuid[])
+`
+
+type AssignmentsByConfirmationParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) AssignmentsByConfirmation(ctx context.Context, arg AssignmentsByConfirmationParams) ([]OrgAccountAssignment, error) {
+	rows, err := q.db.Query(ctx, assignmentsByConfirmation, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgAccountAssignment
+	for rows.Next() {
+		var i OrgAccountAssignment
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.SourceAccountID,
+			&i.PersonID,
+			&i.ActorKind,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ConfirmedBy,
+			&i.ConfirmedAt,
+			&i.ConfirmationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const createOrganization = `-- name: CreateOrganization :exec
@@ -301,6 +417,65 @@ func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (GetUserRow, e
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const insertAssignment = `-- name: InsertAssignment :one
+INSERT INTO org.account_assignment (organization_id, source_account_id, person_id, actor_kind, known_seq, confirmed_by, confirmed_at,
+    confirmation_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id
+`
+
+type InsertAssignmentParams struct {
+	OrganizationID  uuid.UUID
+	SourceAccountID uuid.UUID
+	PersonID        uuid.NullUUID
+	ActorKind       string
+	KnownSeq        int64
+	ConfirmedBy     uuid.UUID
+	ConfirmedAt     time.Time
+	ConfirmationID  uuid.UUID
+}
+
+func (q *Queries) InsertAssignment(ctx context.Context, arg InsertAssignmentParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertAssignment,
+		arg.OrganizationID,
+		arg.SourceAccountID,
+		arg.PersonID,
+		arg.ActorKind,
+		arg.KnownSeq,
+		arg.ConfirmedBy,
+		arg.ConfirmedAt,
+		arg.ConfirmationID,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertPerson = `-- name: InsertPerson :one
+INSERT INTO org.person (organization_id, display_name, kind, created_at)
+VALUES ($1, $2, $3, $4)
+RETURNING id
+`
+
+type InsertPersonParams struct {
+	OrganizationID uuid.UUID
+	DisplayName    pgtype.Text
+	Kind           string
+	CreatedAt      time.Time
+}
+
+func (q *Queries) InsertPerson(ctx context.Context, arg InsertPersonParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertPerson,
+		arg.OrganizationID,
+		arg.DisplayName,
+		arg.Kind,
+		arg.CreatedAt,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const insertTeamMember = `-- name: InsertTeamMember :exec
@@ -890,6 +1065,50 @@ func (q *Queries) ListVisibleTeams(ctx context.Context, arg ListVisibleTeamsPara
 	return items, nil
 }
 
+const lockCurrentAssignments = `-- name: LockCurrentAssignments :many
+SELECT organization_id, id, source_account_id, person_id, actor_kind, known_seq, superseded_seq, superseded_at, confirmed_by, confirmed_at, confirmation_id FROM org.account_assignment
+WHERE organization_id = $1 AND source_account_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+ORDER BY id
+FOR UPDATE
+`
+
+type LockCurrentAssignmentsParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) LockCurrentAssignments(ctx context.Context, arg LockCurrentAssignmentsParams) ([]OrgAccountAssignment, error) {
+	rows, err := q.db.Query(ctx, lockCurrentAssignments, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgAccountAssignment
+	for rows.Next() {
+		var i OrgAccountAssignment
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.SourceAccountID,
+			&i.PersonID,
+			&i.ActorKind,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ConfirmedBy,
+			&i.ConfirmedAt,
+			&i.ConfirmationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockOrganization = `-- name: LockOrganization :one
 SELECT organization_id, name, status, first_admin_issuer, first_admin_subject
 FROM org.organization WHERE organization_id = $1
@@ -1000,6 +1219,55 @@ func (q *Queries) LockUserByIdentity(ctx context.Context, arg LockUserByIdentity
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const pagePersons = `-- name: PagePersons :many
+SELECT id, display_name, kind FROM org.person
+WHERE organization_id = $1
+    AND ($2::text IS NULL OR kind = $2)
+    AND (NOT $3::bool OR id > $4::uuid)
+ORDER BY id
+LIMIT $5
+`
+
+type PagePersonsParams struct {
+	OrganizationID uuid.UUID
+	Kind           pgtype.Text
+	After          bool
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PagePersonsRow struct {
+	ID          uuid.UUID
+	DisplayName pgtype.Text
+	Kind        string
+}
+
+func (q *Queries) PagePersons(ctx context.Context, arg PagePersonsParams) ([]PagePersonsRow, error) {
+	rows, err := q.db.Query(ctx, pagePersons,
+		arg.OrganizationID,
+		arg.Kind,
+		arg.After,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PagePersonsRow
+	for rows.Next() {
+		var i PagePersonsRow
+		if err := rows.Scan(&i.ID, &i.DisplayName, &i.Kind); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const pageProjectsAsc = `-- name: PageProjectsAsc :many
@@ -1220,6 +1488,88 @@ func (q *Queries) PageServicesDesc(ctx context.Context, arg PageServicesDescPara
 	for rows.Next() {
 		var i PageServicesDescRow
 		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageSourceAccounts = `-- name: PageSourceAccounts :many
+SELECT a.id, a.instance_id, a.native_account_id, a.login, a.display_name, a.email, a.proposed_kind,
+    x.id AS assignment_id, x.person_id, x.actor_kind, x.known_seq, x.confirmed_by, x.confirmed_at, x.confirmation_id
+FROM org.source_account a
+LEFT JOIN org.account_assignment x
+    ON x.organization_id = a.organization_id AND x.source_account_id = a.id AND x.superseded_seq IS NULL
+WHERE a.organization_id = $1
+    AND ($2::uuid IS NULL OR a.instance_id = $2)
+    AND ($3::bool IS NULL OR (x.id IS NOT NULL) = $3)
+    AND (NOT $4::bool OR a.id > $5::uuid)
+ORDER BY a.id
+LIMIT $6
+`
+
+type PageSourceAccountsParams struct {
+	OrganizationID uuid.UUID
+	InstanceID     uuid.NullUUID
+	Assigned       pgtype.Bool
+	After          bool
+	AfterID        uuid.UUID
+	RowLimit       int32
+}
+
+type PageSourceAccountsRow struct {
+	ID              uuid.UUID
+	InstanceID      uuid.UUID
+	NativeAccountID string
+	Login           pgtype.Text
+	DisplayName     pgtype.Text
+	Email           pgtype.Text
+	ProposedKind    string
+	AssignmentID    uuid.NullUUID
+	PersonID        uuid.NullUUID
+	ActorKind       pgtype.Text
+	KnownSeq        pgtype.Int8
+	ConfirmedBy     uuid.NullUUID
+	ConfirmedAt     pgtype.Timestamptz
+	ConfirmationID  uuid.NullUUID
+}
+
+func (q *Queries) PageSourceAccounts(ctx context.Context, arg PageSourceAccountsParams) ([]PageSourceAccountsRow, error) {
+	rows, err := q.db.Query(ctx, pageSourceAccounts,
+		arg.OrganizationID,
+		arg.InstanceID,
+		arg.Assigned,
+		arg.After,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageSourceAccountsRow
+	for rows.Next() {
+		var i PageSourceAccountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.InstanceID,
+			&i.NativeAccountID,
+			&i.Login,
+			&i.DisplayName,
+			&i.Email,
+			&i.ProposedKind,
+			&i.AssignmentID,
+			&i.PersonID,
+			&i.ActorKind,
+			&i.KnownSeq,
+			&i.ConfirmedBy,
+			&i.ConfirmedAt,
+			&i.ConfirmationID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1739,6 +2089,76 @@ func (q *Queries) SourceAccountIDs(ctx context.Context, arg SourceAccountIDsPara
 	return items, nil
 }
 
+const sourceAccountsByID = `-- name: SourceAccountsByID :many
+SELECT id, instance_id, native_account_id, login, display_name, email, proposed_kind FROM org.source_account
+WHERE organization_id = $1 AND id = ANY ($2::uuid[])
+`
+
+type SourceAccountsByIDParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+type SourceAccountsByIDRow struct {
+	ID              uuid.UUID
+	InstanceID      uuid.UUID
+	NativeAccountID string
+	Login           pgtype.Text
+	DisplayName     pgtype.Text
+	Email           pgtype.Text
+	ProposedKind    string
+}
+
+func (q *Queries) SourceAccountsByID(ctx context.Context, arg SourceAccountsByIDParams) ([]SourceAccountsByIDRow, error) {
+	rows, err := q.db.Query(ctx, sourceAccountsByID, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SourceAccountsByIDRow
+	for rows.Next() {
+		var i SourceAccountsByIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.InstanceID,
+			&i.NativeAccountID,
+			&i.Login,
+			&i.DisplayName,
+			&i.Email,
+			&i.ProposedKind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const supersedeAssignments = `-- name: SupersedeAssignments :exec
+UPDATE org.account_assignment SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = ANY ($4::uuid[]) AND superseded_seq IS NULL
+`
+
+type SupersedeAssignmentsParams struct {
+	KnownSeq       int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) SupersedeAssignments(ctx context.Context, arg SupersedeAssignmentsParams) error {
+	_, err := q.db.Exec(ctx, supersedeAssignments,
+		arg.KnownSeq,
+		arg.At,
+		arg.OrganizationID,
+		arg.Ids,
+	)
+	return err
+}
+
 const supersedeTeamMember = `-- name: SupersedeTeamMember :exec
 UPDATE org.team_member SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
 WHERE organization_id = $3 AND id = $4 AND superseded_seq IS NULL
@@ -1844,4 +2264,32 @@ func (q *Queries) UpdateTeam(ctx context.Context, arg UpdateTeamParams) error {
 		arg.Status,
 	)
 	return err
+}
+
+const userSourceAccount = `-- name: UserSourceAccount :one
+SELECT a.id, a.native_account_id FROM org.app_user u
+JOIN org.account_assignment x ON x.organization_id = u.organization_id AND x.person_id = u.person_id
+    AND x.superseded_seq IS NULL AND x.actor_kind = 'human'
+JOIN org.source_account a ON a.organization_id = x.organization_id AND a.id = x.source_account_id
+WHERE u.organization_id = $1 AND u.id = $2 AND a.instance_id = $3
+ORDER BY x.confirmed_at DESC, x.id DESC
+LIMIT 1
+`
+
+type UserSourceAccountParams struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+	InstanceID     uuid.UUID
+}
+
+type UserSourceAccountRow struct {
+	ID              uuid.UUID
+	NativeAccountID string
+}
+
+func (q *Queries) UserSourceAccount(ctx context.Context, arg UserSourceAccountParams) (UserSourceAccountRow, error) {
+	row := q.db.QueryRow(ctx, userSourceAccount, arg.OrganizationID, arg.UserID, arg.InstanceID)
+	var i UserSourceAccountRow
+	err := row.Scan(&i.ID, &i.NativeAccountID)
+	return i, err
 }

@@ -50,6 +50,21 @@ type OrgRepo interface {
 // SourceAccountRepo keeps the accounts of source instances (TZ 12.5.1); a name or an email joins nothing.
 type SourceAccountRepo interface {
 	EnsureSourceAccounts(ctx context.Context, orgID, instanceID entity.ID, accounts []entity.SourceAccount, at time.Time) (map[string]entity.ID, error)
+	// PagePersons and PageSourceAccounts read by ID after the cursor, up to the limit of the filter.
+	PagePersons(ctx context.Context, orgID entity.ID, f entity.PersonFilter) ([]entity.Person, error)
+	CreatePerson(ctx context.Context, orgID entity.ID, name string, kind entity.PersonKind, at time.Time) (entity.ID, error)
+	PageSourceAccounts(ctx context.Context, orgID entity.ID, f entity.SourceAccountFilter) ([]entity.AccountView, error)
+	// AccountProposals are the people whose other accounts share the login or the email of an account.
+	AccountProposals(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.AccountProposal, error)
+	SourceAccountsByID(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID]entity.AccountView, error)
+	// LockCurrentAssignments locks the current links of accounts by ascending ID and returns them by account.
+	LockCurrentAssignments(ctx context.Context, orgID entity.ID, accountIDs []entity.ID) (map[entity.ID]entity.AccountAssignment, error)
+	// AssignmentsByConfirmation finds the versions saved under confirmation IDs, by confirmation ID.
+	AssignmentsByConfirmation(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID]entity.AccountAssignment, error)
+	SupersedeAssignments(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
+	InsertAssignment(ctx context.Context, orgID entity.ID, a entity.AccountAssignment) (entity.ID, error)
+	AssignmentAt(ctx context.Context, orgID, accountID entity.ID, seq int64) (entity.AccountAssignment, bool, error)
+	UserSourceAccount(ctx context.Context, orgID, userID, instanceID entity.ID) (entity.UserAccount, bool, error)
 }
 
 // UserRepo is the administration of users: roles and blocking (TZ 7.2, 7.7).

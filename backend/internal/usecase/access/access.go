@@ -39,6 +39,7 @@ var _rules = map[string]rule{
 	"installation.read":    ruleAdministrator,
 	"audit.read":           ruleAdministrator,
 	"connections.manage":   ruleAdministrator,
+	"accounts.manage":      ruleAdministrator,
 	"upload_tokens.manage": ruleProjectLead,
 	"imports.create":       ruleProjectLead,
 	"receipts.read":        ruleReceipts,

@@ -66,6 +66,17 @@ func AdapterKeyAAD(orgID, connectionID entity.ID) []byte {
 
 // EnsureInstance finds the instance by provider and key or creates it without a connection, so a package
 // of import and a connection to the same instance share its identity (TZ 12.4, 12.6).
+// Instance reads an instance of a source of the organization.
+func (u *UseCase) Instance(ctx context.Context, orgID, id entity.ID) (entity.SourceInstance, error) {
+	var out entity.SourceInstance
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.Instance(ctx, orgID, id)
+		return err
+	})
+	return out, err
+}
+
 func (u *UseCase) EnsureInstance(ctx context.Context, orgID entity.ID, provider entity.Provider, key string) (entity.SourceInstance, error) {
 	var out entity.SourceInstance
 	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {

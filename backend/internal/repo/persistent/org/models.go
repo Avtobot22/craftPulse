@@ -3,3 +3,24 @@
 //   sqlc v1.31.1
 
 package org
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type OrgAccountAssignment struct {
+	OrganizationID  uuid.UUID
+	ID              uuid.UUID
+	SourceAccountID uuid.UUID
+	PersonID        uuid.NullUUID
+	ActorKind       string
+	KnownSeq        int64
+	SupersededSeq   pgtype.Int8
+	SupersededAt    pgtype.Timestamptz
+	ConfirmedBy     uuid.UUID
+	ConfirmedAt     time.Time
+	ConfirmationID  uuid.UUID
+}

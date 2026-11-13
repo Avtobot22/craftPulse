@@ -19,6 +19,7 @@ import (
 // Domain handlers are embedded here; the fallback is one level deeper, so their methods win.
 type Handler struct {
 	uploads
+	accounts
 	connections
 	intake
 	fallback
@@ -40,6 +41,7 @@ type Deps struct {
 	Audit        usecase.AuditLog
 	Protocols    usecase.Protocols
 	Connections  usecase.Connections
+	Accounts     usecase.Accounts
 	Intake       usecase.Intake
 	Sync         usecase.SyncStatus
 	Operations   usecase.Operations
@@ -50,6 +52,7 @@ func New(d Deps) *Handler {
 	return &Handler{
 		uploads:        uploads{tokens: d.UploadTokens},
 		connections:    connections{uc: d.Connections, sync: d.Sync, operations: d.Operations},
+		accounts:       accounts{uc: d.Accounts, connections: d.Connections},
 		intake:         intake{uc: d.Intake},
 		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),
 		organization:   organization{structure: d.Structure},
@@ -99,6 +102,9 @@ func Error(c *gin.Context, err error) {
 		return
 	case errors.Is(err, entity.ErrVersionConflict):
 		response.Write(c, response.VersionConflict)
+		return
+	case errors.Is(err, entity.ErrIdempotencyKeyReused):
+		response.Write(c, response.IdempotencyKeyReused)
 		return
 	case errors.Is(err, errMalformedPage), errors.Is(err, errMalformedForm):
 		response.Write(c, response.MalformedRequest)
