@@ -72,11 +72,12 @@ type Areas struct {
 // Profile is what the subject may see, read on every request (TZ 7.2): roles and areas from roles and teams.
 // Whole marks a role over the whole organization, which sees every area.
 type Profile struct {
-	User         User
-	Organization Organization
-	Roles        []RoleAssignment
-	Areas        Areas
-	Whole        bool
+	UploadProjects []ID
+	User           User
+	Organization   Organization
+	Roles          []RoleAssignment
+	Areas          Areas
+	Whole          bool
 }
 
 type AccessRequest struct {

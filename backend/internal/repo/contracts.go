@@ -119,3 +119,11 @@ type IdentityProviderProbe interface {
 type ObjectStoreProbe interface {
 	Check(ctx context.Context) error
 }
+
+type UploadTokenRepo interface {
+	CreateUploadToken(context.Context, entity.ID, entity.ID, entity.ID, []byte, time.Time) (entity.UploadToken, error)
+	UploadToken(context.Context, entity.ID, entity.ID) (entity.UploadToken, error)
+	UploadTokenByHash(context.Context, []byte) (entity.UploadToken, error)
+	RevokeUploadToken(context.Context, entity.ID, entity.ID, time.Time) (bool, error)
+	PageUploadTokens(context.Context, entity.ID, entity.ID, int, *entity.AuditKey) ([]entity.UploadToken, error)
+}

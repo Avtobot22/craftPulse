@@ -123,6 +123,8 @@ type Session struct {
 
 // Subject is who sent the request: the session keeps only the user and the organization of the login.
 type Subject struct {
+	ProjectID        ID
+	UploadTokenID    ID
 	OrganizationID   ID
 	OrganizationSlug string
 	UserID           ID

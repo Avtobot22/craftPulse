@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createLoginAttempt = `-- name: CreateLoginAttempt :exec
@@ -196,6 +197,65 @@ func (q *Queries) EndUserSessions(ctx context.Context, arg EndUserSessionsParams
 	return result.RowsAffected(), nil
 }
 
+const findUploadToken = `-- name: FindUploadToken :one
+SELECT id, organization_id, project_id, slot, created_at, revoked_at FROM auth.upload_token WHERE organization_id=$1 AND id=$2
+`
+
+type FindUploadTokenParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type FindUploadTokenRow struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	ProjectID      uuid.UUID
+	Slot           int16
+	CreatedAt      time.Time
+	RevokedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) FindUploadToken(ctx context.Context, arg FindUploadTokenParams) (FindUploadTokenRow, error) {
+	row := q.db.QueryRow(ctx, findUploadToken, arg.OrganizationID, arg.ID)
+	var i FindUploadTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ProjectID,
+		&i.Slot,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const findUploadTokenHash = `-- name: FindUploadTokenHash :one
+SELECT id, organization_id, project_id, slot, created_at, revoked_at FROM auth.upload_token WHERE token_hash=$1
+`
+
+type FindUploadTokenHashRow struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	ProjectID      uuid.UUID
+	Slot           int16
+	CreatedAt      time.Time
+	RevokedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) FindUploadTokenHash(ctx context.Context, tokenHash []byte) (FindUploadTokenHashRow, error) {
+	row := q.db.QueryRow(ctx, findUploadTokenHash, tokenHash)
+	var i FindUploadTokenHashRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ProjectID,
+		&i.Slot,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const getActiveProviderRegistration = `-- name: GetActiveProviderRegistration :one
 SELECT issuer, client_id, client_secret_enc, key_version
 FROM auth.provider_registration
@@ -267,6 +327,51 @@ func (q *Queries) GetSessionByToken(ctx context.Context, tokenHash []byte) (GetS
 	return i, err
 }
 
+const insertUploadToken = `-- name: InsertUploadToken :one
+INSERT INTO auth.upload_token (organization_id, project_id, token_hash, slot, created_at, created_by)
+SELECT $1, $2, $3, s::smallint, $4, $5 FROM generate_series(1,2) s
+WHERE NOT EXISTS (SELECT 1 FROM auth.upload_token t WHERE t.organization_id=$1 AND t.project_id=$2 AND t.slot=s AND t.revoked_at IS NULL)
+ORDER BY s LIMIT 1
+RETURNING id, organization_id, project_id, slot, created_at, revoked_at
+`
+
+type InsertUploadTokenParams struct {
+	OrganizationID uuid.UUID
+	ProjectID      uuid.UUID
+	TokenHash      []byte
+	CreatedAt      time.Time
+	CreatedBy      uuid.UUID
+}
+
+type InsertUploadTokenRow struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	ProjectID      uuid.UUID
+	Slot           int16
+	CreatedAt      time.Time
+	RevokedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) InsertUploadToken(ctx context.Context, arg InsertUploadTokenParams) (InsertUploadTokenRow, error) {
+	row := q.db.QueryRow(ctx, insertUploadToken,
+		arg.OrganizationID,
+		arg.ProjectID,
+		arg.TokenHash,
+		arg.CreatedAt,
+		arg.CreatedBy,
+	)
+	var i InsertUploadTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ProjectID,
+		&i.Slot,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const listLiveSessions = `-- name: ListLiveSessions :many
 SELECT id FROM auth.session
 WHERE organization_id = $1 AND user_id = $2 AND ended_at IS NULL
@@ -304,6 +409,98 @@ func (q *Queries) ListLiveSessions(ctx context.Context, arg ListLiveSessionsPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockUploadProject = `-- name: LockUploadProject :one
+SELECT id FROM org.project WHERE organization_id=$1 AND id=$2 FOR UPDATE
+`
+
+type LockUploadProjectParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) LockUploadProject(ctx context.Context, arg LockUploadProjectParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockUploadProject, arg.OrganizationID, arg.ID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const pageUploadTokens = `-- name: PageUploadTokens :many
+SELECT id, organization_id, project_id, slot, created_at, revoked_at FROM auth.upload_token
+WHERE organization_id=$1 AND project_id=$2 AND (NOT $3::boolean OR (created_at,id) < ($4::timestamptz, $5::uuid))
+ORDER BY created_at DESC, id DESC LIMIT $6
+`
+
+type PageUploadTokensParams struct {
+	OrganizationID uuid.UUID
+	ProjectID      uuid.UUID
+	HasCursor      bool
+	AfterTime      time.Time
+	AfterID        uuid.UUID
+	PageLimit      int32
+}
+
+type PageUploadTokensRow struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	ProjectID      uuid.UUID
+	Slot           int16
+	CreatedAt      time.Time
+	RevokedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) PageUploadTokens(ctx context.Context, arg PageUploadTokensParams) ([]PageUploadTokensRow, error) {
+	rows, err := q.db.Query(ctx, pageUploadTokens,
+		arg.OrganizationID,
+		arg.ProjectID,
+		arg.HasCursor,
+		arg.AfterTime,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageUploadTokensRow
+	for rows.Next() {
+		var i PageUploadTokensRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.ProjectID,
+			&i.Slot,
+			&i.CreatedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeUploadToken = `-- name: RevokeUploadToken :execrows
+UPDATE auth.upload_token SET revoked_at=$3 WHERE organization_id=$1 AND id=$2 AND revoked_at IS NULL
+`
+
+type RevokeUploadTokenParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	RevokedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) RevokeUploadToken(ctx context.Context, arg RevokeUploadTokenParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeUploadToken, arg.OrganizationID, arg.ID, arg.RevokedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const revokeUserAPIKeys = `-- name: RevokeUserAPIKeys :execrows

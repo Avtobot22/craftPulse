@@ -65,3 +65,21 @@ func TestDecide(t *testing.T) {
 		})
 	}
 }
+
+func TestUploadSubjectScope(t *testing.T) {
+	t.Parallel()
+	project := entity.ID{3}
+	s := entity.Subject{OrganizationID: entity.ID{1}, UploadTokenID: entity.ID{2}, ProjectID: project}
+	u := &UseCase{}
+	for _, action := range []string{"ingest.upload", "receipts.read"} {
+		scope, err := u.Authorize(t.Context(), s, entity.AccessRequest{Action: action, Area: entity.AreaRef{Kind: entity.AreaProject, ID: project}})
+		assert.NoError(t, err)
+		assert.Equal(t, entity.Scope{Projects: []entity.ID{project}}, scope)
+		_, err = u.Authorize(t.Context(), s, entity.AccessRequest{Action: action, Area: entity.AreaRef{Kind: entity.AreaProject, ID: entity.ID{4}}})
+		assert.ErrorIs(t, err, entity.ErrNotFound)
+	}
+	for _, action := range []string{"org.read", "upload_tokens.manage", "session.read", "users.manage", ""} {
+		_, err := u.Authorize(t.Context(), s, entity.AccessRequest{Action: action})
+		assert.ErrorIs(t, err, entity.ErrForbidden)
+	}
+}

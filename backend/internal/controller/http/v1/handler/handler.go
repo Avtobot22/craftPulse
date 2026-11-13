@@ -18,6 +18,7 @@ import (
 
 // Domain handlers are embedded here; the fallback is one level deeper, so their methods win.
 type Handler struct {
+	uploads
 	fallback
 	session
 	organization
@@ -29,17 +30,19 @@ type fallback struct {
 }
 
 type Deps struct {
-	Logins     usecase.Logins
-	Access     usecase.Access
-	Structure  usecase.Structure
-	Users      usecase.Users
-	Audit      usecase.AuditLog
-	Protocols  usecase.Protocols
-	Registerer prometheus.Registerer
+	UploadTokens usecase.UploadTokens
+	Logins       usecase.Logins
+	Access       usecase.Access
+	Structure    usecase.Structure
+	Users        usecase.Users
+	Audit        usecase.AuditLog
+	Protocols    usecase.Protocols
+	Registerer   prometheus.Registerer
 }
 
 func New(d Deps) *Handler {
 	return &Handler{
+		uploads:        uploads{tokens: d.UploadTokens},
 		session:        newSession(d.Logins, d.Access, d.Registerer),
 		organization:   organization{structure: d.Structure},
 		administration: administration{users: d.Users, audit: d.Audit, protocols: d.Protocols},
@@ -82,6 +85,9 @@ func Error(c *gin.Context, err error) {
 		return
 	case errors.Is(err, entity.ErrForbidden):
 		response.Write(c, response.Forbidden)
+		return
+	case errors.Is(err, entity.ErrTokenSlotsFull):
+		response.Write(c, response.StateConflict)
 		return
 	case errors.Is(err, entity.ErrVersionConflict):
 		response.Write(c, response.VersionConflict)
