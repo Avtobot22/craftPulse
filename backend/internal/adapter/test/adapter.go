@@ -260,12 +260,17 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 	start := 0
 	switch {
 	case len(in.ObjectKeys) > 0:
+		// A key of a task asks for the whole changelog of the task: that is how a cut history is read on.
 		keys := make(map[[2]string]bool, len(in.ObjectKeys))
+		owners := map[string]bool{}
 		for _, k := range in.ObjectKeys {
 			keys[[2]string{k.NativeNs, k.NativeId}] = true
+			if k.ObjectKind == adaptersdk.ObjectKeyObjectKindTask && schema == "task_events" {
+				owners[k.NativeId] = true
+			}
 		}
 		for _, e := range latest(feed) {
-			if keys[[2]string{e.NativeNS, e.NativeID}] {
+			if keys[[2]string{e.NativeNS, e.NativeID}] || owners[e.NativeNS] {
 				selected = append(selected, e)
 			}
 		}
@@ -312,7 +317,7 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 			owner = e.NativeNS
 		}
 		for _, t := range a.data.Truncated {
-			if t.NativeID == owner && kind.kind == "task_event" && !seen[owner] {
+			if t.NativeID == owner && kind.kind == "task_event" && !seen[owner] && len(in.ObjectKeys) == 0 {
 				seen[owner] = true
 				from := t.HistoryFrom
 				truncated = append(truncated, envelope.TruncatedHistory{

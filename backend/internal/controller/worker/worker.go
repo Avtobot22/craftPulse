@@ -3,19 +3,24 @@ package worker
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase"
+	"github.com/Avtobot22/craftPulse/backend/pkg/postgres"
 )
 
 const _minSnooze = time.Second
 
 type Deps struct {
-	Probes   usecase.ProbeRunner
-	Packages usecase.PackageProcessor
+	Probes     usecase.ProbeRunner
+	Packages   usecase.PackageProcessor
+	Collection usecase.Collector
 }
 
 // Register adds the handlers of the job kinds; the count matters: River refuses to fetch jobs without a
@@ -23,7 +28,43 @@ type Deps struct {
 func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &probeWorker{runner: d.Probes})
 	river.AddWorker(w, &packageWorker{packages: d.Packages})
-	return 2
+	river.AddWorker(w, &pageWorker{collector: d.Collection})
+	river.AddWorker(w, &historyWorker{collector: d.Collection})
+	return 4
+}
+
+type pageWorker struct {
+	river.WorkerDefaults[entity.SyncPageJob]
+	collector usecase.Collector
+}
+
+func (w *pageWorker) Work(ctx context.Context, job *river.Job[entity.SyncPageJob]) error {
+	return snooze(w.collector.RunPage(ctx, job.Args, holder(job.JobRow), completeIn(job)))
+}
+
+type historyWorker struct {
+	river.WorkerDefaults[entity.SyncHistoryJob]
+	collector usecase.Collector
+}
+
+func (w *historyWorker) Work(ctx context.Context, job *river.Job[entity.SyncHistoryJob]) error {
+	return snooze(w.collector.RunHistory(ctx, job.Args, holder(job.JobRow), completeIn(job)))
+}
+
+// holder names the lease after the job, so its own repeat takes the lease back at once.
+func holder(row *rivertype.JobRow) string { return "river-job-" + strconv.FormatInt(row.ID, 10) }
+
+// completeIn ends the job in the transaction of its result: a crash before the commit repeats the job,
+// a crash after it finds the job done (TZ 10.5.1).
+func completeIn[T river.JobArgs](job *river.Job[T]) func(context.Context) error {
+	return func(ctx context.Context) error {
+		tx, ok := postgres.TxFrom(ctx)
+		if !ok {
+			return errors.New("worker: the job is completed in the transaction of its result")
+		}
+		_, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+		return err
+	}
 }
 
 type packageWorker struct {

@@ -10,6 +10,8 @@ import (
 
 type JobQueue interface {
 	Enqueue(ctx context.Context, job entity.Job, queue string) error
+	// EnqueueAt puts a job that is not taken before at.
+	EnqueueAt(ctx context.Context, job entity.Job, queue string, at time.Time) error
 }
 
 // Transactor opens transactions; repositories take the transaction from ctx (TZ 10.3, rule 2).
@@ -205,4 +207,13 @@ type ObjectStore interface {
 	Put(ctx context.Context, key string, r io.Reader) error
 	Get(ctx context.Context, key string) (io.ReadCloser, error)
 	Delete(ctx context.Context, key string) error
+}
+
+// SyncRepo is the state of collection and the lease of a connection under row-level security.
+type SyncRepo interface {
+	State(ctx context.Context, orgID, connectionID entity.ID, dataKind string) (entity.SyncState, bool, error)
+	SaveState(ctx context.Context, orgID entity.ID, s entity.SyncState) error
+	// AcquireLease takes or renews the lease; false means another holder has it until it runs out.
+	AcquireLease(ctx context.Context, orgID, connectionID entity.ID, holder string, until, now time.Time) (bool, error)
+	ReleaseLease(ctx context.Context, orgID, connectionID entity.ID, holder string) error
 }

@@ -20,7 +20,10 @@ import (
 )
 
 const (
-	_jobTimeout      = 60 * time.Second
+	_jobTimeout = 60 * time.Second
+	// _rescueAfter returns a job of a dead process to the queue; with the rest of the work it fits the
+	// 300 s of recovery of NFR-009 (TZ 10.6).
+	_rescueAfter     = 120 * time.Second
 	_watchdogTimeout = 3 * time.Minute
 	_readyPoll       = 2 * time.Second
 	_cancelTimeout   = 5 * time.Second
@@ -47,9 +50,10 @@ func runJobs(ctx context.Context, c jobsConfig) error {
 			entity.QueueInteractive: {MaxWorkers: 2},
 			entity.QueueBulk:        {MaxWorkers: 2},
 		},
-		Workers:    c.workers,
-		JobTimeout: _jobTimeout,
-		Logger:     c.slog,
+		Workers:              c.workers,
+		JobTimeout:           _jobTimeout,
+		RescueStuckJobsAfter: _rescueAfter,
+		Logger:               c.slog,
 	})
 	if err != nil {
 		return fmt.Errorf("app: river client: %w", err)
