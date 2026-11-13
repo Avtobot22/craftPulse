@@ -5178,13 +5178,13 @@ erDiagram
 
 ##### 12.5.9. База адаптера
 
-У каждого адаптера своя база с одинаковой схемой из `adaptersdk` и RLS по `organization_id`; процесс адаптера работает под ролью без владения таблицами (раздел 12.2). Ядро к базе доступа не имеет.
+У каждого адаптера своя база с одинаковой схемой из `adaptersdk` и RLS по `organization_id`; процесс адаптера работает под ролью без владения таблицами (раздел 12.2). Ядро к базе доступа не имеет. Базу, роли, схему `adapter` и права по умолчанию для роли процесса и `craftpulse_backup` создаёт `deploy/postgres/adapter-db.sh`, таблицы - миграции `migrations/adapter`.
 
 | Таблица | Назначение | Поля и типы | Ключи и связи | Ограничения | Индексы и запрос |
 |---|---|---|---|---|---|
 | `adapter.org_key` | Ключ данных организации, зашифрованный мастер-ключом адаптера | `organization_id uuid`; `data_key_enc bytea`; `master_key_version integer` | PK (`organization_id`) | - | PK |
-| `adapter.credential` | Учётные данные подключения | `connection_id uuid`; `purpose text`; `ciphertext bytea`; `nonce bytea`; `previous_ciphertext bytea?`; `previous_nonce bytea?`; `replaced_at timestamptz` | PK (`connection_id`, `purpose`); FK `organization_id` → `adapter.org_key` | `purpose IN ('collect','write_bot','webhook_secret','oauth_client')`; `octet_length(nonce) = 12`. Прежнее значение удаляется после успешного `Probe` (раздел 13.6) | PK - чтение при каждом вызове |
-| `adapter.user_token` | Токен пользователя для проверки прав, например Confluence DC | `connection_id uuid`; `user_id uuid`; `account_native_id ntext`; `access_ciphertext bytea`; `refresh_ciphertext bytea?`; `nonce bytea`; `expires_at timestamptz` | PK (`connection_id`, `user_id`); FK `organization_id` → `adapter.org_key` | - | PK - `CheckAccess` для пользователя |
+| `adapter.credential` | Учётные данные подключения | `organization_id uuid`; `connection_id uuid`; `purpose text`; `ciphertext bytea`; `nonce bytea`; `previous_ciphertext bytea?`; `previous_nonce bytea?`; `replaced_at timestamptz` | PK (`connection_id`, `purpose`); FK `organization_id` → `adapter.org_key` | `purpose IN ('collect','write_bot','webhook_secret','oauth_client')`; `octet_length(nonce) = 12`. Прежнее значение удаляется после успешного `Probe` (раздел 13.6) | PK - чтение при каждом вызове |
+| `adapter.user_token` | Токен пользователя для проверки прав, например Confluence DC | `organization_id uuid`; `connection_id uuid`; `user_id uuid`; `account_native_id text?`; `access_ciphertext bytea`; `nonce bytea`; `refresh_ciphertext bytea?`; `refresh_nonce bytea?`; `expires_at timestamptz?`; `replaced_at timestamptz` | PK (`connection_id`, `user_id`); FK `organization_id` → `adapter.org_key` | `octet_length(nonce) = 12`; у токена обновления свой nonce: один nonce под одним ключом данных не шифрует два значения | PK - `CheckAccess` для пользователя |
 
 ##### 12.5.10. Таблицы M1 и M2
 

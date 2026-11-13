@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	stdlog "log"
@@ -140,32 +141,49 @@ func newRegistry() *prometheus.Registry {
 }
 
 func serve(ctx context.Context, log zerolog.Logger, ready *health.Readiness, handlers map[string]http.Handler) error {
-	listeners := make(map[string]net.Listener, len(handlers))
+	endpoints := make([]endpoint, 0, len(handlers))
+	for addr, h := range handlers {
+		endpoints = append(endpoints, endpoint{addr: addr, handler: h})
+	}
+	return serveEndpoints(ctx, log, ready, _shutdownTimeout, endpoints)
+}
+
+// endpoint is one listener of a process; tls is set for an adapter, which serves the core over TLS.
+type endpoint struct {
+	addr    string
+	handler http.Handler
+	tls     *tls.Config
+}
+
+// serveEndpoints stops accepting on ctx cancellation and waits up to shutdown for the calls in flight.
+func serveEndpoints(ctx context.Context, log zerolog.Logger, ready *health.Readiness, shutdown time.Duration, endpoints []endpoint) error {
+	listeners := make([]net.Listener, 0, len(endpoints))
 	var lc net.ListenConfig
-	for addr := range handlers {
-		ln, err := lc.Listen(ctx, "tcp", addr)
+	for _, ep := range endpoints {
+		ln, err := lc.Listen(ctx, "tcp", ep.addr)
 		if err != nil {
 			for _, l := range listeners {
 				_ = l.Close()
 			}
-			return fmt.Errorf("app: listen %s: %w", addr, err)
+			return fmt.Errorf("app: listen %s: %w", ep.addr, err)
 		}
-		listeners[addr] = ln
+		listeners = append(listeners, ln)
 	}
 	context.AfterFunc(ctx, ready.Drain)
 
 	g, gctx := errgroup.WithContext(ctx)
-	for addr, h := range handlers {
+	for i, ep := range endpoints {
 		srv := &http.Server{
-			Handler:           h,
+			Handler:           ep.handler,
+			TLSConfig:         ep.tls,
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       60 * time.Second,
 			WriteTimeout:      60 * time.Second,
 			IdleTimeout:       120 * time.Second,
 			ErrorLog:          stdlog.New(log, "", 0),
 		}
-		g.Go(func() error { return run(gctx, srv, listeners[addr]) })
-		log.Info().Str("addr", listeners[addr].Addr().String()).Msg("listening")
+		g.Go(func() error { return run(gctx, srv, listeners[i], shutdown) })
+		log.Info().Str("addr", listeners[i].Addr().String()).Bool("tls", ep.tls != nil).Msg("listening")
 	}
 	if err := g.Wait(); err != nil {
 		return err
@@ -174,9 +192,15 @@ func serve(ctx context.Context, log zerolog.Logger, ready *health.Readiness, han
 	return nil
 }
 
-func run(ctx context.Context, srv *http.Server, ln net.Listener) error {
+func run(ctx context.Context, srv *http.Server, ln net.Listener, shutdown time.Duration) error {
 	errc := make(chan error, 1)
-	go func() { errc <- srv.Serve(ln) }()
+	go func() {
+		if srv.TLSConfig != nil {
+			errc <- srv.ServeTLS(ln, "", "")
+			return
+		}
+		errc <- srv.Serve(ln)
+	}()
 
 	select {
 	case err := <-errc:
@@ -184,7 +208,7 @@ func run(ctx context.Context, srv *http.Server, ln net.Listener) error {
 	case <-ctx.Done():
 	}
 
-	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), _shutdownTimeout)
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdown)
 	defer cancel()
 	if err := srv.Shutdown(sctx); err != nil {
 		return fmt.Errorf("app: shutdown %s: %w", ln.Addr(), errors.Join(err, srv.Close()))

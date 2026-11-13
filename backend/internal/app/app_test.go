@@ -28,7 +28,7 @@ func TestRun_FinishesActiveRequestOnShutdown(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- run(ctx, srv, ln) }()
+	go func() { served <- run(ctx, srv, ln, _shutdownTimeout) }()
 
 	response := make(chan int, 1)
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+addr+"/", http.NoBody)
