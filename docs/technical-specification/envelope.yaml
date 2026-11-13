@@ -1,0 +1,533 @@
+openapi: 3.1.2
+info:
+  title: craftPulse canonical fact package
+  version: '1'
+  summary: Канонический пакет фактов - формат ответа `Fetch` адаптера, пакета CI и универсального импорта.
+  description: |
+    Все пути поступления данных приводятся к одному пакету (раздел 10.2 ТЗ, FR-016). Пакет -
+    архив tar.gz. Первым файлом идёт `manifest.json` по схеме `Manifest`. За ним идёт
+    `records.jsonl`: одна запись `Record` в строке JSON. Для снимка задач универсального
+    импорта вместо него допускается `records.csv` (схема `TaskCsvRow`). Файлы отчётов и
+    содержимое документов лежат под `files/` и упоминаются из записей полем `file`.
+
+    Правила пакета:
+
+    - Невалидный манифест, неподдержанные `schema_id` или `schema_version`, небезопасный путь,
+      превышение лимитов NFR-015 и посторонний файл отклоняют пакет целиком.
+    - Запись проверяется отдельно: класс и вид из `x-craftpulse-schemas` манифеста,
+      `payload_schema` из `x-craftpulse-record`, тело по схеме записи. Отклонённая запись не
+      мешает принять остальные, пакет становится `partial`.
+    - Класс записи (раздел 12.6): `event` - событие истории, `object` - состояние объекта со
+      временем изменения или номером версии, `snapshot` - состояние без времени изменения,
+      ревизия задаётся ID чтения манифеста, `file` - файл отчёта.
+    - Хэш содержимого записи - SHA-256 канонического JSON: `event_time` события, поля
+      `payload` в порядке объявления схемы и `file.sha256`. Служебные поля конверта
+      (`record_class`, `record_kind`, `payload_schema`, `native_ns`, `native_id`,
+      `source_revision`, `observed_time`, `file.path`) в хэш не входят. `null` равен
+      отсутствию поля, ключи свободных объектов упорядочены по алфавиту, время приводится к
+      RFC 3339 с исходным смещением.
+    - Внутри `schema_version` новые поля манифеста необязательны, старые не удаляются.
+      Изменение состава полей тела записи повышает версию `payload_schema`: хэш сравнивается
+      только внутри одной версии тела (раздел 12.6).
+  contact:
+    name: Команда craftPulse
+    url: https://github.com/Avtobot22/craftPulse
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+x-craftpulse-schemas:
+  tasks:
+    versions: ['1']
+    kinds: [task, task_status, task_resolution, task_type, task_field, account]
+  task_events:
+    versions: ['1']
+    kinds: [task_event]
+  relations:
+    versions: ['1']
+    kinds: [relation]
+  accounts:
+    versions: ['1']
+    kinds: [account]
+  merge_requests:
+    versions: ['1']
+    kinds: [merge_request, mr_revision, mr_event, account]
+  ci_runs:
+    versions: ['1']
+    kinds: [ci_run, ci_attempt, report_file]
+  findings:
+    versions: ['1']
+    kinds: [finding, report_file]
+  junit:
+    versions: ['1']
+    kinds: [report_file]
+  coverage:
+    versions: ['1']
+    kinds: [report_file]
+  documents:
+    versions: ['1']
+    kinds: [document]
+paths: {}
+components:
+  schemas:
+    Manifest:
+      type: object
+      description: Первый файл пакета `manifest.json`.
+      required: [schema_id, schema_version, source, area, period, completeness, selection, snapshot, read_id, producer, created_at]
+      additionalProperties: false
+      properties:
+        schema_id:
+          type: string
+          enum: [tasks, task_events, relations, accounts, merge_requests, ci_runs, findings, junit, coverage, documents]
+          description: Вид данных пакета. Совпадает с `ImportUpload.schema_id` универсального импорта и с видом данных `Fetch`.
+        schema_version: {type: string, maxLength: 16}
+        source: {$ref: '#/components/schemas/Source'}
+        area: {$ref: '#/components/schemas/AreaRef'}
+        period: {$ref: '#/components/schemas/Period'}
+        completeness: {type: string, enum: [complete, partial, unknown]}
+        selection: {$ref: '#/components/schemas/Selection'}
+        snapshot: {type: boolean, description: 'Пакет описывает текущее состояние без истории: записи только класса `snapshot`, событий нет (FR-016 A1).'}
+        read_id: {type: [string, 'null'], maxLength: 255, description: ID чтения; обязателен для снимков и входит в их ревизию.}
+        producer: {$ref: '#/components/schemas/Producer'}
+        created_at: {type: string, format: date-time}
+      example:
+        schema_id: task_events
+        schema_version: '1'
+        source: {provider: jira_dc, instance_key: 6a1c3f0e-2b7d-4c55-9a10-3e4f5a6b7c8d, edition: datacenter, version: 9.12.15}
+        area: {kind: tracker_project, native_id: '10000', key: PA}
+        period: {from: '2026-01-01T00:00:00Z', to: '2026-12-01T00:00:00Z'}
+        completeness: partial
+        selection: {cursor: {modified_at: '2026-03-01T00:00:00Z', native_id: '20001'}, next_cursor: {modified_at: '2026-03-02T09:00:00Z', native_id: '20011'}, end: false, total_count: 40, truncated: []}
+        snapshot: false
+        read_id: null
+        producer: {name: craftpulse-adapter-jiradc, version: 0.1.0}
+        created_at: '2026-11-12T10:00:00Z'
+    Source:
+      type: object
+      required: [provider, instance_key, edition, version]
+      additionalProperties: false
+      properties:
+        provider: {type: string, enum: [jira_dc, gitlab, github, jenkins, sonarqube, confluence_dc, git, universal, client]}
+        instance_key: {type: string, minLength: 1, maxLength: 512, description: Ключ экземпляра из `Probe` или объявленный импортом (раздел 12.4).}
+        edition: {type: [string, 'null'], maxLength: 64}
+        version: {type: [string, 'null'], maxLength: 64}
+      example: {provider: gitlab, instance_key: gitlab.example.test, edition: ce, version: 18.4.2}
+    AreaRef:
+      type: object
+      description: Область источника, к которой относятся записи пакета.
+      required: [kind, native_id]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [tracker_project, repository, wiki_space, ci_project, analysis_project]}
+        native_id: {type: string, minLength: 1, maxLength: 255}
+        key: {type: [string, 'null'], maxLength: 255, description: Отображаемый ключ или путь; в идентичность не входит.}
+      example: {kind: repository, native_id: '42', key: demo/orders-service}
+    Period:
+      type: object
+      description: Полуоткрытый период `[from, to)`.
+      required: [from, to]
+      additionalProperties: false
+      properties:
+        from: {type: [string, 'null'], format: date-time}
+        to: {type: [string, 'null'], format: date-time}
+      example: {from: '2026-01-01T00:00:00Z', to: '2026-12-01T00:00:00Z'}
+    Cursor:
+      type: object
+      description: Курсор приращения - пара «время изменения, исходный ID»; адаптер читает с перекрытием окна назад.
+      required: [modified_at, native_id]
+      additionalProperties: false
+      properties:
+        modified_at: {type: string, format: date-time}
+        native_id: {type: string, maxLength: 255}
+      example: {modified_at: '2026-03-01T00:00:00Z', native_id: '20001'}
+    Selection:
+      type: object
+      description: Границы выборки страницы.
+      required: [cursor, next_cursor, end, total_count, truncated]
+      additionalProperties: false
+      properties:
+        cursor:
+          oneOf:
+            - {$ref: '#/components/schemas/Cursor'}
+            - {type: 'null'}
+        next_cursor:
+          oneOf:
+            - {$ref: '#/components/schemas/Cursor'}
+            - {type: 'null'}
+        end: {type: boolean, description: Выборка закончена; `next_cursor` равен `null`.}
+        total_count: {type: [integer, 'null'], minimum: 0, description: Известное общее число объектов выборки.}
+        truncated:
+          type: array
+          description: Объекты, история которых в пакете обрезана; `sync` ставит задание дочитать её.
+          items: {$ref: '#/components/schemas/TruncatedHistory'}
+      example: {cursor: null, next_cursor: null, end: true, total_count: 1, truncated: [{record_kind: task, native_ns: '', native_id: '20001', history_from: '2026-02-01T00:00:00Z'}]}
+    TruncatedHistory:
+      type: object
+      required: [record_kind, native_ns, native_id, history_from]
+      additionalProperties: false
+      properties:
+        record_kind: {type: string, enum: [task, merge_request]}
+        native_ns: {type: string, maxLength: 255}
+        native_id: {type: string, minLength: 1, maxLength: 255}
+        history_from: {type: [string, 'null'], format: date-time, description: С какого времени история в пакете полная.}
+      example: {record_kind: task, native_ns: '', native_id: '20001', history_from: '2026-02-01T00:00:00Z'}
+    Producer:
+      type: object
+      required: [name, version]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 128}
+        version: {type: string, minLength: 1, maxLength: 64}
+      example: {name: craftpulse-ci, version: 0.1.0}
+    Record:
+      type: object
+      description: Строка `records.jsonl`. Тело записи `payload` проверяется по схеме из `payload_schema`.
+      required: [record_class, record_kind, payload_schema, native_ns, native_id, source_revision, event_time, observed_time, file, payload]
+      additionalProperties: false
+      properties:
+        record_class: {type: string, enum: [event, object, snapshot, file]}
+        record_kind:
+          type: string
+          enum: [task, task_event, task_status, task_resolution, task_type, task_field, relation, account, merge_request, mr_revision, mr_event, ci_run, ci_attempt, report_file, finding, document]
+        payload_schema: {type: string, pattern: '^[a-z_]+/[0-9]+$', description: 'Вид и версия схемы тела, например `task_event/1`.'}
+        native_ns: {type: string, maxLength: 255, description: 'Пространство имён исходного ID по правилу `x-craftpulse-identity` контракта адаптера; пусто, если ID уникален в экземпляре.'}
+        native_id: {type: string, minLength: 1, maxLength: 1024}
+        source_revision: {type: [string, 'null'], maxLength: 255, description: 'Ревизия у источника: ID changelog события, номер версии объекта. Пусто - ревизией служит хэш содержимого.'}
+        event_time: {type: [string, 'null'], format: date-time, description: Время события у источника с исходным смещением; обязательно для `event`.}
+        observed_time: {type: [string, 'null'], format: date-time, description: 'Когда источник отдал запись, если позже события.'}
+        file:
+          oneOf:
+            - {$ref: '#/components/schemas/FileRef'}
+            - {type: 'null'}
+        payload:
+          type: object
+          x-go-type: json.RawMessage
+      example:
+        record_class: event
+        record_kind: task_event
+        payload_schema: task_event/1
+        native_ns: '20001'
+        native_id: 30010/status
+        source_revision: '30010'
+        event_time: '2026-03-02T12:00:00+03:00'
+        observed_time: null
+        file: null
+        payload: {task_native_id: '20001', event_kind: field_change, field_native_id: status, before_value: '1', after_value: '3', before_account_native_id: null, after_account_native_id: null, actor_account_native_id: demo-person-05}
+    FileRef:
+      type: object
+      required: [path, sha256, size_bytes, media_type]
+      additionalProperties: false
+      properties:
+        path: {type: string, pattern: '^files/[A-Za-z0-9._/-]+$', maxLength: 1024}
+        sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        size_bytes: {type: integer, minimum: 0}
+        media_type: {type: string, maxLength: 128}
+      example: {path: files/junit/report.xml, sha256: 9f2c4e7a1b8d3f60a5e2c9d4b7f1a3e89f2c4e7a1b8d3f60a5e2c9d4b7f1a3e8, size_bytes: 2048, media_type: application/xml}
+    TaskCsvRow:
+      type: object
+      description: |
+        Строка `records.csv` снимка задач. Первая строка - заголовок с именами колонок; колонка
+        `native_id` обязательна, остальные совпадают с полями `TaskV1`. Пустая ячейка - нет
+        значения. Каждая строка становится записью `snapshot` вида `task`.
+      required: [native_id, project_native_id, type_native_id, status_native_id, created_at]
+      additionalProperties: false
+      properties:
+        native_id: {type: string, minLength: 1, maxLength: 255}
+        project_native_id: {type: string}
+        task_key: {type: string}
+        title: {type: string}
+        type_native_id: {type: string}
+        status_native_id: {type: string}
+        resolution_native_id: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        size: {type: string}
+        team: {type: string}
+        assignee_account_native_id: {type: string}
+        parent_native_id: {type: string}
+      example: {native_id: IMP-2, project_native_id: IMP, task_key: IMP-2, title: Import task, type_native_id: Story, status_native_id: In Progress, created_at: '2026-02-03T09:00:00+03:00', size: S, team: team-1}
+    TaskV1:
+      type: object
+      description: Состояние задачи (`normalize.task_version`). `native_id` - ID задачи, не отображаемый ключ.
+      x-craftpulse-record: {kind: task, version: '1', classes: [object, snapshot]}
+      required: [project_native_id, type_native_id, status_native_id, created_at]
+      additionalProperties: false
+      properties:
+        project_native_id: {type: string, minLength: 1, maxLength: 255}
+        task_key: {type: [string, 'null'], maxLength: 255}
+        title: {type: [string, 'null'], maxLength: 1024}
+        type_native_id: {type: string, minLength: 1, maxLength: 255}
+        status_native_id: {type: string, minLength: 1, maxLength: 255}
+        resolution_native_id: {type: [string, 'null'], maxLength: 255}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: [string, 'null'], format: date-time, description: Время изменения у источника; без номера версии входит в ревизию (раздел 12.6).}
+        version: {type: [string, 'null'], maxLength: 64, description: 'Номер версии, если источник его даёт.'}
+        size: {type: [string, 'null'], maxLength: 255}
+        team: {type: [string, 'null'], maxLength: 255}
+        assignee_account_native_id: {type: [string, 'null'], maxLength: 255}
+        parent_native_id: {type: [string, 'null'], maxLength: 255}
+        restriction: {type: [string, 'null'], maxLength: 255, description: Ограничение видимости задачи у источника.}
+        raw_fields:
+          type: [object, 'null']
+          description: Прочие поля источника без описания задачи и вложений.
+          additionalProperties: {type: [string, 'null'], maxLength: 1024}
+      example: {project_native_id: '10000', task_key: PA-3, title: Blocked task, type_native_id: '10001', status_native_id: '3', resolution_native_id: null, created_at: '2026-02-02T09:00:00+03:00', updated_at: '2026-03-04T10:00:00+03:00', version: null, size: S, team: team-1, assignee_account_native_id: demo-person-05, parent_native_id: null, restriction: null, raw_fields: {customfield_10020: Impediment}}
+    TaskEventV1:
+      type: object
+      description: |
+        Событие истории задачи (`normalize.task_event`). `native_ns` - ID задачи, `native_id` -
+        ID изменения changelog и ID поля через `/`, у `created` - ID задачи и `created`.
+      x-craftpulse-record: {kind: task_event, version: '1', classes: [event]}
+      required: [task_native_id, event_kind]
+      additionalProperties: false
+      properties:
+        task_native_id: {type: string, minLength: 1, maxLength: 255}
+        event_kind: {type: string, enum: [created, field_change, comment, link_change, moved]}
+        field_native_id: {type: [string, 'null'], maxLength: 255, description: Обязательно для `field_change`.}
+        before_value: {type: [string, 'null'], maxLength: 1024}
+        after_value: {type: [string, 'null'], maxLength: 1024}
+        before_account_native_id: {type: [string, 'null'], maxLength: 255}
+        after_account_native_id: {type: [string, 'null'], maxLength: 255}
+        actor_account_native_id: {type: [string, 'null'], maxLength: 255}
+      example: {task_native_id: '20001', event_kind: field_change, field_native_id: status, before_value: '1', after_value: '3', before_account_native_id: null, after_account_native_id: null, actor_account_native_id: demo-person-05}
+    TaskStatusV1:
+      type: object
+      description: Статус трекера с API-категорией источника. `native_id` - ID статуса.
+      x-craftpulse-record: {kind: task_status, version: '1', classes: [snapshot, object]}
+      required: [name, category]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        category: {type: string, enum: [new, indeterminate, done, unknown]}
+        project_native_id: {type: [string, 'null'], maxLength: 255}
+      example: {name: In Progress, category: indeterminate, project_native_id: null}
+    TaskResolutionV1:
+      type: object
+      description: Исход задачи. `native_id` - ID исхода.
+      x-craftpulse-record: {kind: task_resolution, version: '1', classes: [snapshot, object]}
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+      example: {name: Won't Do}
+    TaskTypeV1:
+      type: object
+      description: Тип задачи. `native_id` - ID типа.
+      x-craftpulse-record: {kind: task_type, version: '1', classes: [snapshot, object]}
+      required: [name, subtask]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        subtask: {type: boolean}
+      example: {name: Story, subtask: false}
+    TaskFieldV1:
+      type: object
+      description: Поле задачи из schema полей источника. `native_id` - ID поля.
+      x-craftpulse-record: {kind: task_field, version: '1', classes: [snapshot, object]}
+      required: [name, value_type, custom]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        value_type: {type: string, maxLength: 64, description: 'Тип значения у источника, например `option` или `user`.'}
+        custom: {type: boolean}
+      example: {name: Flagged, value_type: array, custom: true}
+    ObjectRef:
+      type: object
+      description: Ссылка на объект источника; без `instance_key` - тот же экземпляр, что в манифесте.
+      required: [object_kind, native_ns, native_id]
+      additionalProperties: false
+      properties:
+        object_kind: {type: string, enum: [task, merge_request, ci_run, document, finding]}
+        native_ns: {type: string, maxLength: 255}
+        native_id: {type: string, minLength: 1, maxLength: 1024}
+        instance_key: {type: [string, 'null'], maxLength: 512}
+      example: {object_kind: merge_request, native_ns: '', native_id: '9001', instance_key: gitlab.example.test}
+    RelationV1:
+      type: object
+      description: Явная связь источника между объектами (issue link, ссылка задачи на MR). `native_id` - ID связи у источника или производный ключ концов и типа.
+      x-craftpulse-record: {kind: relation, version: '1', classes: [object, snapshot]}
+      required: [link_type, from, to, method]
+      additionalProperties: false
+      properties:
+        link_type: {type: string, minLength: 1, maxLength: 255, description: 'Тип связи у источника, например `blocks` или `mr_closes_issue`.'}
+        from: {$ref: '#/components/schemas/ObjectRef'}
+        to: {$ref: '#/components/schemas/ObjectRef'}
+        method: {type: string, enum: [explicit, branch_key, title_key, commit_key, import]}
+      example: {link_type: blocks, from: {object_kind: task, native_ns: '', native_id: '20001', instance_key: null}, to: {object_kind: task, native_ns: '', native_id: '20002', instance_key: null}, method: explicit}
+    AccountV1:
+      type: object
+      description: Учётная запись источника. `native_id` - ID учётной записи; логин и почта создают только предложение сопоставления.
+      x-craftpulse-record: {kind: account, version: '1', classes: [snapshot, object]}
+      required: [login, display_name, account_kind, active]
+      additionalProperties: false
+      properties:
+        login: {type: [string, 'null'], maxLength: 255}
+        display_name: {type: [string, 'null'], maxLength: 255}
+        email: {type: [string, 'null'], maxLength: 320}
+        account_kind: {type: string, enum: [human, bot, system, unknown]}
+        active: {type: boolean}
+      example: {login: demo-person-05, display_name: Demo person 5, email: null, account_kind: human, active: true}
+    MergeRequestV1:
+      type: object
+      description: Состояние MR или PR (`normalize.mr_version`). `native_id` - глобальный ID, номер внутри проекта - атрибут.
+      x-craftpulse-record: {kind: merge_request, version: '1', classes: [object]}
+      required: [project_native_id, state, draft, source_branch, target_branch, head_sha, opened_at]
+      additionalProperties: false
+      properties:
+        project_native_id: {type: string, minLength: 1, maxLength: 255}
+        iid: {type: [integer, 'null'], minimum: 1}
+        title: {type: [string, 'null'], maxLength: 1024}
+        state: {type: string, enum: [open, merged, closed]}
+        draft: {type: boolean}
+        author_account_native_id: {type: [string, 'null'], maxLength: 255}
+        source_branch: {type: string, maxLength: 1024}
+        target_branch: {type: string, maxLength: 1024}
+        head_sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        base_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        merge_base_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        reviewer_field: {type: boolean, description: Доступно ли поле ревьюера (FR-031).}
+        reviewer_account_native_ids:
+          type: array
+          items: {type: string, maxLength: 255}
+        opened_at: {type: string, format: date-time}
+        ready_at: {type: [string, 'null'], format: date-time}
+        merged_at: {type: [string, 'null'], format: date-time}
+        closed_at: {type: [string, 'null'], format: date-time}
+        updated_at: {type: [string, 'null'], format: date-time}
+      example: {project_native_id: '42', iid: 7, title: Shipping fee, state: open, draft: false, author_account_native_id: demo-person-05, source_branch: feature/PA-21-shipping, target_branch: main, head_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, base_sha: 34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971, merge_base_sha: 34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971, reviewer_field: true, reviewer_account_native_ids: [demo-person-03], opened_at: '2026-10-01T09:00:00+03:00', ready_at: '2026-10-01T09:00:00+03:00', merged_at: null, closed_at: null, updated_at: '2026-10-02T11:00:00+03:00'}
+    MrRevisionV1:
+      type: object
+      description: Ревизия MR - пара head и base после push. `native_ns` - ID MR, `native_id` - ID ревизии у источника или head SHA.
+      x-craftpulse-record: {kind: mr_revision, version: '1', classes: [object]}
+      required: [mr_native_id, head_sha, base_sha, created_at]
+      additionalProperties: false
+      properties:
+        mr_native_id: {type: string, minLength: 1, maxLength: 255}
+        head_sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        base_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        start_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        created_at: {type: string, format: date-time}
+      example: {mr_native_id: '9001', head_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, base_sha: 34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971, start_sha: 34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971, created_at: '2026-10-01T09:00:00+03:00'}
+    MrEventV1:
+      type: object
+      description: Событие MR (`normalize.mr_event`). `native_ns` - ID MR, `native_id` - ID note, approval или события у источника.
+      x-craftpulse-record: {kind: mr_event, version: '1', classes: [event]}
+      required: [mr_native_id, event_kind]
+      additionalProperties: false
+      properties:
+        mr_native_id: {type: string, minLength: 1, maxLength: 255}
+        event_kind: {type: string, enum: [ready, reviewer_assigned, reviewer_removed, review, comment, approval, head_pushed, merged, closed, reopened]}
+        actor_account_native_id: {type: [string, 'null'], maxLength: 255}
+        target_account_native_id: {type: [string, 'null'], maxLength: 255}
+        head_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        review_state: {type: [string, 'null'], enum: [approved, changes_requested, commented, null]}
+      example: {mr_native_id: '9001', event_kind: review, actor_account_native_id: demo-person-03, target_account_native_id: null, head_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, review_state: commented}
+    CiRunV1:
+      type: object
+      description: Запуск pipeline или workflow (`normalize.ci_run_version`). `native_id` - ID запуска.
+      x-craftpulse-record: {kind: ci_run, version: '1', classes: [object]}
+      required: [project_native_id, ref_name, sha, native_status, outcome]
+      additionalProperties: false
+      properties:
+        project_native_id: {type: string, minLength: 1, maxLength: 255}
+        ref_name: {type: string, maxLength: 1024}
+        sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        mr_native_id: {type: [string, 'null'], maxLength: 255}
+        parent_run_native_id: {type: [string, 'null'], maxLength: 255}
+        definition_version: {type: [string, 'null'], maxLength: 255}
+        native_status: {type: string, maxLength: 64}
+        outcome: {type: string, enum: [running, success, failed, canceled, skipped, unknown]}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        updated_at: {type: [string, 'null'], format: date-time}
+      example: {project_native_id: '42', ref_name: refs/merge-requests/7/head, sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, mr_native_id: '9001', parent_run_native_id: null, definition_version: null, native_status: failed, outcome: failed, started_at: '2026-10-01T09:05:00+03:00', finished_at: '2026-10-01T09:12:00+03:00', updated_at: '2026-10-01T09:12:00+03:00'}
+    CiAttemptV1:
+      type: object
+      description: |
+        Попытка job (`normalize.ci_attempt_version`). Логический job задают `job_key` и
+        `config_fingerprint` матрицы; повторная попытка получает новый ID и `attempt_no`.
+      x-craftpulse-record: {kind: ci_attempt, version: '1', classes: [object]}
+      required: [run_native_id, job_key, job_name, config_fingerprint, attempt_no, native_status, outcome, allow_failure]
+      additionalProperties: false
+      properties:
+        run_native_id: {type: string, minLength: 1, maxLength: 255}
+        job_key: {type: string, minLength: 1, maxLength: 1024}
+        job_name: {type: string, maxLength: 1024}
+        config_fingerprint: {type: string, pattern: '^[0-9a-f]{64}$'}
+        attempt_no: {type: integer, minimum: 1}
+        native_status: {type: string, maxLength: 64}
+        outcome: {type: string, enum: [running, success, failed, canceled, skipped, unknown]}
+        allow_failure: {type: boolean}
+        failure_kind: {type: [string, 'null'], maxLength: 64}
+        runner_class: {type: [string, 'null'], maxLength: 255}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        duration_s: {type: [integer, 'null'], minimum: 0}
+      example: {run_native_id: '5001', job_key: test/go, job_name: test, config_fingerprint: 3f6c2a1b9d8e7f6054a3b2c1d0e9f8a73f6c2a1b9d8e7f6054a3b2c1d0e9f8a7, attempt_no: 2, native_status: success, outcome: success, allow_failure: false, failure_kind: null, runner_class: shared, started_at: '2026-10-01T09:06:00+03:00', finished_at: '2026-10-01T09:08:00+03:00', duration_s: 120}
+    ReportFileV1:
+      type: object
+      description: |
+        Файл отчёта (класс `file`). `native_ns` - ID попытки CI, а без неё SHA или digest;
+        `native_id` - вид отчёта и путь файла в пакете через `:` (раздел 12.6). Задан SHA или digest.
+      x-craftpulse-record: {kind: report_file, version: '1', classes: [file]}
+      required: [report_kind, report_format, sha, artifact_digest, producer, producer_version]
+      additionalProperties: false
+      properties:
+        report_kind: {type: string, enum: [code, sast, sca, secrets, iac, image, junit, coverage, docs, openapi, sonar]}
+        report_format: {type: string, enum: [envelope, sarif, gitlab_security, gitlab_code_quality, junit_xml, lcov, cobertura, jacoco, golangci_json, gitleaks_json, spectral_json, docs_json]}
+        sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        artifact_digest: {type: [string, 'null'], maxLength: 255}
+        run_native_id: {type: [string, 'null'], maxLength: 255}
+        attempt_native_id: {type: [string, 'null'], maxLength: 255}
+        producer: {type: string, minLength: 1, maxLength: 128}
+        producer_version: {type: string, minLength: 1, maxLength: 64}
+        profile_id: {type: [string, 'null'], maxLength: 128}
+        rules_hash: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
+        config_hash: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
+        db_version: {type: [string, 'null'], maxLength: 128}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        exit_class: {type: string, enum: [success, findings, partial, failed, timeout, unknown]}
+        completeness: {type: string, enum: [complete, partial, unknown]}
+      example: {report_kind: junit, report_format: junit_xml, sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, artifact_digest: null, run_native_id: '5001', attempt_native_id: '7002', producer: go test, producer_version: go1.27.0, profile_id: go-light, rules_hash: null, config_hash: null, db_version: null, started_at: '2026-10-01T09:06:00+03:00', finished_at: '2026-10-01T09:08:00+03:00', exit_class: findings, completeness: complete}
+    FindingV1:
+      type: object
+      description: 'Находка: формат универсального импорта (`report_format = envelope`) и замечания SonarQube. Идентичность - по `x-craftpulse-identity` контракта адаптера: у импорта `native_ns` - SHA ревизии, `native_id` - ID находки у инструмента или её отпечаток.'
+      x-craftpulse-record: {kind: finding, version: '1', classes: [object]}
+      required: [sha, producer, producer_version, rule_id, finding_kind]
+      additionalProperties: false
+      properties:
+        sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        producer: {type: string, minLength: 1, maxLength: 128}
+        producer_version: {type: string, minLength: 1, maxLength: 64}
+        rule_id: {type: string, minLength: 1, maxLength: 255}
+        finding_kind: {type: string, enum: [code, security, secret, dependency, iac, docs, openapi]}
+        path: {type: [string, 'null'], maxLength: 4096}
+        line_start: {type: [integer, 'null'], minimum: 1}
+        line_end: {type: [integer, 'null'], minimum: 1}
+        package_purl: {type: [string, 'null'], maxLength: 1024}
+        native_severity: {type: [string, 'null'], maxLength: 64}
+        native_confidence: {type: [string, 'null'], maxLength: 64}
+        message: {type: [string, 'null'], maxLength: 4096, description: Без значений секретов (BR-017).}
+      example: {sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, producer: golangci-lint, producer_version: 2.15.0, rule_id: errcheck, finding_kind: code, path: internal/httpapi/handler.go, line_start: 43, line_end: 43, package_purl: null, native_severity: error, native_confidence: null, message: Error return value is not checked}
+    DocumentV1:
+      type: object
+      description: |
+        Версия документа (`normalize.document_version`). Для Git `native_ns` - ID репозитория,
+        `native_id` - путь от корня, `version_ref` - SHA blob; для Confluence `native_id` - ID
+        страницы, `version_ref` - номер версии. Задан путь или страница.
+      x-craftpulse-record: {kind: document, version: '1', classes: [object, snapshot]}
+      required: [doc_format, version_ref, container_native_id, acl_state]
+      additionalProperties: false
+      properties:
+        doc_format: {type: string, enum: [markdown, openapi, confluence]}
+        version_ref: {type: string, minLength: 1, maxLength: 255}
+        container_native_id: {type: string, minLength: 1, maxLength: 255, description: Репозиторий или пространство.}
+        path: {type: [string, 'null'], maxLength: 4096}
+        page_native_id: {type: [string, 'null'], maxLength: 255}
+        title: {type: [string, 'null'], maxLength: 1024}
+        restriction: {type: [string, 'null'], maxLength: 255, description: Ограничение страницы или документа у источника.}
+        acl_state: {type: string, enum: [known, unknown]}
+        content_sha256: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
+        content_path: {type: [string, 'null'], pattern: '^files/[A-Za-z0-9._/-]+$', description: Содержимое документа в пакете.}
+        updated_at: {type: [string, 'null'], format: date-time}
+      example: {doc_format: markdown, version_ref: d65d0505a6ba45eb2cac791d30c0a59bdb8c619d, container_native_id: '42', path: docs/api/overview.md, page_native_id: null, title: API overview, restriction: null, acl_state: known, content_sha256: null, content_path: null, updated_at: '2026-04-22T15:40:00+03:00'}

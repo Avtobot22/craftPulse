@@ -1,0 +1,742 @@
+openapi: 3.1.2
+info:
+  title: craftPulse adapter contract
+  version: '1'
+  summary: HTTP-контракт между ядром craftPulse и адаптером источника.
+  description: |
+    Контракт реализуют встроенные адаптеры и адаптеры, которые клиент пишет для своей системы
+    на любом языке (разделы 10.2 и 10.3 ТЗ). Ядро вызывает адаптер только через модуль
+    `connect`. Адаптер хранит учётные данные своих подключений и не хранит состояние сбора:
+    курсор, checkpoint и журнал приёма сохраняет ядро.
+
+    Общие правила:
+
+    - Каждый вызов несёт служебный ключ (`Authorization: Bearer`), организацию
+      (`X-Craftpulse-Organization`), версию контракта (`X-Craftpulse-Contract-Version`) и
+      correlation ID (`X-Correlation-Id`); ID подключения - в адресе. По нему адаптер находит
+      учётные данные. Correlation ID адаптер пишет в каждую строку журнала вызова.
+    - Ошибки - JSON `AdapterError` со стабильным `code`. Ядро ветвится по `code`: `rate_limited`
+      ставит паузу подключения до `Retry-After`; `preparing` откладывает задание до `retry_at`
+      без траты попытки; `unavailable` и `timeout` повторяются с паузами; `auth` и
+      `permission_missing` останавливают сбор до исправления доступа; `invalid_response` -
+      ответ источника не прошёл проверку адаптера.
+    - Адаптер ждёт источник не дольше 30 с, ядро ждёт адаптер не дольше 40 с; `CheckAccess` на
+      пути чтения ограничен 2 с.
+    - `Fetch` отдаёт канонический пакет фактов (`envelope.yaml`) потоком tar.gz, остальные
+      операции обмениваются JSON.
+    - Версия контракта `1`. Внутри версии новые поля необязательны, старые не удаляются, новые
+      значения перечислений клиент принимает как неизвестные. Ядро поддерживает текущую и
+      предыдущую версии; адаптер с неподдержанной версией не становится рабочим (FR-014).
+    - Учётные данные не попадают в ответы, ошибки и журналы адаптера (NFR-014).
+  contact:
+    name: Команда craftPulse
+    url: https://github.com/Avtobot22/craftPulse
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: http://adapter.internal:8080/v1
+    description: Адрес адаптера подключения; задаётся в подключении `connect`.
+security:
+  - adapterKey: []
+tags:
+  - name: credentials
+    description: Учётные данные подключения и токены пользователей для проверки прав.
+  - name: collect
+    description: Проверка подключения, страницы фактов и манифест сверки.
+  - name: access
+    description: Проверка прав пользователя в источнике.
+  - name: publish
+    description: Запись во внешнюю систему и поиск опубликованного по маркеру.
+  - name: webhook
+    description: Разбор webhook источника.
+x-craftpulse-identity:
+  - {srs_row: Задача Jira DC, provider: jira_dc, object_kind: task, native_ns: пусто, native_id: числовой ID задачи, mutable: 'ключ, проект, статус'}
+  - {srs_row: Изменение истории Jira, provider: jira_dc, object_kind: task_event, native_ns: ID задачи, native_id: 'ID changelog и ID поля через `/`; у `created` - ID задачи и `created`', mutable: '-'}
+  - {srs_row: Проект и MR GitLab, provider: gitlab, object_kind: repository, native_ns: пусто, native_id: глобальный ID проекта, mutable: путь проекта}
+  - {srs_row: Проект и MR GitLab, provider: gitlab, object_kind: merge_request, native_ns: пусто, native_id: глобальный ID MR, mutable: '`iid` MR, название'}
+  - {srs_row: Pipeline и job GitLab CI, provider: gitlab, object_kind: ci_run, native_ns: пусто, native_id: ID pipeline, mutable: '-'}
+  - {srs_row: Pipeline и job GitLab CI, provider: gitlab, object_kind: ci_attempt, native_ns: пусто, native_id: 'ID job, новый у каждой повторной попытки', mutable: 'имя job; логический job - `job_key` и отпечаток конфигурации'}
+  - {srs_row: Репозиторий и PR GitHub.com, provider: github, object_kind: repository, native_ns: пусто, native_id: числовой ID репозитория, mutable: 'владелец и имя'}
+  - {srs_row: Репозиторий и PR GitHub.com, provider: github, object_kind: merge_request, native_ns: пусто, native_id: числовой ID PR, mutable: 'номер PR, название'}
+  - {srs_row: Запуск и job GitHub Actions, provider: github, object_kind: ci_run, native_ns: пусто, native_id: ID запуска workflow, mutable: имя workflow}
+  - {srs_row: Запуск и job GitHub Actions, provider: github, object_kind: ci_attempt, native_ns: ID запуска workflow, native_id: 'номер попытки запуска и ID job через `/`', mutable: имя job}
+  - {srs_row: Сборка Jenkins, provider: jenkins, object_kind: ci_run, native_ns: полное имя job, native_id: номер сборки, mutable: '-'}
+  - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: analysis_project, native_ns: пусто, native_id: ключ проекта, mutable: название проекта}
+  - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: report_file, native_ns: ключ проекта, native_id: ключ анализа, mutable: ветка}
+  - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: finding, native_ns: ключ проекта, native_id: ключ замечания, mutable: строка замечания}
+  - {srs_row: Репозиторий адаптера `git`, provider: git, object_kind: repository, native_ns: пусто, native_id: нормализованный адрес remote, mutable: 'ветки и теги; коммит задаётся SHA'}
+  - {srs_row: Страница Confluence DC, provider: confluence_dc, object_kind: document, native_ns: пусто, native_id: ID страницы, mutable: 'заголовок, пространство'}
+  - {srs_row: Документ в Git, provider: git, object_kind: document, native_ns: ID репозитория, native_id: путь от корня, mutable: версия - SHA blob}
+  - {srs_row: Универсальный импорт, provider: universal, object_kind: any, native_ns: 'пространство, объявленное в манифесте (`area.native_id`), у событий и ревизий - ID родителя', native_id: ID из пакета, mutable: по схеме записи}
+  - {srs_row: Тестовый случай, provider: any, object_kind: test_case, native_ns: область (репозиторий), native_id: 'SHA-256 от «набор, класс, имя»', mutable: '-'}
+  - {srs_row: Учётная запись источника, provider: any, object_kind: account, native_ns: пусто, native_id: ID учётной записи в экземпляре, mutable: 'логин, имя, почта'}
+paths:
+  /connections/{connection_id}/credentials:
+    put:
+      operationId: putCredentials
+      summary: Передать учётные данные подключения
+      description: |
+        Сохраняет учётные данные с назначением `purpose` или токен пользователя для проверки
+        прав. Для `user_token` передаются `user_id` и либо `secret`, либо одноразовый
+        `oauth_code` с `redirect_uri`: код адаптер сам обменивает на токены. Значение не
+        возвращается и не пишется в журналы. Повтор заменяет прежнее значение.
+      tags: [credentials]
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/Organization'
+        - $ref: '#/components/parameters/ContractVersion'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CredentialsInput'}
+            example: {purpose: collect, secret: example-token-value, user_id: null, oauth_code: null, redirect_uri: null}
+      responses:
+        '204': {description: Учётные данные приняты.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteCredentials
+      summary: Удалить учётные данные
+      description: |
+        Удаляет учётные данные подключения с назначением `purpose`, токен пользователя `user_id`
+        или, без параметров, всё по подключению. Повтор удаления даёт тот же ответ `204`.
+      tags: [credentials]
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/Organization'
+        - $ref: '#/components/parameters/ContractVersion'
+        - $ref: '#/components/parameters/CorrelationId'
+        - {name: purpose, in: query, schema: {type: string, enum: [collect, write_bot, webhook_secret, oauth_client, user_token]}}
+        - {name: user_id, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Учётные данные удалены или их не было.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /connections/{connection_id}/authorize-url:
+    post:
+      operationId: authorizeUrl
+      summary: Получить адрес авторизации пользователя
+      description: |
+        Адрес авторизации источника для связывания учётной записи пользователя (режим
+        проверки токеном пользователя). Идентификатор клиента OAuth остаётся в адаптере.
+        Подключение без этого режима отвечает `not_supported`, и связывание не предлагается.
+      tags: [credentials]
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/Organization'
+        - $ref: '#/components/parameters/ContractVersion'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthorizeUrlInput'}
+            example: {user_id: 0193a5b0-1111-7000-8000-000000000002, state: 3q2-7Yk0b9c1d2e3f4a5b6c7d8, redirect_uri: 'https://craftpulse.example.test/source-links/callback'}
+      responses:
+        '200':
+          description: Адрес авторизации.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthorizeUrlResult'}
+              example: {url: 'https://wiki.example.test/plugins/servlet/oauth2/authorize?state=3q2-7Yk0b9c1d2e3f4a5b6c7d8'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/NotSupported'}
+  /connections/{connection_id}/probe:
+    post:
+      operationId: probe
+      summary: Проверить подключение
+      description: |
+        Пробное чтение с текущими учётными данными: проверенные возможности с причиной для
+        недоступных, редакция, версия и ключ экземпляра источника, доступный режим
+        `CheckAccess` и поддерживаемые версии контракта (FR-014). Возможность, которую проверить
+        не удалось, не объявляется рабочей.
+      tags: [collect]
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/Organization'
+        - $ref: '#/components/parameters/ContractVersion'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProbeInput'}
+            example: {base_url: 'https://jira.example.test', scopes: [{kind: tracker_project, native_scope_id: '10000'}]}
+      responses:
+        '200':
+          description: Результат проверки.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProbeResult'}
+              example:
+                contract_versions: ['1']
+                provider: jira_dc
+                instance_key: 6a1c3f0e-2b7d-4c55-9a10-3e4f5a6b7c8d
+                edition: datacenter
+                version: 9.12.15
+                access_mode: service_account
+                capabilities:
+                  - {capability: read_current, state: verified, reason_code: null, checked_at: '2026-11-12T10:00:00Z'}
+                  - {capability: read_permissions, state: missing, reason_code: permission_missing, checked_at: '2026-11-12T10:00:00Z'}
+                scopes: [{kind: tracker_project, native_scope_id: '10000', display_name: Project A, state: verified, reason_code: null}]
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/SourceForbidden'}
+        '422': {$ref: '#/components/responses/Unsupported'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '502': {$ref: '#/components/responses/InvalidResponse'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /connections/{connection_id}/fetch:
+    post:
+      operationId: fetch
+      summary: Прочитать страницу фактов
+      description: |
+        Одна страница вида данных `schema_id` в области за период, начиная с курсора. Ответ -
+        канонический пакет tar.gz потоком (`envelope.yaml`): в манифесте следующий курсор,
+        признак конца выборки, известное общее число объектов и объекты с обрезанной историей.
+        Курсор приращения - пара «время изменения, исходный ID», чтение перекрывает окно назад.
+        Повтор с тем же курсором допустим: повторы отсекает идемпотентный приём ядра.
+      tags: [collect]
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/Organization'
+        - $ref: '#/components/parameters/ContractVersion'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FetchInput'}
+            example: {schema_id: task_events, scope: {kind: tracker_project, native_scope_id: '10000'}, cursor: {modified_at: '2026-03-01T00:00:00Z', native_id: '20001'}, period: {from: '2026-01-01T00:00:00Z', to: '2026-12-01T00:00:00Z'}, limit: 10, object_keys: []}
+      responses:
+        '200':
+          description: Канонический пакет страницы.
+          headers:
+            Content-Length: {schema: {type: integer, minimum: 0}, description: 'Размер пакета, если известен.'}
+          content:
+            application/gzip:
+              schema: {type: string, contentMediaType: application/gzip}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/SourceForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '502': {$ref: '#/components/responses/InvalidResponse'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /connections/{connection_id}/manifest:
+    post:
+      operationId: manifest
+      summary: Получить манифест сверки
+      description: |
+        Пары «ID, версия» объектов вида данных в области за период для сверки полноты.
+        Версия - номер версии источника или время изменения, если номера нет (раздел 12.6).
+        Список отдаётся страницами по `cursor`.
+      tags: [collect]
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/Organization'
+        - $ref: '#/components/parameters/ContractVersion'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ManifestInput'}
+            example: {schema_id: tasks, scope: {kind: tracker_project, native_scope_id: '10000'}, period: {from: '2026-01-01T00:00:00Z', to: '2026-12-01T00:00:00Z'}, cursor: null, limit: 1000}
+      responses:
+        '200':
+          description: Страница манифеста.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManifestPage'}
+              example: {items: [{record_kind: task, native_ns: '', native_id: '20001', version: null, updated_at: '2026-03-04T07:00:00Z'}], next_cursor: null, total_count: 1}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/SourceForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '502': {$ref: '#/components/responses/InvalidResponse'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /connections/{connection_id}/check-access:
+    post:
+      operationId: checkAccess
+      summary: Проверить права пользователя
+      description: |
+        Решение по каждому элементу: `allowed`, `denied` или `unknown`, со временем проверки.
+        Режим проверки и свежесть решения возвращаются вместе с ответом. Ядро трактует
+        `unknown` как запрет (FR-001).
+      tags: [access]
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/Organization'
+        - $ref: '#/components/parameters/ContractVersion'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CheckAccessInput'}
+            example: {user_id: 0193a5b0-1111-7000-8000-000000000002, account_native_id: demo-person-04, items: [{item_kind: area, area_kind: repository, object_kind: null, native_ns: '', native_id: '43'}]}
+      responses:
+        '200':
+          description: Решения по элементам в порядке запроса.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CheckAccessResult'}
+              example: {mode: service_account, checked_at: '2026-11-12T10:00:00Z', max_age_seconds: 60, decisions: [{decision: denied, checked_at: '2026-11-12T10:00:00Z', reason_code: not_member}]}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /connections/{connection_id}/publish:
+    post:
+      operationId: publish
+      summary: Выполнить подтверждённую запись
+      description: |
+        Создаёт или обновляет комментарий MR либо задачу трекера с маркером объекта. Исход
+        `unknown` означает потерю ответа источника: ядро ищет результат через `FindPublished`
+        и не создаёт объект повторно (BR-002). Несовпадение `expected_head_sha` с текущим head
+        MR даёт `head_conflict`.
+      tags: [publish]
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/Organization'
+        - $ref: '#/components/parameters/ContractVersion'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PublishInput'}
+            example: {action: mr_comment, marker: craftpulse:mr-summary:0193a5b0-9999-7000-8000-000000000001, target: {object_kind: merge_request, native_ns: '', native_id: '9001'}, external_id: null, expected_head_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, title: null, body_markdown: '**craftPulse**: 2 new findings'}
+      responses:
+        '200':
+          description: Исход записи.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PublishResult'}
+              example: {outcome: succeeded, external_id: '77001', external_url: 'https://gitlab.example.test/demo/orders-service/-/merge_requests/7#note_77001', reason_code: null}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/SourceForbidden'}
+        '409': {$ref: '#/components/responses/HeadConflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /connections/{connection_id}/find-published:
+    post:
+      operationId: findPublished
+      summary: Найти опубликованный объект по маркеру
+      description: Ищет комментарий или задачу с маркером объекта. Вызывается перед каждым созданием.
+      tags: [publish]
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/Organization'
+        - $ref: '#/components/parameters/ContractVersion'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FindPublishedInput'}
+            example: {action: mr_comment, marker: craftpulse:mr-summary:0193a5b0-9999-7000-8000-000000000001, target: {object_kind: merge_request, native_ns: '', native_id: '9001'}}
+      responses:
+        '200':
+          description: Найденный объект или его отсутствие.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FindPublishedResult'}
+              example: {found: true, external_id: '77001', external_url: 'https://gitlab.example.test/demo/orders-service/-/merge_requests/7#note_77001'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/SourceForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '502': {$ref: '#/components/responses/InvalidResponse'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /connections/{connection_id}/webhooks/parse:
+    post:
+      operationId: parseWebhook
+      summary: Разобрать webhook источника
+      description: |
+        Проверяет подпись секретом webhook, который хранит адаптер, и возвращает ключи объектов
+        для перечитывания с признаком «MR или pipeline». Неверная подпись даёт
+        `invalid_signature`, webhook отбрасывается. Неизвестный вид события - `ignored: true`.
+      tags: [webhook]
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - $ref: '#/components/parameters/Organization'
+        - $ref: '#/components/parameters/ContractVersion'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WebhookInput'}
+            example: {headers: {X-Gitlab-Event: Merge Request Hook, X-Gitlab-Token: '[redacted]'}, body_base64: eyJvYmplY3Rfa2luZCI6Im1lcmdlX3JlcXVlc3QifQ==}
+      responses:
+        '200':
+          description: Подпись проверена.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WebhookResult'}
+              example: {ignored: false, event_kind: merge_request, keys: [{object_kind: merge_request, native_ns: '', native_id: '9001'}]}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/InvalidSignature'}
+components:
+  securitySchemes:
+    adapterKey:
+      type: http
+      scheme: bearer
+      description: Служебный ключ, которым ядро обращается к адаптеру подключения. Хранится в `connect` зашифрованным.
+  parameters:
+    ConnectionId:
+      name: connection_id
+      in: path
+      required: true
+      description: ID подключения в ядре; по нему адаптер находит учётные данные.
+      schema: {type: string, format: uuid}
+    Organization:
+      name: X-Craftpulse-Organization
+      in: header
+      required: true
+      description: Организация подключения.
+      schema: {type: string, format: uuid}
+    ContractVersion:
+      name: X-Craftpulse-Contract-Version
+      in: header
+      required: true
+      description: Версия контракта вызова; неподдержанная даёт `unsupported_contract_version`.
+      schema: {type: string, maxLength: 16}
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: true
+      description: Correlation ID вызова ядра для журналов (NFR-018).
+      schema: {type: string, maxLength: 64}
+  headers:
+    RetryAfter:
+      description: Через сколько секунд повторять.
+      schema: {type: integer, minimum: 0}
+  responses:
+    BadRequest:
+      description: Неверный формат запроса или параметров.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: invalid_request, detail: purpose is required, retry_at: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    Unauthorized:
+      description: Неверный служебный ключ ядра.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: unauthorized, detail: service key rejected, retry_at: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    SourceForbidden:
+      description: 'Источник отклонил учётные данные (`auth`) или у них нет нужного права (`permission_missing`).'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: auth, detail: source returned 401, retry_at: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    NotFound:
+      description: Область или объект не найдены в источнике.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: not_found, detail: project 10000 not found, retry_at: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    NotSupported:
+      description: Операция не поддержана режимом подключения.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: not_supported, detail: user token mode is not available, retry_at: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    HeadConflict:
+      description: Текущий head MR отличается от `expected_head_sha`.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: head_conflict, detail: head moved, retry_at: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    Unsupported:
+      description: 'Неподдержанная редакция источника (`unsupported_edition`) или версия контракта (`unsupported_contract_version`).'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: unsupported_contract_version, detail: contract version 2 is not supported, retry_at: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    InvalidSignature:
+      description: Подпись webhook не прошла проверку; webhook отбрасывается.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: invalid_signature, detail: signature mismatch, retry_at: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    RateLimited:
+      description: Источник ограничил частоту; ядро ставит паузу подключения до `Retry-After`.
+      headers:
+        Retry-After: {$ref: '#/components/headers/RetryAfter'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: rate_limited, detail: source returned 429, retry_at: '2026-11-12T10:01:00Z', correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    InvalidResponse:
+      description: Ответ источника не прошёл проверку адаптера.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: invalid_response, detail: changelog page has no total, retry_at: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    Unavailable:
+      description: 'Источник временно недоступен (`unavailable`) или адаптер готовит данные (`preparing`, повтор в `retry_at` без траты попытки).'
+      headers:
+        Retry-After: {$ref: '#/components/headers/RetryAfter'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: preparing, detail: partial clone in progress, retry_at: '2026-11-12T10:05:00Z', correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+    Timeout:
+      description: Источник не ответил за 30 с.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdapterError'}
+          example: {code: timeout, detail: source did not answer in 30s, retry_at: null, correlation_id: 0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b14}
+  schemas:
+    AdapterError:
+      type: object
+      required: [code, detail, retry_at, correlation_id]
+      properties:
+        code:
+          type: string
+          enum: [invalid_request, unauthorized, not_supported, unsupported_contract_version, unsupported_edition, auth, permission_missing, not_found, head_conflict, invalid_signature, rate_limited, preparing, unavailable, timeout, invalid_response]
+        detail: {type: string, maxLength: 1024, description: Текст для диагностики без учётных данных; ядро по нему не ветвится.}
+        retry_at: {type: [string, 'null'], format: date-time, description: 'Когда повторять: для `rate_limited` и `preparing`.'}
+        correlation_id: {type: string, maxLength: 64}
+    ScopeRef:
+      type: object
+      required: [kind, native_scope_id]
+      properties:
+        kind: {type: string, enum: [tracker_project, repository, wiki_space, ci_project, analysis_project]}
+        native_scope_id: {type: string, minLength: 1, maxLength: 255}
+    Period:
+      type: object
+      description: Полуоткрытый период `[from, to)`.
+      required: [from, to]
+      properties:
+        from: {type: [string, 'null'], format: date-time}
+        to: {type: [string, 'null'], format: date-time}
+    Cursor:
+      type: object
+      description: Курсор приращения - пара «время изменения, исходный ID».
+      required: [modified_at, native_id]
+      properties:
+        modified_at: {type: string, format: date-time}
+        native_id: {type: string, maxLength: 255}
+    ObjectKey:
+      type: object
+      required: [object_kind, native_ns, native_id]
+      properties:
+        object_kind: {type: string, enum: [task, merge_request, ci_run, ci_attempt, document, finding]}
+        native_ns: {type: string, maxLength: 255}
+        native_id: {type: string, minLength: 1, maxLength: 1024}
+    CredentialsInput:
+      type: object
+      required: [purpose, secret, user_id, oauth_code, redirect_uri]
+      properties:
+        purpose: {type: string, enum: [collect, write_bot, webhook_secret, oauth_client, user_token]}
+        secret: {type: [string, 'null'], maxLength: 8192, writeOnly: true, description: 'Токен, пароль или секрет; для `user_token` вместо него можно передать `oauth_code`.'}
+        user_id: {type: [string, 'null'], format: uuid, description: 'Пользователь craftPulse для `user_token`.'}
+        oauth_code: {type: [string, 'null'], maxLength: 2048, writeOnly: true}
+        redirect_uri: {type: [string, 'null'], format: uri}
+    AuthorizeUrlInput:
+      type: object
+      required: [user_id, state, redirect_uri]
+      properties:
+        user_id: {type: string, format: uuid}
+        state: {type: string, minLength: 16, maxLength: 255}
+        redirect_uri: {type: string, format: uri}
+    AuthorizeUrlResult:
+      type: object
+      required: [url]
+      properties:
+        url: {type: string, format: uri}
+    ProbeInput:
+      type: object
+      required: [base_url, scopes]
+      properties:
+        base_url: {type: string, format: uri}
+        scopes:
+          type: array
+          items: {$ref: '#/components/schemas/ScopeRef'}
+    ProbeResult:
+      type: object
+      required: [contract_versions, provider, instance_key, edition, version, access_mode, capabilities, scopes]
+      properties:
+        contract_versions:
+          type: array
+          minItems: 1
+          items: {type: string, maxLength: 16}
+        provider: {type: string, enum: [jira_dc, gitlab, github, jenkins, sonarqube, confluence_dc, git, client]}
+        instance_key: {type: string, minLength: 1, maxLength: 512, description: Стабильный ID экземпляра или нормализованный базовый адрес (раздел 12.4).}
+        edition: {type: [string, 'null'], maxLength: 64}
+        version: {type: [string, 'null'], maxLength: 64}
+        access_mode: {type: [string, 'null'], enum: [service_account, user_token, synced, null], description: 'Доступный режим `CheckAccess`; `null` - проверка прав недоступна.'}
+        capabilities:
+          type: array
+          items: {$ref: '#/components/schemas/Capability'}
+        scopes:
+          type: array
+          items: {$ref: '#/components/schemas/ScopeCheck'}
+    Capability:
+      type: object
+      required: [capability, state, reason_code, checked_at]
+      properties:
+        capability:
+          type: string
+          enum: [read_current, read_status_history, read_field_history, read_resolution_history, read_sprint_history, read_links, read_permissions, read_deletions, write_mr_comment, write_tracker_issue, webhook]
+        state: {type: string, enum: [verified, partial, missing]}
+        reason_code: {type: [string, 'null'], maxLength: 64, description: 'Причина для `partial` и `missing`.'}
+        checked_at: {type: string, format: date-time}
+    ScopeCheck:
+      type: object
+      required: [kind, native_scope_id, display_name, state, reason_code]
+      properties:
+        kind: {type: string, enum: [tracker_project, repository, wiki_space, ci_project, analysis_project]}
+        native_scope_id: {type: string, maxLength: 255}
+        display_name: {type: [string, 'null'], maxLength: 255}
+        state: {type: string, enum: [verified, missing]}
+        reason_code: {type: [string, 'null'], maxLength: 64}
+    FetchInput:
+      type: object
+      required: [schema_id, scope, cursor, period, limit, object_keys]
+      properties:
+        schema_id: {type: string, enum: [tasks, task_events, relations, accounts, merge_requests, ci_runs, findings, junit, coverage, documents]}
+        scope: {$ref: '#/components/schemas/ScopeRef'}
+        cursor: {oneOf: [{$ref: '#/components/schemas/Cursor'}, {type: 'null'}]}
+        period: {$ref: '#/components/schemas/Period'}
+        limit: {type: integer, minimum: 1, maximum: 1000}
+        object_keys:
+          type: array
+          description: Объекты для перечитывания по webhook, дочитывания истории или сверки; пусто - выборка по курсору.
+          maxItems: 1000
+          items: {$ref: '#/components/schemas/ObjectKey'}
+    ManifestInput:
+      type: object
+      required: [schema_id, scope, period, cursor, limit]
+      properties:
+        schema_id: {type: string, enum: [tasks, task_events, relations, accounts, merge_requests, ci_runs, findings, junit, coverage, documents]}
+        scope: {$ref: '#/components/schemas/ScopeRef'}
+        period: {$ref: '#/components/schemas/Period'}
+        cursor: {type: [string, 'null'], maxLength: 1024, description: Непрозрачный курсор страницы манифеста.}
+        limit: {type: integer, minimum: 1, maximum: 10000}
+    ManifestPage:
+      type: object
+      required: [items, next_cursor, total_count]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ManifestItem'}
+        next_cursor: {type: [string, 'null'], maxLength: 1024}
+        total_count: {type: [integer, 'null'], minimum: 0}
+    ManifestItem:
+      type: object
+      required: [record_kind, native_ns, native_id, version, updated_at]
+      properties:
+        record_kind: {type: string, maxLength: 64}
+        native_ns: {type: string, maxLength: 255}
+        native_id: {type: string, minLength: 1, maxLength: 1024}
+        version: {type: [string, 'null'], maxLength: 255, description: Номер версии источника.}
+        updated_at: {type: [string, 'null'], format: date-time, description: 'Время изменения; обязательно, если номера версии нет.'}
+    CheckAccessInput:
+      type: object
+      required: [user_id, account_native_id, items]
+      properties:
+        user_id: {type: string, format: uuid}
+        account_native_id: {type: string, minLength: 1, maxLength: 255}
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: {$ref: '#/components/schemas/AccessItem'}
+    AccessItem:
+      type: object
+      required: [item_kind, area_kind, object_kind, native_ns, native_id]
+      properties:
+        item_kind: {type: string, enum: [area, object]}
+        area_kind: {type: [string, 'null'], enum: [tracker_project, repository, wiki_space, ci_project, analysis_project, null]}
+        object_kind: {type: [string, 'null'], enum: [task, merge_request, document, null]}
+        native_ns: {type: string, maxLength: 255}
+        native_id: {type: string, minLength: 1, maxLength: 1024}
+    CheckAccessResult:
+      type: object
+      required: [mode, checked_at, max_age_seconds, decisions]
+      properties:
+        mode: {type: string, enum: [service_account, user_token, synced]}
+        checked_at: {type: string, format: date-time}
+        max_age_seconds: {type: [integer, 'null'], minimum: 0, description: 'Свежесть решения; для `synced` - задержка синхронизации.'}
+        decisions:
+          type: array
+          items: {$ref: '#/components/schemas/AccessDecision'}
+    AccessDecision:
+      type: object
+      required: [decision, checked_at, reason_code]
+      properties:
+        decision: {type: string, enum: [allowed, denied, unknown]}
+        checked_at: {type: string, format: date-time}
+        reason_code: {type: [string, 'null'], maxLength: 64}
+    PublishInput:
+      type: object
+      required: [action, marker, target, external_id, expected_head_sha, title, body_markdown]
+      properties:
+        action: {type: string, enum: [mr_comment, tracker_issue]}
+        marker: {type: string, minLength: 1, maxLength: 255, description: Маркер объекта craftPulse; по нему ищется опубликованное.}
+        target: {$ref: '#/components/schemas/ObjectKey'}
+        external_id: {type: [string, 'null'], maxLength: 255, description: Известный внешний ID для обновления; `null` - создать.}
+        expected_head_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        title: {type: [string, 'null'], maxLength: 255}
+        body_markdown: {type: string, maxLength: 65536}
+    PublishResult:
+      type: object
+      required: [outcome, external_id, external_url, reason_code]
+      properties:
+        outcome: {type: string, enum: [succeeded, failed, unknown]}
+        external_id: {type: [string, 'null'], maxLength: 255}
+        external_url: {type: [string, 'null'], format: uri}
+        reason_code: {type: [string, 'null'], maxLength: 64}
+    FindPublishedInput:
+      type: object
+      required: [action, marker, target]
+      properties:
+        action: {type: string, enum: [mr_comment, tracker_issue]}
+        marker: {type: string, minLength: 1, maxLength: 255}
+        target: {$ref: '#/components/schemas/ObjectKey'}
+    FindPublishedResult:
+      type: object
+      required: [found, external_id, external_url]
+      properties:
+        found: {type: boolean}
+        external_id: {type: [string, 'null'], maxLength: 255}
+        external_url: {type: [string, 'null'], format: uri}
+    WebhookInput:
+      type: object
+      required: [headers, body_base64]
+      properties:
+        headers:
+          type: object
+          additionalProperties: {type: string, maxLength: 8192}
+        body_base64: {type: string, contentEncoding: base64, maxLength: 1398104}
+    WebhookResult:
+      type: object
+      required: [ignored, event_kind, keys]
+      properties:
+        ignored: {type: boolean}
+        event_kind: {type: [string, 'null'], maxLength: 64}
+        keys:
+          type: array
+          items: {$ref: '#/components/schemas/ObjectKey'}

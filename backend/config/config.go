@@ -35,7 +35,7 @@ type Config struct {
 	MetricsAddr string `env:"METRICS_ADDR" envDefault:":9090"`
 	DB          DB
 	ObjectStore ObjectStore
-	MasterKeys  MasterKeys
+	MasterKeys  MasterKeys `envPrefix:"CORE_"`
 }
 
 type DB struct {
@@ -52,13 +52,14 @@ type ObjectStore struct {
 	SecretAccessKey Secret `env:"OBJECT_STORE_SECRET_ACCESS_KEY_FILE,file,required,notEmpty"`
 }
 
-// MasterKeys are the core keys of pkg/crypto (TZ 14.2): files with base64 of 32 bytes. The previous key
-// is set only during rotation, until data keys are rewrapped by the current one.
+// MasterKeys are the keys of pkg/crypto (TZ 14.2): files with base64 of 32 bytes, under the CORE_ prefix
+// for the core and ADAPTER_ for an adapter. The previous key is set only during rotation, until data keys
+// are rewrapped by the current one.
 type MasterKeys struct {
-	CurrentVersion  uint32 `env:"CORE_MASTER_KEY_VERSION,required"`
-	Current         Secret `env:"CORE_MASTER_KEY_FILE,file,required,notEmpty"`
-	PreviousVersion uint32 `env:"CORE_PREVIOUS_MASTER_KEY_VERSION"`
-	Previous        Secret `env:"CORE_PREVIOUS_MASTER_KEY_FILE,file"`
+	CurrentVersion  uint32 `env:"MASTER_KEY_VERSION,required"`
+	Current         Secret `env:"MASTER_KEY_FILE,file,required,notEmpty"`
+	PreviousVersion uint32 `env:"PREVIOUS_MASTER_KEY_VERSION"`
+	Previous        Secret `env:"PREVIOUS_MASTER_KEY_FILE,file"`
 }
 
 type MasterKey struct {
@@ -83,16 +84,16 @@ func (m MasterKeys) Decode() ([]MasterKey, error) {
 	return keys, errors.Join(errs...)
 }
 
-func (m MasterKeys) validate() error {
+func (m MasterKeys) validate(prefix string) error {
 	var errs []error
 	if m.CurrentVersion == 0 {
-		errs = append(errs, errors.New("CORE_MASTER_KEY_VERSION must be positive"))
+		errs = append(errs, fmt.Errorf("%sMASTER_KEY_VERSION must be positive", prefix))
 	}
 	if (m.Previous == "") != (m.PreviousVersion == 0) {
-		errs = append(errs, errors.New("CORE_PREVIOUS_MASTER_KEY_FILE and CORE_PREVIOUS_MASTER_KEY_VERSION are set together"))
+		errs = append(errs, fmt.Errorf("%[1]sPREVIOUS_MASTER_KEY_FILE and %[1]sPREVIOUS_MASTER_KEY_VERSION are set together", prefix))
 	}
 	if m.Previous != "" && m.PreviousVersion == m.CurrentVersion {
-		errs = append(errs, errors.New("CORE_PREVIOUS_MASTER_KEY_VERSION must differ from CORE_MASTER_KEY_VERSION"))
+		errs = append(errs, fmt.Errorf("%[1]sPREVIOUS_MASTER_KEY_VERSION must differ from %[1]sMASTER_KEY_VERSION", prefix))
 	}
 	if m.Current != "" {
 		if _, err := m.Decode(); err != nil {
@@ -124,7 +125,7 @@ func Load(environ map[string]string) (Config, error) {
 	if cfg.ObjectStore.Endpoint != "" {
 		errs = append(errs, validateHTTPURL("OBJECT_STORE_ENDPOINT", cfg.ObjectStore.Endpoint))
 	}
-	errs = append(errs, cfg.MasterKeys.validate())
+	errs = append(errs, cfg.MasterKeys.validate("CORE_"))
 	if err := errors.Join(errs...); err != nil {
 		return Config{}, fmt.Errorf("invalid configuration: %w", err)
 	}

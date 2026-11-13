@@ -1,0 +1,23 @@
+package config
+
+import "os"
+
+// Config holds the runtime settings of the service.
+type Config struct {
+	Addr          string
+	PartnerAPIKey string
+}
+
+const defaultPartnerAPIKey = "@@DEMO_SECRET_MARKER@@"
+
+// Load reads the settings from the environment and falls back to defaults.
+func Load() Config {
+	cfg := Config{Addr: ":8080", PartnerAPIKey: defaultPartnerAPIKey}
+	if addr := os.Getenv("ORDERS_ADDR"); addr != "" {
+		cfg.Addr = addr
+	}
+	if key := os.Getenv("ORDERS_PARTNER_KEY"); key != "" {
+		cfg.PartnerAPIKey = key
+	}
+	return cfg
+}

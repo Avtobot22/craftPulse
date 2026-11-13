@@ -14,24 +14,38 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-//go:embed core/*.sql
-var _core embed.FS
+var (
+	//go:embed core/*.sql
+	_core embed.FS
+	//go:embed adapter/*.sql
+	_adapter embed.FS
+)
 
 func Core() fs.FS {
 	sub, _ := fs.Sub(_core, "core")
 	return sub
 }
 
-func Latest() int64 {
-	files, _ := fs.Glob(Core(), "*.sql")
-	var latest int64
+// Adapter is the schema every adapter database has, from pkg/adaptersdk (TZ 12.5.9).
+func Adapter() fs.FS {
+	sub, _ := fs.Sub(_adapter, "adapter")
+	return sub
+}
+
+func Latest() int64 { return latestIn(Core()) }
+
+func AdapterLatest() int64 { return latestIn(Adapter()) }
+
+func latestIn(fsys fs.FS) int64 {
+	files, _ := fs.Glob(fsys, "*.sql")
+	var v int64
 	for _, f := range files {
 		prefix, _, _ := strings.Cut(f, "_")
-		if v, err := strconv.ParseInt(prefix, 10, 64); err == nil && v > latest {
-			latest = v
+		if n, err := strconv.ParseInt(prefix, 10, 64); err == nil && n > v {
+			v = n
 		}
 	}
-	return latest
+	return v
 }
 
 func Current(ctx context.Context, pool *pgxpool.Pool) (int64, error) {

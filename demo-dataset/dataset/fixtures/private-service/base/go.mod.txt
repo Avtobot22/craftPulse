@@ -1,0 +1,3 @@
+module demo.invalid/private
+
+go 1.22

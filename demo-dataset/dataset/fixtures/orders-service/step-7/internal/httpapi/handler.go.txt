@@ -1,0 +1,53 @@
+package httpapi
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"net/http"
+
+	"demo.invalid/orders/internal/order"
+	"demo.invalid/orders/internal/report"
+)
+
+type quote struct {
+	OrderID string `json:"order_id"`
+	Total   int64  `json:"total"`
+}
+
+// NewHandler routes the public API of the service.
+func NewHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/quotes", createQuote)
+	mux.HandleFunc("GET /v1/reports/{name}/title", reportTitle)
+	return mux
+}
+
+func createQuote(w http.ResponseWriter, r *http.Request) {
+	var o order.Order
+	if err := json.NewDecoder(r.Body).Decode(&o); err != nil {
+		http.Error(w, "invalid order", http.StatusBadRequest)
+		return
+	}
+	total, err := o.Total()
+	if errors.Is(err, order.ErrEmpty) {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(quote{OrderID: o.ID, Total: total}); err != nil {
+		log.Printf("write quote %s: %v", o.ID, err)
+	}
+}
+
+func reportTitle(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if _, err := io.WriteString(w, report.Title(r.PathValue("name"))); err != nil {
+		log.Printf("write report title: %v", err)
+	}
+}

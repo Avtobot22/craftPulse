@@ -15,3 +15,14 @@ rules:
   tag-description: error
   info-license: error
   no-server-example.com: off
+apis:
+  openapi:
+    root: openapi.yaml
+  adapter:
+    root: adapter.yaml
+  # Файл содержит только схемы пакета: операций и серверов в нём нет.
+  envelope:
+    root: envelope.yaml
+    rules:
+      no-unused-components: off
+      no-empty-servers: off

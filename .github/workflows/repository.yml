@@ -40,6 +40,8 @@ jobs:
               - 'backend/**'
               - 'deploy/postgres/**'
               - 'docs/technical-specification/openapi.yaml'
+              - 'docs/technical-specification/adapter.yaml'
+              - 'docs/technical-specification/envelope.yaml'
               - '.github/workflows/repository.yml'
               - '.github/workflows/go-check.yml'
             dataset:

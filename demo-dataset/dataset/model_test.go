@@ -66,7 +66,7 @@ func TestGenerateDeterminismAndPeople(t *testing.T) {
 			t.Fatalf("missing role %s", role)
 		}
 	}
-	if len(first.People[3].DeniedAreas) != 2 {
+	if len(first.People[3].DeniedAreas) != 3 {
 		t.Fatal("restricted actor needs repo and wiki denials")
 	}
 }

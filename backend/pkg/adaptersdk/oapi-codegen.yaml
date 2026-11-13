@@ -1,0 +1,9 @@
+package: adaptersdk
+output: adapter.gen.go
+generate:
+  models: true
+  gin-server: true
+  strict-server: true
+compatibility:
+  # Значения вроде `client` иначе совпадают с именами типов.
+  always-prefix-enum-values: true
