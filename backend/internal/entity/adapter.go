@@ -151,8 +151,8 @@ type ScopeCheck struct {
 }
 
 type SourceCursor struct {
-	ModifiedAt time.Time
-	NativeID   string
+	ModifiedAt time.Time `json:"modified_at"`
+	NativeID   string    `json:"native_id"`
 }
 
 // Period is [From, To); a nil end is open.

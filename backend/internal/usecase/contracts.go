@@ -93,3 +93,9 @@ type Intake interface {
 	ListConflicts(ctx context.Context, s entity.Subject, f entity.ConflictFilter) (entity.ConflictPage, error)
 	ResolveConflict(ctx context.Context, s entity.Subject, id entity.ID, resolution string) (entity.IngestConflict, error)
 }
+
+// Collector runs the jobs of collection; complete ends the job in the transaction of its result.
+type Collector interface {
+	RunPage(ctx context.Context, job entity.SyncPageJob, holder string, complete func(context.Context) error) error
+	RunHistory(ctx context.Context, job entity.SyncHistoryJob, holder string, complete func(context.Context) error) error
+}
