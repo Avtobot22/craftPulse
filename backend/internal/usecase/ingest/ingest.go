@@ -27,6 +27,10 @@ type Authorizer interface {
 	Authorize(ctx context.Context, s entity.Subject, r entity.AccessRequest) (entity.Scope, error)
 }
 
+type Auditor interface {
+	Record(ctx context.Context, e entity.AuditEvent) error
+}
+
 type Metrics interface {
 	PackageRejected(channel entity.ReceiptChannel, reason string)
 }
@@ -38,6 +42,7 @@ type Deps struct {
 	Tx      repo.Transactor
 	Connect Connect
 	Access  Authorizer
+	Auditor Auditor
 	Metrics Metrics
 	Clock   clock.Clock
 	NewID   func() (entity.ID, error)
@@ -64,9 +69,9 @@ func packageKey(orgID, receiptID entity.ID) string {
 	return "packages/" + orgID.String() + "/" + receiptID.String() + ".tar.gz"
 }
 
-// SubmitImport puts a package of the universal import into quarantine. A package that breaks a limit, a
-// path rule or the envelope is refused at once and its quarantine object is deleted; a valid one waits
-// for the job ingest.package (TZ 10.5.2).
+// SubmitImport puts a package of the universal import into quarantine and checks it at once: a package
+// that breaks a limit, a path rule or the envelope is refused, one equal to a stored package is a duplicate,
+// and both lose their quarantine object; a valid one waits for the job ingest.package (TZ 10.5.2).
 func (u *UseCase) SubmitImport(ctx context.Context, s entity.Subject, projectID entity.ID, pkg io.Reader) (entity.Receipt, error) {
 	id, err := u.d.NewID()
 	if err != nil {
@@ -82,23 +87,34 @@ func (u *UseCase) SubmitImport(ctx context.Context, s entity.Subject, projectID 
 		return entity.Receipt{}, err
 	}
 	if counted.n > u.d.Limits.MaxPackageBytes {
-		return u.refuse(ctx, rc, nil, entity.PackageLimitExceeded)
+		return u.refuse(ctx, s, rc, nil, entity.PackageLimitExceeded)
 	}
 	body, err := u.d.Objects.Get(ctx, rc.QuarantineKey)
 	if err != nil {
 		return entity.Receipt{}, err
 	}
-	res := envelope.Check(body, u.d.Limits)
+	res, err := envelope.Clean(body, u.d.Limits, io.Discard)
 	_ = body.Close()
+	if err != nil {
+		return entity.Receipt{}, err
+	}
 	if res.Envelope != nil {
-		return u.refuse(ctx, rc, res.Manifest, packageReason(res.Envelope.Code))
+		return u.refuse(ctx, s, rc, res.Manifest, packageReason(res.Envelope.Code))
 	}
 	rc.Status, rc.RecordCount = entity.ReceiptQuarantined, len(res.Records)
 	if err := describe(&rc, res.Manifest); err != nil {
 		return entity.Receipt{}, err
 	}
 	err = u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
-		if err := u.d.Repo.SaveReceipt(ctx, rc); err != nil {
+		first, dup, err := u.d.Repo.FirstReceiptOfHash(ctx, s.OrganizationID, res.ContentHash)
+		if err != nil {
+			return err
+		}
+		if dup {
+			rc.Status, rc.DuplicateOf, rc.PackageHash = entity.ReceiptDuplicate, &first, res.ContentHash
+			return u.saveSubmitted(ctx, s, rc)
+		}
+		if err := u.saveSubmitted(ctx, s, rc); err != nil {
 			return err
 		}
 		job := entity.IngestPackageJob{OrganizationID: s.OrganizationID, ReceiptID: id, CorrelationID: entity.ID(logger.CorrelationID(ctx))}
@@ -107,11 +123,28 @@ func (u *UseCase) SubmitImport(ctx context.Context, s entity.Subject, projectID 
 	if err != nil {
 		return entity.Receipt{}, err
 	}
+	if rc.Status == entity.ReceiptDuplicate {
+		return rc, u.d.Objects.Delete(ctx, quarantineKey(s.OrganizationID, id))
+	}
 	return rc, nil
 }
 
+func (u *UseCase) saveSubmitted(ctx context.Context, s entity.Subject, rc entity.Receipt) error {
+	if rc.Status != entity.ReceiptQuarantined {
+		rc.QuarantineKey = ""
+	}
+	if err := u.d.Repo.SaveReceipt(ctx, rc); err != nil {
+		return err
+	}
+	return u.d.Auditor.Record(ctx, entity.AuditEvent{
+		OrganizationID: s.OrganizationID, OccurredAt: u.d.Clock.Now(), ActorKind: entity.ActorUser, ActorID: s.UserID,
+		Operation: "createImport", ObjectKind: "receipt", ObjectID: rc.ID, AreaID: *rc.ProjectID, Outcome: entity.AuditSucceeded,
+		ReasonCode: rc.ReasonCode, CorrelationID: entity.ID(logger.CorrelationID(ctx)),
+	})
+}
+
 // refuse deletes the quarantine object and records the refused package with its reason.
-func (u *UseCase) refuse(ctx context.Context, rc entity.Receipt, m *envelope.Manifest, reason string) (entity.Receipt, error) {
+func (u *UseCase) refuse(ctx context.Context, s entity.Subject, rc entity.Receipt, m *envelope.Manifest, reason string) (entity.Receipt, error) {
 	if err := u.d.Objects.Delete(ctx, rc.QuarantineKey); err != nil {
 		return entity.Receipt{}, err
 	}
@@ -119,7 +152,7 @@ func (u *UseCase) refuse(ctx context.Context, rc entity.Receipt, m *envelope.Man
 	if err := describe(&rc, m); err != nil {
 		return entity.Receipt{}, err
 	}
-	if err := u.d.Tx.InOrgTx(ctx, rc.OrganizationID, func(ctx context.Context) error { return u.d.Repo.SaveReceipt(ctx, rc) }); err != nil {
+	if err := u.d.Tx.InOrgTx(ctx, rc.OrganizationID, func(ctx context.Context) error { return u.saveSubmitted(ctx, s, rc) }); err != nil {
 		return entity.Receipt{}, err
 	}
 	u.d.Metrics.PackageRejected(rc.Channel, reason)

@@ -29,6 +29,7 @@ var (
 	NotFound             = Problem{http.StatusNotFound, "not_found", "Not found"}
 	VersionConflict      = Problem{http.StatusPreconditionFailed, "version_conflict", "Resource version has changed"}
 	PayloadTooLarge      = Problem{http.StatusRequestEntityTooLarge, "payload_too_large", "Payload is too large"}
+	UnsupportedMedia     = Problem{http.StatusUnsupportedMediaType, "unsupported_media_type", "Unsupported media type"}
 	ValidationFailed     = Problem{http.StatusUnprocessableEntity, "validation_failed", "Validation failed"}
 	PreconditionRequired = Problem{http.StatusPreconditionRequired, "precondition_required", "If-Match header is required"}
 	InternalError        = Problem{http.StatusInternalServerError, "internal_error", "Internal server error"}

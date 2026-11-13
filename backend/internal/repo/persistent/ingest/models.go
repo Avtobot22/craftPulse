@@ -11,6 +11,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type IngestConflict struct {
+	OrganizationID    uuid.UUID
+	ID                uuid.UUID
+	ReceiptID         uuid.UUID
+	RecordNo          int32
+	ExistingReceiptID uuid.UUID
+	ExistingRecordNo  int32
+	DetectedAt        time.Time
+	Status            string
+	Resolution        pgtype.Text
+	ResolvedBy        uuid.NullUUID
+	ResolvedAt        pgtype.Timestamptz
+}
+
 type IngestReceipt struct {
 	OrganizationID   uuid.UUID
 	ID               uuid.UUID

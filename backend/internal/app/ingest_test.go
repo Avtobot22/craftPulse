@@ -27,9 +27,11 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/adapterapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/objstore"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
+	auditrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit"
 	connectrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/connect"
 	ingestrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/ingest"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/connect"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/ingest"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
@@ -482,7 +484,7 @@ func TestIngest_InterruptedJobGivesTheSameJournal(t *testing.T) {
 	uc := ingest.New(ingest.Deps{
 		Repo: ingestrepo.NewRepo(e.app), Objects: e.store, Queue: q, Tx: persistent.NewTransactor(e.app),
 		Connect: e.connect, Access: rights, Metrics: ingestMetrics{rejected: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "x"}, []string{"channel", "reason"})},
-		Clock: e.clock, NewID: newID,
+		Clock: e.clock, NewID: newID, Auditor: audit.New(auditrepo.NewRepo(e.app), persistent.NewTransactor(e.app), e.clock),
 	})
 	data := pack(t, importManifest("1"), task(t, "IMP-1", "A", ""), task(t, "", "B", ""), task(t, "IMP-2", "C", ""))
 	rc, err := uc.SubmitImport(t.Context(), e.admin, e.project, bytes.NewReader(data))

@@ -2588,6 +2588,7 @@ func (e ReceiptStatus) Valid() bool {
 const (
 	ReceiptAcceptedStatusDuplicate   ReceiptAcceptedStatus = "duplicate"
 	ReceiptAcceptedStatusQuarantined ReceiptAcceptedStatus = "quarantined"
+	ReceiptAcceptedStatusRejected    ReceiptAcceptedStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the ReceiptAcceptedStatus enum.
@@ -2596,6 +2597,8 @@ func (e ReceiptAcceptedStatus) Valid() bool {
 	case ReceiptAcceptedStatusDuplicate:
 		return true
 	case ReceiptAcceptedStatusQuarantined:
+		return true
+	case ReceiptAcceptedStatusRejected:
 		return true
 	default:
 		return false
@@ -6254,7 +6257,7 @@ type ImportUpload struct {
 	// CommitSha Ревизия, к которой относится отчёт; обязательна для `findings`, `junit` и `coverage`. Без неё отчёт отклоняется: результат не привязывается к head по догадке.
 	CommitSha *string `json:"commit_sha,omitempty"`
 
-	// File Файл по схеме импорта: JSON или CSV для фактов, отчёт поддержанного формата для `findings`, `junit` и `coverage`.
+	// File Файл по схеме импорта: JSON или CSV для фактов, отчёт поддержанного формата для `findings`, `junit` и `coverage`. JSON - массив записей `Record` канонического пакета (`envelope.yaml`), CSV - снимок текущих задач по `TaskCsvRow`.
 	File      openapi_types.File `json:"file"`
 	ProjectId openapi_types.UUID `json:"project_id"`
 
@@ -7114,7 +7117,7 @@ type ReceiptChannel string
 // ReceiptStatus defines model for Receipt.Status.
 type ReceiptStatus string
 
-// ReceiptAccepted Пакет принят к разбору. Итог - в квитанции по адресу `Location`.
+// ReceiptAccepted Пакет принят к разбору. Итог - в квитанции по адресу `Location`. Пакет, который нарушает лимит, правила путей или конверт либо имеет неподдержанную схему, отклоняется сразу со статусом `rejected`, причина - в квитанции.
 type ReceiptAccepted struct {
 	DuplicateOf *openapi_types.UUID `json:"duplicate_of,omitempty"`
 	ReceiptId   openapi_types.UUID  `json:"receipt_id"`

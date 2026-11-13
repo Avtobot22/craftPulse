@@ -83,3 +83,13 @@ type ProbeRunner interface {
 type PackageProcessor interface {
 	ProcessPackage(ctx context.Context, orgID, receiptID entity.ID) error
 }
+
+// Intake is the ingest module for people: the universal import, receipts and conflicts (UC-06, UI-12, UI-13).
+type Intake interface {
+	Import(ctx context.Context, s entity.Subject, f entity.ImportFile) (entity.Receipt, error)
+	Receipt(ctx context.Context, s entity.Subject, id entity.ID) (entity.Receipt, error)
+	ListReceipts(ctx context.Context, s entity.Subject, f entity.ReceiptFilter) (entity.ReceiptPage, error)
+	ListRecords(ctx context.Context, s entity.Subject, receiptID entity.ID, f entity.RecordFilter) (entity.RecordPage, error)
+	ListConflicts(ctx context.Context, s entity.Subject, f entity.ConflictFilter) (entity.ConflictPage, error)
+	ResolveConflict(ctx context.Context, s entity.Subject, id entity.ID, resolution string) (entity.IngestConflict, error)
+}

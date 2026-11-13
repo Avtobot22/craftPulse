@@ -25,6 +25,8 @@ const (
 	ruleAdministrator
 	// ruleProjectLead is an administrator or a tech lead of the project: upload tokens and imports.
 	ruleProjectLead
+	// ruleReceipts is every administrator and a project lead for the receipts of their projects.
+	ruleReceipts
 )
 
 // _rules is table 5.3 for the actions served so far; an action missing here is granted to nobody.
@@ -39,6 +41,8 @@ var _rules = map[string]rule{
 	"connections.manage":   ruleAdministrator,
 	"upload_tokens.manage": ruleProjectLead,
 	"imports.create":       ruleProjectLead,
+	"receipts.read":        ruleReceipts,
+	"sync.read":            ruleAdministrator,
 }
 
 // Profiles is the org module; Profile runs in the caller's organization transaction.
@@ -130,7 +134,7 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 	if !visible(p, r.Area) {
 		return ReasonOutsideScope, entity.ErrNotFound
 	}
-	if _rules[r.Action] == ruleProjectLead && !r.Area.ID.IsZero() && !slices.Contains(p.UploadProjects, r.Area.ID) {
+	if rule := _rules[r.Action]; (rule == ruleProjectLead || rule == ruleReceipts) && !r.Area.ID.IsZero() && !slices.Contains(p.UploadProjects, r.Area.ID) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
 	if !granted(p, r.Action) {
@@ -143,6 +147,8 @@ func granted(p entity.Profile, action string) bool {
 	switch _rules[action] {
 	case ruleProjectLead:
 		return len(p.UploadProjects) > 0
+	case ruleReceipts:
+		return len(p.UploadProjects) > 0 || slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleAdministrator })
 	case ruleSession:
 		return true
 	case ruleAreaRead:

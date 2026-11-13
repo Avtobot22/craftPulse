@@ -13,6 +13,43 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countOutcomes = `-- name: CountOutcomes :many
+SELECT receipt_id, outcome, count(*)::integer AS n FROM ingest.record
+WHERE organization_id = $1 AND receipt_id = ANY($2::uuid[]) AND outcome IN ('replay', 'conflict')
+GROUP BY receipt_id, outcome
+`
+
+type CountOutcomesParams struct {
+	OrganizationID uuid.UUID
+	ReceiptIds     []uuid.UUID
+}
+
+type CountOutcomesRow struct {
+	ReceiptID uuid.UUID
+	Outcome   string
+	N         int32
+}
+
+func (q *Queries) CountOutcomes(ctx context.Context, arg CountOutcomesParams) ([]CountOutcomesRow, error) {
+	rows, err := q.db.Query(ctx, countOutcomes, arg.OrganizationID, arg.ReceiptIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountOutcomesRow
+	for rows.Next() {
+		var i CountOutcomesRow
+		if err := rows.Scan(&i.ReceiptID, &i.Outcome, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const firstReceiptOfHash = `-- name: FirstReceiptOfHash :one
 SELECT id FROM ingest.receipt
 WHERE organization_id = $1 AND package_hash = $2 AND status IN ('accepted', 'partial')
@@ -72,6 +109,40 @@ func (q *Queries) GetReceipt(ctx context.Context, arg GetReceiptParams) (IngestR
 	return i, err
 }
 
+const getRecord = `-- name: GetRecord :one
+SELECT organization_id, receipt_id, record_no, record_class, record_kind, payload_schema, instance_id, native_ns, native_id, source_revision, content_hash, outcome, reason_code, first_receipt_id, first_record_no, deleted_at FROM ingest.record WHERE organization_id = $1 AND receipt_id = $2 AND record_no = $3
+`
+
+type GetRecordParams struct {
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+	RecordNo       int32
+}
+
+func (q *Queries) GetRecord(ctx context.Context, arg GetRecordParams) (IngestRecord, error) {
+	row := q.db.QueryRow(ctx, getRecord, arg.OrganizationID, arg.ReceiptID, arg.RecordNo)
+	var i IngestRecord
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ReceiptID,
+		&i.RecordNo,
+		&i.RecordClass,
+		&i.RecordKind,
+		&i.PayloadSchema,
+		&i.InstanceID,
+		&i.NativeNs,
+		&i.NativeID,
+		&i.SourceRevision,
+		&i.ContentHash,
+		&i.Outcome,
+		&i.ReasonCode,
+		&i.FirstReceiptID,
+		&i.FirstRecordNo,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const listRecords = `-- name: ListRecords :many
 SELECT organization_id, receipt_id, record_no, record_class, record_kind, payload_schema, instance_id, native_ns, native_id, source_revision, content_hash, outcome, reason_code, first_receipt_id, first_record_no, deleted_at FROM ingest.record WHERE organization_id = $1 AND receipt_id = $2 ORDER BY record_no
 `
@@ -116,6 +187,34 @@ func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]Ing
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockConflict = `-- name: LockConflict :one
+SELECT organization_id, id, receipt_id, record_no, existing_receipt_id, existing_record_no, detected_at, status, resolution, resolved_by, resolved_at FROM ingest.conflict WHERE organization_id = $1 AND id = $2 FOR UPDATE
+`
+
+type LockConflictParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) LockConflict(ctx context.Context, arg LockConflictParams) (IngestConflict, error) {
+	row := q.db.QueryRow(ctx, lockConflict, arg.OrganizationID, arg.ID)
+	var i IngestConflict
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.ReceiptID,
+		&i.RecordNo,
+		&i.ExistingReceiptID,
+		&i.ExistingRecordNo,
+		&i.DetectedAt,
+		&i.Status,
+		&i.Resolution,
+		&i.ResolvedBy,
+		&i.ResolvedAt,
+	)
+	return i, err
 }
 
 const lockPackageHash = `-- name: LockPackageHash :exec
@@ -170,6 +269,225 @@ func (q *Queries) LockReceipt(ctx context.Context, arg LockReceiptParams) (Inges
 		&i.Manifest,
 	)
 	return i, err
+}
+
+const pageConflicts = `-- name: PageConflicts :many
+SELECT organization_id, id, receipt_id, record_no, existing_receipt_id, existing_record_no, detected_at, status, resolution, resolved_by, resolved_at FROM ingest.conflict
+WHERE organization_id = $1 AND status = $2
+    AND (NOT $3::bool OR (detected_at, id) > ($4::timestamptz, $5::uuid))
+ORDER BY detected_at, id
+LIMIT $6
+`
+
+type PageConflictsParams struct {
+	OrganizationID uuid.UUID
+	Status         string
+	HasCursor      bool
+	AfterTime      time.Time
+	AfterID        uuid.UUID
+	PageLimit      int32
+}
+
+func (q *Queries) PageConflicts(ctx context.Context, arg PageConflictsParams) ([]IngestConflict, error) {
+	rows, err := q.db.Query(ctx, pageConflicts,
+		arg.OrganizationID,
+		arg.Status,
+		arg.HasCursor,
+		arg.AfterTime,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IngestConflict
+	for rows.Next() {
+		var i IngestConflict
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.ExistingReceiptID,
+			&i.ExistingRecordNo,
+			&i.DetectedAt,
+			&i.Status,
+			&i.Resolution,
+			&i.ResolvedBy,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageReceipts = `-- name: PageReceipts :many
+SELECT organization_id, id, channel, connection_id, scope_id, project_id, upload_token_id, requested_by, source_instance_id, received_at, status, duplicate_of, schema_id, schema_version, package_hash, object_key, quarantine_key, record_count, accepted_count, rejected_count, reason_code, repacked_at, manifest FROM ingest.receipt
+WHERE organization_id = $1
+    AND ($2::text = '' OR channel = $2::text)
+    AND ($3::text = '' OR status = $3::text)
+    AND ($4::uuid IS NULL OR connection_id = $4::uuid)
+    AND ($5::uuid IS NULL OR project_id = $5::uuid)
+    AND (NOT $6::bool OR (received_at, id) < ($7::timestamptz, $8::uuid))
+ORDER BY received_at DESC, id DESC
+LIMIT $9
+`
+
+type PageReceiptsParams struct {
+	OrganizationID uuid.UUID
+	Channel        string
+	Status         string
+	ConnectionID   uuid.NullUUID
+	ProjectID      uuid.NullUUID
+	HasCursor      bool
+	AfterTime      time.Time
+	AfterID        uuid.UUID
+	PageLimit      int32
+}
+
+func (q *Queries) PageReceipts(ctx context.Context, arg PageReceiptsParams) ([]IngestReceipt, error) {
+	rows, err := q.db.Query(ctx, pageReceipts,
+		arg.OrganizationID,
+		arg.Channel,
+		arg.Status,
+		arg.ConnectionID,
+		arg.ProjectID,
+		arg.HasCursor,
+		arg.AfterTime,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IngestReceipt
+	for rows.Next() {
+		var i IngestReceipt
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.Channel,
+			&i.ConnectionID,
+			&i.ScopeID,
+			&i.ProjectID,
+			&i.UploadTokenID,
+			&i.RequestedBy,
+			&i.SourceInstanceID,
+			&i.ReceivedAt,
+			&i.Status,
+			&i.DuplicateOf,
+			&i.SchemaID,
+			&i.SchemaVersion,
+			&i.PackageHash,
+			&i.ObjectKey,
+			&i.QuarantineKey,
+			&i.RecordCount,
+			&i.AcceptedCount,
+			&i.RejectedCount,
+			&i.ReasonCode,
+			&i.RepackedAt,
+			&i.Manifest,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageRecords = `-- name: PageRecords :many
+SELECT organization_id, receipt_id, record_no, record_class, record_kind, payload_schema, instance_id, native_ns, native_id, source_revision, content_hash, outcome, reason_code, first_receipt_id, first_record_no, deleted_at FROM ingest.record
+WHERE organization_id = $1 AND receipt_id = $2
+    AND ($3::text = '' OR outcome = $3::text)
+    AND record_no > $4
+ORDER BY record_no
+LIMIT $5
+`
+
+type PageRecordsParams struct {
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+	Outcome        string
+	AfterNo        int32
+	PageLimit      int32
+}
+
+func (q *Queries) PageRecords(ctx context.Context, arg PageRecordsParams) ([]IngestRecord, error) {
+	rows, err := q.db.Query(ctx, pageRecords,
+		arg.OrganizationID,
+		arg.ReceiptID,
+		arg.Outcome,
+		arg.AfterNo,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IngestRecord
+	for rows.Next() {
+		var i IngestRecord
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.RecordClass,
+			&i.RecordKind,
+			&i.PayloadSchema,
+			&i.InstanceID,
+			&i.NativeNs,
+			&i.NativeID,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.Outcome,
+			&i.ReasonCode,
+			&i.FirstReceiptID,
+			&i.FirstRecordNo,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const resolveConflict = `-- name: ResolveConflict :exec
+UPDATE ingest.conflict SET status = 'resolved', resolution = $1, resolved_by = $2,
+    resolved_at = $3
+WHERE organization_id = $4 AND id = $5
+`
+
+type ResolveConflictParams struct {
+	Resolution     pgtype.Text
+	ResolvedBy     uuid.NullUUID
+	ResolvedAt     pgtype.Timestamptz
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) ResolveConflict(ctx context.Context, arg ResolveConflictParams) error {
+	_, err := q.db.Exec(ctx, resolveConflict,
+		arg.Resolution,
+		arg.ResolvedBy,
+		arg.ResolvedAt,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
 }
 
 const saveReceipt = `-- name: SaveReceipt :exec
@@ -237,6 +555,33 @@ func (q *Queries) SaveReceipt(ctx context.Context, arg SaveReceiptParams) error 
 		arg.RejectedCount,
 		arg.ReasonCode,
 		arg.Manifest,
+	)
+	return err
+}
+
+const setRecordOutcome = `-- name: SetRecordOutcome :exec
+UPDATE ingest.record SET outcome = $1, first_receipt_id = $2,
+    first_record_no = $3
+WHERE organization_id = $4 AND receipt_id = $5 AND record_no = $6
+`
+
+type SetRecordOutcomeParams struct {
+	Outcome        string
+	FirstReceiptID uuid.NullUUID
+	FirstRecordNo  pgtype.Int4
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+	RecordNo       int32
+}
+
+func (q *Queries) SetRecordOutcome(ctx context.Context, arg SetRecordOutcomeParams) error {
+	_, err := q.db.Exec(ctx, setRecordOutcome,
+		arg.Outcome,
+		arg.FirstReceiptID,
+		arg.FirstRecordNo,
+		arg.OrganizationID,
+		arg.ReceiptID,
+		arg.RecordNo,
 	)
 	return err
 }

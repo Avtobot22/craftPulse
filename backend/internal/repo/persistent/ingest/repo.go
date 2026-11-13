@@ -31,7 +31,7 @@ func (r *Repo) SaveReceipt(ctx context.Context, rc entity.Receipt) error {
 	}
 	err := New(postgres.Conn(ctx, r.pool)).SaveReceipt(ctx, SaveReceiptParams{
 		OrganizationID: uuid.UUID(rc.OrganizationID), ID: uuid.UUID(rc.ID), Channel: string(rc.Channel),
-		ConnectionID: nullID(rc.ConnectionID), ScopeID: nullID(rc.ScopeID), ProjectID: nullID(rc.ProjectID),
+		ConnectionID: nullID(rc.ConnectionID), ScopeID: nullID(rc.ScopeID), ProjectID: nullID(rc.ProjectID), UploadTokenID: nullID(rc.UploadTokenID),
 		RequestedBy: nullID(rc.RequestedBy), SourceInstanceID: nullID(rc.SourceInstanceID), ReceivedAt: rc.ReceivedAt,
 		Status: string(rc.Status), DuplicateOf: nullID(rc.DuplicateOf), SchemaID: text(rc.SchemaID), SchemaVersion: text(rc.SchemaVersion),
 		PackageHash: rc.PackageHash, ObjectKey: text(rc.ObjectKey), QuarantineKey: text(rc.QuarantineKey),
@@ -206,18 +206,7 @@ func (r *Repo) Records(ctx context.Context, orgID, receiptID entity.ID) ([]entit
 	}
 	out := make([]entity.IngestRecord, 0, len(rows))
 	for i := range rows {
-		row := &rows[i]
-		rec := entity.IngestRecord{
-			No: int(row.RecordNo), Class: row.RecordClass.String, Kind: row.RecordKind.String, PayloadSchema: row.PayloadSchema,
-			InstanceID: entity.ID(row.InstanceID.UUID), NativeNS: row.NativeNs, NativeID: row.NativeID.String,
-			SourceRevision: row.SourceRevision.String, ContentHash: row.ContentHash, Outcome: entity.RecordOutcome(row.Outcome),
-			ReasonCode: row.ReasonCode.String, FirstRecordNo: int(row.FirstRecordNo.Int32),
-		}
-		if row.FirstReceiptID.Valid {
-			id := entity.ID(row.FirstReceiptID.UUID)
-			rec.FirstReceiptID = &id
-		}
-		out = append(out, rec)
+		out = append(out, record(&rows[i]))
 	}
 	return out, nil
 }
@@ -231,7 +220,7 @@ func receipt(row IngestReceipt, err error) (entity.Receipt, error) {
 	}
 	return entity.Receipt{
 		ID: entity.ID(row.ID), OrganizationID: entity.ID(row.OrganizationID), Channel: entity.ReceiptChannel(row.Channel),
-		ConnectionID: idPtr(row.ConnectionID), ScopeID: idPtr(row.ScopeID), ProjectID: idPtr(row.ProjectID),
+		ConnectionID: idPtr(row.ConnectionID), ScopeID: idPtr(row.ScopeID), ProjectID: idPtr(row.ProjectID), UploadTokenID: idPtr(row.UploadTokenID),
 		RequestedBy: idPtr(row.RequestedBy), SourceInstanceID: idPtr(row.SourceInstanceID), ReceivedAt: row.ReceivedAt,
 		Status: entity.ReceiptStatus(row.Status), DuplicateOf: idPtr(row.DuplicateOf), SchemaID: row.SchemaID.String,
 		SchemaVersion: row.SchemaVersion.String, PackageHash: row.PackageHash, ObjectKey: row.ObjectKey.String,
@@ -262,4 +251,159 @@ func idPtr(id uuid.NullUUID) *entity.ID {
 	}
 	out := entity.ID(id.UUID)
 	return &out
+}
+
+func (r *Repo) PageReceipts(ctx context.Context, orgID entity.ID, f entity.ReceiptFilter) ([]entity.Receipt, error) {
+	p := PageReceiptsParams{
+		OrganizationID: uuid.UUID(orgID), Channel: string(f.Channel), Status: string(f.Status),
+		ConnectionID: nullID(f.ConnectionID), ProjectID: nullID(f.ProjectID), PageLimit: number(f.Limit),
+	}
+	if f.After != nil {
+		p.HasCursor, p.AfterTime, p.AfterID = true, f.After.OccurredAt, uuid.UUID(f.After.ID)
+	}
+	rows, err := New(postgres.Conn(ctx, r.pool)).PageReceipts(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("ingest: page receipts: %w", err)
+	}
+	out := make([]entity.Receipt, 0, len(rows))
+	for i := range rows {
+		rc, err := receipt(rows[i], nil)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rc)
+	}
+	return out, nil
+}
+
+// CountRepeats fills the replay and conflict counts of the receipts.
+func (r *Repo) CountRepeats(ctx context.Context, orgID entity.ID, receipts []entity.Receipt) error {
+	ids := make([]uuid.UUID, len(receipts))
+	at := make(map[uuid.UUID]int, len(receipts))
+	for i := range receipts {
+		ids[i] = uuid.UUID(receipts[i].ID)
+		at[ids[i]] = i
+	}
+	rows, err := New(postgres.Conn(ctx, r.pool)).CountOutcomes(ctx, CountOutcomesParams{OrganizationID: uuid.UUID(orgID), ReceiptIds: ids})
+	if err != nil {
+		return fmt.Errorf("ingest: count outcomes: %w", err)
+	}
+	for _, row := range rows {
+		rc := &receipts[at[row.ReceiptID]]
+		if row.Outcome == string(entity.RecordReplay) {
+			rc.ReplayCount = int(row.N)
+		} else {
+			rc.ConflictCount = int(row.N)
+		}
+	}
+	return nil
+}
+
+func (r *Repo) PageRecords(ctx context.Context, orgID, receiptID entity.ID, f entity.RecordFilter) ([]entity.IngestRecord, error) {
+	rows, err := New(postgres.Conn(ctx, r.pool)).PageRecords(ctx, PageRecordsParams{
+		OrganizationID: uuid.UUID(orgID), ReceiptID: uuid.UUID(receiptID), Outcome: string(f.Outcome),
+		AfterNo: number(f.AfterNo), PageLimit: number(f.Limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ingest: page records: %w", err)
+	}
+	out := make([]entity.IngestRecord, 0, len(rows))
+	for i := range rows {
+		out = append(out, record(&rows[i]))
+	}
+	return out, nil
+}
+
+func (r *Repo) Record(ctx context.Context, orgID, receiptID entity.ID, no int) (entity.IngestRecord, error) {
+	row, err := New(postgres.Conn(ctx, r.pool)).GetRecord(ctx, GetRecordParams{OrganizationID: uuid.UUID(orgID), ReceiptID: uuid.UUID(receiptID), RecordNo: number(no)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.IngestRecord{}, entity.ErrNotFound
+	}
+	if err != nil {
+		return entity.IngestRecord{}, fmt.Errorf("ingest: get record: %w", err)
+	}
+	return record(&row), nil
+}
+
+// SetRecordOutcome changes the outcome of a record and the accepted record it points to.
+func (r *Repo) SetRecordOutcome(ctx context.Context, orgID, receiptID entity.ID, rec entity.IngestRecord) error {
+	p := SetRecordOutcomeParams{
+		OrganizationID: uuid.UUID(orgID), ReceiptID: uuid.UUID(receiptID), RecordNo: number(rec.No),
+		Outcome: string(rec.Outcome), FirstReceiptID: nullID(rec.FirstReceiptID),
+	}
+	if rec.FirstReceiptID != nil {
+		p.FirstRecordNo = pgtype.Int4{Int32: number(rec.FirstRecordNo), Valid: true}
+	}
+	if err := New(postgres.Conn(ctx, r.pool)).SetRecordOutcome(ctx, p); err != nil {
+		return fmt.Errorf("ingest: set record outcome: %w", err)
+	}
+	return nil
+}
+
+func (r *Repo) PageConflicts(ctx context.Context, orgID entity.ID, f entity.ConflictFilter) ([]entity.IngestConflict, error) {
+	status := "resolved"
+	if f.Open {
+		status = "open"
+	}
+	p := PageConflictsParams{OrganizationID: uuid.UUID(orgID), Status: status, PageLimit: number(f.Limit)}
+	if f.After != nil {
+		p.HasCursor, p.AfterTime, p.AfterID = true, f.After.OccurredAt, uuid.UUID(f.After.ID)
+	}
+	rows, err := New(postgres.Conn(ctx, r.pool)).PageConflicts(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("ingest: page conflicts: %w", err)
+	}
+	out := make([]entity.IngestConflict, 0, len(rows))
+	for i := range rows {
+		out = append(out, conflict(&rows[i]))
+	}
+	return out, nil
+}
+
+func (r *Repo) LockConflict(ctx context.Context, orgID, id entity.ID) (entity.IngestConflict, error) {
+	row, err := New(postgres.Conn(ctx, r.pool)).LockConflict(ctx, LockConflictParams{OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(id)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.IngestConflict{}, entity.ErrNotFound
+	}
+	if err != nil {
+		return entity.IngestConflict{}, fmt.Errorf("ingest: lock conflict: %w", err)
+	}
+	return conflict(&row), nil
+}
+
+func (r *Repo) ResolveConflict(ctx context.Context, orgID entity.ID, c entity.IngestConflict) error {
+	err := New(postgres.Conn(ctx, r.pool)).ResolveConflict(ctx, ResolveConflictParams{
+		OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(c.ID), Resolution: text(c.Resolution),
+		ResolvedBy: nullID(c.ResolvedBy), ResolvedAt: pgtype.Timestamptz{Time: *c.ResolvedAt, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("ingest: resolve conflict: %w", err)
+	}
+	return nil
+}
+
+func conflict(row *IngestConflict) entity.IngestConflict {
+	out := entity.IngestConflict{
+		ID: entity.ID(row.ID), ReceiptID: entity.ID(row.ReceiptID), RecordNo: int(row.RecordNo),
+		ExistingReceipt: entity.ID(row.ExistingReceiptID), ExistingRecordNo: int(row.ExistingRecordNo),
+		DetectedAt: row.DetectedAt, Open: row.Status == "open", Resolution: row.Resolution.String, ResolvedBy: idPtr(row.ResolvedBy),
+	}
+	if row.ResolvedAt.Valid {
+		out.ResolvedAt = &row.ResolvedAt.Time
+	}
+	return out
+}
+
+func record(row *IngestRecord) entity.IngestRecord {
+	rec := entity.IngestRecord{
+		No: int(row.RecordNo), Class: row.RecordClass.String, Kind: row.RecordKind.String, PayloadSchema: row.PayloadSchema,
+		InstanceID: entity.ID(row.InstanceID.UUID), NativeNS: row.NativeNs, NativeID: row.NativeID.String,
+		SourceRevision: row.SourceRevision.String, ContentHash: row.ContentHash, Outcome: entity.RecordOutcome(row.Outcome),
+		ReasonCode: row.ReasonCode.String, FirstRecordNo: int(row.FirstRecordNo.Int32),
+	}
+	if row.FirstReceiptID.Valid {
+		id := entity.ID(row.FirstReceiptID.UUID)
+		rec.FirstReceiptID = &id
+	}
+	return rec
 }

@@ -58,8 +58,7 @@ func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, r io.Reader) (
 	if err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256(cleaned.Bytes())
-	p.Receipt.SourceInstanceID, p.Receipt.PackageHash, p.Receipt.ObjectKey = &instance, sum[:], packageKey(rc.OrganizationID, rc.ID)
+	p.Receipt.SourceInstanceID, p.Receipt.PackageHash, p.Receipt.ObjectKey = &instance, res.ContentHash, packageKey(rc.OrganizationID, rc.ID)
 	p.Records = records(res, instance, allowed)
 	err = u.d.Tx.InOrgTx(ctx, rc.OrganizationID, func(ctx context.Context) error {
 		_, p.Duplicate, err = u.d.Repo.FirstReceiptOfHash(ctx, rc.OrganizationID, p.Receipt.PackageHash)

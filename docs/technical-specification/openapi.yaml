@@ -5602,11 +5602,11 @@ components:
         display_name: {type: [string, 'null']}
     ReceiptAccepted:
       type: object
-      description: Пакет принят к разбору. Итог - в квитанции по адресу `Location`.
+      description: Пакет принят к разбору. Итог - в квитанции по адресу `Location`. Пакет, который нарушает лимит, правила путей или конверт либо имеет неподдержанную схему, отклоняется сразу со статусом `rejected`, причина - в квитанции.
       required: ["receipt_id","status","retry_after_seconds"]
       properties:
         receipt_id: {type: string, format: uuid}
-        status: {type: string, enum: [quarantined, duplicate]}
+        status: {type: string, enum: [quarantined, duplicate, rejected]}
         duplicate_of: {type: [string, 'null'], format: uuid}
         retry_after_seconds:
           type:
@@ -6317,7 +6317,7 @@ components:
       type: object
       required: [file, schema_id, schema_version, source_provider, source_instance_key, project_id]
       properties:
-        file: {type: string, contentMediaType: application/octet-stream, description: 'Файл по схеме импорта: JSON или CSV для фактов, отчёт поддержанного формата для `findings`, `junit` и `coverage`.'}
+        file: {type: string, contentMediaType: application/octet-stream, description: 'Файл по схеме импорта: JSON или CSV для фактов, отчёт поддержанного формата для `findings`, `junit` и `coverage`. JSON - массив записей `Record` канонического пакета (`envelope.yaml`), CSV - снимок текущих задач по `TaskCsvRow`.'}
         schema_id: {type: string, enum: [tasks, task_events, relations, merge_requests, ci_runs, findings, junit, coverage, documents], description: '`merge_requests` и `ci_runs` несут те же факты MR, запусков, jobs и попыток, что отдают адаптеры Git и CI.'}
         report_format: {type: string, enum: [envelope, sarif, gitlab_security, gitlab_code_quality, junit_xml, lcov, cobertura, jacoco], description: 'Формат файла для `findings`, `junit` и `coverage`; для остальных схем не передаётся. `envelope` - находки в формате универсального импорта.'}
         commit_sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$', description: 'Ревизия, к которой относится отчёт; обязательна для `findings`, `junit` и `coverage`. Без неё отчёт отклоняется: результат не привязывается к head по догадке.'}
