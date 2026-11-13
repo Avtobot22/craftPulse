@@ -30,6 +30,7 @@ type Page struct {
 	contents *os.File
 	files    []pageFile
 	unpacked int64
+	wrap     func(io.Writer) io.Writer
 }
 
 type pageFile struct {
@@ -107,6 +108,10 @@ func (p *Page) AddFile(name, mediaType string, r io.Reader) (envelope.FileRef, e
 	return envelope.FileRef{Path: name, Sha256: hex.EncodeToString(h.Sum(nil)), SizeBytes: int(n), MediaType: mediaType}, nil
 }
 
+// WrapOutput replaces the response stream of the page with wrap(stream), so a test adapter can cut or
+// break the package while it is written. Built-in adapters do not use it.
+func (p *Page) WrapOutput(wrap func(io.Writer) io.Writer) { p.wrap = wrap }
+
 func (p *Page) reserve(n int64) error {
 	if p.unpacked+n > p.limits.MaxUnpackedBytes {
 		return ErrPageFull
@@ -121,6 +126,9 @@ func (p *Page) writeTo(w io.Writer, manifest *envelope.Manifest) error {
 		if err := p.buf.Flush(); err != nil {
 			return fmt.Errorf("adaptersdk: spool records: %w", err)
 		}
+	}
+	if p.wrap != nil {
+		w = p.wrap(w)
 	}
 	pw, err := envelope.NewWriter(w, manifest)
 	if err != nil {
