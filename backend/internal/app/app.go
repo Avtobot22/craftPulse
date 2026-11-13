@@ -39,6 +39,20 @@ const (
 	_providerTimeout = 10 * time.Second
 )
 
+// Limits of the database sessions of the processes (TZ 12.8): a request of api fits the 5 s of NFR-001, a
+// statement of worker ends before the 60 s of its job, and waiting for a lock gives 55P03, which
+// pkg/postgres repeats.
+var (
+	_apiSession = []postgres.Option{
+		postgres.RuntimeParam("statement_timeout", "5s"), postgres.RuntimeParam("lock_timeout", "5s"),
+		postgres.RuntimeParam("idle_in_transaction_session_timeout", "30s"),
+	}
+	_workerSession = []postgres.Option{
+		postgres.RuntimeParam("statement_timeout", "50s"), postgres.RuntimeParam("lock_timeout", "5s"),
+		postgres.RuntimeParam("idle_in_transaction_session_timeout", "30s"),
+	}
+)
+
 func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log zerolog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -51,7 +65,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return fmt.Errorf("app: %w", err)
 	}
-	pool, err := postgres.New(ctx, cfg.DB.URL, cfg.DB.Password.Value(), postgres.MaxConns(cfg.DB.MaxConns))
+	pool, err := postgres.New(ctx, cfg.DB.URL, cfg.DB.Password.Value(), append(_apiSession, postgres.MaxConns(cfg.DB.MaxConns))...)
 	if err != nil {
 		return fmt.Errorf("app: %w", err)
 	}
@@ -69,12 +83,22 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return err
 	}
-	_, rights := newOrgAccess(pool, clock.System{})
-	intake, err := newIngest(pool, newObjectStore(cfg.ObjectStore), connections, rights, clock.System{}, reg)
+	orgs, rights := newOrgAccess(pool, clock.System{})
+	store := newObjectStore(cfg.ObjectStore)
+	intake, err := newIngest(pool, store, connections, rights, clock.System{}, reg)
 	if err != nil {
 		return err
 	}
-	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, connections, intake))
+	normalizer, err := newNormalize(pool, store, intake, orgs, clock.System{})
+	if err != nil {
+		return err
+	}
+	collection, err := newSync(pool, connections, intake, normalizer, clock.System{}, reg)
+	if err != nil {
+		return err
+	}
+	modules := apiModules{connections: connections, intake: intake, sync: collection, operations: newView(pool, collection, rights, clock.System{})}
+	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules))
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Msg("api started")
 	return serve(ctx, log, probes.Ready, map[string]http.Handler{
@@ -98,7 +122,7 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 
 	wd := newWatchdog(_watchdogTimeout)
 	pool, err := postgres.New(ctx, cfg.DB.URL, cfg.DB.Password.Value(),
-		postgres.MaxConns(cfg.DB.MaxConns), postgres.Tracer(wd))
+		append(_workerSession, postgres.MaxConns(cfg.DB.MaxConns), postgres.Tracer(wd))...)
 	if err != nil {
 		return fmt.Errorf("app: %w", err)
 	}
@@ -122,11 +146,11 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	collection, err := newSync(pool, connections, packages, clock.System{}, reg)
+	normalizer, err := newNormalize(pool, store, packages, orgs, clock.System{})
 	if err != nil {
 		return err
 	}
-	normalizer, err := newNormalize(pool, store, packages, orgs, clock.System{})
+	collection, err := newSync(pool, connections, packages, normalizer, clock.System{}, reg)
 	if err != nil {
 		return err
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/rs/zerolog"
 
+	workerctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/worker"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
@@ -51,6 +52,7 @@ func runJobs(ctx context.Context, c jobsConfig) error {
 			entity.QueueBulk:        {MaxWorkers: 2},
 		},
 		Workers:              c.workers,
+		PeriodicJobs:         workerctrl.Periodic(),
 		JobTimeout:           _jobTimeout,
 		RescueStuckJobsAfter: _rescueAfter,
 		Logger:               c.slog,

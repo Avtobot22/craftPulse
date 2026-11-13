@@ -31,12 +31,16 @@ func (r *Repo) State(ctx context.Context, orgID, connectionID entity.ID, dataKin
 	if err != nil {
 		return entity.SyncState{}, false, fmt.Errorf("sync: get state: %w", err)
 	}
+	return syncState(&row), true, nil
+}
+
+func syncState(row *SyncState) entity.SyncState {
 	return entity.SyncState{
 		ConnectionID: entity.ID(row.ConnectionID), DataKind: row.DataKind, Phase: entity.SyncPhase(row.Phase), Cursor: row.Cursor.String,
 		CheckpointAt: timePtr(row.CheckpointAt), FailedCursor: row.FailedCursor.String, LastAttemptAt: timePtr(row.LastAttemptAt),
 		LastOutcome: row.LastOutcome.String, LastErrorCode: row.LastErrorCode.String, LastSuccessAt: timePtr(row.LastSuccessAt),
 		Watermark: timePtr(row.Watermark), HistoryFrom: timePtr(row.HistoryFrom), Completeness: row.Completeness,
-	}, true, nil
+	}
 }
 
 func (r *Repo) SaveState(ctx context.Context, orgID entity.ID, s entity.SyncState) error {

@@ -57,6 +57,30 @@ type Config struct {
 	HistoryDenied bool    `json:"history_denied"`
 	Faults        []Fault `json:"faults"`
 	Access        Access  `json:"access"`
+	// Missed are tasks the pages of Fetch skip, while a key and the manifest still find them.
+	Missed []string `json:"missed"`
+	// Stale are tasks whose last change the pages of Fetch skip, as if the source changed them without a new
+	// time of change; a key and the manifest give the last version.
+	Stale []string `json:"stale"`
+}
+
+// paged drops what the pages of tasks miss in the scenario.
+func (c *Config) paged(feed []entry) []entry {
+	if len(c.Missed) == 0 && len(c.Stale) == 0 {
+		return feed
+	}
+	last := make(map[string]int, len(feed))
+	for i, e := range feed {
+		last[e.NativeID] = i
+	}
+	out := make([]entry, 0, len(feed))
+	for i, e := range feed {
+		if slices.Contains(c.Missed, e.NativeID) || (slices.Contains(c.Stale, e.NativeID) && last[e.NativeID] == i) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // Fault applies to the attempts listed, or to every attempt, of an operation on a page; page 0 is any

@@ -29,6 +29,13 @@ const (
 	_preparePoll  = 5 * time.Second
 )
 
+// Completeness of a data kind: complete only after a reconciliation without differences (BR-022).
+const (
+	completeComplete = "complete"
+	completePartial  = "partial"
+	completeUnknown  = "unknown"
+)
+
 // _backoff are the pauses after failures in a row (TZ 10.6); the last one repeats.
 var _backoff = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 30 * time.Second}
 
@@ -42,30 +49,43 @@ var _schemas = map[string][]string{
 	"documents":      {"documents"},
 }
 
-// Connect is the connect module: the scopes of a connection and the one way to call its adapter.
+// Connect is the connect module: the connection, its scopes and the one way to call its adapter.
 type Connect interface {
+	State(ctx context.Context, orgID, connectionID entity.ID) (entity.ConnectionState, error)
 	Scopes(ctx context.Context, orgID, connectionID entity.ID) ([]entity.ConnectionScope, error)
 	Fetch(ctx context.Context, orgID, connectionID entity.ID, in entity.FetchInput) (io.ReadCloser, error)
+	Manifest(ctx context.Context, orgID, connectionID entity.ID, in entity.ManifestInput) (entity.ManifestPage, error)
 }
 
 // Ingest is the intake of a page: cleaned before the transaction, written in it.
 type Ingest interface {
 	PreparePage(ctx context.Context, orgID, connectionID, scopeID entity.ID, page io.Reader) (*entity.PreparedPackage, error)
 	RecordPage(ctx context.Context, p *entity.PreparedPackage) (entity.Receipt, error)
+	AffectedMetrics(schemaID string) []string
+}
+
+// Normalize is the normalize module: the current versions a manifest of the source is compared with.
+type Normalize interface {
+	AreaOf(ctx context.Context, orgID, instanceID entity.ID, kind entity.ObjectKind, nativeID string) (entity.ID, error)
+	CurrentTasks(ctx context.Context, orgID, areaID entity.ID, nativeIDs []string) (map[string]entity.TaskVersion, error)
 }
 
 type Metrics interface {
 	CollectionFailed(class string)
+	// Freshness reports the time since the last success and the lag of a data kind; nil is not known yet.
+	Freshness(connectionID, dataKind string, sinceSuccess, lag *time.Duration)
 }
 
 type Deps struct {
-	Repo    repo.SyncRepo
-	Connect Connect
-	Ingest  Ingest
-	Queue   repo.JobQueue
-	Tx      repo.Transactor
-	Metrics Metrics
-	Clock   clock.Clock
+	Repo      repo.SyncRepo
+	Tenants   repo.TenantRepo
+	Connect   Connect
+	Ingest    Ingest
+	Normalize Normalize
+	Queue     repo.JobQueue
+	Tx        repo.Transactor
+	Metrics   Metrics
+	Clock     clock.Clock
 	// Rand returns a number in [0, 1) for the jitter of pauses; tests set their own.
 	Rand func() float64
 	// PageSize is the limit of one Fetch; zero is 100.
@@ -118,7 +138,7 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 		var found bool
 		st, found, err = u.d.Repo.State(ctx, org, conn, job.DataKind)
 		if !found {
-			st = entity.SyncState{ConnectionID: conn, DataKind: job.DataKind, Phase: entity.SyncBackfill, Completeness: "unknown", HistoryFrom: earliest(scopes)}
+			st = entity.SyncState{ConnectionID: conn, DataKind: job.DataKind, Phase: entity.SyncBackfill, Completeness: completeUnknown, HistoryFrom: earliest(scopes)}
 		}
 		return err
 	})
@@ -163,10 +183,16 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 	}
 	p.NewRound = false
 	p.Cursors[cur.key()] = cursor
+	if st.Completeness != completeComplete {
+		st.Completeness = completePartial
+	}
 	if !sel.End {
 		p.Cursors[cur.key()] = sourceCursor(sel.NextCursor)
 	}
-	var next []entity.Job
+	var (
+		next      []entity.Job
+		reconcile bool
+	)
 	switch {
 	case !sel.End:
 		p.Current = cur.key()
@@ -175,8 +201,7 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 		p.Current = steps[i+1].key()
 		next = append(next, entity.SyncPageJob{OrganizationID: org, ConnectionID: conn, DataKind: job.DataKind, CorrelationID: job.CorrelationID})
 	default:
-		p.Current, p.NewRound, st.Phase = steps[0].key(), true, entity.SyncIncremental
-		next = append(next, entity.SyncReconcileJob{OrganizationID: org, ConnectionID: conn, DataKind: job.DataKind, CorrelationID: job.CorrelationID})
+		p.Current, p.NewRound, st.Phase, reconcile = steps[0].key(), true, entity.SyncIncremental, true
 	}
 	next = append(next, histories(job, cur, sel)...)
 	raw, err := json.Marshal(p)
@@ -191,12 +216,19 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 		if err := u.d.Repo.SaveState(ctx, org, st); err != nil {
 			return err
 		}
+		// The job ends before its next page is queued: a page job is unique only among active ones (TZ 10.6).
+		if err := u.end(ctx, org, conn, holder, complete); err != nil {
+			return err
+		}
 		for _, j := range next {
 			if err := u.d.Queue.Enqueue(ctx, j, entity.QueueBulk); err != nil {
 				return err
 			}
 		}
-		return u.end(ctx, org, conn, holder, complete)
+		if !reconcile {
+			return nil
+		}
+		return u.queueReconcile(ctx, org, conn, job.DataKind, job.CorrelationID, 0, now)
 	})
 }
 
@@ -282,7 +314,7 @@ func Pause(retry int, jitter float64) time.Duration {
 // with a new job, so the repeat spends no attempt; auth and an unsupported adapter stop the collection.
 func (u *UseCase) fail(ctx context.Context, job entity.SyncPageJob, st entity.SyncState, page *entity.PreparedPackage, f *failure, holder string, complete Complete) error {
 	org, conn := job.OrganizationID, job.ConnectionID
-	st.FailedCursor, st.LastOutcome, st.LastErrorCode = st.Cursor, "failed", f.code
+	st.FailedCursor, st.LastOutcome, st.LastErrorCode, st.Completeness = st.Cursor, "failed", f.code, completePartial
 	retry := job
 	switch {
 	case f.stop:
@@ -304,12 +336,13 @@ func (u *UseCase) fail(ctx context.Context, job entity.SyncPageJob, st entity.Sy
 		if err := u.d.Repo.SaveState(ctx, org, st); err != nil {
 			return err
 		}
-		if !f.stop {
-			if err := u.d.Queue.EnqueueAt(ctx, retry, entity.QueueBulk, f.at); err != nil {
-				return err
-			}
+		if err := u.end(ctx, org, conn, holder, complete); err != nil {
+			return err
 		}
-		return u.end(ctx, org, conn, holder, complete)
+		if f.stop {
+			return nil
+		}
+		return u.d.Queue.EnqueueAt(ctx, retry, entity.QueueBulk, f.at)
 	})
 }
 

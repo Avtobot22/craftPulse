@@ -68,6 +68,7 @@ type connectionsEnv struct {
 	*loginEnv
 	adapter *adapterServer
 	admin   *browser
+	runner  jobRunner
 }
 
 func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEnv {
@@ -84,7 +85,15 @@ func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEn
 	require.NoError(t, err)
 	uc, err := newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, uc, nil)
+	orgs, rights := newOrgAccess(e.app, e.clock)
+	intake, err := newIngest(e.app, sharedStore(t), uc, rights, e.clock, reg)
+	require.NoError(t, err)
+	normalizer, err := newNormalize(e.app, sharedStore(t), intake, orgs, e.clock)
+	require.NoError(t, err)
+	collection, err := newSync(e.app, uc, intake, normalizer, e.clock, reg)
+	require.NoError(t, err)
+	modules := apiModules{connections: uc, intake: intake, sync: collection, operations: newView(e.app, collection, rights, e.clock)}
+	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, modules)
 	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
 
 	workers := river.NewWorkers()
@@ -101,7 +110,8 @@ func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEn
 		_ = jobs.Stop(ctx)
 	})
 	e.secrets = append(e.secrets, _jiraToken, _adapterKey)
-	return &connectionsEnv{loginEnv: e, adapter: srv, admin: e.admin(t, "demo")}
+	runner := jobRunner{owner: e.owner, clock: e.clock, sync: collection, norm: normalizer}
+	return &connectionsEnv{loginEnv: e, adapter: srv, admin: e.admin(t, "demo"), runner: runner}
 }
 
 func jiraConnection(baseURL, project string) map[string]any {

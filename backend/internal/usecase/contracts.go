@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
@@ -98,6 +99,22 @@ type Intake interface {
 type Collector interface {
 	RunPage(ctx context.Context, job entity.SyncPageJob, holder string, complete func(context.Context) error) error
 	RunHistory(ctx context.Context, job entity.SyncHistoryJob, holder string, complete func(context.Context) error) error
+	RunReconcile(ctx context.Context, job entity.SyncReconcileJob, holder string, complete func(context.Context) error) error
+	RunDirty(ctx context.Context, job entity.SyncDirtyJob, holder string, complete func(context.Context) error) error
+	Tick(ctx context.Context) error
+	Schedule(ctx context.Context, orgID entity.ID) error
+}
+
+// SyncStatus is the sync module for administrators: the state of collection of connections (FR-020).
+type SyncStatus interface {
+	Status(ctx context.Context, orgID, connectionID entity.ID) (entity.SyncStatus, error)
+	LastSuccess(ctx context.Context, orgID entity.ID) (map[entity.ID]*time.Time, error)
+}
+
+// Operations is the view module for the runs users ask for and their descriptors (TZ 12.5.8).
+type Operations interface {
+	RequestSyncRun(ctx context.Context, s entity.Subject, connectionID entity.ID, req entity.SyncRunRequest) (entity.Operation, error)
+	Operation(ctx context.Context, s entity.Subject, id entity.ID) (entity.Operation, error)
 }
 
 // Normalizer runs the job normalize.batch; complete ends the job in the transaction of its part.

@@ -41,3 +41,16 @@ func (r *Repo) NextSeq(ctx context.Context, orgID entity.ID) (int64, error) {
 	}
 	return seq, nil
 }
+
+// ActiveTenants lists the organizations the scheduler plans for; the registry is outside row-level security.
+func (r *Repo) ActiveTenants(ctx context.Context) ([]entity.ID, error) {
+	rows, err := New(postgres.Conn(ctx, r.pool)).ActiveTenants(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("platform: active tenants: %w", err)
+	}
+	out := make([]entity.ID, len(rows))
+	for i, id := range rows {
+		out[i] = entity.ID(id)
+	}
+	return out, nil
+}

@@ -32,7 +32,59 @@ func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &pageWorker{collector: d.Collection})
 	river.AddWorker(w, &historyWorker{collector: d.Collection})
 	river.AddWorker(w, &normalizeWorker{normalizer: d.Normalizer})
-	return 5
+	river.AddWorker(w, &reconcileWorker{collector: d.Collection})
+	river.AddWorker(w, &dirtyWorker{collector: d.Collection})
+	river.AddWorker(w, &tickWorker{collector: d.Collection})
+	river.AddWorker(w, &scheduleWorker{collector: d.Collection})
+	return 9
+}
+
+// _tickEvery plans collection every hour, so a data kind waits no more than 24 h for its increment.
+const _tickEvery = time.Hour
+
+// Periodic are the periodic jobs; River runs them on the leader only, so several workers do not repeat them.
+func Periodic() []*river.PeriodicJob {
+	return []*river.PeriodicJob{
+		river.NewPeriodicJob(river.PeriodicInterval(_tickEvery), func() (river.JobArgs, *river.InsertOpts) {
+			return entity.SyncTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
+		}, &river.PeriodicJobOpts{RunOnStart: true}),
+	}
+}
+
+type reconcileWorker struct {
+	river.WorkerDefaults[entity.SyncReconcileJob]
+	collector usecase.Collector
+}
+
+func (w *reconcileWorker) Work(ctx context.Context, job *river.Job[entity.SyncReconcileJob]) error {
+	return snooze(w.collector.RunReconcile(ctx, job.Args, holder(job.JobRow), completeIn(job)))
+}
+
+type dirtyWorker struct {
+	river.WorkerDefaults[entity.SyncDirtyJob]
+	collector usecase.Collector
+}
+
+func (w *dirtyWorker) Work(ctx context.Context, job *river.Job[entity.SyncDirtyJob]) error {
+	return snooze(w.collector.RunDirty(ctx, job.Args, holder(job.JobRow), completeIn(job)))
+}
+
+type tickWorker struct {
+	river.WorkerDefaults[entity.SyncTickJob]
+	collector usecase.Collector
+}
+
+func (w *tickWorker) Work(ctx context.Context, _ *river.Job[entity.SyncTickJob]) error {
+	return w.collector.Tick(ctx)
+}
+
+type scheduleWorker struct {
+	river.WorkerDefaults[entity.SyncScheduleJob]
+	collector usecase.Collector
+}
+
+func (w *scheduleWorker) Work(ctx context.Context, job *river.Job[entity.SyncScheduleJob]) error {
+	return w.collector.Schedule(ctx, job.Args.OrganizationID)
 }
 
 type normalizeWorker struct {

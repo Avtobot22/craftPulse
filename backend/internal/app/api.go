@@ -19,8 +19,16 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/crypto"
 )
 
+// apiModules are the modules the api process builds before its handlers.
+type apiModules struct {
+	connections usecase.Connections
+	intake      usecase.Intake
+	sync        usecase.SyncStatus
+	operations  usecase.Operations
+}
+
 func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvider, c clock.Clock, siteURL string, reg prometheus.Registerer,
-	connections usecase.Connections, intake usecase.Intake,
+	m apiModules,
 ) v1.Deps {
 	tx := persistent.NewTransactor(pool)
 	sessions := authrepo.NewRepo(pool)
@@ -40,7 +48,8 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 	return v1.Deps{
 		Handler: handler.New(handler.Deps{
 			UploadTokens: logins, Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
-			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg, Connections: connections, Intake: intake,
+			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg, Connections: m.connections, Intake: m.intake,
+			Sync: m.sync, Operations: m.operations,
 		}),
 		UploadTokens: logins,
 		Logins:       logins,

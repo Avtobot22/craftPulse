@@ -87,7 +87,7 @@ func newLoginEnv(t *testing.T) *loginEnv {
 	e.orgID, e.otherID, e.keyring = applied[0].ID, applied[1].ID, keyring
 
 	reg := prometheus.NewRegistry()
-	api := newAPI(e.app, keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, nil, nil)
+	api := newAPI(e.app, keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, apiModules{})
 	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
 	e.metrics = promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 	t.Cleanup(func() { e.assertNoSecrets(t) })

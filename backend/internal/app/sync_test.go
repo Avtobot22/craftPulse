@@ -30,6 +30,7 @@ import (
 	syncrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/sync"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/connect"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/ingest"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/normalize"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/sync"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
@@ -44,6 +45,9 @@ type syncEnv struct {
 	connect *connect.UseCase
 	uc      *sync.UseCase
 	norm    *normalize.UseCase
+	intake  *ingest.UseCase
+	metrics syncMetrics
+	reg     *prometheus.Registry
 	org     entity.ID
 	jitter  atomic.Value
 }
@@ -72,14 +76,18 @@ func newSyncEnv(t *testing.T, scenario testadapter.Config) *syncEnv {
 	orgs, rights := newOrgAccess(e.app, e.clock)
 	intake, err := newIngest(e.app, sharedStore(t), e.connect, rights, e.clock, reg)
 	require.NoError(t, err)
+	e.intake = intake
 	e.norm, err = newNormalize(e.app, sharedStore(t), intake, orgs, e.clock)
 	require.NoError(t, err)
 	jobs, err := riverInsertClient(e.app)
 	require.NoError(t, err)
+	e.metrics, err = newSyncMetrics(reg)
+	require.NoError(t, err)
+	e.reg = reg
 	e.uc = sync.New(sync.Deps{
-		Repo: syncrepo.NewRepo(e.app), Connect: e.connect, Ingest: intake, Queue: queue.New(jobs), Tx: persistent.NewTransactor(e.app),
-		Metrics: syncMetrics{failed: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "x"}, []string{"class"})},
-		Clock:   e.clock, Rand: func() float64 { return e.jitter.Load().(float64) }, PageSize: 3,
+		Repo: syncrepo.NewRepo(e.app), Tenants: platform.NewRepo(e.app), Connect: e.connect, Ingest: intake, Normalize: e.norm,
+		Queue: queue.New(jobs), Tx: persistent.NewTransactor(e.app), Metrics: e.metrics,
+		Clock: e.clock, Rand: func() float64 { return e.jitter.Load().(float64) }, PageSize: 3,
 	})
 	return e
 }

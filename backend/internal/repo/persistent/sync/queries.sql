@@ -22,3 +22,54 @@ RETURNING holder;
 
 -- name: ReleaseLease :exec
 DELETE FROM sync.lease WHERE organization_id = $1 AND connection_id = $2 AND holder = $3;
+
+-- name: ListStates :many
+SELECT * FROM sync.state WHERE organization_id = sqlc.arg(organization_id)
+    AND (NOT sqlc.arg(one_connection)::bool OR connection_id = sqlc.arg(connection_id)::uuid)
+ORDER BY connection_id, data_kind;
+
+-- name: LeaseHeld :one
+SELECT EXISTS (SELECT 1 FROM sync.lease WHERE organization_id = $1 AND connection_id = $2 AND lease_until >= sqlc.arg(now)::timestamptz);
+
+-- name: StartReconcile :one
+INSERT INTO sync.reconcile_run (organization_id, connection_id, data_kind, as_of, started_at, outcome)
+VALUES (sqlc.arg(organization_id), sqlc.arg(connection_id), sqlc.arg(data_kind), sqlc.arg(at), sqlc.arg(at), 'running')
+ON CONFLICT (organization_id, connection_id, data_kind) WHERE outcome = 'running' DO NOTHING
+RETURNING id;
+
+-- name: RunningReconcile :one
+SELECT * FROM sync.reconcile_run
+WHERE organization_id = $1 AND connection_id = $2 AND data_kind = $3 AND outcome = 'running';
+
+-- name: GetReconcile :one
+SELECT * FROM sync.reconcile_run WHERE organization_id = $1 AND id = $2;
+
+-- name: FinishReconcile :exec
+UPDATE sync.reconcile_run SET as_of = sqlc.arg(as_of), started_at = sqlc.arg(started_at), finished_at = sqlc.arg(finished_at)::timestamptz, expected_count = sqlc.narg(expected_count),
+    observed_count = sqlc.narg(observed_count), missing_count = sqlc.narg(missing_count), changed_count = sqlc.narg(changed_count),
+    outcome = sqlc.arg(outcome), reason_code = sqlc.narg(reason_code)
+WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND outcome = 'running';
+
+-- name: LastReconcile :one
+SELECT * FROM sync.reconcile_run WHERE organization_id = sqlc.arg(organization_id) AND connection_id = sqlc.arg(connection_id)
+    AND (NOT sqlc.arg(one_kind)::bool OR data_kind = sqlc.arg(data_kind)::text)
+ORDER BY started_at DESC, id DESC
+LIMIT 1;
+
+-- name: AddDirtyKey :batchexec
+INSERT INTO sync.dirty_key (organization_id, connection_id, key_hash, object_kind, native_ref, added_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (organization_id, connection_id, key_hash) DO UPDATE SET added_at = EXCLUDED.added_at;
+
+-- name: DirtyKeys :many
+SELECT key_hash, object_kind, native_ref, added_at FROM sync.dirty_key
+WHERE organization_id = $1 AND connection_id = $2
+ORDER BY key_hash
+LIMIT sqlc.arg(row_limit);
+
+-- name: DeleteDirtyKeys :execrows
+DELETE FROM sync.dirty_key WHERE organization_id = sqlc.arg(organization_id) AND connection_id = sqlc.arg(connection_id)
+    AND key_hash = ANY (sqlc.arg(key_hashes)::bytea[]) AND added_at <= sqlc.arg(read_started_at);
+
+-- name: CountDirtyKeys :one
+SELECT count(*) FROM sync.dirty_key WHERE organization_id = $1 AND connection_id = $2;

@@ -5,9 +5,27 @@
 package sync
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type SyncReconcileRun struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	ConnectionID   uuid.UUID
+	DataKind       string
+	AsOf           time.Time
+	StartedAt      time.Time
+	FinishedAt     pgtype.Timestamptz
+	ExpectedCount  pgtype.Int4
+	ObservedCount  pgtype.Int4
+	MissingCount   pgtype.Int4
+	ChangedCount   pgtype.Int4
+	Outcome        string
+	ReasonCode     pgtype.Text
+}
 
 type SyncState struct {
 	OrganizationID uuid.UUID
