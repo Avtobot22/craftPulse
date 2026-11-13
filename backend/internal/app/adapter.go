@@ -29,7 +29,7 @@ import (
 const _adapterShutdownTimeout = 35 * time.Second
 
 // NewSource builds the source of an adapter around the only client it may use to reach it.
-type NewSource func(client *adaptersdk.SourceClient) adaptersdk.Source
+type NewSource func(client *adaptersdk.SourceClient) (adaptersdk.Source, error)
 
 // AdapterMain is the main of an adapter binary: `migrate` applies the adapter schema and rewraps data
 // keys under the owner role, anything else serves the contract.
@@ -97,12 +97,16 @@ func serveAdapter(ctx context.Context, cfg config.Adapter, srv config.AdapterSer
 		Policy:  netguard.Policy{Installation: srv.InstallationNetworks, Private: srv.SourcePrivateNetworks},
 		RootCAs: roots,
 	})
+	source, err := newSource(client)
+	if err != nil {
+		return fmt.Errorf("app: %w", err)
+	}
 	store := adaptersdk.NewStore(pool, keyring)
 	probes := adapterProbes(pool, store)
 
 	gin.SetMode(gin.ReleaseMode)
 	handler, err := adaptersdk.NewHandler(adaptersdk.Options{ //nolint:contextcheck // handlers use the context of each call
-		Source:      newSource(client),
+		Source:      source,
 		Store:       store,
 		ServiceKeys: []string{srv.ServiceKey.Value(), srv.PreviousServiceKey.Value()},
 		Log:         log,

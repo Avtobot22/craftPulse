@@ -170,7 +170,7 @@ func TestServeAdapter_FinishesCallsInFlightOnShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
 	go func() {
-		served <- serveAdapter(ctx, cfg, srv, func(*adaptersdk.SourceClient) adaptersdk.Source { return src }, zerolog.Nop(), 5*time.Second)
+		served <- serveAdapter(ctx, cfg, srv, func(*adaptersdk.SourceClient) (adaptersdk.Source, error) { return src, nil }, zerolog.Nop(), 5*time.Second)
 	}()
 
 	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}}
