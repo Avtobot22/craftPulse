@@ -1,4 +1,4 @@
-// Package testadapter is the test adapter on recorded Jira DC answers (TZ 14.12): faults are injected by
+// Package testadapter is the test adapter on recorded Jira Cloud answers (TZ 14.12): faults are injected by
 // operation, page and attempt, so the core is tested against failures a real source cannot repeat.
 package testadapter
 
@@ -32,8 +32,8 @@ const (
 )
 
 const (
-	EditionDataCenter = "datacenter"
-	EditionCloud      = "cloud"
+	EditionCloud       = "cloud"
+	EditionUnsupported = "unsupported"
 )
 
 var (
@@ -49,9 +49,9 @@ var (
 // Config is one scenario. The same scenario always gives the same sequence of answers: attempts are
 // counted per operation, data kind and page from the start of the process or the last change of faults.
 type Config struct {
-	// Edition is datacenter by default; cloud is refused like Jira Cloud on the Jira DC adapter (V-12).
+	// Edition is cloud by default; unsupported injects the wrong-edition response (V-12).
 	Edition string `json:"edition"`
-	// Capabilities verified by Probe; empty is the M0 set of jiradc.
+	// Capabilities verified by Probe; empty is the M0 set of jiracloud.
 	Capabilities []string `json:"capabilities"`
 	// HistoryDenied answers 403 to history: its capabilities are missing and task_events is refused.
 	HistoryDenied bool    `json:"history_denied"`
@@ -100,12 +100,12 @@ func (f Fault) matches(op, schema string, page, attempt int) bool {
 
 func (c Config) validate() error {
 	var errs []error
-	if c.Edition != "" && c.Edition != EditionDataCenter && c.Edition != EditionCloud {
-		errs = append(errs, fmt.Errorf("edition %q is not datacenter or cloud", c.Edition))
+	if c.Edition != "" && c.Edition != EditionCloud && c.Edition != EditionUnsupported {
+		errs = append(errs, fmt.Errorf("edition %q is not cloud or unsupported", c.Edition))
 	}
 	for _, capability := range c.Capabilities {
 		if !slices.Contains(_jiraCapabilities, capability) {
-			errs = append(errs, fmt.Errorf("capability %q is not one of jiradc", capability))
+			errs = append(errs, fmt.Errorf("capability %q is not one of jiracloud", capability))
 		}
 	}
 	for i, f := range c.Faults {

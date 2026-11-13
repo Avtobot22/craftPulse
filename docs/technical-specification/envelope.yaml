@@ -92,21 +92,21 @@ components:
       example:
         schema_id: task_events
         schema_version: '1'
-        source: {provider: jira_dc, instance_key: 6a1c3f0e-2b7d-4c55-9a10-3e4f5a6b7c8d, edition: datacenter, version: 9.12.15}
+        source: {provider: jira_cloud, instance_key: 6a1c3f0e-2b7d-4c55-9a10-3e4f5a6b7c8d, edition: cloud, version: null}
         area: {kind: tracker_project, native_id: '10000', key: PA}
         period: {from: '2026-01-01T00:00:00Z', to: '2026-12-01T00:00:00Z'}
         completeness: partial
         selection: {cursor: {modified_at: '2026-03-01T00:00:00Z', native_id: '20001'}, next_cursor: {modified_at: '2026-03-02T09:00:00Z', native_id: '20011'}, end: false, total_count: 40, truncated: []}
         snapshot: false
         read_id: null
-        producer: {name: craftpulse-adapter-jiradc, version: 0.1.0}
+        producer: {name: craftpulse-adapter-jiracloud, version: 0.1.0}
         created_at: '2026-11-12T10:00:00Z'
     Source:
       type: object
       required: [provider, instance_key, edition, version]
       additionalProperties: false
       properties:
-        provider: {type: string, enum: [jira_dc, gitlab, github, jenkins, sonarqube, confluence_dc, git, universal, client]}
+        provider: {type: string, enum: [jira_cloud, confluence_cloud, gitlab, github, jenkins, sonarqube, git, universal, client]}
         instance_key: {type: string, minLength: 1, maxLength: 512, description: Ключ экземпляра из `Probe` или объявленный импортом (раздел 12.4).}
         edition: {type: [string, 'null'], maxLength: 64}
         version: {type: [string, 'null'], maxLength: 64}

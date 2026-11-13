@@ -62,7 +62,7 @@ func contractTarget(baseURL string) contracttest.Target {
 	scope := adaptersdk.ScopeRef{Kind: adaptersdk.ScopeRefKindTrackerProject, NativeScopeId: "10000"}
 	return contracttest.Target{
 		BaseURL: baseURL, ServiceKey: _adapterKey, Organization: uuid.NewString(), Connection: uuid.NewString(), Secret: _contractSecret,
-		Probe:    adaptersdk.ProbeInput{BaseUrl: "https://jira.example.test", Scopes: []adaptersdk.ScopeRef{scope}},
+		Probe:    adaptersdk.ProbeInput{BaseUrl: "https://example.atlassian.net", Scopes: []adaptersdk.ScopeRef{scope}},
 		Fetch:    adaptersdk.FetchInput{SchemaId: adaptersdk.FetchInputSchemaIdTasks, Scope: scope, Limit: 3, ObjectKeys: []adaptersdk.ObjectKey{}},
 		Manifest: adaptersdk.ManifestInput{SchemaId: adaptersdk.ManifestInputSchemaIdTasks, Scope: scope, Limit: 4},
 		CheckAccess: &adaptersdk.CheckAccessInput{UserId: uuid.New(), AccountNativeId: "demo-person-01", Items: []adaptersdk.AccessItem{

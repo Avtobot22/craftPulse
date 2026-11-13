@@ -13,7 +13,7 @@ import (
 func adapterEnv(t *testing.T) map[string]string {
 	t.Helper()
 	return map[string]string{
-		"DATABASE_URL":               "postgres://adapter_jiradc@db:5432/adapter_jiradc",
+		"DATABASE_URL":               "postgres://adapter_jiracloud@db:5432/adapter_jiracloud",
 		"DATABASE_PASSWORD_FILE":     secretFile(t, _marker+"\n"),
 		"ADAPTER_MASTER_KEY_VERSION": "1",
 		"ADAPTER_MASTER_KEY_FILE":    secretFile(t, _masterKey+"\n"),

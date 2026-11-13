@@ -625,15 +625,15 @@ func (e ReportFileV1ReportKind) Valid() bool {
 
 // Defines values for SourceProvider.
 const (
-	SourceProviderClient       SourceProvider = "client"
-	SourceProviderConfluenceDc SourceProvider = "confluence_dc"
-	SourceProviderGit          SourceProvider = "git"
-	SourceProviderGithub       SourceProvider = "github"
-	SourceProviderGitlab       SourceProvider = "gitlab"
-	SourceProviderJenkins      SourceProvider = "jenkins"
-	SourceProviderJiraDc       SourceProvider = "jira_dc"
-	SourceProviderSonarqube    SourceProvider = "sonarqube"
-	SourceProviderUniversal    SourceProvider = "universal"
+	SourceProviderClient          SourceProvider = "client"
+	SourceProviderConfluenceCloud SourceProvider = "confluence_cloud"
+	SourceProviderGit             SourceProvider = "git"
+	SourceProviderGithub          SourceProvider = "github"
+	SourceProviderGitlab          SourceProvider = "gitlab"
+	SourceProviderJenkins         SourceProvider = "jenkins"
+	SourceProviderJiraCloud       SourceProvider = "jira_cloud"
+	SourceProviderSonarqube       SourceProvider = "sonarqube"
+	SourceProviderUniversal       SourceProvider = "universal"
 )
 
 // Valid indicates whether the value is a known member of the SourceProvider enum.
@@ -641,7 +641,7 @@ func (e SourceProvider) Valid() bool {
 	switch e {
 	case SourceProviderClient:
 		return true
-	case SourceProviderConfluenceDc:
+	case SourceProviderConfluenceCloud:
 		return true
 	case SourceProviderGit:
 		return true
@@ -651,7 +651,7 @@ func (e SourceProvider) Valid() bool {
 		return true
 	case SourceProviderJenkins:
 		return true
-	case SourceProviderJiraDc:
+	case SourceProviderJiraCloud:
 		return true
 	case SourceProviderSonarqube:
 		return true

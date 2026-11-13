@@ -301,7 +301,7 @@ func TestFaults_OtherOperations(t *testing.T) {
 		{Operation: OpManifest, SchemaID: "tasks", Page: 1, Attempts: []int{1}, Kind: FaultSchemaViolation},
 		{Operation: OpCheckAccess, Attempts: []int{1}, Kind: FaultSchemaViolation},
 	}})
-	in := adaptersdk.ProbeInput{BaseUrl: "https://jira.example.test", Scopes: []adaptersdk.ScopeRef{{Kind: adaptersdk.ScopeRefKindTrackerProject, NativeScopeId: "10000"}}}
+	in := adaptersdk.ProbeInput{BaseUrl: "https://example.atlassian.net", Scopes: []adaptersdk.ScopeRef{{Kind: adaptersdk.ScopeRefKindTrackerProject, NativeScopeId: "10000"}}}
 	_, err := a.Probe(ctx, adaptersdk.Call{}, in)
 	if e, ok := errors.AsType[*adaptersdk.Error](err); !ok || e.Code != adaptersdk.AdapterErrorCodeAuth {
 		t.Fatalf("probe attempt 1: %v", err)
@@ -331,16 +331,19 @@ func TestFaults_OtherOperations(t *testing.T) {
 func TestProbe_EditionAndPartialHistory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	in := adaptersdk.ProbeInput{BaseUrl: "https://jira.example.test", Scopes: []adaptersdk.ScopeRef{}}
-	_, err := newAdapter(t, Config{Edition: EditionCloud}).Probe(ctx, adaptersdk.Call{}, in)
+	in := adaptersdk.ProbeInput{BaseUrl: "https://example.atlassian.net", Scopes: []adaptersdk.ScopeRef{}}
+	_, err := newAdapter(t, Config{Edition: EditionUnsupported}).Probe(ctx, adaptersdk.Call{}, in)
 	if e, ok := errors.AsType[*adaptersdk.Error](err); !ok || e.Code != adaptersdk.AdapterErrorCodeUnsupportedEdition {
-		t.Fatalf("Jira Cloud must be refused: %v", err)
+		t.Fatalf("unsupported edition must be refused: %v", err)
 	}
 
-	a := newAdapter(t, Config{HistoryDenied: true})
+	a := newAdapter(t, Config{Edition: EditionCloud, HistoryDenied: true})
 	res, err := a.Probe(ctx, adaptersdk.Call{}, in)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if res.Provider != adaptersdk.ProbeResultProviderJiraCloud || res.Edition == nil || *res.Edition != EditionCloud {
+		t.Fatalf("expected Jira Cloud probe result: %+v", res)
 	}
 	for _, c := range res.Capabilities {
 		history := strings.HasPrefix(string(c.Capability), "read_") && strings.HasSuffix(string(c.Capability), "_history")

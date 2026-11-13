@@ -5892,7 +5892,7 @@ components:
     Provider:
       type: string
       description: Вид источника. Клиент показывает неизвестное значение как «другой источник».
-      enum: [jira_cloud, gitlab, github, jenkins, sonarqube, confluence_cloud, git, universal, client, jira_dc, confluence_dc]
+      enum: [jira_cloud, gitlab, github, jenkins, sonarqube, confluence_cloud, git, universal, client]
     SourceAccount:
       type: object
       required: [id, instance_id, provider, native_account_id, login, display_name, proposed_kind, assignment, proposals]

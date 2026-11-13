@@ -185,9 +185,9 @@ func (a *Adapter) Probe(ctx context.Context, call adaptersdk.Call, in adaptersdk
 	if err := a.answer(ctx, fault); err != nil {
 		return adaptersdk.ProbeResult{}, err
 	}
-	if cfg.Edition == EditionCloud {
+	if cfg.Edition == EditionUnsupported {
 		return adaptersdk.ProbeResult{}, adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnsupportedEdition,
-			"edition_mismatch: Jira Cloud is not served by the Jira DC adapter")
+			"edition_mismatch: unsupported Jira edition")
 	}
 	now := a.now().UTC().Truncate(time.Second)
 	enabled := cfg.Capabilities
@@ -214,10 +214,10 @@ func (a *Adapter) Probe(ctx context.Context, call adaptersdk.Call, in adaptersdk
 		}
 		scopes = append(scopes, check)
 	}
-	edition, version, mode := EditionDataCenter, a.data.Version, adaptersdk.ProbeResultAccessModeServiceAccount
+	edition, version, mode := EditionCloud, a.data.Version, adaptersdk.ProbeResultAccessModeServiceAccount
 	res := adaptersdk.ProbeResult{
 		ContractVersions: []string{adaptersdk.CurrentContractVersion},
-		Provider:         adaptersdk.ProbeResultProviderJiraDc,
+		Provider:         adaptersdk.ProbeResultProviderJiraCloud,
 		InstanceKey:      a.data.InstanceKey,
 		Edition:          &edition,
 		Version:          &version,
@@ -341,11 +341,11 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 }
 
 func (a *Adapter) envelopeManifest(schema string, in adaptersdk.FetchInput, selection envelope.Selection) *envelope.Manifest {
-	edition, version := EditionDataCenter, a.data.Version
+	edition, version := EditionCloud, a.data.Version
 	readID := "adapter-test"
 	return &envelope.Manifest{
 		SchemaId: envelope.ManifestSchemaId(schema), SchemaVersion: "1",
-		Source:       envelope.Source{Provider: envelope.SourceProviderJiraDc, InstanceKey: a.data.InstanceKey, Edition: &edition, Version: &version},
+		Source:       envelope.Source{Provider: envelope.SourceProviderJiraCloud, InstanceKey: a.data.InstanceKey, Edition: &edition, Version: &version},
 		Area:         envelope.AreaRef{Kind: envelope.AreaRefKindTrackerProject, NativeId: in.Scope.NativeScopeId},
 		Completeness: envelope.ManifestCompletenessComplete,
 		Period:       envelope.Period{From: in.Period.From, To: in.Period.To},

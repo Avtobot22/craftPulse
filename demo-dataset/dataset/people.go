@@ -31,9 +31,9 @@ func generatePeople(rng *rand.Rand) []Person {
 			person.Roles = roles[i-1]
 		}
 		if i == 4 {
-			person.DeniedAreas = []string{"org-1/github-1/repo-2", "org-1/gitlab-1/restricted-repo", "org-1/confluence-dc-1/wiki-space"}
+			person.DeniedAreas = []string{"org-1/github-1/repo-2", "org-1/gitlab-1/restricted-repo", "org-1/confluence-cloud-1/wiki-space"}
 		}
-		for _, instance := range []string{"jira-dc-1", "confluence-dc-1", "gitlab-1", "github-1"} {
+		for _, instance := range []string{"jira-cloud-1", "confluence-cloud-1", "gitlab-1", "github-1"} {
 			person.Accounts = append(person.Accounts, Account{InstanceID: instance, Login: fmt.Sprintf("demo-person-%02d", i), ExpectedPersonID: person.ID})
 		}
 		people = append(people, person)
@@ -41,7 +41,7 @@ func generatePeople(rng *rand.Rand) []Person {
 	// Equal names must never imply equal identities.
 	people[19].DisplayName = people[18].DisplayName
 	people = append(people, Person{ID: "org-2/person-01", OrganizationID: "org-2", TeamID: "", DisplayName: "Other organization", Roles: []string{"developer"}, DeniedAreas: []string{"org-1/*"}, Accounts: []Account{}})
-	for _, instance := range []string{"jira-dc-1", "confluence-dc-1", "gitlab-1", "github-1"} {
+	for _, instance := range []string{"jira-cloud-1", "confluence-cloud-1", "gitlab-1", "github-1"} {
 		people[20].Accounts = append(people[20].Accounts, Account{InstanceID: instance, Login: "demo-other-person", ExpectedPersonID: people[20].ID})
 	}
 	for _, instance := range []string{"gitlab-1", "github-1"} {

@@ -290,7 +290,7 @@ func TestHandler_PassesSourceErrorsToCore(t *testing.T) {
 			return adaptersdk.ProbeResult{}, err
 		}
 		_ = resp.Body.Close()
-		return adaptersdk.ProbeResult{Provider: adaptersdk.ProbeResultProviderJiraDc, InstanceKey: "jira.example.test"}, nil
+		return adaptersdk.ProbeResult{Provider: adaptersdk.ProbeResultProviderJiraCloud, InstanceKey: "jira.example.test"}, nil
 	}}
 	h := newHarness(t, adaptersdk.NewStore(nil, nil), src)
 	probe := func(path string) (*reply, adaptersdk.AdapterError) {

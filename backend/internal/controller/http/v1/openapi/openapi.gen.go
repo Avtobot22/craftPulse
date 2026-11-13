@@ -2501,13 +2501,11 @@ func (e ProjectOverviewSourcesCompleteness) Valid() bool {
 const (
 	ProviderClient          Provider = "client"
 	ProviderConfluenceCloud Provider = "confluence_cloud"
-	ProviderConfluenceDc    Provider = "confluence_dc"
 	ProviderGit             Provider = "git"
 	ProviderGithub          Provider = "github"
 	ProviderGitlab          Provider = "gitlab"
 	ProviderJenkins         Provider = "jenkins"
 	ProviderJiraCloud       Provider = "jira_cloud"
-	ProviderJiraDc          Provider = "jira_dc"
 	ProviderSonarqube       Provider = "sonarqube"
 	ProviderUniversal       Provider = "universal"
 )
@@ -2519,8 +2517,6 @@ func (e Provider) Valid() bool {
 		return true
 	case ProviderConfluenceCloud:
 		return true
-	case ProviderConfluenceDc:
-		return true
 	case ProviderGit:
 		return true
 	case ProviderGithub:
@@ -2530,8 +2526,6 @@ func (e Provider) Valid() bool {
 	case ProviderJenkins:
 		return true
 	case ProviderJiraCloud:
-		return true
-	case ProviderJiraDc:
 		return true
 	case ProviderSonarqube:
 		return true

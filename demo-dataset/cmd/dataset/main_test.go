@@ -143,7 +143,7 @@ func TestGenerateTasksCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, v := range manifest.Variants {
-		if v.VariantID == "blocked" && !slices.Contains(v.ObjectIDs, "org-1/jira-dc-1/PA-3") {
+		if v.VariantID == "blocked" && !slices.Contains(v.ObjectIDs, "org-1/jira-cloud-1/PA-3") {
 			t.Fatal("the manifest does not take the task variants")
 		}
 	}

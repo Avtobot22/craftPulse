@@ -12,7 +12,7 @@ import (
 //go:embed dataset.json
 var _datasetJSON []byte
 
-// dataset is a recorded Jira DC project: each feed lists what the source returned in the order of the
+// dataset is a recorded Jira Cloud project: each feed lists what the source returned in the order of the
 // increment cursor, so an object changed while it was read appears again with its later version.
 type dataset struct {
 	InstanceKey string                 `json:"instance_key"`
