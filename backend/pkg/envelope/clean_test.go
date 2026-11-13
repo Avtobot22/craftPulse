@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,8 +50,21 @@ func TestClean_KeepsAcceptedRecordsOnTheirNumbers(t *testing.T) {
 	assert.Equal(t, res.Records[2].Hash, again.Records[1].Hash)
 	assert.NotContains(t, string(gunzip(t, cleaned)), "files/unused.xml", "a file no record references is dropped")
 
-	_, twice := clean(t, data)
+	again2, twice := clean(t, data)
 	assert.Equal(t, cleaned, twice, "the same input gives the same bytes")
+	assert.Len(t, res.ContentHash, 32)
+	assert.Equal(t, res.ContentHash, again2.ContentHash)
+}
+
+func TestClean_ContentHashLeavesOutTheTimeOfThePackage(t *testing.T) {
+	t.Parallel()
+	later := manifest(envelope.ManifestSchemaIdTasks, true)
+	later.CreatedAt = later.CreatedAt.Add(time.Hour)
+	rows := []byte("native_id,project_native_id,task_key,type_native_id,status_native_id,created_at\nIMP-2,IMP,IMP-2,Story,Done,2026-02-03T09:00:00+03:00\n")
+	first, a := clean(t, build(t, manifest(envelope.ManifestSchemaIdTasks, true), func(w *envelope.Writer) { require.NoError(t, w.AddTasksCSV(rows)) }))
+	second, b := clean(t, build(t, later, func(w *envelope.Writer) { require.NoError(t, w.AddTasksCSV(rows)) }))
+	assert.NotEqual(t, a, b, "the stored packages keep their own time")
+	assert.Equal(t, first.ContentHash, second.ContentHash, "the content is the same")
 }
 
 func TestClean_TaskCSVBecomesSnapshotRecords(t *testing.T) {

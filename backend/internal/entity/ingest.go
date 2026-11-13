@@ -51,6 +51,7 @@ type Receipt struct {
 	ConnectionID     *ID
 	ScopeID          *ID
 	ProjectID        *ID
+	UploadTokenID    *ID
 	RequestedBy      *ID
 	SourceInstanceID *ID
 	ReceivedAt       time.Time
@@ -64,7 +65,10 @@ type Receipt struct {
 	RecordCount      int
 	AcceptedCount    int
 	RejectedCount    int
-	ReasonCode       string
+	// ReplayCount and ConflictCount are counted from the records when a receipt is read.
+	ReplayCount   int
+	ConflictCount int
+	ReasonCode    string
 	// Manifest is the manifest of the package as JSON; nil when the package has none that reads.
 	Manifest []byte
 }
@@ -93,4 +97,83 @@ type PreparedPackage struct {
 	Records []IngestRecord
 	// Duplicate is set when a stored package with the same hash was found before the transaction.
 	Duplicate bool
+}
+
+type ReceiptFilter struct {
+	Channel      ReceiptChannel
+	Status       ReceiptStatus
+	ConnectionID *ID
+	ProjectID    *ID
+	Limit        int
+	After        *AuditKey
+}
+
+type ReceiptPage struct {
+	Items []Receipt
+	Next  *AuditKey
+}
+
+type RecordFilter struct {
+	Outcome RecordOutcome
+	Limit   int
+	AfterNo int
+}
+
+type RecordPage struct {
+	Items []IngestRecord
+	// NextNo is the record number to continue after; zero when the page is the last one.
+	NextNo int
+}
+
+// Resolutions of a conflict of intake (BR-002).
+const (
+	ResolutionSourceCorrected = "source_corrected"
+	ResolutionKeptExisting    = "kept_existing"
+	ResolutionAcceptedNew     = "accepted_new"
+)
+
+// IngestConflict is a record with the source_revision of an accepted record and another content.
+type IngestConflict struct {
+	ID               ID
+	ReceiptID        ID
+	RecordNo         int
+	ExistingReceipt  ID
+	ExistingRecordNo int
+	// NativeKey shows the identity of the source of the record.
+	NativeKey  string
+	DetectedAt time.Time
+	Open       bool
+	Resolution string
+	ResolvedBy *ID
+	ResolvedAt *time.Time
+}
+
+type ConflictFilter struct {
+	Open  bool
+	Limit int
+	After *AuditKey
+}
+
+type ConflictPage struct {
+	Items []IngestConflict
+	Next  *AuditKey
+}
+
+type ImportFormat string
+
+const (
+	ImportJSON ImportFormat = "json"
+	ImportCSV  ImportFormat = "csv"
+)
+
+// ImportFile is a file of the universal import with the fields of its form (ImportUpload).
+type ImportFile struct {
+	ProjectID     ID
+	SchemaID      string
+	SchemaVersion string
+	Provider      Provider
+	InstanceKey   string
+	Snapshot      bool
+	Format        ImportFormat
+	Content       []byte
 }

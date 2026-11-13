@@ -84,7 +84,7 @@ func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEn
 	require.NoError(t, err)
 	uc, err := newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, uc)
+	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, uc, nil)
 	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
 
 	workers := river.NewWorkers()

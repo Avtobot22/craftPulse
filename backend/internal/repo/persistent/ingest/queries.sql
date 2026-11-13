@@ -54,3 +54,50 @@ VALUES ($1, $2, $3, $4, $5, $6, 'open');
 
 -- name: ListRecords :many
 SELECT * FROM ingest.record WHERE organization_id = $1 AND receipt_id = $2 ORDER BY record_no;
+
+-- name: PageReceipts :many
+SELECT * FROM ingest.receipt
+WHERE organization_id = sqlc.arg(organization_id)
+    AND (sqlc.arg(channel)::text = '' OR channel = sqlc.arg(channel)::text)
+    AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)
+    AND (sqlc.narg(connection_id)::uuid IS NULL OR connection_id = sqlc.narg(connection_id)::uuid)
+    AND (sqlc.narg(project_id)::uuid IS NULL OR project_id = sqlc.narg(project_id)::uuid)
+    AND (NOT sqlc.arg(has_cursor)::bool OR (received_at, id) < (sqlc.arg(after_time)::timestamptz, sqlc.arg(after_id)::uuid))
+ORDER BY received_at DESC, id DESC
+LIMIT sqlc.arg(page_limit);
+
+-- name: CountOutcomes :many
+SELECT receipt_id, outcome, count(*)::integer AS n FROM ingest.record
+WHERE organization_id = sqlc.arg(organization_id) AND receipt_id = ANY(sqlc.arg(receipt_ids)::uuid[]) AND outcome IN ('replay', 'conflict')
+GROUP BY receipt_id, outcome;
+
+-- name: PageRecords :many
+SELECT * FROM ingest.record
+WHERE organization_id = sqlc.arg(organization_id) AND receipt_id = sqlc.arg(receipt_id)
+    AND (sqlc.arg(outcome)::text = '' OR outcome = sqlc.arg(outcome)::text)
+    AND record_no > sqlc.arg(after_no)
+ORDER BY record_no
+LIMIT sqlc.arg(page_limit);
+
+-- name: GetRecord :one
+SELECT * FROM ingest.record WHERE organization_id = $1 AND receipt_id = $2 AND record_no = $3;
+
+-- name: PageConflicts :many
+SELECT * FROM ingest.conflict
+WHERE organization_id = sqlc.arg(organization_id) AND status = sqlc.arg(status)
+    AND (NOT sqlc.arg(has_cursor)::bool OR (detected_at, id) > (sqlc.arg(after_time)::timestamptz, sqlc.arg(after_id)::uuid))
+ORDER BY detected_at, id
+LIMIT sqlc.arg(page_limit);
+
+-- name: LockConflict :one
+SELECT * FROM ingest.conflict WHERE organization_id = $1 AND id = $2 FOR UPDATE;
+
+-- name: ResolveConflict :exec
+UPDATE ingest.conflict SET status = 'resolved', resolution = sqlc.arg(resolution), resolved_by = sqlc.arg(resolved_by),
+    resolved_at = sqlc.arg(resolved_at)
+WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id);
+
+-- name: SetRecordOutcome :exec
+UPDATE ingest.record SET outcome = sqlc.arg(outcome), first_receipt_id = sqlc.narg(first_receipt_id),
+    first_record_no = sqlc.narg(first_record_no)
+WHERE organization_id = sqlc.arg(organization_id) AND receipt_id = sqlc.arg(receipt_id) AND record_no = sqlc.arg(record_no);

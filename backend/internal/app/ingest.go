@@ -70,6 +70,7 @@ func newIngest(pool *pgxpool.Pool, store repo.ObjectStore, connect ingest.Connec
 	return ingest.New(ingest.Deps{
 		Repo: ingestrepo.NewRepo(pool), Objects: store, Queue: queue.New(jobs), Tx: persistent.NewTransactor(pool),
 		Connect: connect, Access: rights, Metrics: ingestMetrics{rejected: rejected}, Clock: c, NewID: newID,
+		Auditor: audit.New(auditrepo.NewRepo(pool), persistent.NewTransactor(pool), c),
 	}), nil
 }
 

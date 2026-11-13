@@ -4,10 +4,12 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
+	"time"
 )
 
 // Clean checks a package and writes the cleaned one to w: the manifest, every record that passed on its
@@ -28,13 +30,20 @@ func Clean(r io.Reader, limits Limits, w io.Writer) (*Result, error) {
 		return &Result{Manifest: c.result.Manifest, Envelope: rejection}, nil //nolint:nilerr // the rejection is the outcome of the check
 	}
 	c.checkFiles()
-	if err := c.write(data, w); err != nil {
+	if err := c.write(data, c.result.Manifest, w); err != nil {
 		return nil, err
 	}
+	timeless := *c.result.Manifest
+	timeless.CreatedAt = time.Time{}
+	h := sha256.New()
+	if err := c.write(data, &timeless, h); err != nil {
+		return nil, err
+	}
+	c.result.ContentHash = h.Sum(nil)
 	return &c.result, nil
 }
 
-func (c *checker) write(data []byte, w io.Writer) error {
+func (c *checker) write(data []byte, m *Manifest, w io.Writer) error {
 	last := 0
 	wanted := map[string]bool{}
 	for _, rec := range c.result.Records {
@@ -47,7 +56,7 @@ func (c *checker) write(data []byte, w io.Writer) error {
 			wanted[ref.path] = true
 		}
 	}
-	pw, err := NewWriter(w, c.result.Manifest)
+	pw, err := NewWriter(w, m)
 	if err != nil {
 		return err
 	}

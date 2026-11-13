@@ -69,7 +69,12 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return err
 	}
-	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, connections))
+	_, rights := newOrgAccess(pool, clock.System{})
+	intake, err := newIngest(pool, newObjectStore(cfg.ObjectStore), connections, rights, clock.System{}, reg)
+	if err != nil {
+		return err
+	}
+	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, connections, intake))
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Msg("api started")
 	return serve(ctx, log, probes.Ready, map[string]http.Handler{

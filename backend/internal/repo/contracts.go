@@ -190,6 +190,14 @@ type IngestRepo interface {
 	InsertRecords(ctx context.Context, orgID, receiptID entity.ID, recs []entity.IngestRecord) error
 	InsertConflicts(ctx context.Context, orgID, receiptID entity.ID, recs []entity.IngestRecord, at time.Time) error
 	Records(ctx context.Context, orgID, receiptID entity.ID) ([]entity.IngestRecord, error)
+	PageReceipts(ctx context.Context, orgID entity.ID, f entity.ReceiptFilter) ([]entity.Receipt, error)
+	CountRepeats(ctx context.Context, orgID entity.ID, receipts []entity.Receipt) error
+	PageRecords(ctx context.Context, orgID, receiptID entity.ID, f entity.RecordFilter) ([]entity.IngestRecord, error)
+	Record(ctx context.Context, orgID, receiptID entity.ID, no int) (entity.IngestRecord, error)
+	SetRecordOutcome(ctx context.Context, orgID, receiptID entity.ID, rec entity.IngestRecord) error
+	PageConflicts(ctx context.Context, orgID entity.ID, f entity.ConflictFilter) ([]entity.IngestConflict, error)
+	LockConflict(ctx context.Context, orgID, id entity.ID) (entity.IngestConflict, error)
+	ResolveConflict(ctx context.Context, orgID entity.ID, c entity.IngestConflict) error
 }
 
 // ObjectStore keeps packages; Get of a missing object is entity.ErrNotFound and Delete of one succeeds.

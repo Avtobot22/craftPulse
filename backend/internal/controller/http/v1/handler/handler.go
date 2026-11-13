@@ -20,6 +20,7 @@ import (
 type Handler struct {
 	uploads
 	connections
+	intake
 	fallback
 	session
 	organization
@@ -39,6 +40,7 @@ type Deps struct {
 	Audit        usecase.AuditLog
 	Protocols    usecase.Protocols
 	Connections  usecase.Connections
+	Intake       usecase.Intake
 	Registerer   prometheus.Registerer
 }
 
@@ -46,6 +48,7 @@ func New(d Deps) *Handler {
 	return &Handler{
 		uploads:        uploads{tokens: d.UploadTokens},
 		connections:    connections{uc: d.Connections},
+		intake:         intake{uc: d.Intake},
 		session:        newSession(d.Logins, d.Access, d.Registerer),
 		organization:   organization{structure: d.Structure},
 		administration: administration{users: d.Users, audit: d.Audit, protocols: d.Protocols},
@@ -95,8 +98,14 @@ func Error(c *gin.Context, err error) {
 	case errors.Is(err, entity.ErrVersionConflict):
 		response.Write(c, response.VersionConflict)
 		return
-	case errors.Is(err, errMalformedPage):
+	case errors.Is(err, errMalformedPage), errors.Is(err, errMalformedForm):
 		response.Write(c, response.MalformedRequest)
+		return
+	case errors.Is(err, errPayloadTooLarge):
+		response.Write(c, response.PayloadTooLarge)
+		return
+	case errors.Is(err, errUnsupportedFile):
+		response.Write(c, response.UnsupportedMedia)
 		return
 	}
 	if verr, ok := errors.AsType[*entity.ValidationError](err); ok {

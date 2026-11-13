@@ -87,7 +87,7 @@ func newLoginEnv(t *testing.T) *loginEnv {
 	e.orgID, e.otherID, e.keyring = applied[0].ID, applied[1].ID, keyring
 
 	reg := prometheus.NewRegistry()
-	api := newAPI(e.app, keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, nil)
+	api := newAPI(e.app, keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, nil, nil)
 	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
 	e.metrics = promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 	t.Cleanup(func() { e.assertNoSecrets(t) })
@@ -311,7 +311,7 @@ func TestLogin_FirstAdministrator(t *testing.T) {
 	assert.Equal(t, "Same Name", cu.User.DisplayName)
 	require.Len(t, cu.Roles, 1)
 	assert.Equal(t, "administrator", cu.Roles[0].Role)
-	assert.Equal(t, []string{"audit.read", "connections.manage", "installation.read", "org.manage", "org.read", "session.manage", "session.read", "users.manage"}, cu.Actions)
+	assert.Equal(t, []string{"audit.read", "connections.manage", "installation.read", "org.manage", "org.read", "receipts.read", "session.manage", "session.read", "sync.read", "users.manage"}, cu.Actions)
 	assert.Equal(t, _now.Add(12*time.Hour), cu.Session.ExpiresAt)
 	assert.Equal(t, _now.Add(time.Hour), cu.Session.IdleExpiresAt)
 
