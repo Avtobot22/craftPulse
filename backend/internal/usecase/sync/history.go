@@ -33,6 +33,9 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 	if err != nil {
 		return err
 	}
+	if page != nil {
+		page.ObservedVia = entity.ViaBackfill
+	}
 	var next []entity.Job
 	at := u.d.Clock.Now()
 	switch {

@@ -99,3 +99,8 @@ type Collector interface {
 	RunPage(ctx context.Context, job entity.SyncPageJob, holder string, complete func(context.Context) error) error
 	RunHistory(ctx context.Context, job entity.SyncHistoryJob, holder string, complete func(context.Context) error) error
 }
+
+// Normalizer runs the job normalize.batch; complete ends the job in the transaction of its part.
+type Normalizer interface {
+	RunBatch(ctx context.Context, job entity.NormalizeBatchJob, complete func(context.Context) error) error
+}

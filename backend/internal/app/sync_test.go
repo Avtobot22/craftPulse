@@ -26,9 +26,11 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/adapterapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	connectrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/connect"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
 	syncrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/sync"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/connect"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/normalize"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/sync"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 	pg "github.com/Avtobot22/craftPulse/backend/pkg/postgres"
@@ -41,6 +43,7 @@ type syncEnv struct {
 	adapter *adapterServer
 	connect *connect.UseCase
 	uc      *sync.UseCase
+	norm    *normalize.UseCase
 	org     entity.ID
 	jitter  atomic.Value
 }
@@ -57,6 +60,7 @@ func newSyncEnv(t *testing.T, scenario testadapter.Config) *syncEnv {
 		org: entity.ID(uuid.New()),
 	}
 	e.jitter.Store(0.0)
+	require.NoError(t, platform.NewRepo(e.owner).CreateTenant(t.Context(), e.org, e.clock.Now()), "the organization has its knowledge counter")
 	reg := prometheus.NewRegistry()
 	caller, err := adapterapi.NewCaller(adapterapi.Config{
 		InternalCA: ca.pool, Registerer: reg,
@@ -65,8 +69,10 @@ func newSyncEnv(t *testing.T, scenario testadapter.Config) *syncEnv {
 	require.NoError(t, err)
 	e.connect, err = newConnect(e.app, adapterKeyring(t), caller, e.clock)
 	require.NoError(t, err)
-	_, rights := newOrgAccess(e.app, e.clock)
+	orgs, rights := newOrgAccess(e.app, e.clock)
 	intake, err := newIngest(e.app, sharedStore(t), e.connect, rights, e.clock, reg)
+	require.NoError(t, err)
+	e.norm, err = newNormalize(e.app, sharedStore(t), intake, orgs, e.clock)
 	require.NoError(t, err)
 	jobs, err := riverInsertClient(e.app)
 	require.NoError(t, err)
@@ -400,7 +406,7 @@ func TestSync_WorkerCompletesJobsInTheTransactionOfTheirResult(t *testing.T) {
 	t.Parallel()
 	e := newSyncEnv(t, testadapter.Config{})
 	workers := river.NewWorkers()
-	workerctrl.Register(workers, workerctrl.Deps{Collection: e.uc})
+	workerctrl.Register(workers, workerctrl.Deps{Collection: e.uc, Normalizer: e.norm})
 	client, err := river.NewClient(riverpgxv5.New(e.app), &river.Config{
 		Queues: map[string]river.QueueConfig{entity.QueueBulk: {MaxWorkers: 2}}, Workers: workers,
 		JobTimeout: _jobTimeout, RescueStuckJobsAfter: _rescueAfter, FetchCooldown: 20 * time.Millisecond, FetchPollInterval: 50 * time.Millisecond,
@@ -421,4 +427,10 @@ func TestSync_WorkerCompletesJobsInTheTransactionOfTheirResult(t *testing.T) {
 	assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'sync.reconcile'"))
 	assert.Equal(t, e.manifest(t, conn), unique(e.accepted(t, "task")))
 	assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM sync.lease"), "the lease is released with the last page")
+	require.Eventually(t, func() bool {
+		return count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'normalize.batch' AND state <> 'completed'") == 0
+	}, 30*time.Second, 100*time.Millisecond, "every job of normalization is completed")
+	assert.Equal(t, len(unique(e.accepted(t, "task"))), count(t, t.Context(), e.owner,
+		"SELECT count(*) FROM normalize.task_version WHERE superseded_seq IS NULL"), "every collected task has its current version")
+	assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM normalize.task_event WHERE observed_via NOT IN ('backfill', 'incremental')"))
 }

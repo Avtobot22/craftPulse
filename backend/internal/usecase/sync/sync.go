@@ -150,6 +150,12 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 	if err != nil {
 		return err
 	}
+	if page != nil {
+		page.ObservedVia = entity.ViaBackfill
+		if st.Phase == entity.SyncIncremental {
+			page.ObservedVia = entity.ViaIncremental
+		}
+	}
 	now := u.d.Clock.Now()
 	st.LastAttemptAt = &now
 	if failure != nil {

@@ -82,3 +82,12 @@ sql:
         out: internal/repo/persistent/sync
         sql_package: pgx/v5
         omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
+    queries: internal/repo/persistent/normalize/queries.sql
+    gen:
+      go:
+        package: normalize
+        out: internal/repo/persistent/normalize
+        sql_package: pgx/v5
+        omit_unused_structs: true

@@ -202,3 +202,12 @@ func (u *UseCase) Profile(ctx context.Context, orgID, userID entity.ID, at time.
 	}
 	return p, nil
 }
+
+// EnsureSourceAccounts records the accounts a package names in the caller's transaction and returns
+// their IDs by native ID: normalize writes them through org, which owns them (TZ 10.3).
+func (u *UseCase) EnsureSourceAccounts(ctx context.Context, orgID, instanceID entity.ID, accounts []entity.SourceAccount) (map[string]entity.ID, error) {
+	if len(accounts) == 0 {
+		return map[string]entity.ID{}, nil
+	}
+	return u.orgs.EnsureSourceAccounts(ctx, orgID, instanceID, accounts, u.clock.Now())
+}

@@ -210,7 +210,9 @@ func (u *UseCase) record(ctx context.Context, p *entity.PreparedPackage) (entity
 		if rc.Channel == entity.ChannelCI {
 			queue = entity.QueueInteractive
 		}
-		job := entity.NormalizeBatchJob{OrganizationID: org, ReceiptID: rc.ID, CorrelationID: entity.ID(logger.CorrelationID(ctx))}
+		job := entity.NormalizeBatchJob{
+			OrganizationID: org, ReceiptID: rc.ID, ObservedVia: p.ObservedVia, CorrelationID: entity.ID(logger.CorrelationID(ctx)),
+		}
 		if err := u.d.Queue.Enqueue(ctx, job, queue); err != nil {
 			return entity.Receipt{}, err
 		}

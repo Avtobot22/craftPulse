@@ -205,6 +205,31 @@ func (u *UseCase) acceptNew(ctx context.Context, orgID entity.ID, c entity.Inges
 	if err := u.d.Repo.SetRecordOutcome(ctx, orgID, c.ReceiptID, fresh); err != nil {
 		return err
 	}
-	job := entity.NormalizeBatchJob{OrganizationID: orgID, ReceiptID: c.ReceiptID, CorrelationID: entity.ID(logger.CorrelationID(ctx))}
+	job := entity.NormalizeBatchJob{
+		OrganizationID: orgID, ReceiptID: c.ReceiptID, ResolvedNo: c.RecordNo, CorrelationID: entity.ID(logger.CorrelationID(ctx)),
+	}
 	return u.d.Queue.Enqueue(ctx, job, entity.QueueBulk)
+}
+
+// Accepted reads a receipt with its accepted records in the order of their numbers: the input of
+// normalization. The records carry their identity and hash; their content is in the stored package.
+func (u *UseCase) Accepted(ctx context.Context, orgID, receiptID entity.ID) (entity.Receipt, []entity.IngestRecord, error) {
+	var (
+		rc   entity.Receipt
+		recs []entity.IngestRecord
+	)
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		if rc, err = u.d.Repo.Receipt(ctx, orgID, receiptID); err != nil {
+			return err
+		}
+		recs, err = u.d.Repo.Records(ctx, orgID, receiptID)
+		return err
+	})
+	if err != nil {
+		return entity.Receipt{}, nil, err
+	}
+	recs = slices.DeleteFunc(recs, func(r entity.IngestRecord) bool { return r.Outcome != entity.RecordAccepted })
+	slices.SortFunc(recs, func(a, b entity.IngestRecord) int { return a.No - b.No })
+	return rc, recs, nil
 }

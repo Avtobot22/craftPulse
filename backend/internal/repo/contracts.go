@@ -42,6 +42,12 @@ type OrgRepo interface {
 	VisibleAreas(ctx context.Context, orgID entity.ID, kind entity.AreaKind, whole bool, ids []entity.ID) ([]entity.Area, error)
 	StructureRepo
 	UserRepo
+	SourceAccountRepo
+}
+
+// SourceAccountRepo keeps the accounts of source instances (TZ 12.5.1); a name or an email joins nothing.
+type SourceAccountRepo interface {
+	EnsureSourceAccounts(ctx context.Context, orgID, instanceID entity.ID, accounts []entity.SourceAccount, at time.Time) (map[string]entity.ID, error)
 }
 
 // UserRepo is the administration of users: roles and blocking (TZ 7.2, 7.7).
@@ -216,4 +222,35 @@ type SyncRepo interface {
 	// AcquireLease takes or renews the lease; false means another holder has it until it runs out.
 	AcquireLease(ctx context.Context, orgID, connectionID entity.ID, holder string, until, now time.Time) (bool, error)
 	ReleaseLease(ctx context.Context, orgID, connectionID entity.ID, holder string) error
+}
+
+// NormalizeRepo is the normalize schema under row-level security: canonical facts in versions of knowledge.
+type NormalizeRepo interface {
+	// EnsureObjects creates the identities that are new with the knowledge number seq and returns all by key.
+	EnsureObjects(ctx context.Context, orgID entity.ID, keys []entity.SourceKey, quality entity.IdentityQuality, seq int64) (map[entity.SourceKey]entity.SourceObject, error)
+	EnsureAreas(ctx context.Context, orgID entity.ID, areas map[entity.ID]entity.ObjectKind) error
+	PlaceObjects(ctx context.Context, orgID entity.ID, placements []entity.ObjectPlacement) error
+	// RecordAreaChanges writes the changes of areas at seq and moves their last change to it.
+	RecordAreaChanges(ctx context.Context, orgID entity.ID, seq int64, changes []entity.AreaChange, at time.Time) error
+	AreaChanges(ctx context.Context, orgID, areaID entity.ID, afterSeq int64) ([]entity.AreaChange, error)
+	AreaOf(ctx context.Context, orgID, instanceID entity.ID, kind entity.ObjectKind, nativeID string) (entity.ID, error)
+
+	CurrentTaskVersions(ctx context.Context, orgID entity.ID, taskIDs []entity.ID) ([]entity.TaskVersion, error)
+	TaskRevisions(ctx context.Context, orgID entity.ID, taskIDs []entity.ID) (map[entity.ID][]entity.Revision, error)
+	SupersedeTaskVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
+	InsertTaskVersions(ctx context.Context, orgID entity.ID, versions []entity.TaskVersion) error
+	TaskVersionsAt(ctx context.Context, orgID, areaID entity.ID, seq int64) ([]entity.TaskVersion, error)
+	CurrentTasksByNative(ctx context.Context, orgID, areaID entity.ID, nativeIDs []string) (map[string]entity.TaskVersion, error)
+
+	CurrentTaskEvents(ctx context.Context, orgID entity.ID, keys []entity.EventKey) ([]entity.TaskEvent, error)
+	TaskEventRevisions(ctx context.Context, orgID entity.ID, keys []entity.EventKey) (map[entity.EventKey][]entity.Revision, error)
+	SupersedeTaskEvents(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
+	InsertTaskEvents(ctx context.Context, orgID entity.ID, events []entity.TaskEvent) error
+	TaskEventsAt(ctx context.Context, orgID, areaID entity.ID, seq int64) ([]entity.TaskEvent, error)
+
+	CurrentDictionaryEntries(ctx context.Context, orgID entity.ID, keys []entity.DictionaryKey) ([]entity.DictionaryEntry, error)
+	DictionaryRevisions(ctx context.Context, orgID entity.ID, keys []entity.DictionaryKey) (map[entity.DictionaryKey][]entity.Revision, error)
+	SupersedeDictionaryEntries(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
+	InsertDictionaryEntries(ctx context.Context, orgID entity.ID, entries []entity.DictionaryEntry) error
+	Dictionary(ctx context.Context, orgID, areaID entity.ID, kind entity.DictionaryKind) ([]entity.DictionaryEntry, error)
 }

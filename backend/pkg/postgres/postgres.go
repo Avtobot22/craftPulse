@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
+	"slices"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -78,7 +82,37 @@ func InTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context) 
 	return withTransaction(ctx, pool, func(ctx context.Context, _ pgx.Tx) error { return fn(ctx) })
 }
 
+const (
+	_retries  = 3
+	_maxPause = 100 * time.Millisecond
+)
+
+// _retryable are a deadlock, a serialization failure and an expired lock_timeout: the whole transaction
+// runs again, and the scenarios that open it are idempotent (TZ 12.8).
+var _retryable = []string{pgerrcode.DeadlockDetected, pgerrcode.SerializationFailure, pgerrcode.LockNotAvailable}
+
 func withTransaction(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	return retry(ctx, func() error { return transaction(ctx, pool, fn) })
+}
+
+// retry repeats run up to _retries times with a random pause while it fails with a retryable error.
+func retry(ctx context.Context, run func() error) error {
+	for attempt := 0; ; attempt++ {
+		err := run()
+		var pgErr *pgconn.PgError
+		if attempt == _retries || ctx.Err() != nil || !errors.As(err, &pgErr) || !slices.Contains(_retryable, pgErr.Code) {
+			return err
+		}
+		pause := time.Duration(rand.Int64N(int64(_maxPause))) //nolint:gosec // a pause needs no secure randomness
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(pause):
+		}
+	}
+}
+
+func transaction(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("postgres: begin: %w", err)
