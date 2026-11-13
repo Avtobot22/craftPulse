@@ -66,7 +66,7 @@ func Run(t *testing.T, target Target) {
 	}
 }
 
-var _spec = sync.OnceValues(GetSwagger)
+var _spec = sync.OnceValues(GetSpec)
 
 // Check calls the adapter and returns the violations of the contract; none means it passed.
 func Check(ctx context.Context, target Target) []Violation {
