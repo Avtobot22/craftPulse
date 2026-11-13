@@ -53,6 +53,8 @@ type Probes struct {
 	Ready         *Readiness
 	Live          Check
 	SchemaVersion func(ctx context.Context) (int64, error)
+	// ContractVersion is set by an adapter: the adapter.yaml version it serves.
+	ContractVersion string
 }
 
 func Handler(p Probes) http.Handler {
@@ -72,7 +74,7 @@ func Handler(p Probes) http.Handler {
 		writeJSON(w, http.StatusOK, statusBody{Status: "ok"})
 	})
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
-		body := versionBody{CommitSHA: CommitSHA()}
+		body := versionBody{CommitSHA: CommitSHA(), ContractVersion: p.ContractVersion}
 		if p.SchemaVersion != nil {
 			if v, err := p.SchemaVersion(r.Context()); err == nil {
 				body.SchemaVersion = &v
@@ -88,8 +90,9 @@ type statusBody struct {
 }
 
 type versionBody struct {
-	CommitSHA     string `json:"commit_sha"`
-	SchemaVersion *int64 `json:"schema_version"`
+	CommitSHA       string `json:"commit_sha"`
+	SchemaVersion   *int64 `json:"schema_version"`
+	ContractVersion string `json:"contract_version,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

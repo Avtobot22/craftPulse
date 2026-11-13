@@ -25,6 +25,8 @@ var _passwords = map[string]string{
 	"craftpulse_backup": "backup-secret",
 }
 
+var _adapterPasswords = map[string]string{"owner": "adapter-owner-secret", "app": "adapter-app-secret"}
+
 var (
 	_container *postgres.PostgresContainer
 	_hostPort  string
@@ -37,8 +39,16 @@ func TestMain(m *testing.M) {
 
 func runWithPostgres(m *testing.M) int {
 	ctx := context.Background()
-	env := map[string]string{}
-	files := make([]testcontainers.ContainerFile, 0, len(_passwords))
+	env := map[string]string{
+		"ADAPTER_OWNER_PASSWORD_FILE": "/run/secrets/adapter_owner",
+		"ADAPTER_PASSWORD_FILE":       "/run/secrets/adapter_app",
+	}
+	files := make([]testcontainers.ContainerFile, 0, 3+len(_passwords))
+	files = append(files,
+		testcontainers.ContainerFile{Reader: strings.NewReader(_adapterPasswords["owner"]), ContainerFilePath: "/run/secrets/adapter_owner", FileMode: 0o644},
+		testcontainers.ContainerFile{Reader: strings.NewReader(_adapterPasswords["app"]), ContainerFilePath: "/run/secrets/adapter_app", FileMode: 0o644},
+		testcontainers.ContainerFile{HostFilePath: "../../../deploy/postgres/adapter-db.sh", ContainerFilePath: "/adapter-db.sh", FileMode: 0o755},
+	)
 	for role, password := range _passwords {
 		path := "/run/secrets/" + role
 		files = append(files, testcontainers.ContainerFile{Reader: strings.NewReader(password + "\n"), ContainerFilePath: path, FileMode: 0o644})

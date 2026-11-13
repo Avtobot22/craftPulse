@@ -312,3 +312,34 @@ func mustJSON(t *testing.T, v any) string {
 	require.NoError(t, err)
 	return string(data)
 }
+
+func TestWriter_StreamedEqualsBuffered(t *testing.T) {
+	t.Parallel()
+	m := manifest(envelope.ManifestSchemaIdJunit, false)
+	schema := schemaOf(t, "report_file")
+	report := []byte("<testsuites/>")
+
+	var records bytes.Buffer
+	buffered := build(t, m, func(w *envelope.Writer) {
+		rec := exampleRecord(t, w, schema)
+		require.NoError(t, w.AddRecord(rec))
+		line, err := json.Marshal(rec)
+		require.NoError(t, err)
+		records.Write(append(line, '\n'))
+	})
+	streamed := build(t, m, func(w *envelope.Writer) {
+		ref, err := w.AddFileFrom("files/report_file/report.xml", "application/xml", bytes.NewReader(report), int64(len(report)))
+		require.NoError(t, err)
+		assert.Equal(t, len(report), ref.SizeBytes)
+		require.NoError(t, w.AddRecordsFrom(bytes.NewReader(records.Bytes()), int64(records.Len())))
+		assert.Error(t, w.AddRecord(&envelope.Record{}), "records are already written")
+	})
+	assert.Equal(t, buffered, streamed)
+	assert.Zero(t, check(streamed).Rejected())
+
+	var buf bytes.Buffer
+	w, err := envelope.NewWriter(&buf, m)
+	require.NoError(t, err)
+	_, err = w.AddFileFrom("files/x.xml", "application/xml", bytes.NewReader(report), int64(len(report))+1)
+	assert.Error(t, err, "a short reader is refused")
+}

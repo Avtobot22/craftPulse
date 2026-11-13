@@ -44,6 +44,9 @@ func NewKeyring(current MasterKey, previous ...MasterKey) (*Keyring, error) {
 	return k, nil
 }
 
+// CurrentVersion is the master key that wraps new and rewrapped data keys.
+func (k *Keyring) CurrentVersion() uint32 { return k.current }
+
 func (k *Keyring) NewDataKey() WrappedKey {
 	key := make([]byte, _keySize)
 	_, _ = rand.Read(key)
