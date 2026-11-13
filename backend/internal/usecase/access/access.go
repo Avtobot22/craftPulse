@@ -23,17 +23,19 @@ const (
 	ruleSession rule = iota + 1
 	ruleAreaRead
 	ruleAdministrator
+	ruleUploadManage
 )
 
 // _rules is table 5.3 for the actions served so far; an action missing here is granted to nobody.
 var _rules = map[string]rule{
-	"session.read":      ruleSession,
-	"session.manage":    ruleSession,
-	"org.read":          ruleAreaRead,
-	"org.manage":        ruleAdministrator,
-	"users.manage":      ruleAdministrator,
-	"installation.read": ruleAdministrator,
-	"audit.read":        ruleAdministrator,
+	"session.read":         ruleSession,
+	"session.manage":       ruleSession,
+	"org.read":             ruleAreaRead,
+	"org.manage":           ruleAdministrator,
+	"users.manage":         ruleAdministrator,
+	"installation.read":    ruleAdministrator,
+	"audit.read":           ruleAdministrator,
+	"upload_tokens.manage": ruleUploadManage,
 }
 
 // Profiles is the org module; Profile runs in the caller's organization transaction.
@@ -60,6 +62,15 @@ func New(tx repo.Transactor, p Profiles, a Auditor, c clock.Clock) *UseCase {
 // when it is visible but no role grants the action (TZ 13.4); both are recorded in the audit. On success it
 // returns the scope that read methods of modules take.
 func (u *UseCase) Authorize(ctx context.Context, s entity.Subject, r entity.AccessRequest) (entity.Scope, error) {
+	if !s.UploadTokenID.IsZero() {
+		if r.Action != "ingest.upload" && r.Action != "receipts.read" {
+			return entity.Scope{}, entity.ErrForbidden
+		}
+		if !r.Area.ID.IsZero() && (r.Area.Kind != entity.AreaProject || r.Area.ID != s.ProjectID) {
+			return entity.Scope{}, entity.ErrNotFound
+		}
+		return entity.Scope{Projects: []entity.ID{s.ProjectID}}, nil
+	}
 	p, err := u.profile(ctx, s)
 	if err != nil {
 		return entity.Scope{}, err
@@ -116,6 +127,9 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 	if !visible(p, r.Area) {
 		return ReasonOutsideScope, entity.ErrNotFound
 	}
+	if r.Action == "upload_tokens.manage" && !r.Area.ID.IsZero() && !slices.Contains(p.UploadProjects, r.Area.ID) {
+		return ReasonNoPermission, entity.ErrForbidden
+	}
 	if !granted(p, r.Action) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
@@ -124,6 +138,8 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 
 func granted(p entity.Profile, action string) bool {
 	switch _rules[action] {
+	case ruleUploadManage:
+		return len(p.UploadProjects) > 0
 	case ruleSession:
 		return true
 	case ruleAreaRead:

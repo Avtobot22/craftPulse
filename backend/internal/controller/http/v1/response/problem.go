@@ -20,6 +20,7 @@ type Problem struct {
 }
 
 var (
+	StateConflict        = Problem{http.StatusConflict, "state_conflict", "Resource state conflicts with this operation"}
 	MalformedRequest     = Problem{http.StatusBadRequest, "malformed_request", "Malformed request"}
 	UnknownParameter     = Problem{http.StatusBadRequest, "unknown_parameter", "Unknown query parameter"}
 	AuthRequired         = Problem{http.StatusUnauthorized, "auth_required", "Authentication required"}

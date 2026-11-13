@@ -170,5 +170,35 @@ func (u *UseCase) Profile(ctx context.Context, orgID, userID entity.ID, at time.
 	if p.Areas.Services, err = u.orgs.VisibleAreas(ctx, orgID, entity.AreaService, p.Whole, services); err != nil {
 		return entity.Profile{}, err
 	}
+
+	var uploadTeams, uploadProjects []entity.ID
+	uploadWhole := false
+	for _, r := range roles {
+		if r.Role != entity.RoleAdministrator && r.Role != entity.RoleTechLead {
+			continue
+		}
+		switch {
+		case !r.ProjectID.IsZero():
+			uploadProjects = append(uploadProjects, r.ProjectID)
+		case !r.TeamID.IsZero():
+			uploadTeams = append(uploadTeams, r.TeamID)
+		case r.ServiceID.IsZero():
+			uploadWhole = true
+		}
+	}
+	if len(uploadTeams) > 0 {
+		owned, err := u.orgs.TeamProjectIDs(ctx, orgID, uploadTeams, at)
+		if err != nil {
+			return entity.Profile{}, err
+		}
+		uploadProjects = append(uploadProjects, owned...)
+	}
+	allowed, err := u.orgs.VisibleAreas(ctx, orgID, entity.AreaProject, uploadWhole, uploadProjects)
+	if err != nil {
+		return entity.Profile{}, err
+	}
+	for _, a := range allowed {
+		p.UploadProjects = append(p.UploadProjects, a.ID)
+	}
 	return p, nil
 }

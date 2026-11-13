@@ -17,10 +17,11 @@ const _maxBodyBytes = 25 << 20
 var _strictJSON sync.Once
 
 type Deps struct {
-	Handler *handler.Handler
-	Logins  usecase.Logins
-	Access  usecase.Access
-	Metrics *middleware.Metrics
+	UploadTokens usecase.UploadTokens
+	Handler      *handler.Handler
+	Logins       usecase.Logins
+	Access       usecase.Access
+	Metrics      *middleware.Metrics
 	// SiteOrigin is the only Origin accepted on a changing request with the session cookie.
 	SiteOrigin string
 }
@@ -36,6 +37,7 @@ func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
 		})
 	guard := []gin.HandlerFunc{
 		middleware.Operation(openapi.Operations),
+		middleware.UploadAuthentication(d.UploadTokens),
 		middleware.Authenticate(d.Logins, d.SiteOrigin),
 		middleware.Authorize(d.Access, d.Metrics),
 		middleware.Contract(),

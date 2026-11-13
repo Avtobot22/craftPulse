@@ -26,7 +26,13 @@ type Auditor interface {
 }
 
 // Deps of the module; installation uses only Repo, Keyring and Clock.
+type Authorizer interface {
+	Authorize(context.Context, entity.Subject, entity.AccessRequest) (entity.Scope, error)
+}
+
 type Deps struct {
+	Tokens   repo.UploadTokenRepo
+	Access   Authorizer
 	Repo     repo.AuthRepo
 	Tx       repo.Transactor
 	Provider repo.IdentityProvider

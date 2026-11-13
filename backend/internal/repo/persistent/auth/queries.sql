@@ -62,3 +62,27 @@ WHERE organization_id = sqlc.arg(organization_id) AND user_id = sqlc.arg(user_id
 -- name: RevokeUserAPIKeys :execrows
 UPDATE auth.api_key SET revoked_at = sqlc.arg(at)::timestamptz
 WHERE organization_id = sqlc.arg(organization_id) AND owner_user_id = sqlc.arg(user_id) AND revoked_at IS NULL;
+
+-- name: LockUploadProject :one
+SELECT id FROM org.project WHERE organization_id=$1 AND id=$2 FOR UPDATE;
+
+-- name: InsertUploadToken :one
+INSERT INTO auth.upload_token (organization_id, project_id, token_hash, slot, created_at, created_by)
+SELECT $1, $2, $3, s::smallint, $4, $5 FROM generate_series(1,2) s
+WHERE NOT EXISTS (SELECT 1 FROM auth.upload_token t WHERE t.organization_id=$1 AND t.project_id=$2 AND t.slot=s AND t.revoked_at IS NULL)
+ORDER BY s LIMIT 1
+RETURNING id, organization_id, project_id, slot, created_at, revoked_at;
+
+-- name: FindUploadToken :one
+SELECT id, organization_id, project_id, slot, created_at, revoked_at FROM auth.upload_token WHERE organization_id=$1 AND id=$2;
+
+-- name: FindUploadTokenHash :one
+SELECT id, organization_id, project_id, slot, created_at, revoked_at FROM auth.upload_token WHERE token_hash=$1;
+
+-- name: RevokeUploadToken :execrows
+UPDATE auth.upload_token SET revoked_at=$3 WHERE organization_id=$1 AND id=$2 AND revoked_at IS NULL;
+
+-- name: PageUploadTokens :many
+SELECT id, organization_id, project_id, slot, created_at, revoked_at FROM auth.upload_token
+WHERE organization_id=$1 AND project_id=$2 AND (NOT sqlc.arg(has_cursor)::boolean OR (created_at,id) < (sqlc.arg(after_time)::timestamptz, sqlc.arg(after_id)::uuid))
+ORDER BY created_at DESC, id DESC LIMIT sqlc.arg(page_limit);

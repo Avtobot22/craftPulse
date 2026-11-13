@@ -27,7 +27,7 @@ func NewRouter(log zerolog.Logger, reg prometheus.Registerer, probes health.Prob
 	api.Metrics = middleware.NewMetrics(reg)
 	chain := make([]gin.HandlerFunc, 0, 4)
 	chain = append(chain, middleware.Correlate(log), middleware.Observe(api.Metrics), middleware.Recovery())
-	r.NoRoute(append(chain, func(c *gin.Context) { response.Write(c, response.NotFound) })...)
+	r.NoRoute(append(chain, middleware.UploadAuthentication(api.UploadTokens), func(c *gin.Context) { response.Write(c, response.NotFound) })...)
 
 	root := r.Group("", chain...)
 	v1.RegisterRoutes(root, root.Group("/api/v1"), api)

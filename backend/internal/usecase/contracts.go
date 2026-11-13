@@ -52,3 +52,11 @@ type AuditLog interface {
 type Protocols interface {
 	LatestProtocol(ctx context.Context) (entity.Protocol, error)
 }
+
+type UploadTokens interface {
+	CreateUploadToken(context.Context, entity.Subject, entity.ID) (entity.UploadToken, entity.Secret, error)
+	ListUploadTokens(context.Context, entity.Subject, entity.ID, int, *entity.AuditKey) (entity.UploadTokenPage, error)
+	RevokeUploadToken(context.Context, entity.Subject, entity.ID) error
+	AuthenticateUpload(context.Context, string) (entity.Subject, error)
+	RejectExposedUpload(context.Context, string) error
+}

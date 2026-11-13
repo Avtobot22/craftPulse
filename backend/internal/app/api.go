@@ -30,7 +30,9 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 		Orgs: orgrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Auditor: auditor,
 		Credentials: auth.NewCredentials(sessions), Clock: c, NewID: newID,
 	})
+	decisions := access.New(tx, orgs, auditor, c)
 	logins := auth.New(auth.Deps{
+		Tokens: sessions, Access: decisions,
 		Repo:     sessions,
 		Tx:       tx,
 		Provider: idp,
@@ -40,14 +42,14 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 		Clock:    c,
 		SiteURL:  siteURL,
 	})
-	decisions := access.New(tx, orgs, auditor, c)
 	return v1.Deps{
 		Handler: handler.New(handler.Deps{
-			Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
+			UploadTokens: logins, Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
 			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg,
 		}),
-		Logins:     logins,
-		Access:     decisions,
-		SiteOrigin: siteURL,
+		UploadTokens: logins,
+		Logins:       logins,
+		Access:       decisions,
+		SiteOrigin:   siteURL,
 	}
 }

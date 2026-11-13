@@ -70,6 +70,10 @@ func Authenticate(logins usecase.Logins, siteOrigin string) gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if s, ok := SubjectFrom(c.Request.Context()); ok && !s.UploadTokenID.IsZero() {
+			c.Next()
+			return
+		}
 		token, err := c.Cookie(cookie.Session)
 		if err != nil || token == "" {
 			response.Write(c, response.AuthRequired)
@@ -106,6 +110,11 @@ func Authorize(access usecase.Access, metrics *Metrics) gin.HandlerFunc {
 		s, ok := SubjectFrom(c.Request.Context())
 		if !ok {
 			response.Write(c, response.AuthRequired)
+			return
+		}
+		// Management handlers authorize the project from the query, body or stored token.
+		if action == "upload_tokens.manage" && s.UploadTokenID.IsZero() {
+			c.Next()
 			return
 		}
 		scope, err := access.Authorize(c.Request.Context(), s, entity.AccessRequest{
