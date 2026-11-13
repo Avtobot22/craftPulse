@@ -32,6 +32,7 @@ var (
 	ValidationFailed     = Problem{http.StatusUnprocessableEntity, "validation_failed", "Validation failed"}
 	PreconditionRequired = Problem{http.StatusPreconditionRequired, "precondition_required", "If-Match header is required"}
 	InternalError        = Problem{http.StatusInternalServerError, "internal_error", "Internal server error"}
+	ServiceUnavailable   = Problem{http.StatusServiceUnavailable, "service_unavailable", "Service temporarily unavailable"}
 	NotImplemented       = Problem{http.StatusNotImplemented, "not_implemented", "Operation is not implemented"}
 )
 

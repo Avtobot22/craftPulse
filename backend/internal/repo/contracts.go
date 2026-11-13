@@ -133,14 +133,38 @@ type UploadTokenRepo interface {
 type ConnectRepo interface {
 	EnsureInstance(ctx context.Context, orgID entity.ID, provider entity.Provider, key string) (entity.SourceInstance, error)
 	Instance(ctx context.Context, orgID, id entity.ID) (entity.SourceInstance, error)
+	SetInstanceBaseURL(ctx context.Context, orgID, id entity.ID, baseURL string) error
+	VerifyInstance(ctx context.Context, in entity.SourceInstance) error
 	CreateConnection(ctx context.Context, c entity.Connection) error
 	Connection(ctx context.Context, orgID, id entity.ID) (entity.Connection, error)
+	LockConnection(ctx context.Context, orgID, id entity.ID) (entity.Connection, error)
+	PageConnections(ctx context.Context, orgID entity.ID, f entity.ConnectionFilter) ([]entity.Connection, error)
+	SaveConnection(ctx context.Context, c entity.Connection) error
 	PauseConnection(ctx context.Context, orgID, id entity.ID, until time.Time) error
 	MarkAccessLost(ctx context.Context, orgID, id entity.ID, at time.Time) (bool, error)
 	AddScope(ctx context.Context, orgID, connectionID, instanceID entity.ID, s entity.NewScope, at time.Time) (entity.ID, error)
 	Scopes(ctx context.Context, orgID, connectionID entity.ID) ([]entity.ConnectionScope, error)
+	ScopesOf(ctx context.Context, orgID entity.ID, connectionIDs []entity.ID) (map[entity.ID][]entity.ConnectionScope, error)
+	RemoveScope(ctx context.Context, orgID, scopeID entity.ID, at time.Time) error
+	RemoveScopes(ctx context.Context, orgID, connectionID entity.ID, at time.Time) error
+	SetScopeHistory(ctx context.Context, orgID, scopeID entity.ID, from *time.Time) error
 	SetScopeArea(ctx context.Context, orgID, scopeID, areaID entity.ID) (bool, error)
 	Capabilities(ctx context.Context, orgID, connectionID entity.ID) ([]entity.Capability, error)
+	CapabilitiesOf(ctx context.Context, orgID entity.ID, connectionIDs []entity.ID) (map[entity.ID][]entity.Capability, error)
+	ReplaceCapabilities(ctx context.Context, orgID, connectionID entity.ID, caps []entity.Capability) error
+	RunningProbe(ctx context.Context, orgID, connectionID entity.ID) (entity.Probe, bool, error)
+	CreateProbe(ctx context.Context, orgID, connectionID entity.ID, configurationVersion int, at time.Time) (entity.Probe, error)
+	Probe(ctx context.Context, orgID, connectionID, probeID entity.ID) (entity.Probe, error)
+	LatestProbe(ctx context.Context, orgID, connectionID entity.ID) (entity.Probe, bool, error)
+	StartProbeRun(ctx context.Context, orgID, probeID entity.ID) (bool, error)
+	FinishProbe(ctx context.Context, orgID entity.ID, p entity.Probe) error
+}
+
+// AddressChecker refuses an address an administrator enters before it is saved (TZ 13.7); the same
+// rules hold again on every connection. Errors are entity.ErrOutsideScope.
+type AddressChecker interface {
+	CheckSourceURL(ctx context.Context, raw string) error
+	CheckAdapterURL(ctx context.Context, raw string) error
 }
 
 // AdapterClient is the transport of adapter.yaml for connect; every error is *entity.AdapterError.

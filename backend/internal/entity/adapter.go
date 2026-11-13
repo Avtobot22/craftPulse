@@ -224,3 +224,15 @@ type SourceAccessDecision struct {
 	CheckedAt  time.Time
 	ReasonCode string
 }
+
+// RetryLaterError asks the job to run again at At without spending an attempt (TZ 10.6).
+type RetryLaterError struct {
+	At  time.Time
+	Err error
+}
+
+func (e *RetryLaterError) Error() string {
+	return "retry at " + e.At.Format(time.RFC3339) + ": " + e.Err.Error()
+}
+
+func (e *RetryLaterError) Unwrap() error { return e.Err }

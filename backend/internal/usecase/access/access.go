@@ -35,6 +35,7 @@ var _rules = map[string]rule{
 	"users.manage":         ruleAdministrator,
 	"installation.read":    ruleAdministrator,
 	"audit.read":           ruleAdministrator,
+	"connections.manage":   ruleAdministrator,
 	"upload_tokens.manage": ruleUploadManage,
 }
 

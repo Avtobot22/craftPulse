@@ -39,7 +39,7 @@ const (
 	_providerTimeout = 10 * time.Second
 )
 
-func RunAPI(cfg config.Config, site config.Site, log zerolog.Logger) error {
+func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log zerolog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -61,7 +61,15 @@ func RunAPI(cfg config.Config, site config.Site, log zerolog.Logger) error {
 	reg := newRegistry()
 	probes := databaseProbes(pool)
 	idp := oidc.New(&http.Client{Timeout: _providerTimeout})
-	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg))
+	caller, err := newAdapterCaller(adapters, reg)
+	if err != nil {
+		return err
+	}
+	connections, err := newConnect(pool, keyring, caller, clock.System{})
+	if err != nil {
+		return err
+	}
+	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, connections))
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Msg("api started")
 	return serve(ctx, log, probes.Ready, map[string]http.Handler{
@@ -70,9 +78,18 @@ func RunAPI(cfg config.Config, site config.Site, log zerolog.Logger) error {
 	})
 }
 
-func RunWorker(cfg config.Config, log zerolog.Logger) error {
+func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	keys, err := cfg.MasterKeys.Decode()
+	if err != nil {
+		return fmt.Errorf("app: %w", err)
+	}
+	keyring, err := newKeyring(keys)
+	if err != nil {
+		return fmt.Errorf("app: %w", err)
+	}
 
 	wd := newWatchdog(_watchdogTimeout)
 	pool, err := postgres.New(ctx, cfg.DB.URL, cfg.DB.Password.Value(),
@@ -86,8 +103,16 @@ func RunWorker(cfg config.Config, log zerolog.Logger) error {
 	probes := databaseProbes(pool)
 	probes.Live = wd.Check
 
+	caller, err := newAdapterCaller(adapters, reg)
+	if err != nil {
+		return err
+	}
+	connections, err := newConnect(pool, keyring, caller, clock.System{})
+	if err != nil {
+		return err
+	}
 	workers := river.NewWorkers()
-	kinds := workerctrl.Register(workers)
+	kinds := workerctrl.Register(workers, workerctrl.Deps{Probes: connections})
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Int("job_kinds", kinds).Msg("worker started")
 	g, gctx := errgroup.WithContext(ctx)
@@ -101,7 +126,7 @@ func RunWorker(cfg config.Config, log zerolog.Logger) error {
 		g.Go(func() error {
 			return runJobs(gctx, jobsConfig{
 				log:         log,
-				slog:        logger.Slog(os.Stdout, slog.LevelWarn, "worker", cfg.Secrets()),
+				slog:        logger.Slog(os.Stdout, slog.LevelWarn, "worker", append(cfg.Secrets(), adapters.Secrets()...)),
 				pool:        pool,
 				workers:     workers,
 				ready:       probes.Ready,

@@ -27,6 +27,23 @@ type ConnectConnectionScope struct {
 	RemovedAt         pgtype.Timestamptz
 }
 
+type ConnectProbe struct {
+	OrganizationID       uuid.UUID
+	ID                   uuid.UUID
+	ConnectionID         uuid.UUID
+	ConfigurationVersion int32
+	Status               string
+	StartedAt            time.Time
+	FinishedAt           pgtype.Timestamptz
+	InstanceKey          pgtype.Text
+	Edition              pgtype.Text
+	SourceVersion        pgtype.Text
+	ContractVersion      pgtype.Text
+	AccessMode           pgtype.Text
+	Capabilities         []byte
+	ReasonCode           pgtype.Text
+}
+
 type ConnectSourceInstance struct {
 	OrganizationID uuid.UUID
 	ID             uuid.UUID

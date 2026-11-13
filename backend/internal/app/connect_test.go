@@ -32,6 +32,7 @@ import (
 	testadapter "github.com/Avtobot22/craftPulse/backend/internal/adapter/test"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/adapterapi"
+	connectrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/connect"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/connect"
 	"github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
@@ -92,6 +93,7 @@ func (ca *testCA) serverTLS(t *testing.T, notAfter time.Time, names ...string) (
 // adapterServer serves h over TLS and counts the calls of the contract that reach it.
 type adapterServer struct {
 	*httptest.Server
+	db   adapterDB
 	hits atomic.Int64
 	mu   sync.Mutex
 	auth []string
@@ -126,7 +128,9 @@ func testAdapter(t *testing.T, tlsCfg *tls.Config, scenario testadapter.Config, 
 		Log: zerolog.Nop(), Probes: health.Probes{Ready: &health.Readiness{}}, SpoolDir: t.TempDir(),
 	})
 	require.NoError(t, err)
-	return serveTLSAdapter(t, tlsCfg, h)
+	srv := serveTLSAdapter(t, tlsCfg, h)
+	srv.db = db
+	return srv
 }
 
 type connectEnv struct {
@@ -146,27 +150,52 @@ func newConnectEnv(t *testing.T, cfg adapterapi.Config) *connectEnv {
 		clock: clock.NewManual(time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)), reg: prometheus.NewRegistry(),
 	}
 	cfg.Registerer = e.reg
+	if cfg.Resolver == nil {
+		cfg.Resolver = mapResolver{}
+	}
 	caller, err := adapterapi.NewCaller(cfg)
 	require.NoError(t, err)
-	e.uc = newConnect(e.app, adapterKeyring(t), caller, e.clock)
+	e.uc, err = newConnect(e.app, adapterKeyring(t), caller, e.clock)
+	require.NoError(t, err)
 	return e
 }
 
-// connection creates a draft on the Jira instance; url and key are set for an adapter of a client.
+// connection writes a draft on the Jira instance through the repository: these tests are about the calls,
+// the form is checked by the API tests. url and key are set for an adapter of a client.
 func (e *connectEnv) connection(t *testing.T, org entity.ID, url, key string, scopes ...entity.NewScope) entity.ID {
+	t.Helper()
+	id, err := e.draft(t, org, url, key, scopes...)
+	require.NoError(t, err)
+	return id
+}
+
+func (e *connectEnv) draft(t *testing.T, org entity.ID, url, key string, scopes ...entity.NewScope) (entity.ID, error) {
 	t.Helper()
 	inst, err := e.uc.EnsureInstance(t.Context(), org, entity.ProviderJiraCloud, _jiraInstance)
 	require.NoError(t, err)
-	in := entity.NewConnection{
-		OrganizationID: org, InstanceID: inst.ID, Name: "Jira", AdapterKind: entity.AdapterBuiltin,
-		AccessMode: entity.AccessServiceAccount, CreatedBy: entity.ID(uuid.New()), CreatedAt: e.clock.Now(),
+	c := entity.Connection{
+		ID: entity.ID(uuid.Must(uuid.NewV7())), OrganizationID: org, InstanceID: inst.ID, Name: "Jira", AdapterKind: entity.AdapterBuiltin,
+		ContractVersion: connect.ContractVersions[0], AccessMode: entity.AccessServiceAccount, Status: entity.ConnectionDraft,
+		RowVersion: 1, CreatedBy: entity.ID(uuid.New()), CreatedAt: e.clock.Now(),
 	}
 	if url != "" {
-		in.AdapterKind, in.AdapterURL, in.AdapterKey = entity.AdapterClient, url, entity.Secret(key)
+		blob, version, err := adapterKeyring(t).SealEnvelope([]byte(key), connect.AdapterKeyAAD(org, c.ID))
+		require.NoError(t, err)
+		c.AdapterKind, c.AdapterURL, c.AdapterKeyEnc, c.KeyVersion = entity.AdapterClient, url, blob, version
 	}
-	id, err := e.uc.CreateConnection(t.Context(), in, scopes)
-	require.NoError(t, err)
-	return id
+	r := connectrepo.NewRepo(e.app)
+	err = pg.InOrgTx(t.Context(), e.app, uuid.UUID(org), func(ctx context.Context) error {
+		if err := r.CreateConnection(ctx, c); err != nil {
+			return err
+		}
+		for _, sc := range scopes {
+			if _, err := r.AddScope(ctx, org, c.ID, c.InstanceID, sc, e.clock.Now()); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return c.ID, err
 }
 
 func (e *connectEnv) activate(t *testing.T, id entity.ID) {
@@ -333,13 +362,15 @@ func TestConnect_RateLimitPausesEveryCallOfTheConnection(t *testing.T) {
 				_, err := env.uc.Manifest(ctx, org, id, entity.ManifestInput{SchemaID: "tasks", Scope: fetch.Scope, Limit: 4})
 				return err
 			}(),
-			"credentials": env.uc.PutCredentials(ctx, org, id, collect()),
 		}
 		for name, err := range calls {
 			assert.ErrorIs(t, err, entity.ErrConnectionPaused, "%s at %s", name, at)
 		}
 	}
-	assert.Equal(t, reached, srv.hits.Load(), "no call reaches the adapter during the pause")
+	assert.Equal(t, reached, srv.hits.Load(), "no call that reaches the source reaches the adapter during the pause")
+	require.NoError(t, env.uc.PutCredentials(ctx, org, id, collect()), "credentials stay in the adapter and are replaced during a pause")
+	reached++
+	assert.Equal(t, reached, srv.hits.Load())
 
 	env.clock.Advance(time.Millisecond)
 	_, err = env.uc.Probe(ctx, org, id, _probeIn)
@@ -546,21 +577,18 @@ func TestConnect_OneActiveConnectionCollectsAScope(t *testing.T) {
 	first := env.connection(t, org, "", "", scope)
 	inst, err := env.uc.EnsureInstance(ctx, org, entity.ProviderJiraCloud, _jiraInstance)
 	require.NoError(t, err)
-	second := entity.NewConnection{
-		OrganizationID: org, InstanceID: inst.ID, Name: "Jira 2", AdapterKind: entity.AdapterBuiltin,
-		AccessMode: entity.AccessServiceAccount, CreatedBy: entity.ID(uuid.New()), CreatedAt: env.clock.Now(),
-	}
-	_, err = env.uc.CreateConnection(ctx, second, []entity.NewScope{scope})
+	assert.Equal(t, _jiraInstance, inst.InstanceKey)
+	_, err = env.draft(t, org, "", "", scope)
 	require.ErrorIs(t, err, entity.ErrScopeTaken, "the database refuses the same instance, kind and source ID")
 
 	other := scope
 	other.Kind = entity.ScopeRepository
-	_, err = env.uc.CreateConnection(ctx, second, []entity.NewScope{other})
+	_, err = env.draft(t, org, "", "", other)
 	require.NoError(t, err, "another kind with the same source ID is another scope")
 
 	_, err = env.owner.Exec(ctx, "UPDATE connect.connection_scope SET status = 'removed', removed_at = now() WHERE connection_id = $1", uuid.UUID(first))
 	require.NoError(t, err)
-	_, err = env.uc.CreateConnection(ctx, second, []entity.NewScope{scope})
+	_, err = env.draft(t, org, "", "", scope)
 	require.NoError(t, err, "a removed scope is free for another connection")
 
 	scopes, err := env.uc.Scopes(ctx, org, first)

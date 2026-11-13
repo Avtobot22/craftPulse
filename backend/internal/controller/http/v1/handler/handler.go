@@ -19,6 +19,7 @@ import (
 // Domain handlers are embedded here; the fallback is one level deeper, so their methods win.
 type Handler struct {
 	uploads
+	connections
 	fallback
 	session
 	organization
@@ -37,12 +38,14 @@ type Deps struct {
 	Users        usecase.Users
 	Audit        usecase.AuditLog
 	Protocols    usecase.Protocols
+	Connections  usecase.Connections
 	Registerer   prometheus.Registerer
 }
 
 func New(d Deps) *Handler {
 	return &Handler{
 		uploads:        uploads{tokens: d.UploadTokens},
+		connections:    connections{uc: d.Connections},
 		session:        newSession(d.Logins, d.Access, d.Registerer),
 		organization:   organization{structure: d.Structure},
 		administration: administration{users: d.Users, audit: d.Audit, protocols: d.Protocols},
@@ -86,7 +89,7 @@ func Error(c *gin.Context, err error) {
 	case errors.Is(err, entity.ErrForbidden):
 		response.Write(c, response.Forbidden)
 		return
-	case errors.Is(err, entity.ErrTokenSlotsFull):
+	case errors.Is(err, entity.ErrTokenSlotsFull), errors.Is(err, entity.ErrScopeTaken), errors.Is(err, entity.ErrStateConflict):
 		response.Write(c, response.StateConflict)
 		return
 	case errors.Is(err, entity.ErrVersionConflict):
@@ -98,6 +101,17 @@ func Error(c *gin.Context, err error) {
 	}
 	if verr, ok := errors.AsType[*entity.ValidationError](err); ok {
 		response.WriteDetail(c, response.ValidationFailed, "", verr.Fields)
+		return
+	}
+	// The adapter refused or did not take the call; its detail stays in the log, the class goes out.
+	if ae, ok := errors.AsType[*entity.AdapterError](err); ok {
+		_ = c.Error(err)
+		if ae.Class == entity.CallSource && ae.Code == "invalid_request" {
+			response.WriteDetail(c, response.ValidationFailed, "", []entity.FieldError{{Field: "/credentials", Code: entity.FieldInvalidFormat}})
+			return
+		}
+		c.Header("Retry-After", "30")
+		response.WriteDetail(c, response.ServiceUnavailable, "adapter call failed: "+string(ae.Class)+" "+ae.Code, nil)
 		return
 	}
 	_ = c.Error(err)

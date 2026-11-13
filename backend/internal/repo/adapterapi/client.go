@@ -44,6 +44,8 @@ type Config struct {
 	ClientRoots *x509.CertPool
 	// Policy is the network scope of adapters of clients (TZ 13.7).
 	Policy netguard.Policy
+	// SourcePolicy is the network scope of sources; a source address is checked against it when saved.
+	SourcePolicy netguard.Policy
 	// Timeout bounds a call including its body; zero is CallTimeout.
 	Timeout    time.Duration
 	Registerer prometheus.Registerer
@@ -57,6 +59,9 @@ type Config struct {
 type Caller struct {
 	builtin  map[entity.Provider]builtinAdapter
 	clients  *http.Client
+	policy   netguard.Policy
+	sources  netguard.Policy
+	resolver netguard.Resolver
 	timeout  time.Duration
 	calls    *prometheus.CounterVec
 	notAfter *prometheus.GaugeVec
@@ -101,6 +106,10 @@ func NewCaller(cfg Config) (*Caller, error) {
 			return nil, errors.New("adapterapi: built-in adapters need the internal CA")
 		}
 		c.builtin[provider] = builtinAdapter{url: strings.TrimRight(b.URL, "/"), key: b.Key, http: c.builtinHTTP(provider, cfg.InternalCA, timeout)}
+	}
+	c.policy, c.sources, c.resolver = cfg.Policy, cfg.SourcePolicy, cfg.Resolver
+	if c.resolver == nil {
+		c.resolver = net.DefaultResolver
 	}
 	dialer := &netguard.Dialer{Policy: cfg.Policy, Resolver: cfg.Resolver, Connect: cfg.Connect}
 	c.clients = netguard.NewClient(dialer, netguard.ClientOptions{Timeout: timeout, RootCAs: cfg.ClientRoots})

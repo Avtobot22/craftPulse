@@ -80,6 +80,8 @@ const (
 	FieldNotAllowedValue  = "not_allowed_value"
 	FieldDuplicate        = "duplicate"
 	FieldUnknownReference = "unknown_reference"
+	FieldOutsideScope     = "outside_scope"
+	FieldInvalidFormat    = "invalid_format"
 )
 
 type FieldError struct {

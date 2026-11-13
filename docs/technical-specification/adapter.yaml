@@ -550,7 +550,7 @@ components:
       required: [purpose, secret, user_id, oauth_code, redirect_uri]
       properties:
         purpose: {type: string, enum: [collect, write_bot, webhook_secret, oauth_client, user_token]}
-        secret: {type: [string, 'null'], maxLength: 8192, writeOnly: true, description: 'Токен, пароль или секрет; для `user_token` вместо него можно передать `oauth_code`.'}
+        secret: {type: [string, 'null'], maxLength: 8192, writeOnly: true, description: 'Токен, пароль или секрет; для `user_token` вместо него можно передать `oauth_code`. Для `collect` ядро передаёт JSON-объект полей `credentials` формы подключения, например `{"email":"...","token":"..."}`.'}
         user_id: {type: [string, 'null'], format: uuid, description: 'Пользователь craftPulse для `user_token`.'}
         oauth_code: {type: [string, 'null'], maxLength: 2048, writeOnly: true}
         redirect_uri: {type: [string, 'null'], format: uri}

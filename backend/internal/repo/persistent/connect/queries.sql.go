@@ -13,6 +13,67 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const capabilitiesOf = `-- name: CapabilitiesOf :many
+SELECT connection_id, capability, state, reason_code, checked_at, source_version FROM connect.capability
+WHERE organization_id = $1 AND connection_id = ANY($2::uuid[])
+ORDER BY connection_id, capability
+`
+
+type CapabilitiesOfParams struct {
+	OrganizationID uuid.UUID
+	ConnectionIds  []uuid.UUID
+}
+
+type CapabilitiesOfRow struct {
+	ConnectionID  uuid.UUID
+	Capability    string
+	State         string
+	ReasonCode    pgtype.Text
+	CheckedAt     time.Time
+	SourceVersion pgtype.Text
+}
+
+func (q *Queries) CapabilitiesOf(ctx context.Context, arg CapabilitiesOfParams) ([]CapabilitiesOfRow, error) {
+	rows, err := q.db.Query(ctx, capabilitiesOf, arg.OrganizationID, arg.ConnectionIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CapabilitiesOfRow
+	for rows.Next() {
+		var i CapabilitiesOfRow
+		if err := rows.Scan(
+			&i.ConnectionID,
+			&i.Capability,
+			&i.State,
+			&i.ReasonCode,
+			&i.CheckedAt,
+			&i.SourceVersion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteCapabilities = `-- name: DeleteCapabilities :exec
+DELETE FROM connect.capability WHERE organization_id = $1 AND connection_id = $2
+`
+
+type DeleteCapabilitiesParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+}
+
+func (q *Queries) DeleteCapabilities(ctx context.Context, arg DeleteCapabilitiesParams) error {
+	_, err := q.db.Exec(ctx, deleteCapabilities, arg.OrganizationID, arg.ConnectionID)
+	return err
+}
+
 const findInstanceByKey = `-- name: FindInstanceByKey :one
 SELECT organization_id, id, provider, instance_key, base_url, edition, source_version, verified_at FROM connect.source_instance
 WHERE organization_id = $1 AND provider = $2 AND instance_key = $3
@@ -40,8 +101,47 @@ func (q *Queries) FindInstanceByKey(ctx context.Context, arg FindInstanceByKeyPa
 	return i, err
 }
 
+const finishProbe = `-- name: FinishProbe :exec
+UPDATE connect.probe SET status = $1, finished_at = $2,
+    instance_key = $3, edition = $4, source_version = $5,
+    contract_version = $6, access_mode = $7,
+    capabilities = $8, reason_code = $9
+WHERE organization_id = $10 AND id = $11 AND status IN ('pending', 'running')
+`
+
+type FinishProbeParams struct {
+	Status          string
+	FinishedAt      pgtype.Timestamptz
+	InstanceKey     pgtype.Text
+	Edition         pgtype.Text
+	SourceVersion   pgtype.Text
+	ContractVersion pgtype.Text
+	AccessMode      pgtype.Text
+	Capabilities    []byte
+	ReasonCode      pgtype.Text
+	OrganizationID  uuid.UUID
+	ID              uuid.UUID
+}
+
+func (q *Queries) FinishProbe(ctx context.Context, arg FinishProbeParams) error {
+	_, err := q.db.Exec(ctx, finishProbe,
+		arg.Status,
+		arg.FinishedAt,
+		arg.InstanceKey,
+		arg.Edition,
+		arg.SourceVersion,
+		arg.ContractVersion,
+		arg.AccessMode,
+		arg.Capabilities,
+		arg.ReasonCode,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
+}
+
 const getConnection = `-- name: GetConnection :one
-SELECT c.organization_id, c.id, c.instance_id, c.name, c.adapter_kind, c.adapter_url, c.adapter_key_enc, c.key_version, c.contract_version, c.access_mode, c.status, c.paused_until, c.access_lost_at, c.row_version, c.activated_probe_id, c.activated_row_version, c.created_by, c.created_at, c.deleted_at, i.provider
+SELECT c.organization_id, c.id, c.instance_id, c.name, c.adapter_kind, c.adapter_url, c.adapter_key_enc, c.key_version, c.contract_version, c.access_mode, c.status, c.paused_until, c.access_lost_at, c.row_version, c.activated_probe_id, c.activated_row_version, c.created_by, c.created_at, c.deleted_at, c.credentials_set_at, c.sync_paused, i.provider
 FROM connect.connection c
 JOIN connect.source_instance i ON i.organization_id = c.organization_id AND i.id = c.instance_id
 WHERE c.organization_id = $1 AND c.id = $2
@@ -72,6 +172,8 @@ type GetConnectionRow struct {
 	CreatedBy           uuid.UUID
 	CreatedAt           time.Time
 	DeletedAt           pgtype.Timestamptz
+	CredentialsSetAt    pgtype.Timestamptz
+	SyncPaused          bool
 	Provider            string
 }
 
@@ -98,6 +200,8 @@ func (q *Queries) GetConnection(ctx context.Context, arg GetConnectionParams) (G
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.CredentialsSetAt,
+		&i.SyncPaused,
 		&i.Provider,
 	)
 	return i, err
@@ -128,25 +232,86 @@ func (q *Queries) GetInstance(ctx context.Context, arg GetInstanceParams) (Conne
 	return i, err
 }
 
+const getProbe = `-- name: GetProbe :one
+SELECT organization_id, id, connection_id, configuration_version, status, started_at, finished_at, instance_key, edition, source_version, contract_version, access_mode, capabilities, reason_code FROM connect.probe WHERE organization_id = $1 AND connection_id = $2 AND id = $3
+`
+
+type GetProbeParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) GetProbe(ctx context.Context, arg GetProbeParams) (ConnectProbe, error) {
+	row := q.db.QueryRow(ctx, getProbe, arg.OrganizationID, arg.ConnectionID, arg.ID)
+	var i ConnectProbe
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.ConnectionID,
+		&i.ConfigurationVersion,
+		&i.Status,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.InstanceKey,
+		&i.Edition,
+		&i.SourceVersion,
+		&i.ContractVersion,
+		&i.AccessMode,
+		&i.Capabilities,
+		&i.ReasonCode,
+	)
+	return i, err
+}
+
+const insertCapability = `-- name: InsertCapability :exec
+INSERT INTO connect.capability (organization_id, connection_id, capability, state, reason_code, checked_at, source_version)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`
+
+type InsertCapabilityParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	Capability     string
+	State          string
+	ReasonCode     pgtype.Text
+	CheckedAt      time.Time
+	SourceVersion  pgtype.Text
+}
+
+func (q *Queries) InsertCapability(ctx context.Context, arg InsertCapabilityParams) error {
+	_, err := q.db.Exec(ctx, insertCapability,
+		arg.OrganizationID,
+		arg.ConnectionID,
+		arg.Capability,
+		arg.State,
+		arg.ReasonCode,
+		arg.CheckedAt,
+		arg.SourceVersion,
+	)
+	return err
+}
+
 const insertConnection = `-- name: InsertConnection :exec
 INSERT INTO connect.connection (organization_id, id, instance_id, name, adapter_kind, adapter_url, adapter_key_enc,
-    key_version, contract_version, access_mode, status, row_version, created_by, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft', 1, $11, $12)
+    key_version, contract_version, access_mode, status, row_version, credentials_set_at, sync_paused, created_by, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft', 1, $11, false, $12, $13)
 `
 
 type InsertConnectionParams struct {
-	OrganizationID  uuid.UUID
-	ID              uuid.UUID
-	InstanceID      uuid.UUID
-	Name            string
-	AdapterKind     string
-	AdapterUrl      pgtype.Text
-	AdapterKeyEnc   []byte
-	KeyVersion      pgtype.Int4
-	ContractVersion string
-	AccessMode      string
-	CreatedBy       uuid.UUID
-	CreatedAt       time.Time
+	OrganizationID   uuid.UUID
+	ID               uuid.UUID
+	InstanceID       uuid.UUID
+	Name             string
+	AdapterKind      string
+	AdapterUrl       pgtype.Text
+	AdapterKeyEnc    []byte
+	KeyVersion       pgtype.Int4
+	ContractVersion  string
+	AccessMode       string
+	CredentialsSetAt pgtype.Timestamptz
+	CreatedBy        uuid.UUID
+	CreatedAt        time.Time
 }
 
 func (q *Queries) InsertConnection(ctx context.Context, arg InsertConnectionParams) error {
@@ -161,6 +326,7 @@ func (q *Queries) InsertConnection(ctx context.Context, arg InsertConnectionPara
 		arg.KeyVersion,
 		arg.ContractVersion,
 		arg.AccessMode,
+		arg.CredentialsSetAt,
 		arg.CreatedBy,
 		arg.CreatedAt,
 	)
@@ -182,6 +348,46 @@ type InsertInstanceParams struct {
 func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) error {
 	_, err := q.db.Exec(ctx, insertInstance, arg.OrganizationID, arg.Provider, arg.InstanceKey)
 	return err
+}
+
+const insertProbe = `-- name: InsertProbe :one
+INSERT INTO connect.probe (organization_id, connection_id, configuration_version, status, started_at, capabilities)
+VALUES ($1, $2, $3, 'pending', $4, '[]')
+RETURNING organization_id, id, connection_id, configuration_version, status, started_at, finished_at, instance_key, edition, source_version, contract_version, access_mode, capabilities, reason_code
+`
+
+type InsertProbeParams struct {
+	OrganizationID       uuid.UUID
+	ConnectionID         uuid.UUID
+	ConfigurationVersion int32
+	StartedAt            time.Time
+}
+
+func (q *Queries) InsertProbe(ctx context.Context, arg InsertProbeParams) (ConnectProbe, error) {
+	row := q.db.QueryRow(ctx, insertProbe,
+		arg.OrganizationID,
+		arg.ConnectionID,
+		arg.ConfigurationVersion,
+		arg.StartedAt,
+	)
+	var i ConnectProbe
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.ConnectionID,
+		&i.ConfigurationVersion,
+		&i.Status,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.InstanceKey,
+		&i.Edition,
+		&i.SourceVersion,
+		&i.ContractVersion,
+		&i.AccessMode,
+		&i.Capabilities,
+		&i.ReasonCode,
+	)
+	return i, err
 }
 
 const insertScope = `-- name: InsertScope :one
@@ -218,6 +424,39 @@ func (q *Queries) InsertScope(ctx context.Context, arg InsertScopeParams) (uuid.
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const latestProbe = `-- name: LatestProbe :one
+SELECT organization_id, id, connection_id, configuration_version, status, started_at, finished_at, instance_key, edition, source_version, contract_version, access_mode, capabilities, reason_code FROM connect.probe WHERE organization_id = $1 AND connection_id = $2
+ORDER BY started_at DESC, id DESC
+LIMIT 1
+`
+
+type LatestProbeParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+}
+
+func (q *Queries) LatestProbe(ctx context.Context, arg LatestProbeParams) (ConnectProbe, error) {
+	row := q.db.QueryRow(ctx, latestProbe, arg.OrganizationID, arg.ConnectionID)
+	var i ConnectProbe
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.ConnectionID,
+		&i.ConfigurationVersion,
+		&i.Status,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.InstanceKey,
+		&i.Edition,
+		&i.SourceVersion,
+		&i.ContractVersion,
+		&i.AccessMode,
+		&i.Capabilities,
+		&i.ReasonCode,
+	)
+	return i, err
 }
 
 const listCapabilities = `-- name: ListCapabilities :many
@@ -310,6 +549,74 @@ func (q *Queries) ListScopes(ctx context.Context, arg ListScopesParams) ([]Conne
 	return items, nil
 }
 
+const lockConnection = `-- name: LockConnection :one
+SELECT c.organization_id, c.id, c.instance_id, c.name, c.adapter_kind, c.adapter_url, c.adapter_key_enc, c.key_version, c.contract_version, c.access_mode, c.status, c.paused_until, c.access_lost_at, c.row_version, c.activated_probe_id, c.activated_row_version, c.created_by, c.created_at, c.deleted_at, c.credentials_set_at, c.sync_paused, i.provider
+FROM connect.connection c
+JOIN connect.source_instance i ON i.organization_id = c.organization_id AND i.id = c.instance_id
+WHERE c.organization_id = $1 AND c.id = $2
+FOR UPDATE OF c
+`
+
+type LockConnectionParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type LockConnectionRow struct {
+	OrganizationID      uuid.UUID
+	ID                  uuid.UUID
+	InstanceID          uuid.UUID
+	Name                string
+	AdapterKind         string
+	AdapterUrl          pgtype.Text
+	AdapterKeyEnc       []byte
+	KeyVersion          pgtype.Int4
+	ContractVersion     string
+	AccessMode          string
+	Status              string
+	PausedUntil         pgtype.Timestamptz
+	AccessLostAt        pgtype.Timestamptz
+	RowVersion          int32
+	ActivatedProbeID    uuid.NullUUID
+	ActivatedRowVersion pgtype.Int4
+	CreatedBy           uuid.UUID
+	CreatedAt           time.Time
+	DeletedAt           pgtype.Timestamptz
+	CredentialsSetAt    pgtype.Timestamptz
+	SyncPaused          bool
+	Provider            string
+}
+
+func (q *Queries) LockConnection(ctx context.Context, arg LockConnectionParams) (LockConnectionRow, error) {
+	row := q.db.QueryRow(ctx, lockConnection, arg.OrganizationID, arg.ID)
+	var i LockConnectionRow
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.InstanceID,
+		&i.Name,
+		&i.AdapterKind,
+		&i.AdapterUrl,
+		&i.AdapterKeyEnc,
+		&i.KeyVersion,
+		&i.ContractVersion,
+		&i.AccessMode,
+		&i.Status,
+		&i.PausedUntil,
+		&i.AccessLostAt,
+		&i.RowVersion,
+		&i.ActivatedProbeID,
+		&i.ActivatedRowVersion,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.CredentialsSetAt,
+		&i.SyncPaused,
+		&i.Provider,
+	)
+	return i, err
+}
+
 const markAccessLost = `-- name: MarkAccessLost :execrows
 UPDATE connect.connection SET status = 'access_lost', access_lost_at = $1
 WHERE organization_id = $2 AND id = $3 AND status = 'active'
@@ -329,6 +636,101 @@ func (q *Queries) MarkAccessLost(ctx context.Context, arg MarkAccessLostParams) 
 	return result.RowsAffected(), nil
 }
 
+const pageConnections = `-- name: PageConnections :many
+SELECT c.organization_id, c.id, c.instance_id, c.name, c.adapter_kind, c.adapter_url, c.adapter_key_enc, c.key_version, c.contract_version, c.access_mode, c.status, c.paused_until, c.access_lost_at, c.row_version, c.activated_probe_id, c.activated_row_version, c.created_by, c.created_at, c.deleted_at, c.credentials_set_at, c.sync_paused, i.provider
+FROM connect.connection c
+JOIN connect.source_instance i ON i.organization_id = c.organization_id AND i.id = c.instance_id
+WHERE c.organization_id = $1
+    AND ($2::text = '' OR c.status = $2::text)
+    AND (NOT $3::bool OR (c.created_at, c.id) < ($4::timestamptz, $5::uuid))
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $6
+`
+
+type PageConnectionsParams struct {
+	OrganizationID uuid.UUID
+	Status         string
+	HasCursor      bool
+	AfterTime      time.Time
+	AfterID        uuid.UUID
+	PageLimit      int32
+}
+
+type PageConnectionsRow struct {
+	OrganizationID      uuid.UUID
+	ID                  uuid.UUID
+	InstanceID          uuid.UUID
+	Name                string
+	AdapterKind         string
+	AdapterUrl          pgtype.Text
+	AdapterKeyEnc       []byte
+	KeyVersion          pgtype.Int4
+	ContractVersion     string
+	AccessMode          string
+	Status              string
+	PausedUntil         pgtype.Timestamptz
+	AccessLostAt        pgtype.Timestamptz
+	RowVersion          int32
+	ActivatedProbeID    uuid.NullUUID
+	ActivatedRowVersion pgtype.Int4
+	CreatedBy           uuid.UUID
+	CreatedAt           time.Time
+	DeletedAt           pgtype.Timestamptz
+	CredentialsSetAt    pgtype.Timestamptz
+	SyncPaused          bool
+	Provider            string
+}
+
+func (q *Queries) PageConnections(ctx context.Context, arg PageConnectionsParams) ([]PageConnectionsRow, error) {
+	rows, err := q.db.Query(ctx, pageConnections,
+		arg.OrganizationID,
+		arg.Status,
+		arg.HasCursor,
+		arg.AfterTime,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageConnectionsRow
+	for rows.Next() {
+		var i PageConnectionsRow
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.InstanceID,
+			&i.Name,
+			&i.AdapterKind,
+			&i.AdapterUrl,
+			&i.AdapterKeyEnc,
+			&i.KeyVersion,
+			&i.ContractVersion,
+			&i.AccessMode,
+			&i.Status,
+			&i.PausedUntil,
+			&i.AccessLostAt,
+			&i.RowVersion,
+			&i.ActivatedProbeID,
+			&i.ActivatedRowVersion,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.DeletedAt,
+			&i.CredentialsSetAt,
+			&i.SyncPaused,
+			&i.Provider,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pauseConnection = `-- name: PauseConnection :exec
 UPDATE connect.connection SET paused_until = GREATEST(paused_until, $1::timestamptz)
 WHERE organization_id = $2 AND id = $3
@@ -342,6 +744,186 @@ type PauseConnectionParams struct {
 
 func (q *Queries) PauseConnection(ctx context.Context, arg PauseConnectionParams) error {
 	_, err := q.db.Exec(ctx, pauseConnection, arg.Until, arg.OrganizationID, arg.ID)
+	return err
+}
+
+const removeConnectionScopes = `-- name: RemoveConnectionScopes :exec
+UPDATE connect.connection_scope SET status = 'removed', removed_at = $1
+WHERE organization_id = $2 AND connection_id = $3 AND status = 'active'
+`
+
+type RemoveConnectionScopesParams struct {
+	At             pgtype.Timestamptz
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+}
+
+func (q *Queries) RemoveConnectionScopes(ctx context.Context, arg RemoveConnectionScopesParams) error {
+	_, err := q.db.Exec(ctx, removeConnectionScopes, arg.At, arg.OrganizationID, arg.ConnectionID)
+	return err
+}
+
+const removeScope = `-- name: RemoveScope :exec
+UPDATE connect.connection_scope SET status = 'removed', removed_at = $1
+WHERE organization_id = $2 AND id = $3 AND status = 'active'
+`
+
+type RemoveScopeParams struct {
+	At             pgtype.Timestamptz
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) RemoveScope(ctx context.Context, arg RemoveScopeParams) error {
+	_, err := q.db.Exec(ctx, removeScope, arg.At, arg.OrganizationID, arg.ID)
+	return err
+}
+
+const runningProbe = `-- name: RunningProbe :one
+SELECT organization_id, id, connection_id, configuration_version, status, started_at, finished_at, instance_key, edition, source_version, contract_version, access_mode, capabilities, reason_code FROM connect.probe
+WHERE organization_id = $1 AND connection_id = $2 AND status IN ('pending', 'running')
+`
+
+type RunningProbeParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+}
+
+func (q *Queries) RunningProbe(ctx context.Context, arg RunningProbeParams) (ConnectProbe, error) {
+	row := q.db.QueryRow(ctx, runningProbe, arg.OrganizationID, arg.ConnectionID)
+	var i ConnectProbe
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.ConnectionID,
+		&i.ConfigurationVersion,
+		&i.Status,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.InstanceKey,
+		&i.Edition,
+		&i.SourceVersion,
+		&i.ContractVersion,
+		&i.AccessMode,
+		&i.Capabilities,
+		&i.ReasonCode,
+	)
+	return i, err
+}
+
+const saveConnection = `-- name: SaveConnection :exec
+UPDATE connect.connection SET
+    instance_id = $1, name = $2, adapter_url = $3,
+    adapter_key_enc = $4, key_version = $5,
+    contract_version = $6, access_mode = $7, status = $8,
+    access_lost_at = $9, credentials_set_at = $10,
+    sync_paused = $11, row_version = $12,
+    activated_probe_id = $13, activated_row_version = $14,
+    deleted_at = $15
+WHERE organization_id = $16 AND id = $17
+`
+
+type SaveConnectionParams struct {
+	InstanceID          uuid.UUID
+	Name                string
+	AdapterUrl          pgtype.Text
+	AdapterKeyEnc       []byte
+	KeyVersion          pgtype.Int4
+	ContractVersion     string
+	AccessMode          string
+	Status              string
+	AccessLostAt        pgtype.Timestamptz
+	CredentialsSetAt    pgtype.Timestamptz
+	SyncPaused          bool
+	RowVersion          int32
+	ActivatedProbeID    uuid.NullUUID
+	ActivatedRowVersion pgtype.Int4
+	DeletedAt           pgtype.Timestamptz
+	OrganizationID      uuid.UUID
+	ID                  uuid.UUID
+}
+
+func (q *Queries) SaveConnection(ctx context.Context, arg SaveConnectionParams) error {
+	_, err := q.db.Exec(ctx, saveConnection,
+		arg.InstanceID,
+		arg.Name,
+		arg.AdapterUrl,
+		arg.AdapterKeyEnc,
+		arg.KeyVersion,
+		arg.ContractVersion,
+		arg.AccessMode,
+		arg.Status,
+		arg.AccessLostAt,
+		arg.CredentialsSetAt,
+		arg.SyncPaused,
+		arg.RowVersion,
+		arg.ActivatedProbeID,
+		arg.ActivatedRowVersion,
+		arg.DeletedAt,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
+}
+
+const scopesOf = `-- name: ScopesOf :many
+SELECT organization_id, id, connection_id, instance_id, scope_kind, native_scope_id, display_name, history_from, repository_scope_id, area_id, status, added_at, removed_at FROM connect.connection_scope
+WHERE organization_id = $1 AND connection_id = ANY($2::uuid[])
+ORDER BY connection_id, added_at, id
+`
+
+type ScopesOfParams struct {
+	OrganizationID uuid.UUID
+	ConnectionIds  []uuid.UUID
+}
+
+func (q *Queries) ScopesOf(ctx context.Context, arg ScopesOfParams) ([]ConnectConnectionScope, error) {
+	rows, err := q.db.Query(ctx, scopesOf, arg.OrganizationID, arg.ConnectionIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ConnectConnectionScope
+	for rows.Next() {
+		var i ConnectConnectionScope
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.ConnectionID,
+			&i.InstanceID,
+			&i.ScopeKind,
+			&i.NativeScopeID,
+			&i.DisplayName,
+			&i.HistoryFrom,
+			&i.RepositoryScopeID,
+			&i.AreaID,
+			&i.Status,
+			&i.AddedAt,
+			&i.RemovedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setInstanceBaseURL = `-- name: SetInstanceBaseURL :exec
+UPDATE connect.source_instance SET base_url = $1
+WHERE organization_id = $2 AND id = $3 AND base_url IS NULL
+`
+
+type SetInstanceBaseURLParams struct {
+	BaseUrl        pgtype.Text
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) SetInstanceBaseURL(ctx context.Context, arg SetInstanceBaseURLParams) error {
+	_, err := q.db.Exec(ctx, setInstanceBaseURL, arg.BaseUrl, arg.OrganizationID, arg.ID)
 	return err
 }
 
@@ -363,4 +945,65 @@ func (q *Queries) SetScopeArea(ctx context.Context, arg SetScopeAreaParams) (int
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const setScopeHistory = `-- name: SetScopeHistory :exec
+UPDATE connect.connection_scope SET history_from = $1
+WHERE organization_id = $2 AND id = $3
+`
+
+type SetScopeHistoryParams struct {
+	HistoryFrom    pgtype.Timestamptz
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) SetScopeHistory(ctx context.Context, arg SetScopeHistoryParams) error {
+	_, err := q.db.Exec(ctx, setScopeHistory, arg.HistoryFrom, arg.OrganizationID, arg.ID)
+	return err
+}
+
+const startProbeRun = `-- name: StartProbeRun :execrows
+UPDATE connect.probe SET status = 'running'
+WHERE organization_id = $1 AND id = $2 AND status IN ('pending', 'running')
+`
+
+type StartProbeRunParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) StartProbeRun(ctx context.Context, arg StartProbeRunParams) (int64, error) {
+	result, err := q.db.Exec(ctx, startProbeRun, arg.OrganizationID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const verifyInstance = `-- name: VerifyInstance :exec
+UPDATE connect.source_instance SET base_url = $1, edition = $2,
+    source_version = $3, verified_at = $4
+WHERE organization_id = $5 AND id = $6
+`
+
+type VerifyInstanceParams struct {
+	BaseUrl        pgtype.Text
+	Edition        pgtype.Text
+	SourceVersion  pgtype.Text
+	VerifiedAt     pgtype.Timestamptz
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) VerifyInstance(ctx context.Context, arg VerifyInstanceParams) error {
+	_, err := q.db.Exec(ctx, verifyInstance,
+		arg.BaseUrl,
+		arg.Edition,
+		arg.SourceVersion,
+		arg.VerifiedAt,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
 }

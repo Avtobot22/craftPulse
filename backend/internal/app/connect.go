@@ -5,17 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/Avtobot22/craftPulse/backend/config"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
-	"github.com/Avtobot22/craftPulse/backend/internal/repo"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/adapterapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	auditrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit"
 	connectrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/connect"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/connect"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
@@ -27,11 +30,15 @@ import (
 // through the system roots plus the CA given at installation.
 func newAdapterCaller(cfg config.Adapters, reg prometheus.Registerer) (*adapterapi.Caller, error) {
 	c := adapterapi.Config{
-		Builtin:    make(map[entity.Provider]adapterapi.Builtin, len(cfg.Builtin)),
-		Policy:     netguard.Policy{Installation: cfg.InstallationNetworks, Private: cfg.ClientPrivateNetworks},
-		Registerer: reg,
+		Builtin:      make(map[entity.Provider]adapterapi.Builtin, len(cfg.Builtin)),
+		Policy:       netguard.Policy{Installation: cfg.InstallationNetworks, Private: cfg.ClientPrivateNetworks},
+		SourcePolicy: netguard.Policy{Installation: cfg.InstallationNetworks, Private: cfg.SourcePrivateNetworks},
+		Registerer:   reg,
 	}
 	for provider, url := range cfg.Builtin {
+		if !slices.ContainsFunc(connect.Catalog(), func(a entity.AdapterInfo) bool { return string(a.Provider) == provider }) {
+			return nil, fmt.Errorf("app: built-in adapter %s has no catalog entry", provider)
+		}
 		c.Builtin[entity.Provider(provider)] = adapterapi.Builtin{URL: url, Key: entity.Secret(cfg.ServiceKeys[provider].Value())}
 	}
 	if cfg.InternalCAFile != "" {
@@ -65,10 +72,15 @@ func appendPEM(pool *x509.CertPool, path string) error {
 	return nil
 }
 
-func newConnect(pool *pgxpool.Pool, keyring *crypto.Keyring, adapters repo.AdapterClient, c clock.Clock) *connect.UseCase {
+// newConnect inserts its jobs with a client of its own: api only inserts, worker also takes them.
+func newConnect(pool *pgxpool.Pool, keyring *crypto.Keyring, adapters *adapterapi.Caller, c clock.Clock) (*connect.UseCase, error) {
+	jobs, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("app: river insert client: %w", err)
+	}
 	tx := persistent.NewTransactor(pool)
 	return connect.New(connect.Deps{
-		Repo: connectrepo.NewRepo(pool), Adapters: adapters, Tx: tx, Keyring: keyring,
-		Auditor: audit.New(auditrepo.NewRepo(pool), tx, c), Clock: c, NewID: newID,
-	})
+		Repo: connectrepo.NewRepo(pool), Adapters: adapters, Addresses: adapters, Queue: queue.New(jobs), Tx: tx, Keyring: keyring,
+		Auditor: audit.New(auditrepo.NewRepo(pool), tx, c), Clock: c, NewID: newID, Builtin: adapters.Builtin,
+	}), nil
 }

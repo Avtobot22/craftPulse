@@ -709,7 +709,7 @@ type CredentialsInput struct {
 	Purpose     CredentialsInputPurpose `json:"purpose"`
 	RedirectUri *string                 `json:"redirect_uri"`
 
-	// Secret Токен, пароль или секрет; для `user_token` вместо него можно передать `oauth_code`.
+	// Secret Токен, пароль или секрет; для `user_token` вместо него можно передать `oauth_code`. Для `collect` ядро передаёт JSON-объект полей `credentials` формы подключения, например `{"email":"...","token":"..."}`.
 	Secret *string `json:"secret,omitempty"`
 
 	// UserId Пользователь craftPulse для `user_token`.

@@ -5,7 +5,13 @@ import (
 	"time"
 )
 
-var ErrScopeTaken = errors.New("connect: the scope is collected by another active connection")
+var (
+	ErrScopeTaken = errors.New("connect: the scope is collected by another active connection")
+	// ErrOutsideScope is an address the installation must not reach (TZ 13.7).
+	ErrOutsideScope = errors.New("connect: the address is outside the network scope of the installation")
+	// ErrStateConflict is a change the current state of the connection or of its probe does not allow.
+	ErrStateConflict = errors.New("connect: the state of the connection does not allow this change")
+)
 
 type Provider string
 
@@ -91,25 +97,109 @@ type Connection struct {
 	Status          ConnectionStatus
 	PausedUntil     *time.Time
 	AccessLostAt    *time.Time
-	RowVersion      int
-	CreatedBy       ID
-	CreatedAt       time.Time
-	DeletedAt       *time.Time
+	// CredentialsSetAt is when the adapter last accepted credentials; their value never reaches the core.
+	CredentialsSetAt    *time.Time
+	SyncPaused          bool
+	RowVersion          int
+	ActivatedProbeID    *ID
+	ActivatedRowVersion int
+	CreatedBy           ID
+	CreatedAt           time.Time
+	DeletedAt           *time.Time
 }
 
-// NewConnection is a draft; AdapterKey is the plain service key of an adapter of a client.
-type NewConnection struct {
-	ID              ID
-	OrganizationID  ID
-	InstanceID      ID
-	Name            string
-	AdapterKind     AdapterKind
-	AdapterURL      string
-	AdapterKey      Secret
-	ContractVersion string
-	AccessMode      AccessMode
-	CreatedBy       ID
-	CreatedAt       time.Time
+// ConnectionInput creates a draft; AdapterKey is the plain service key of an adapter of a client.
+type ConnectionInput struct {
+	OrganizationID ID
+	CreatedBy      ID
+	Name           string
+	Provider       Provider
+	BaseURL        string
+	AdapterKind    AdapterKind
+	AdapterURL     string
+	AdapterKey     Secret
+	Credentials    map[string]Secret
+	Scopes         []NewScope
+}
+
+// ConnectionPatch is a JSON Merge Patch; a nil field is left as it is.
+type ConnectionPatch struct {
+	Name        *string
+	BaseURL     *string
+	AdapterURL  *string
+	AdapterKey  *Secret
+	Credentials map[string]Secret
+	Scopes      *[]NewScope
+	SyncPaused  *bool
+}
+
+type ConnectionFilter struct {
+	Status ConnectionStatus
+	Limit  int
+	After  *AuditKey
+}
+
+type ConnectionPage struct {
+	Items []ConnectionState
+	Next  *AuditKey
+}
+
+type ProbeStatus string
+
+const (
+	ProbePending   ProbeStatus = "pending"
+	ProbeRunning   ProbeStatus = "running"
+	ProbeSucceeded ProbeStatus = "succeeded"
+	ProbeFailed    ProbeStatus = "failed"
+)
+
+// Reasons of a failed probe (ConnectionProbe.reason_code).
+const (
+	ProbeEditionMismatch      = "edition_mismatch"
+	ProbeAuthFailed           = "auth_failed"
+	ProbeOutsideNetworkScope  = "outside_network_scope"
+	ProbeCertificateUntrusted = "certificate_untrusted"
+	ProbeTimeout              = "timeout"
+	ProbeAdapterUnavailable   = "adapter_unavailable"
+	ProbeContractUnsupported  = "contract_unsupported"
+	ProbeConfigurationChanged = "configuration_changed"
+)
+
+// Probe is a probe of a connection kept until it is activated or expires (TZ 12.5.3).
+type Probe struct {
+	ID                   ID
+	ConnectionID         ID
+	ConfigurationVersion int
+	Status               ProbeStatus
+	StartedAt            time.Time
+	FinishedAt           *time.Time
+	InstanceKey          string
+	Edition              string
+	SourceVersion        string
+	ContractVersion      string
+	AccessMode           AccessMode
+	Capabilities         []Capability
+	ReasonCode           string
+}
+
+func (p Probe) Running() bool { return p.Status == ProbePending || p.Status == ProbeRunning }
+
+// AdapterInfo describes a built-in adapter for the connection form (listAdapters).
+type AdapterInfo struct {
+	Provider         Provider
+	DisplayName      string
+	Editions         []string
+	ContractVersions []string
+	DataKinds        []string
+	ScopeKinds       []ScopeKind
+	CredentialFields []CredentialField
+}
+
+type CredentialField struct {
+	Name     string
+	Label    string
+	Required bool
+	Secret   bool
 }
 
 type ConnectionScope struct {
@@ -135,6 +225,15 @@ type NewScope struct {
 	HistoryFrom       *time.Time
 	RepositoryScopeID *ID
 }
+
+// Capabilities are every capability a connection may have (connect.capability).
+var Capabilities = []string{
+	"read_current", "read_status_history", "read_field_history", "read_resolution_history", "read_sprint_history",
+	"read_links", "read_permissions", "read_deletions", "write_mr_comment", "write_tracker_issue", "webhook",
+}
+
+// CapabilityNotChecked is the reason of a capability the adapter did not report: it is not working.
+const CapabilityNotChecked = "not_checked"
 
 // Capability is a capability of a connection checked by Probe (FR-014).
 type Capability struct {

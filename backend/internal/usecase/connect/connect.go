@@ -37,13 +37,17 @@ type Auditor interface {
 }
 
 type Deps struct {
-	Repo     repo.ConnectRepo
-	Adapters repo.AdapterClient
-	Tx       repo.Transactor
-	Keyring  Keyring
-	Auditor  Auditor
-	Clock    clock.Clock
-	NewID    func() (entity.ID, error)
+	Repo      repo.ConnectRepo
+	Adapters  repo.AdapterClient
+	Addresses repo.AddressChecker
+	Queue     repo.JobQueue
+	Tx        repo.Transactor
+	Keyring   Keyring
+	Auditor   Auditor
+	Clock     clock.Clock
+	NewID     func() (entity.ID, error)
+	// Builtin reports whether the installation runs a built-in adapter of the provider.
+	Builtin func(entity.Provider) bool
 }
 
 type UseCase struct {
@@ -70,58 +74,6 @@ func (u *UseCase) EnsureInstance(ctx context.Context, orgID entity.ID, provider 
 		return err
 	})
 	return out, err
-}
-
-// CreateConnection stores a draft with its scopes; a scope another active connection of the instance
-// collects is refused with ErrScopeTaken by the database.
-func (u *UseCase) CreateConnection(ctx context.Context, in entity.NewConnection, scopes []entity.NewScope) (entity.ID, error) {
-	if in.ID.IsZero() {
-		id, err := u.d.NewID()
-		if err != nil {
-			return entity.ID{}, err
-		}
-		in.ID = id
-	}
-	c := entity.Connection{
-		ID: in.ID, OrganizationID: in.OrganizationID, InstanceID: in.InstanceID, Name: in.Name, AdapterKind: in.AdapterKind,
-		ContractVersion: in.ContractVersion, AccessMode: in.AccessMode, Status: entity.ConnectionDraft, RowVersion: 1,
-		CreatedBy: in.CreatedBy, CreatedAt: in.CreatedAt,
-	}
-	if c.ContractVersion == "" {
-		c.ContractVersion = ContractVersions[0]
-	}
-	switch in.AdapterKind {
-	case entity.AdapterClient:
-		if !strings.HasPrefix(in.AdapterURL, "https://") || in.AdapterKey == "" {
-			return entity.ID{}, errors.New("connect: an adapter of a client needs an https address and a key")
-		}
-		blob, version, err := u.d.Keyring.SealEnvelope([]byte(in.AdapterKey.Value()), AdapterKeyAAD(in.OrganizationID, in.ID))
-		if err != nil {
-			return entity.ID{}, fmt.Errorf("connect: seal adapter key: %w", err)
-		}
-		c.AdapterURL, c.AdapterKeyEnc, c.KeyVersion = in.AdapterURL, blob, version
-	case entity.AdapterBuiltin:
-		if in.AdapterURL != "" || in.AdapterKey != "" {
-			return entity.ID{}, errors.New("connect: a built-in adapter takes its address and key from the installation")
-		}
-	default:
-		return entity.ID{}, fmt.Errorf("connect: unknown adapter kind %q", in.AdapterKind)
-	}
-	err := u.d.Tx.InOrgTx(ctx, in.OrganizationID, func(ctx context.Context) error {
-		if err := u.d.Repo.CreateConnection(ctx, c); err != nil {
-			return err
-		}
-		for _, s := range scopes {
-			if _, err := u.d.Repo.AddScope(ctx, in.OrganizationID, c.ID, c.InstanceID, s, in.CreatedAt); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return entity.ID{}, err
-	}
-	return c.ID, nil
 }
 
 // State is the connection with its instance, scopes and the capabilities its activation verified.
@@ -237,9 +189,8 @@ func (u *UseCase) CheckAccess(ctx context.Context, orgID, connectionID entity.ID
 	return out, err
 }
 
-// call reads the connection in a short transaction, refuses it during a pause without a request, and
-// calls the adapter outside any transaction (TZ 10.3, rule 2). An adapter that refuses the version of
-// the connection is tried with the other supported versions.
+// call reads the connection in a short transaction and calls the adapter outside any transaction
+// (TZ 10.3, rule 2).
 func (u *UseCase) call(ctx context.Context, orgID, connectionID entity.ID, op entity.AdapterOp, fn func(context.Context, entity.AdapterTarget) error) error {
 	var c entity.Connection
 	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
@@ -250,7 +201,15 @@ func (u *UseCase) call(ctx context.Context, orgID, connectionID entity.ID, op en
 	if err != nil {
 		return err
 	}
-	if c.PausedUntil != nil && u.d.Clock.Now().Before(*c.PausedUntil) {
+	return u.invoke(ctx, c, op, fn)
+}
+
+// invoke refuses a call that reaches the source during a pause without a request; credentials stay in
+// the adapter and are handled during a pause too. An adapter that refuses the version of the connection
+// is tried with the other supported versions.
+func (u *UseCase) invoke(ctx context.Context, c entity.Connection, op entity.AdapterOp, fn func(context.Context, entity.AdapterTarget) error) error {
+	reachesSource := op != entity.OpPutCredentials && op != entity.OpDeleteCredentials
+	if reachesSource && c.PausedUntil != nil && u.d.Clock.Now().Before(*c.PausedUntil) {
 		return &entity.AdapterError{Class: entity.CallPaused, Code: entity.SourceRateLimited, RetryAt: c.PausedUntil}
 	}
 	t, err := u.target(c)
