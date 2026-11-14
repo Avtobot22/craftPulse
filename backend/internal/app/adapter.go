@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -100,6 +101,10 @@ func serveAdapter(ctx context.Context, cfg config.Adapter, srv config.AdapterSer
 	source, err := newSource(client)
 	if err != nil {
 		return fmt.Errorf("app: %w", err)
+	}
+	// A source with background work, such as the clones of git, stops it after the last call.
+	if closer, ok := source.(io.Closer); ok {
+		defer func() { _ = closer.Close() }()
 	}
 	store := adaptersdk.NewStore(pool, keyring)
 	probes := adapterProbes(pool, store)

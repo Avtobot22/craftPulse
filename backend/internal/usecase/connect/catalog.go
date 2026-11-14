@@ -28,6 +28,19 @@ var _catalog = []entity.AdapterInfo{
 			{Name: "webhook_secret", Label: "Секрет подписи webhook", Secret: true},
 		},
 	},
+	{
+		// Areas are repositories by their normalized remote; https takes a token, ssh a key with host keys.
+		Provider: entity.ProviderGit, DisplayName: "Git по SSH или HTTPS",
+		DataKinds:  []string{"documents"},
+		ScopeKinds: []entity.ScopeKind{entity.ScopeRepository},
+		CredentialFields: []entity.CredentialField{
+			{Name: "token", Label: "Токен чтения репозитория для HTTPS", Secret: true},
+			{Name: "username", Label: "Имя пользователя для токена HTTPS"},
+			{Name: "private_key", Label: "Закрытый ключ SSH только на чтение", Secret: true},
+			{Name: "known_hosts", Label: "Ключи хоста SSH в формате known_hosts"},
+			{Name: "ssh_user", Label: "Пользователь SSH, по умолчанию git"},
+		},
+	},
 }
 
 // _scopeDataKinds are the data kinds of an adapter of a client, which has no catalog entry.

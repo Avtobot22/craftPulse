@@ -140,14 +140,9 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	if err != nil {
 		return nil, &RefusedError{Reason: ReasonInvalidAddress}
 	}
-	addrs, err := d.resolve(ctx, host)
+	addrs, err := d.Resolve(ctx, host)
 	if err != nil {
 		return nil, err
-	}
-	for _, a := range addrs {
-		if err := d.Policy.Check(a); err != nil {
-			return nil, err
-		}
 	}
 	connect := d.Connect
 	if connect == nil {
@@ -165,7 +160,22 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	return nil, errors.Join(errs...)
 }
 
-func (d *Dialer) resolve(ctx context.Context, host string) ([]netip.Addr, error) {
+// Resolve returns the addresses of a host when the policy allows every one of them; a client that connects
+// by itself, such as git, connects only to an address it returns.
+func (d *Dialer) Resolve(ctx context.Context, host string) ([]netip.Addr, error) {
+	addrs, err := d.lookup(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range addrs {
+		if err := d.Policy.Check(a); err != nil {
+			return nil, err
+		}
+	}
+	return addrs, nil
+}
+
+func (d *Dialer) lookup(ctx context.Context, host string) ([]netip.Addr, error) {
 	if a, err := netip.ParseAddr(host); err == nil {
 		return []netip.Addr{a}, nil
 	}

@@ -191,6 +191,24 @@ func (e FindingV1FindingKind) Valid() bool {
 	}
 }
 
+// Defines values for GitRefV1RefKind.
+const (
+	GitRefV1RefKindBranch GitRefV1RefKind = "branch"
+	GitRefV1RefKindTag    GitRefV1RefKind = "tag"
+)
+
+// Valid indicates whether the value is a known member of the GitRefV1RefKind enum.
+func (e GitRefV1RefKind) Valid() bool {
+	switch e {
+	case GitRefV1RefKindBranch:
+		return true
+	case GitRefV1RefKindTag:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ManifestCompleteness.
 const (
 	ManifestCompletenessComplete ManifestCompleteness = "complete"
@@ -399,6 +417,7 @@ const (
 	RecordRecordKindCiRun          RecordRecordKind = "ci_run"
 	RecordRecordKindDocument       RecordRecordKind = "document"
 	RecordRecordKindFinding        RecordRecordKind = "finding"
+	RecordRecordKindGitRef         RecordRecordKind = "git_ref"
 	RecordRecordKindMergeRequest   RecordRecordKind = "merge_request"
 	RecordRecordKindMrEvent        RecordRecordKind = "mr_event"
 	RecordRecordKindMrRevision     RecordRecordKind = "mr_revision"
@@ -424,6 +443,8 @@ func (e RecordRecordKind) Valid() bool {
 	case RecordRecordKindDocument:
 		return true
 	case RecordRecordKindFinding:
+		return true
+	case RecordRecordKindGitRef:
 		return true
 	case RecordRecordKindMergeRequest:
 		return true
@@ -800,20 +821,28 @@ type Cursor struct {
 }
 
 // DocumentV1 Версия документа (`normalize.document_version`). Для Git `native_ns` - ID репозитория,
-// `native_id` - путь от корня, `version_ref` - SHA blob; для Confluence `native_id` - ID
-// страницы, `version_ref` - номер версии. Задан путь или страница.
+// `native_id` - путь от корня, `version_ref` - SHA blob, `commit_sha` и `updated_at` -
+// последний коммит default branch, изменивший файл. Удалённый из default branch документ
+// приходит с `deleted: true`, его `version_ref` - SHA коммита удаления. Для Confluence
+// `native_id` - ID страницы, `version_ref` - номер версии. Задан путь или страница.
 type DocumentV1 struct {
 	AclState DocumentV1AclState `json:"acl_state"`
+
+	// CommitSha Последний коммит Git, изменивший документ.
+	CommitSha *string `json:"commit_sha,omitempty"`
 
 	// ContainerNativeId Репозиторий или пространство.
 	ContainerNativeId string `json:"container_native_id"`
 
 	// ContentPath Содержимое документа в пакете.
-	ContentPath   *string             `json:"content_path,omitempty"`
-	ContentSha256 *string             `json:"content_sha256,omitempty"`
-	DocFormat     DocumentV1DocFormat `json:"doc_format"`
-	PageNativeId  *string             `json:"page_native_id,omitempty"`
-	Path          *string             `json:"path,omitempty"`
+	ContentPath   *string `json:"content_path,omitempty"`
+	ContentSha256 *string `json:"content_sha256,omitempty"`
+
+	// Deleted `true` - документа больше нет в default branch.
+	Deleted      *bool               `json:"deleted,omitempty"`
+	DocFormat    DocumentV1DocFormat `json:"doc_format"`
+	PageNativeId *string             `json:"page_native_id,omitempty"`
+	Path         *string             `json:"path,omitempty"`
 
 	// Restriction Ограничение страницы или документа у источника.
 	Restriction *string    `json:"restriction,omitempty"`
@@ -856,6 +885,21 @@ type FindingV1 struct {
 
 // FindingV1FindingKind defines model for FindingV1.FindingKind.
 type FindingV1FindingKind string
+
+// GitRefV1 Ветка или тег репозитория адаптера `git`. `native_ns` - нормализованный адрес remote,
+// `native_id` - полное имя ref (`refs/heads/main`, `refs/tags/v1.2.0`), `source_revision` -
+// SHA коммита. Запись приходит снимком всех refs в каждой выборке `documents`.
+type GitRefV1 struct {
+	CommitSha     string `json:"commit_sha"`
+	DefaultBranch bool   `json:"default_branch"`
+
+	// Name Короткое имя ветки или тега.
+	Name    string          `json:"name"`
+	RefKind GitRefV1RefKind `json:"ref_kind"`
+}
+
+// GitRefV1RefKind defines model for GitRefV1.RefKind.
+type GitRefV1RefKind string
 
 // Manifest Первый файл пакета `manifest.json`.
 type Manifest struct {

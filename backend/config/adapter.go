@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/rs/zerolog"
@@ -71,4 +72,29 @@ func LoadAdapterServer(environ map[string]string) (AdapterServer, error) {
 		return AdapterServer{}, fmt.Errorf("invalid adapter server: %w", err)
 	}
 	return s, nil
+}
+
+// AdapterGit bounds the clones of the adapter git (TZ 14.9): the cache on the disk of its container, one
+// clone and its time. SOURCE_CA_FILE is the authority git trusts for sources by https, as the client does.
+type AdapterGit struct {
+	CacheDir     string        `env:"GIT_CACHE_DIR" envDefault:"/var/cache/craftpulse-git"`
+	CacheBytes   int64         `env:"GIT_CACHE_MAX_BYTES" envDefault:"2147483648"`
+	CloneBytes   int64         `env:"GIT_CLONE_MAX_BYTES" envDefault:"1073741824"`
+	CloneTimeout time.Duration `env:"GIT_CLONE_TIMEOUT" envDefault:"15m"`
+	SourceCAFile string        `env:"SOURCE_CA_FILE"`
+}
+
+func LoadAdapterGit(environ map[string]string) (AdapterGit, error) {
+	var g AdapterGit
+	errs := []error{env.ParseWithOptions(&g, env.Options{Environment: environ})}
+	if g.CacheBytes < 1 || g.CloneBytes < 1 || g.CloneBytes > g.CacheBytes {
+		errs = append(errs, errors.New("GIT_CLONE_MAX_BYTES must be positive and fit GIT_CACHE_MAX_BYTES"))
+	}
+	if g.CloneTimeout <= 0 {
+		errs = append(errs, errors.New("GIT_CLONE_TIMEOUT must be positive"))
+	}
+	if err := errors.Join(errs...); err != nil {
+		return AdapterGit{}, fmt.Errorf("invalid adapter git: %w", err)
+	}
+	return g, nil
 }

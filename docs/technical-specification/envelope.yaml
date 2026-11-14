@@ -65,7 +65,7 @@ x-craftpulse-schemas:
     kinds: [report_file]
   documents:
     versions: ['1']
-    kinds: [document]
+    kinds: [document, git_ref]
 paths: {}
 components:
   schemas:
@@ -187,7 +187,7 @@ components:
         record_class: {type: string, enum: [event, object, snapshot, file]}
         record_kind:
           type: string
-          enum: [task, task_event, task_status, task_resolution, task_type, task_field, relation, account, merge_request, mr_revision, mr_event, ci_run, ci_attempt, report_file, finding, document]
+          enum: [task, task_event, task_status, task_resolution, task_type, task_field, relation, account, merge_request, mr_revision, mr_event, ci_run, ci_attempt, report_file, finding, document, git_ref]
         payload_schema: {type: string, pattern: '^[a-z_]+/[0-9]+$', description: 'Вид и версия схемы тела, например `task_event/1`.'}
         native_ns: {type: string, maxLength: 255, description: 'Пространство имён исходного ID по правилу `x-craftpulse-identity` контракта адаптера; пусто, если ID уникален в экземпляре.'}
         native_id: {type: string, minLength: 1, maxLength: 1024}
@@ -513,8 +513,10 @@ components:
       type: object
       description: |
         Версия документа (`normalize.document_version`). Для Git `native_ns` - ID репозитория,
-        `native_id` - путь от корня, `version_ref` - SHA blob; для Confluence `native_id` - ID
-        страницы, `version_ref` - номер версии. Задан путь или страница.
+        `native_id` - путь от корня, `version_ref` - SHA blob, `commit_sha` и `updated_at` -
+        последний коммит default branch, изменивший файл. Удалённый из default branch документ
+        приходит с `deleted: true`, его `version_ref` - SHA коммита удаления. Для Confluence
+        `native_id` - ID страницы, `version_ref` - номер версии. Задан путь или страница.
       x-craftpulse-record: {kind: document, version: '1', classes: [object, snapshot]}
       required: [doc_format, version_ref, container_native_id, acl_state]
       additionalProperties: false
@@ -530,4 +532,21 @@ components:
         content_sha256: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
         content_path: {type: [string, 'null'], pattern: '^files/[A-Za-z0-9._/-]+$', description: Содержимое документа в пакете.}
         updated_at: {type: [string, 'null'], format: date-time}
-      example: {doc_format: markdown, version_ref: d65d0505a6ba45eb2cac791d30c0a59bdb8c619d, container_native_id: '42', path: docs/api/overview.md, page_native_id: null, title: API overview, restriction: null, acl_state: known, content_sha256: null, content_path: null, updated_at: '2026-04-22T15:40:00+03:00'}
+        commit_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$', description: 'Последний коммит Git, изменивший документ.'}
+        deleted: {type: [boolean, 'null'], description: '`true` - документа больше нет в default branch.'}
+      example: {doc_format: markdown, version_ref: d65d0505a6ba45eb2cac791d30c0a59bdb8c619d, container_native_id: '42', path: docs/api/overview.md, page_native_id: null, title: API overview, restriction: null, acl_state: known, content_sha256: null, content_path: null, updated_at: '2026-04-22T15:40:00+03:00', commit_sha: 7c1e4b0a9d3f2e8b6a5c4d3e2f1a0b9c8d7e6f5a, deleted: null}
+    GitRefV1:
+      type: object
+      description: |
+        Ветка или тег репозитория адаптера `git`. `native_ns` - нормализованный адрес remote,
+        `native_id` - полное имя ref (`refs/heads/main`, `refs/tags/v1.2.0`), `source_revision` -
+        SHA коммита. Запись приходит снимком всех refs в каждой выборке `documents`.
+      x-craftpulse-record: {kind: git_ref, version: '1', classes: [snapshot]}
+      required: [ref_kind, name, commit_sha, default_branch]
+      additionalProperties: false
+      properties:
+        ref_kind: {type: string, enum: [branch, tag]}
+        name: {type: string, minLength: 1, maxLength: 255, description: Короткое имя ветки или тега.}
+        commit_sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        default_branch: {type: boolean}
+      example: {ref_kind: branch, name: main, commit_sha: 7c1e4b0a9d3f2e8b6a5c4d3e2f1a0b9c8d7e6f5a, default_branch: true}

@@ -65,9 +65,10 @@ x-craftpulse-identity:
   - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: analysis_project, native_ns: пусто, native_id: ключ проекта, mutable: название проекта}
   - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: report_file, native_ns: ключ проекта, native_id: ключ анализа, mutable: ветка}
   - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: finding, native_ns: ключ проекта, native_id: ключ замечания, mutable: строка замечания}
-  - {srs_row: Репозиторий адаптера `git`, provider: git, object_kind: repository, native_ns: пусто, native_id: нормализованный адрес remote, mutable: 'ветки и теги; коммит задаётся SHA'}
+  - {srs_row: Репозиторий адаптера `git`, provider: git, object_kind: repository, native_ns: пусто, native_id: 'нормализованный адрес remote: хост в нижнем регистре, порт только нестандартный, путь без `.git` и завершающего `/`, без схемы и пользователя', identity_quality: derived, mutable: 'ветки и теги; коммит задаётся SHA'}
+  - {srs_row: Репозиторий адаптера `git`, provider: git, object_kind: git_ref, native_ns: нормализованный адрес remote, native_id: полное имя ref, identity_quality: derived, mutable: SHA коммита}
   - {srs_row: Страница Confluence Cloud, provider: confluence_cloud, object_kind: document, native_ns: пусто, native_id: ID страницы, mutable: 'заголовок, пространство'}
-  - {srs_row: Документ в Git, provider: git, object_kind: document, native_ns: ID репозитория, native_id: путь от корня, mutable: версия - SHA blob}
+  - {srs_row: Документ в Git, provider: git, object_kind: document, native_ns: 'ID репозитория; у адаптера `git` - нормализованный адрес remote', native_id: путь от корня, mutable: версия - SHA blob}
   - {srs_row: Универсальный импорт, provider: universal, object_kind: any, native_ns: 'пространство, объявленное в манифесте (`area.native_id`), у событий и ревизий - ID родителя', native_id: ID из пакета, mutable: по схеме записи}
   - {srs_row: Тестовый случай, provider: any, object_kind: test_case, native_ns: область (репозиторий), native_id: 'SHA-256 от «набор, класс, имя»', mutable: '-'}
   - {srs_row: Учётная запись источника, provider: any, object_kind: account, native_ns: пусто, native_id: ID учётной записи в экземпляре, mutable: 'логин, имя, почта'}
