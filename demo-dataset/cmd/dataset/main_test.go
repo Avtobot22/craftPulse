@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -57,7 +58,7 @@ func TestCompareCLI(t *testing.T) {
 	dir := t.TempDir()
 	left := filepath.Join(dir, "left.json")
 	right := filepath.Join(dir, "right.json")
-	record := dataset.Expected{ID: "fixture", MetricID: "fixture-count", DefinitionVersion: "1", Scope: map[string]string{"organization_id": "org-1"}, Filters: map[string][]string{}, Period: dataset.Window{From: "2026-01-01T00:00:00Z", To: "2026-02-01T00:00:00Z"}, Step: "month", AsOf: "2026-12-01T00:00:00Z", Unit: "count", N: 1, State: "ASSESSED", Cohort: []string{"task-a"}, Intervals: []dataset.Interval{{ObjectID: "task-a", Kind: "cycle", From: "2026-01-01T00:00:00Z", To: "2026-01-02T00:00:00Z", OriginalOffset: "Z"}}}
+	record := dataset.Expected{ID: "fixture", MetricID: "fixture-count", DefinitionVersion: "1", Scope: map[string]string{"organization_id": "org-1"}, Filters: map[string][]string{}, Period: dataset.Window{From: "2026-01-01T00:00:00Z", To: "2026-02-01T00:00:00Z"}, Step: "month", AsOf: "2026-12-01T00:00:00Z", Unit: "count", N: 1, State: "ASSESSED", Cohort: []string{"task-a"}, Intervals: []dataset.Interval{{ObjectID: "task-a", Kind: "cycle", From: "2026-01-01T00:00:00Z", To: "2026-01-02T00:00:00Z", OriginalOffset: "Z"}}, Flags: []string{}, Conditions: []dataset.Condition{}}
 	file := dataset.ExpectedFile{SchemaVersion: "1", Records: []dataset.Expected{record}}
 	if err := dataset.WriteJSON(left, file); err != nil {
 		t.Fatal(err)
@@ -191,5 +192,34 @@ func TestGenerateReposCLI(t *testing.T) {
 	}
 	if err := run(args, &output); err == nil {
 		t.Fatal("a second run must not overwrite the repositories")
+	}
+}
+
+func TestExpectCLI(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	tasks, settings := filepath.Join(dir, "tasks.json"), filepath.Join(dir, "settings.json")
+	var output bytes.Buffer
+	if err := run([]string{"generate", "--out", filepath.Join(dir, "model.json"), "--tasks", tasks, "--settings", settings}, &output); err != nil {
+		t.Fatal(err)
+	}
+	hashes := make([]string, 2)
+	for i := range hashes {
+		output.Reset()
+		path := filepath.Join(dir, fmt.Sprintf("expected-%d.json", i))
+		if err := run([]string{"expect", "--tasks", tasks, "--settings", settings, "--out", path}, &output); err != nil {
+			t.Fatal(err)
+		}
+		hashes[i] = output.String()
+		var file dataset.ExpectedFile
+		if err := dataset.ReadJSON(path, &file); err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Validate(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if hashes[0] != hashes[1] || !strings.Contains(hashes[0], "expected SHA-256: ") {
+		t.Fatalf("two runs on the same model: %q %q", hashes[0], hashes[1])
 	}
 }

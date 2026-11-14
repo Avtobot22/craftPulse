@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/Avtobot22/craftPulse/demo-dataset/dataset"
+	"github.com/Avtobot22/craftPulse/demo-dataset/expect"
 )
 
 func main() {
@@ -20,7 +21,7 @@ func main() {
 
 func run(args []string, output io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: dataset generate|compare|manifest")
+		return fmt.Errorf("usage: dataset generate|compare|expect|manifest")
 	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -70,6 +71,34 @@ func run(args []string, output io.Writer) error {
 			return fmt.Errorf("comparison differs")
 		}
 		return nil
+	case "expect":
+		tasksPath := flags.String("tasks", "tasks.json", "task model")
+		settingsPath := flags.String("settings", "settings.json", "demo settings")
+		path := flags.String("out", "expected.json", "output expected values")
+		if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 {
+			return fmt.Errorf("invalid expect arguments")
+		}
+		var tasks dataset.TaskFile
+		if err := dataset.ReadJSON(*tasksPath, &tasks); err != nil {
+			return err
+		}
+		var settings dataset.Settings
+		if err := dataset.ReadJSON(*settingsPath, &settings); err != nil {
+			return err
+		}
+		file, err := expect.Build(&tasks, &settings)
+		if err != nil {
+			return err
+		}
+		if err := dataset.WriteJSON(*path, file); err != nil {
+			return err
+		}
+		hash, err := dataset.Hash(file)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(output, "expected records: %d\nexpected SHA-256: %s\n", len(file.Records), hash)
+		return err
 	case "manifest":
 		modelPath := flags.String("model", "model.json", "generated model")
 		sourcesDir := flags.String("sources", "", "directory of source manifest parts")
@@ -99,7 +128,7 @@ func run(args []string, output io.Writer) error {
 		}
 		return dataset.WriteJSON(*path, manifest)
 	default:
-		return fmt.Errorf("unknown command; use generate, compare or manifest")
+		return fmt.Errorf("unknown command; use generate, compare, expect or manifest")
 	}
 }
 

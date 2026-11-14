@@ -62,7 +62,8 @@
           "step": {
             "enum": [
               "week",
-              "month"
+              "month",
+              "period"
             ]
           },
           "as_of": {
@@ -151,6 +152,36 @@
               ],
               "additionalProperties": false
             }
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "conditions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "enum": [
+                    "ge",
+                    "le"
+                  ]
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "op",
+                "value"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -169,7 +200,9 @@
           "n",
           "state",
           "cohort",
-          "intervals"
+          "intervals",
+          "flags",
+          "conditions"
         ],
         "additionalProperties": false
       }
