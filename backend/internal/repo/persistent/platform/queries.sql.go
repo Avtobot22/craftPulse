@@ -70,3 +70,19 @@ func (q *Queries) NextSeq(ctx context.Context, organizationID uuid.UUID) (int64,
 	err := row.Scan(&last_seq)
 	return last_seq, err
 }
+
+const orgClock = `-- name: OrgClock :one
+SELECT last_seq, reproducible_from_seq FROM platform.org_clock WHERE organization_id = $1
+`
+
+type OrgClockRow struct {
+	LastSeq             int64
+	ReproducibleFromSeq int64
+}
+
+func (q *Queries) OrgClock(ctx context.Context, organizationID uuid.UUID) (OrgClockRow, error) {
+	row := q.db.QueryRow(ctx, orgClock, organizationID)
+	var i OrgClockRow
+	err := row.Scan(&i.LastSeq, &i.ReproducibleFromSeq)
+	return i, err
+}

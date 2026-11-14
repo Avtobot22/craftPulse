@@ -9,3 +9,6 @@ UPDATE platform.org_clock SET last_seq = last_seq + 1 WHERE organization_id = $1
 
 -- name: ActiveTenants :many
 SELECT organization_id FROM platform.tenant WHERE status = 'active' ORDER BY organization_id;
+
+-- name: OrgClock :one
+SELECT last_seq, reproducible_from_seq FROM platform.org_clock WHERE organization_id = $1;

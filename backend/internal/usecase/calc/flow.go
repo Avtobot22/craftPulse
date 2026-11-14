@@ -30,16 +30,22 @@ var _metrics = map[string]pointCalc{
 
 // compute is the flow of a team as a pure function of its facts, settings, window and as_of (TZ 10.3, rule 5).
 func compute(in input) entity.CalcResult {
-	out := entity.CalcResult{Grouping: entity.GroupingCurrentStructure}
-	periods := periods(in.window, in.asOf, in.location)
+	return prepare(in).calculate(periods(in.window, in.asOf, in.location))
+}
+
+// prepared is the timelines of the tasks of a calculation; a window is computed from them part by part.
+type prepared struct {
+	in  input
+	tls []*timeline
+}
+
+// prepare replays the history of every task of the team known at as_of; without a mapping nothing is replayed.
+func prepare(in input) *prepared {
+	pr := &prepared{in: in}
 	if in.mapping == nil {
-		out.Series = notEvaluated(periods)
-		return out
+		return pr
 	}
-	no := in.mapping.VersionNo
-	out.MappingVersion = &no
 	byInstance := rulesOf(in.mapping)
-	var tls []*timeline
 	for i := range in.tasks {
 		t := &in.tasks[i]
 		rs, ok := byInstance[t.instance]
@@ -49,15 +55,28 @@ func compute(in input) entity.CalcResult {
 		if t.version.CreatedSrcAt.After(in.asOf) || !rs.ofTeam(&t.version, in.team) {
 			continue
 		}
-		tl := buildTimeline(t, rs, in.asOf)
-		tls = append(tls, tl)
-		out.Tasks = append(out.Tasks, tl.slice)
+		pr.tls = append(pr.tls, buildTimeline(t, rs, in.asOf))
 	}
-	if in.groupBy == entity.GroupNone {
-		out.Series = series(tls, periods, nil)
+	return pr
+}
+
+// calculate is the series over the periods with the tasks they were computed from.
+func (pr *prepared) calculate(periods []period) entity.CalcResult {
+	out := entity.CalcResult{Grouping: entity.GroupingCurrentStructure}
+	if pr.in.mapping == nil {
+		out.Series = notEvaluated(periods)
 		return out
 	}
-	for _, g := range groups(tls, in.groupBy) {
+	no := pr.in.mapping.VersionNo
+	out.MappingVersion = &no
+	for _, tl := range pr.tls {
+		out.Tasks = append(out.Tasks, tl.slice)
+	}
+	if pr.in.groupBy == entity.GroupNone {
+		out.Series = series(pr.tls, periods, nil)
+		return out
+	}
+	for _, g := range groups(pr.tls, pr.in.groupBy) {
 		out.Series = append(out.Series, series(g.tasks, periods, &g.group)...)
 	}
 	return out

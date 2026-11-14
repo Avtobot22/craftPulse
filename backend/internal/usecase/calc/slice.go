@@ -1,0 +1,339 @@
+package calc
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
+)
+
+const (
+	// _partPoints keeps a part of a long window well within the 60 s of a job: ten months by weeks are five parts.
+	_partPoints = 10
+	// _staleAfter is the age of the progress of a building revision after which a new chain takes it over;
+	// it bounds the delay only, the conditional updates keep the chain correct (TZ 12.7).
+	_staleAfter = 30 * time.Minute
+)
+
+// errPublishOrder is a revision of the series published by someone else while this chain built: the job fails
+// and does not overwrite it (TZ 12.7).
+var errPublishOrder = errors.New("calc: the current revision of the series changed while the chain built")
+
+// Complete ends the job in the transaction of its result.
+type Complete = func(ctx context.Context) error
+
+type teamScope struct {
+	Kind   string    `json:"kind"`
+	TeamID entity.ID `json:"team_id"`
+}
+
+// TeamSeries finds the series of the flow of a team by the step and creates it on the first request. The scope
+// is canonical JSON with ordered keys, so one team always finds one series (TZ 12.7).
+func (u *UseCase) TeamSeries(ctx context.Context, orgID, teamID entity.ID, step entity.Step) (entity.CalcSeries, error) {
+	scope, err := json.Marshal(teamScope{Kind: "team", TeamID: teamID})
+	if err != nil {
+		return entity.CalcSeries{}, fmt.Errorf("calc: encode scope: %w", err)
+	}
+	sum := sha256.Sum256(scope)
+	id, err := u.d.NewID()
+	if err != nil {
+		return entity.CalcSeries{}, fmt.Errorf("calc: new series id: %w", err)
+	}
+	var out entity.CalcSeries
+	err = u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		out, err = u.d.Repo.EnsureSeries(ctx, orgID, entity.CalcSeries{
+			ID: id, Scope: scope, ScopeHash: sum[:], MetricSet: entity.MetricSetFlow, Step: step,
+		})
+		return err
+	})
+	return out, err
+}
+
+// Refresh queues a new revision of the series over the window at as_of.
+func (u *UseCase) Refresh(ctx context.Context, orgID, seriesID entity.ID, w entity.Window, asOf time.Time) error {
+	return u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return u.d.Queue.Enqueue(ctx, entity.CalcSliceJob{
+			OrganizationID: orgID, SeriesID: seriesID, From: w.From, To: w.To, AsOf: asOf, CorrelationID: entity.ID(logger.CorrelationID(ctx)),
+		}, entity.QueueBulk)
+	})
+}
+
+// RunSlice is the job calc.slice: without a revision it starts a chain, otherwise it computes and saves the
+// part of its number and queues the next one or publishes the revision (TZ 10.6).
+func (u *UseCase) RunSlice(ctx context.Context, job entity.CalcSliceJob, complete Complete) error {
+	if job.RevisionID.IsZero() {
+		return u.start(ctx, job, complete)
+	}
+	return u.part(ctx, job, complete)
+}
+
+// FailSlice ends the building revision of a job that spent its attempts; the current revision stays.
+func (u *UseCase) FailSlice(ctx context.Context, job entity.CalcSliceJob) error {
+	if job.RevisionID.IsZero() {
+		return nil
+	}
+	var failed bool
+	err := u.d.Tx.InOrgTx(ctx, job.OrganizationID, func(ctx context.Context) error {
+		var err error
+		failed, err = u.d.Repo.FailRevision(ctx, job.OrganizationID, job.RevisionID)
+		return err
+	})
+	if err == nil && failed {
+		u.d.Metrics.RevisionFailed()
+	}
+	return err
+}
+
+// start fixes the knowledge cutoff of the organization and writes the building revision with its inputs; a
+// series that builds another revision keeps it, and a revision whose progress stopped is taken over.
+func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete Complete) error {
+	org := job.OrganizationID
+	var (
+		series entity.CalcSeries
+		seq    int64
+	)
+	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		if series, err = u.d.Repo.Series(ctx, org, job.SeriesID); err != nil {
+			return err
+		}
+		seq, _, err = u.d.Tenants.Clock(ctx, org)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	team, err := scopeTeam(series.Scope)
+	if err != nil {
+		return err
+	}
+	mapping, mapped, err := u.d.Settings.MappingAt(ctx, org, team, seq)
+	if err != nil {
+		return err
+	}
+	id, err := u.d.NewID()
+	if err != nil {
+		return fmt.Errorf("calc: new revision id: %w", err)
+	}
+	now := u.d.Clock.Now()
+	rev := entity.CalcRevision{
+		ID: id, SeriesID: series.ID, Window: entity.Window{From: job.From, To: job.To, Step: series.Step}, AsOf: job.AsOf,
+		KnowledgeSeq: seq, Timezone: "UTC", StartedAt: now, PreviousRevisionID: series.CurrentRevisionID,
+	}
+	inputs := definitionInputs()
+	inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindStructure, ID: team.String(), Version: entity.GroupingCurrentStructure})
+	if mapped {
+		rev.Timezone = mapping.Timezone
+		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindMapping, ID: mapping.ID.String(), Version: strconv.Itoa(mapping.VersionNo)})
+	}
+	rev.InputHash = revisionHash(&series, &rev, inputs)
+	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		if err := u.d.Repo.FailStaleRevisions(ctx, org, series.ID, now.Add(-_staleAfter)); err != nil {
+			return err
+		}
+		created, err := u.d.Repo.CreateRevision(ctx, org, rev)
+		if err != nil || !created {
+			return errors.Join(err, complete(ctx))
+		}
+		if err := u.d.Repo.InsertRevisionInputs(ctx, org, rev.ID, inputs); err != nil {
+			return err
+		}
+		if err := complete(ctx); err != nil {
+			return err
+		}
+		next := job
+		next.RevisionID, next.PartNo = rev.ID, 1
+		return u.d.Queue.Enqueue(ctx, next, entity.QueueBulk)
+	})
+}
+
+// part computes its part on the facts and the mapping of the knowledge cutoff of the revision outside a
+// transaction, then saves it with the next job in one. A part whose input hash is stored is taken as it is.
+func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Complete) error {
+	org := job.OrganizationID
+	var (
+		rev    entity.CalcRevision
+		series entity.CalcSeries
+	)
+	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		if rev, err = u.d.Repo.Revision(ctx, org, job.RevisionID); err != nil {
+			return err
+		}
+		series, err = u.d.Repo.Series(ctx, org, rev.SeriesID)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if rev.Status != entity.RevisionBuilding {
+		return u.d.Tx.InOrgTx(ctx, org, complete)
+	}
+	team, err := scopeTeam(series.Scope)
+	if err != nil {
+		return err
+	}
+	in, err := u.input(ctx, entity.CalcRequest{
+		OrganizationID: org, TeamID: team, KnowledgeSeq: rev.KnowledgeSeq, Window: entity.Window{From: rev.Window.From, To: rev.Window.To, Step: series.Step},
+		AsOf: rev.AsOf,
+	})
+	if err != nil {
+		return err
+	}
+	chunks := chunk(periods(in.window, in.asOf, in.location), u.d.PartPoints)
+	var stored *entity.StoredPart
+	if job.PartNo <= len(chunks) {
+		c := chunks[job.PartNo-1]
+		pr := prepare(in)
+		from, to := c[0].start, c[len(c)-1].end
+		stored = storedPart(pr.calculate(c), pr.partHash(series.ScopeHash, series.Step, from, to), from, to)
+	}
+	newID, err := u.d.NewID()
+	if err != nil {
+		return fmt.Errorf("calc: new part id: %w", err)
+	}
+	now := u.d.Clock.Now()
+	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		alive, err := u.d.Repo.TouchRevision(ctx, org, rev.ID, now)
+		if err != nil {
+			return err
+		}
+		if !alive {
+			return complete(ctx)
+		}
+		if stored != nil {
+			partID, created, err := u.d.Repo.SavePart(ctx, org, newID, stored, now)
+			if err != nil {
+				return err
+			}
+			if !created {
+				u.d.Metrics.PartReused()
+			}
+			if err := u.d.Repo.LinkPart(ctx, org, rev.ID, job.PartNo, partID); err != nil {
+				return err
+			}
+		}
+		if job.PartNo < len(chunks) {
+			if err := complete(ctx); err != nil {
+				return err
+			}
+			next := job
+			next.PartNo++
+			return u.d.Queue.Enqueue(ctx, next, entity.QueueBulk)
+		}
+		if err := u.publish(ctx, org, &rev, now); err != nil {
+			return err
+		}
+		return complete(ctx)
+	})
+}
+
+// publish makes the revision current in one transaction: it becomes published, the one it replaces superseded,
+// and the pointer of the series moves only from that one (TZ 12.7).
+func (u *UseCase) publish(ctx context.Context, org entity.ID, rev *entity.CalcRevision, at time.Time) error {
+	published, err := u.d.Repo.PublishRevision(ctx, org, rev.ID, at)
+	if err != nil {
+		return err
+	}
+	if !published {
+		return fmt.Errorf("calc: revision %s is not building", rev.ID)
+	}
+	if prev := rev.PreviousRevisionID; prev != nil {
+		if err := u.d.Repo.SupersedeRevision(ctx, org, *prev, at); err != nil {
+			return err
+		}
+	}
+	moved, err := u.d.Repo.MoveCurrentRevision(ctx, org, rev.SeriesID, rev.ID, rev.PreviousRevisionID, rev.KnowledgeSeq)
+	if err != nil {
+		return err
+	}
+	if !moved {
+		return errPublishOrder
+	}
+	return nil
+}
+
+// chunk cuts the points of a window into parts of n points.
+func chunk(ps []period, n int) [][]period {
+	var out [][]period
+	for start := 0; start < len(ps); start += n {
+		out = append(out, ps[start:min(start+n, len(ps))])
+	}
+	return out
+}
+
+// storedPart is the result of a part as it is saved: intervals cut to the part and the attributes of the tasks
+// its points count.
+func storedPart(r entity.CalcResult, hash []byte, from, to time.Time) *entity.StoredPart {
+	out := &entity.StoredPart{InputHash: hash, MetricSet: entity.MetricSetFlow, From: from, To: to}
+	counted := map[entity.ID]bool{}
+	for i := range r.Series {
+		s := &r.Series[i]
+		for j := range s.Points {
+			p := &s.Points[j]
+			out.Points = append(out.Points, entity.SeriesPoint{MetricID: s.MetricID, Estimator: s.Estimator, Unit: s.Unit, Point: *p})
+			for _, c := range p.Contributions {
+				counted[c.ObjectID] = true
+			}
+		}
+	}
+	for i := range r.Tasks {
+		t := &r.Tasks[i]
+		if counted[t.TaskID] {
+			out.Tasks = append(out.Tasks, *t)
+		}
+		for _, iv := range t.Intervals {
+			if !iv.From.Before(to) || !iv.To.After(from) {
+				continue
+			}
+			if iv.From.Before(from) {
+				iv.From = from
+			}
+			if iv.To.After(to) {
+				iv.To = to
+			}
+			out.Intervals = append(out.Intervals, iv)
+		}
+	}
+	return out
+}
+
+func definitionInputs() []entity.RevisionInput {
+	out := make([]entity.RevisionInput, len(_definitions))
+	for i := range _definitions {
+		out[i] = entity.RevisionInput{Kind: entity.InputKindDefinition, ID: _definitions[i].ID, Version: strconv.Itoa(_definitions[i].Version)}
+	}
+	return out
+}
+
+// revisionHash is SHA-256 of the scope, the window, as_of and the versions of the inputs of a revision.
+func revisionHash(s *entity.CalcSeries, r *entity.CalcRevision, inputs []entity.RevisionInput) []byte {
+	d := newDigest()
+	d.bytes(s.ScopeHash)
+	d.text(s.MetricSet)
+	d.text(string(s.Step))
+	d.time(r.Window.From)
+	d.time(r.Window.To)
+	d.time(r.AsOf)
+	d.text(r.Timezone)
+	for _, in := range inputs {
+		d.text(in.Kind)
+		d.text(in.ID)
+		d.text(in.Version)
+	}
+	return d.sum()
+}
+
+func scopeTeam(raw []byte) (entity.ID, error) {
+	var s teamScope
+	if err := json.Unmarshal(raw, &s); err != nil || s.Kind != "team" {
+		return entity.ID{}, fmt.Errorf("calc: scope of the series is not a team: %s", raw)
+	}
+	return s.TeamID, nil
+}

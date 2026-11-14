@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 )
 
@@ -27,11 +28,27 @@ type Settings interface {
 	MappingAt(ctx context.Context, orgID, teamID entity.ID, seq int64) (entity.MappingVersion, bool, error)
 }
 
+// Metrics count the revisions that failed and the parts a revision took from earlier ones.
+type Metrics interface {
+	RevisionFailed()
+	PartReused()
+}
+
 type Deps struct {
 	Structure Structure
 	Facts     Facts
 	Settings  Settings
+	Repo      repo.CalcRepo
+	Tenants   repo.TenantRepo
+	Queue     repo.JobQueue
+	Tx        repo.Transactor
+	Metrics   Metrics
 	Clock     clock.Clock
+	NewID     func() (entity.ID, error)
+	// PartPoints is the points of one part of a window; _partPoints when zero.
+	PartPoints int
+	// GCBatch is the parts one portion of the collection deletes; _gcBatch when zero.
+	GCBatch int
 }
 
 type UseCase struct {
@@ -39,6 +56,15 @@ type UseCase struct {
 }
 
 func New(d Deps) *UseCase {
+	if d.PartPoints == 0 {
+		d.PartPoints = _partPoints
+	}
+	if d.GCBatch == 0 {
+		d.GCBatch = _gcBatch
+	}
+	if d.Metrics == nil {
+		d.Metrics = noMetrics{}
+	}
 	return &UseCase{d: d}
 }
 
@@ -46,22 +72,28 @@ func New(d Deps) *UseCase {
 // facts and the mapping are read at that slice, the projects of the team by the current structure (M0,
 // current_structure). Without a confirmed mapping every point is NOT_EVALUATED with mapping_missing.
 func (u *UseCase) Calculate(ctx context.Context, req entity.CalcRequest) (entity.CalcResult, error) {
+	in, err := u.input(ctx, req)
+	if err != nil {
+		return entity.CalcResult{}, err
+	}
+	return compute(in), nil
+}
+
+// input reads what a calculation of the request needs; it holds no transaction across modules.
+func (u *UseCase) input(ctx context.Context, req entity.CalcRequest) (input, error) {
 	org := req.OrganizationID
 	in := input{team: req.TeamID, window: req.Window, asOf: req.AsOf, location: time.UTC, groupBy: req.GroupBy}
 	mapping, ok, err := u.d.Settings.MappingAt(ctx, org, req.TeamID, req.KnowledgeSeq)
-	if err != nil {
-		return entity.CalcResult{}, err
-	}
-	if !ok {
-		return compute(in), nil
+	if err != nil || !ok {
+		return in, err
 	}
 	in.mapping = &mapping
 	if in.location, err = time.LoadLocation(mapping.Timezone); err != nil {
-		return entity.CalcResult{}, fmt.Errorf("calc: time zone of mapping version %d: %w", mapping.VersionNo, err)
+		return in, fmt.Errorf("calc: time zone of mapping version %d: %w", mapping.VersionNo, err)
 	}
 	links, err := u.d.Structure.TeamProjectAreas(ctx, org, req.TeamID, u.d.Clock.Now())
 	if err != nil {
-		return entity.CalcResult{}, err
+		return in, err
 	}
 	seen := map[entity.ID]bool{}
 	for _, l := range links {
@@ -71,12 +103,18 @@ func (u *UseCase) Calculate(ctx context.Context, req entity.CalcRequest) (entity
 		seen[l.To] = true
 		facts, err := u.d.Facts.AreaFacts(ctx, org, l.To, req.KnowledgeSeq)
 		if err != nil {
-			return entity.CalcResult{}, err
+			return in, err
 		}
 		in.tasks = append(in.tasks, tasksOf(&facts, l.From)...)
 	}
-	return compute(in), nil
+	return in, nil
 }
+
+type noMetrics struct{}
+
+func (noMetrics) RevisionFailed() {}
+
+func (noMetrics) PartReused() {}
 
 // tasksOf joins the events of an area to their tasks; the history of an area is complete from the creation of
 // its tasks until the collection reports a boundary.

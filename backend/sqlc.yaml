@@ -109,3 +109,12 @@ sql:
         out: internal/repo/persistent/process
         sql_package: pgx/v5
         omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
+    queries: internal/repo/persistent/calc/queries.sql
+    gen:
+      go:
+        package: calc
+        out: internal/repo/persistent/calc
+        sql_package: pgx/v5
+        omit_unused_structs: true

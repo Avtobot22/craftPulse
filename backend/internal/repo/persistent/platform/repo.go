@@ -54,3 +54,12 @@ func (r *Repo) ActiveTenants(ctx context.Context) ([]entity.ID, error) {
 	}
 	return out, nil
 }
+
+// Clock reads the knowledge counter without moving it: the last number and the oldest slice still reproducible.
+func (r *Repo) Clock(ctx context.Context, orgID entity.ID) (lastSeq, reproducibleFrom int64, err error) {
+	row, err := New(postgres.Conn(ctx, r.pool)).OrgClock(ctx, uuid.UUID(orgID))
+	if err != nil {
+		return 0, 0, fmt.Errorf("platform: org clock: %w", err)
+	}
+	return row.LastSeq, row.ReproducibleFromSeq, nil
+}

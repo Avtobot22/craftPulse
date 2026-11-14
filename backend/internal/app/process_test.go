@@ -128,6 +128,20 @@ func newProcessEnv(t *testing.T) *processEnv {
 // Jira adapter sends them, and normalizes it.
 func (e *processEnv) collectDictionaries(t *testing.T) {
 	t.Helper()
+	e.collect(t, manifestOf(envelope.ManifestSchemaIdTasks, envelope.SourceProviderJiraCloud, _jiraInstance, "10000"),
+		dictionaryRecord(t, "task_status", "1", envelope.TaskStatusV1{Name: "Open", Category: envelope.TaskStatusV1CategoryNew}),
+		dictionaryRecord(t, "task_status", "3", envelope.TaskStatusV1{Name: "In Progress", Category: envelope.TaskStatusV1CategoryIndeterminate}),
+		dictionaryRecord(t, "task_status", _intakeStatus, envelope.TaskStatusV1{Name: "Intake", Category: envelope.TaskStatusV1CategoryIndeterminate}),
+		dictionaryRecord(t, "task_resolution", "10000", envelope.TaskResolutionV1{Name: "Done"}),
+		dictionaryRecord(t, "task_type", "10004", envelope.TaskTypeV1{Name: "Bug"}),
+		dictionaryRecord(t, "task_field", "customfield_10016", envelope.TaskFieldV1{Name: "Story Points", ValueType: "number", Custom: true}),
+	)
+}
+
+// collect writes a sync page of the connection of the test adapter and normalizes it; the members sign in again
+// after the clock moved to the times of the jobs.
+func (e *processEnv) collect(t *testing.T, m *envelope.Manifest, recs ...*envelope.Record) {
+	t.Helper()
 	caller, err := adapterapi.NewCaller(adapterapi.Config{Resolver: mapResolver{}})
 	require.NoError(t, err)
 	conn, err := newConnect(e.app, e.keyring, caller, e.clock)
@@ -137,20 +151,12 @@ func (e *processEnv) collectDictionaries(t *testing.T) {
 	var scope uuid.UUID
 	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT id FROM connect.connection_scope WHERE connection_id = $1", e.conn).Scan(&scope))
 
-	data := pack(t, manifestOf(envelope.ManifestSchemaIdTasks, envelope.SourceProviderJiraCloud, _jiraInstance, "10000"),
-		dictionaryRecord(t, "task_status", "1", envelope.TaskStatusV1{Name: "Open", Category: envelope.TaskStatusV1CategoryNew}),
-		dictionaryRecord(t, "task_status", "3", envelope.TaskStatusV1{Name: "In Progress", Category: envelope.TaskStatusV1CategoryIndeterminate}),
-		dictionaryRecord(t, "task_status", _intakeStatus, envelope.TaskStatusV1{Name: "Intake", Category: envelope.TaskStatusV1CategoryIndeterminate}),
-		dictionaryRecord(t, "task_resolution", "10000", envelope.TaskResolutionV1{Name: "Done"}),
-		dictionaryRecord(t, "task_type", "10004", envelope.TaskTypeV1{Name: "Bug"}),
-		dictionaryRecord(t, "task_field", "customfield_10016", envelope.TaskFieldV1{Name: "Story Points", ValueType: "number", Custom: true}),
-	)
-	p, err := intake.PreparePage(t.Context(), e.orgID, entity.ID(e.conn), entity.ID(scope), bytes.NewReader(data))
+	p, err := intake.PreparePage(t.Context(), e.orgID, entity.ID(e.conn), entity.ID(scope), bytes.NewReader(pack(t, m, recs...)))
 	require.NoError(t, err)
 	require.NoError(t, pg.InOrgTx(t.Context(), e.app, uuid.UUID(e.orgID), func(ctx context.Context) error {
 		rc, err := intake.RecordPage(ctx, p)
 		if err == nil && rc.Status != entity.ReceiptAccepted {
-			err = errors.New("the page of dictionaries is not accepted: " + string(rc.Status))
+			err = errors.New("the page is not accepted: " + string(rc.Status))
 		}
 		return err
 	}))
