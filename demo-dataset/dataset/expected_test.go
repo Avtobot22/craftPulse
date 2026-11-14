@@ -10,7 +10,7 @@ import (
 
 func expected() dataset.ExpectedFile {
 	value := json.Number("9007199254740993")
-	return dataset.ExpectedFile{SchemaVersion: "1", Records: []dataset.Expected{{ID: "cycle-january", MetricID: "T08", DefinitionVersion: "1", Scope: map[string]string{"organization_id": "org-1", "team_id": "team-1"}, Filters: map[string][]string{}, Period: dataset.Window{From: "2026-01-01T00:00:00Z", To: "2026-02-01T00:00:00Z"}, Step: "month", AsOf: "2026-12-01T00:00:00Z", Unit: "seconds", Value: &value, N: 1, State: "ASSESSED", Cohort: []string{"org-1/task-a"}, Intervals: []dataset.Interval{{ObjectID: "org-1/task-a", Kind: "cycle", From: "2026-01-02T00:00:00Z", To: "2026-01-05T00:00:00Z", OriginalOffset: "+07:00"}}}}}
+	return dataset.ExpectedFile{SchemaVersion: "1", Records: []dataset.Expected{{ID: "cycle-january", MetricID: "T08", DefinitionVersion: "1", Scope: map[string]string{"organization_id": "org-1", "team_id": "team-1"}, Filters: map[string][]string{}, Period: dataset.Window{From: "2026-01-01T00:00:00Z", To: "2026-02-01T00:00:00Z"}, Step: "month", AsOf: "2026-12-01T00:00:00Z", Unit: "seconds", Value: &value, N: 1, State: "ASSESSED", Cohort: []string{"org-1/task-a"}, Intervals: []dataset.Interval{{ObjectID: "org-1/task-a", Kind: "cycle", From: "2026-01-02T00:00:00Z", To: "2026-01-05T00:00:00Z", OriginalOffset: "+07:00"}}, Flags: []string{"low_sample"}, Conditions: []dataset.Condition{}}}}
 }
 
 func TestCompareFindsEveryChangedValue(t *testing.T) {
@@ -127,5 +127,38 @@ func TestDecodeAndValidateRejectMalformedExpected(t *testing.T) {
 		if err := file.Validate(); err == nil {
 			t.Fatal("accepted invalid expected values")
 		}
+	}
+}
+
+func TestCompareChecksConditionsInsteadOfValue(t *testing.T) {
+	t.Parallel()
+	left := expected()
+	left.Records[0].Value = nil
+	left.Records[0].State = "BOUNDED"
+	left.Records[0].Conditions = []dataset.Condition{{Op: "ge", Value: "1"}, {Op: "le", Value: "3"}}
+	right := clone(t, left)
+	right.Records[0].Conditions = []dataset.Condition{}
+	inside := json.Number("2")
+	right.Records[0].Value = &inside
+	differences, err := dataset.Compare(&left, &right)
+	if err != nil || len(differences) != 0 {
+		t.Fatalf("a value inside the conditions: %v %v", differences, err)
+	}
+	for _, v := range []string{"4", "0"} {
+		outside := json.Number(v)
+		right.Records[0].Value = &outside
+		differences, err = dataset.Compare(&left, &right)
+		if err != nil || len(differences) != 1 || !strings.Contains(differences[0], "outside conditions") || strings.Contains(differences[0], v+"\n") {
+			t.Fatalf("a value outside the conditions: %v %v", differences, err)
+		}
+	}
+	right.Records[0].Value = nil
+	if differences, _ = dataset.Compare(&left, &right); len(differences) != 1 {
+		t.Fatalf("a missing value does not meet conditions: %v", differences)
+	}
+	broken := expected()
+	broken.Records[0].Conditions = []dataset.Condition{{Op: "gt", Value: "1"}}
+	if err := broken.Validate(); err == nil {
+		t.Fatal("an unknown operator or a value next to conditions is accepted")
 	}
 }
