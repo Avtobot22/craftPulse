@@ -29,6 +29,7 @@ type apiModules struct {
 	intake      usecase.Intake
 	sync        usecase.SyncStatus
 	operations  usecase.Operations
+	process     usecase.Process
 }
 
 func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvider, c clock.Clock, siteURL string, reg prometheus.Registerer,
@@ -53,7 +54,7 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 		Handler: handler.New(handler.Deps{
 			UploadTokens: logins, Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
 			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg, Connections: m.connections, Intake: m.intake,
-			Sync: m.sync, Operations: m.operations, Accounts: orgs,
+			Sync: m.sync, Operations: m.operations, Accounts: orgs, Process: m.process,
 		}),
 		UploadTokens: logins,
 		Logins:       logins,

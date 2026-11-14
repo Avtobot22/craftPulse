@@ -100,3 +100,12 @@ sql:
         out: internal/repo/persistent/view
         sql_package: pgx/v5
         omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
+    queries: internal/repo/persistent/process/queries.sql
+    gen:
+      go:
+        package: process
+        out: internal/repo/persistent/process
+        sql_package: pgx/v5
+        omit_unused_structs: true

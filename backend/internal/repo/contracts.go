@@ -291,6 +291,28 @@ type NormalizeRepo interface {
 	SupersedeDictionaryEntries(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
 	InsertDictionaryEntries(ctx context.Context, orgID entity.ID, entries []entity.DictionaryEntry) error
 	Dictionary(ctx context.Context, orgID, areaID entity.ID, kind entity.DictionaryKind) ([]entity.DictionaryEntry, error)
+	AreaInstances(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) (map[entity.ID]entity.ID, error)
+	Dictionaries(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.DictionaryEntry, error)
+}
+
+// ProcessRepo keeps the immutable versions of the mapping and the calendar of teams (TZ 12.5.6). A version at
+// a knowledge number is the last one with known_seq not above it; ErrNotFound when the team has none.
+type ProcessRepo interface {
+	TimezoneExists(ctx context.Context, name string) (bool, error)
+	LastSettingsSeq(ctx context.Context, orgID, teamID entity.ID) (int64, error)
+
+	LatestMappingVersionNo(ctx context.Context, orgID, teamID entity.ID) (int, error)
+	MappingVersionAt(ctx context.Context, orgID, teamID entity.ID, seq int64) (entity.MappingVersion, error)
+	MappingVersionByConfirmation(ctx context.Context, orgID, confirmationID entity.ID) (entity.MappingVersion, error)
+	PageMappingVersions(ctx context.Context, orgID, teamID entity.ID, p entity.VersionPageRequest) ([]entity.MappingVersion, error)
+	InsertMappingVersion(ctx context.Context, orgID entity.ID, v entity.MappingVersion) error
+
+	LatestCalendarVersionNo(ctx context.Context, orgID, teamID entity.ID) (int, error)
+	CalendarVersionAt(ctx context.Context, orgID, teamID entity.ID, seq int64) (entity.CalendarVersion, error)
+	CalendarVersionByNo(ctx context.Context, orgID, teamID entity.ID, no int) (entity.CalendarVersion, error)
+	CalendarVersionByConfirmation(ctx context.Context, orgID, confirmationID entity.ID) (entity.CalendarVersion, error)
+	PageCalendarVersions(ctx context.Context, orgID, teamID entity.ID, p entity.VersionPageRequest) ([]entity.CalendarVersion, error)
+	InsertCalendarVersion(ctx context.Context, orgID entity.ID, v entity.CalendarVersion) error
 }
 
 // ViewRepo keeps the public descriptors of runs users asked for (TZ 12.5.8).

@@ -133,3 +133,16 @@ type Accounts interface {
 	ListSourceAccounts(ctx context.Context, s entity.Subject, f entity.SourceAccountFilter) (entity.SourceAccountPage, error)
 	AssignAccounts(ctx context.Context, s entity.Subject, key entity.ID, items []entity.AssignmentRequest) ([]entity.AssignmentOutcome, error)
 }
+
+// Process is the process module for process owners: the dictionaries of sources and the versions of the
+// mapping and the calendar of a team (UC-07, FR-017). created tells a new or repeated version from the current
+// one a form equal to it returns.
+type Process interface {
+	WorkflowCatalog(ctx context.Context, s entity.Subject, teamID entity.ID) (entity.WorkflowCatalog, error)
+	ListMappingVersions(ctx context.Context, s entity.Subject, teamID entity.ID, p entity.VersionPageRequest) (entity.MappingVersionPage, error)
+	CreateMappingVersion(ctx context.Context, s entity.Subject, teamID entity.ID, baseVersion int, key entity.ID,
+		d entity.MappingDraft) (v entity.MappingVersion, created bool, err error)
+	ListCalendarVersions(ctx context.Context, s entity.Subject, teamID entity.ID, p entity.VersionPageRequest) (entity.CalendarVersionPage, error)
+	CreateCalendarVersion(ctx context.Context, s entity.Subject, teamID entity.ID, baseVersion int, key entity.ID,
+		d entity.CalendarDraft) (v entity.CalendarVersion, created bool, err error)
+}

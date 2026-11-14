@@ -30,6 +30,8 @@ const (
 	ruleProjectLead
 	// ruleReceipts is every administrator and a project lead for the receipts of their projects.
 	ruleReceipts
+	// ruleProcessOwner is the process owner of the team of the request; no other role stands in for it.
+	ruleProcessOwner
 )
 
 // _rules is table 5.3 for the actions served so far; an action missing here is granted to nobody.
@@ -47,6 +49,7 @@ var _rules = map[string]rule{
 	"imports.create":       ruleProjectLead,
 	"receipts.read":        ruleReceipts,
 	"sync.read":            ruleAdministrator,
+	"process.manage":       ruleProcessOwner,
 }
 
 // Profiles is the org module; Profile runs in the caller's organization transaction.
@@ -196,10 +199,20 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 	if rule := _rules[r.Action]; (rule == ruleProjectLead || rule == ruleReceipts) && !r.Area.ID.IsZero() && !slices.Contains(p.UploadProjects, r.Area.ID) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
+	if _rules[r.Action] == ruleProcessOwner && !ownsProcess(p, r.Area) {
+		return ReasonNoPermission, entity.ErrForbidden
+	}
 	if !granted(p, r.Action) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
 	return "", nil
+}
+
+// ownsProcess tells whether the subject is the process owner of the team of the request.
+func ownsProcess(p entity.Profile, a entity.AreaRef) bool {
+	return a.Kind == entity.AreaTeam && slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool {
+		return r.Role == entity.RoleProcessOwner && r.TeamID == a.ID
+	})
 }
 
 func granted(p entity.Profile, action string) bool {
@@ -214,6 +227,8 @@ func granted(p entity.Profile, action string) bool {
 		return p.Whole || len(p.Areas.Teams)+len(p.Areas.Projects)+len(p.Areas.Services) > 0
 	case ruleAdministrator:
 		return slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleAdministrator })
+	case ruleProcessOwner:
+		return slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleProcessOwner })
 	}
 	return false
 }
