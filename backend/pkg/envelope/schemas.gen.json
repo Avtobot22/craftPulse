@@ -31,7 +31,8 @@
         "1"
       ],
       "kinds": [
-        "document"
+        "document",
+        "git_ref"
       ]
     },
     "findings": {
@@ -576,7 +577,8 @@
             "ci_attempt",
             "report_file",
             "finding",
-            "document"
+            "document",
+            "git_ref"
           ]
         }
       },
@@ -1365,6 +1367,25 @@
               ],
               "format": "date-time"
             }
+          },
+          {
+            "name": "commit_sha",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "deleted",
+            "schema": {
+              "types": [
+                "boolean",
+                "null"
+              ]
+            }
           }
         ],
         "required": [
@@ -1377,9 +1398,11 @@
       },
       "example": {
         "acl_state": "known",
+        "commit_sha": "7c1e4b0a9d3f2e8b6a5c4d3e2f1a0b9c8d7e6f5a",
         "container_native_id": "42",
         "content_path": null,
         "content_sha256": null,
+        "deleted": null,
         "doc_format": "markdown",
         "page_native_id": null,
         "path": "docs/api/overview.md",
@@ -1549,6 +1572,72 @@
         "producer_version": "2.15.0",
         "rule_id": "errcheck",
         "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"
+      }
+    },
+    {
+      "kind": "git_ref",
+      "version": "1",
+      "classes": [
+        "snapshot"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "ref_kind",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "branch",
+                "tag"
+              ]
+            }
+          },
+          {
+            "name": "name",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "commit_sha",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "default_branch",
+            "schema": {
+              "types": [
+                "boolean"
+              ]
+            }
+          }
+        ],
+        "required": [
+          "ref_kind",
+          "name",
+          "commit_sha",
+          "default_branch"
+        ],
+        "closed": true
+      },
+      "example": {
+        "commit_sha": "7c1e4b0a9d3f2e8b6a5c4d3e2f1a0b9c8d7e6f5a",
+        "default_branch": true,
+        "name": "main",
+        "ref_kind": "branch"
       }
     },
     {

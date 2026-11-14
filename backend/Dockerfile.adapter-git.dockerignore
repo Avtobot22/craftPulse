@@ -1,0 +1,9 @@
+*
+!go.mod
+!go.sum
+!cmd/
+!config/
+!internal/
+!migrations/
+!pkg/
+**/*_test.go

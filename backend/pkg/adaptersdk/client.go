@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/pkg/netguard"
@@ -37,6 +38,7 @@ type ClientConfig struct {
 // the connection is made, at most three redirects, bounded time and size (TZ 13.7).
 type SourceClient struct {
 	http    *http.Client
+	dialer  *netguard.Dialer
 	maxBody int64
 	now     func() time.Time
 }
@@ -53,6 +55,7 @@ func NewSourceClient(cfg ClientConfig) *SourceClient {
 	dialer := &netguard.Dialer{Policy: cfg.Policy, Resolver: cfg.Resolver, Connect: cfg.Connect}
 	return &SourceClient{
 		http:    netguard.NewClient(dialer, netguard.ClientOptions{Timeout: timeout, MaxRedirects: _maxSourceRedirects, RootCAs: cfg.RootCAs}),
+		dialer:  dialer,
 		maxBody: maxBody,
 		now:     time.Now,
 	}
@@ -71,6 +74,17 @@ func (c *SourceClient) Do(req *http.Request) (*http.Response, error) {
 	}
 	resp.Body = &limitedBody{rc: resp.Body, left: c.maxBody}
 	return resp, nil
+}
+
+// CheckHost resolves the host of a source the adapter reaches without this client and returns its
+// addresses when the network scope allows all of them (TZ 13.7). The adapter connects only to one of them;
+// a refused host is invalid_request, a name that does not resolve is unavailable.
+func (c *SourceClient) CheckHost(ctx context.Context, host string) ([]netip.Addr, error) {
+	addrs, err := c.dialer.Resolve(ctx, host)
+	if err != nil {
+		return nil, classifyError(err)
+	}
+	return addrs, nil
 }
 
 // DecodeJSON reads a JSON body of a response from Do and closes it; a body that does not decode is
