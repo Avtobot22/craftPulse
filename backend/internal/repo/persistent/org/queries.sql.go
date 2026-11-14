@@ -478,6 +478,33 @@ func (q *Queries) InsertPerson(ctx context.Context, arg InsertPersonParams) (uui
 	return id, err
 }
 
+const insertProjectArea = `-- name: InsertProjectArea :exec
+INSERT INTO org.project_area (organization_id, project_id, area_id, valid, known_seq)
+VALUES ($1, $2, $3,
+    tstzrange($4::timestamptz, $5::timestamptz, '[)'), $6)
+`
+
+type InsertProjectAreaParams struct {
+	OrganizationID uuid.UUID
+	ProjectID      uuid.UUID
+	ToID           uuid.UUID
+	ValidFrom      time.Time
+	ValidTo        pgtype.Timestamptz
+	Seq            int64
+}
+
+func (q *Queries) InsertProjectArea(ctx context.Context, arg InsertProjectAreaParams) error {
+	_, err := q.db.Exec(ctx, insertProjectArea,
+		arg.OrganizationID,
+		arg.ProjectID,
+		arg.ToID,
+		arg.ValidFrom,
+		arg.ValidTo,
+		arg.Seq,
+	)
+	return err
+}
+
 const insertTeamMember = `-- name: InsertTeamMember :exec
 INSERT INTO org.team_member (organization_id, team_id, person_id, valid, known_seq)
 VALUES ($1, $2, $3,
@@ -660,6 +687,55 @@ func (q *Queries) ListAllTeams(ctx context.Context, organizationID uuid.UUID) ([
 	for rows.Next() {
 		var i ListAllTeamsRow
 		if err := rows.Scan(&i.ID, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCurrentProjectAreas = `-- name: ListCurrentProjectAreas :many
+SELECT id, project_id, area_id AS to_id, lower(valid)::timestamptz AS valid_from,
+    coalesce(upper(valid), lower(valid))::timestamptz AS valid_to, upper_inf(valid)::bool AS open
+FROM org.project_area
+WHERE organization_id = $1 AND superseded_seq IS NULL AND valid @> $2::timestamptz
+ORDER BY project_id, area_id
+`
+
+type ListCurrentProjectAreasParams struct {
+	OrganizationID uuid.UUID
+	At             time.Time
+}
+
+type ListCurrentProjectAreasRow struct {
+	ID        uuid.UUID
+	ProjectID uuid.UUID
+	ToID      uuid.UUID
+	ValidFrom time.Time
+	ValidTo   time.Time
+	Open      bool
+}
+
+func (q *Queries) ListCurrentProjectAreas(ctx context.Context, arg ListCurrentProjectAreasParams) ([]ListCurrentProjectAreasRow, error) {
+	rows, err := q.db.Query(ctx, listCurrentProjectAreas, arg.OrganizationID, arg.At)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCurrentProjectAreasRow
+	for rows.Next() {
+		var i ListCurrentProjectAreasRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.ToID,
+			&i.ValidFrom,
+			&i.ValidTo,
+			&i.Open,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -2155,6 +2231,28 @@ func (q *Queries) SupersedeAssignments(ctx context.Context, arg SupersedeAssignm
 		arg.At,
 		arg.OrganizationID,
 		arg.Ids,
+	)
+	return err
+}
+
+const supersedeProjectArea = `-- name: SupersedeProjectArea :exec
+UPDATE org.project_area SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = $4 AND superseded_seq IS NULL
+`
+
+type SupersedeProjectAreaParams struct {
+	Seq            int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) SupersedeProjectArea(ctx context.Context, arg SupersedeProjectAreaParams) error {
+	_, err := q.db.Exec(ctx, supersedeProjectArea,
+		arg.Seq,
+		arg.At,
+		arg.OrganizationID,
+		arg.ID,
 	)
 	return err
 }

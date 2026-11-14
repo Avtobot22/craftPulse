@@ -15,29 +15,12 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/objstore"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	auditrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit"
-	authrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/auth"
 	ingestrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/ingest"
-	orgrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/org"
-	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
-	"github.com/Avtobot22/craftPulse/backend/internal/usecase/access"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
-	"github.com/Avtobot22/craftPulse/backend/internal/usecase/auth"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/ingest"
-	"github.com/Avtobot22/craftPulse/backend/internal/usecase/org"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 )
-
-// newOrgAccess builds the org module and the access decisions on it, which every process checks rights with.
-func newOrgAccess(pool *pgxpool.Pool, c clock.Clock) (orgs *org.UseCase, rights *access.UseCase) {
-	tx := persistent.NewTransactor(pool)
-	auditor := audit.New(auditrepo.NewRepo(pool), tx, c)
-	orgs = org.New(org.Deps{
-		Orgs: orgrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Auditor: auditor,
-		Credentials: auth.NewCredentials(authrepo.NewRepo(pool)), Clock: c, NewID: newID,
-	})
-	return orgs, access.New(tx, orgs, auditor, c)
-}
 
 func newObjectStore(cfg config.ObjectStore) *objstore.Store {
 	return objstore.New(objstore.Config{

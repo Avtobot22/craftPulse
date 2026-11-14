@@ -23,6 +23,8 @@ type Logins interface {
 // Access decides whether the subject may run the action of an operation (TZ 13.4).
 type Access interface {
 	Authorize(ctx context.Context, s entity.Subject, r entity.AccessRequest) (entity.Scope, error)
+	// Decide narrows the scope by the rights of the user in the sources (TZ 13.5).
+	Decide(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.SourceQuery) (entity.Scope, error)
 	CurrentUser(ctx context.Context, s entity.Subject) (entity.CurrentUser, error)
 }
 
@@ -66,6 +68,7 @@ type UploadTokens interface {
 type Connections interface {
 	ListAdapters() []entity.AdapterInfo
 	Instance(ctx context.Context, orgID, id entity.ID) (entity.SourceInstance, error)
+	ListAreas(ctx context.Context, s entity.Subject, f entity.SourceAreaFilter) (entity.SourceAreaPage, error)
 	List(ctx context.Context, s entity.Subject, f entity.ConnectionFilter) (entity.ConnectionPage, error)
 	Create(ctx context.Context, s entity.Subject, in entity.ConnectionInput) (entity.ConnectionState, error)
 	State(ctx context.Context, orgID, connectionID entity.ID) (entity.ConnectionState, error)

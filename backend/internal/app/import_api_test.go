@@ -60,12 +60,12 @@ func newImportsEnv(t *testing.T) *importsEnv {
 	require.NoError(t, err)
 	conn, err := newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	_, rights := newOrgAccess(e.app, e.clock)
+	orgs, rights := newOrgAccess(e.app, e.clock, conn, nil)
 	reg := prometheus.NewRegistry()
 	uc, err := newIngest(e.app, sharedStore(t), conn, rights, e.clock, reg)
 	require.NoError(t, err)
 	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}},
-		newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, apiModules{connections: conn, intake: uc}))
+		newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, apiModules{orgs: orgs, access: rights, connections: conn, intake: uc}))
 	return &importsEnv{loginEnv: e, uc: uc, admin: e.admin(t, "demo"), project: e.tokenProject(t, e.orgID)}
 }
 

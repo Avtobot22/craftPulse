@@ -24,6 +24,7 @@ import (
 
 	httpctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/http"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/adapterapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/oidc"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/probe"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
@@ -87,11 +88,22 @@ func newLoginEnv(t *testing.T) *loginEnv {
 	e.orgID, e.otherID, e.keyring = applied[0].ID, applied[1].ID, keyring
 
 	reg := prometheus.NewRegistry()
-	api := newAPI(e.app, keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, apiModules{})
+	api := newAPI(e.app, keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, e.modules(t))
 	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
 	e.metrics = promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 	t.Cleanup(func() { e.assertNoSecrets(t) })
 	return e
+}
+
+// modules are the api modules without adapters: connect knows the areas of connections and calls no adapter.
+func (e *loginEnv) modules(t *testing.T) apiModules {
+	t.Helper()
+	caller, err := adapterapi.NewCaller(adapterapi.Config{Resolver: mapResolver{}})
+	require.NoError(t, err)
+	conn, err := newConnect(e.app, e.keyring, caller, e.clock)
+	require.NoError(t, err)
+	orgs, rights := newOrgAccess(e.app, e.clock, conn, nil)
+	return apiModules{orgs: orgs, access: rights, connections: conn}
 }
 
 // browser keeps cookies the way a browser does for one site.

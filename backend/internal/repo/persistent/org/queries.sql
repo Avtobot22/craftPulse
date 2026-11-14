@@ -207,6 +207,22 @@ INSERT INTO org.team_member (organization_id, team_id, person_id, valid, known_s
 VALUES (sqlc.arg(organization_id), sqlc.arg(team_id), sqlc.arg(to_id),
     tstzrange(sqlc.arg(valid_from)::timestamptz, sqlc.narg(valid_to)::timestamptz, '[)'), sqlc.arg(seq));
 
+-- name: ListCurrentProjectAreas :many
+SELECT id, project_id, area_id AS to_id, lower(valid)::timestamptz AS valid_from,
+    coalesce(upper(valid), lower(valid))::timestamptz AS valid_to, upper_inf(valid)::bool AS open
+FROM org.project_area
+WHERE organization_id = sqlc.arg(organization_id) AND superseded_seq IS NULL AND valid @> sqlc.arg(at)::timestamptz
+ORDER BY project_id, area_id;
+
+-- name: SupersedeProjectArea :exec
+UPDATE org.project_area SET superseded_seq = sqlc.arg(seq)::bigint, superseded_at = sqlc.arg(at)::timestamptz
+WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND superseded_seq IS NULL;
+
+-- name: InsertProjectArea :exec
+INSERT INTO org.project_area (organization_id, project_id, area_id, valid, known_seq)
+VALUES (sqlc.arg(organization_id), sqlc.arg(project_id), sqlc.arg(to_id),
+    tstzrange(sqlc.arg(valid_from)::timestamptz, sqlc.narg(valid_to)::timestamptz, '[)'), sqlc.arg(seq));
+
 -- name: RoleSetVersion :one
 SELECT (count(*) + count(revoked_at))::bigint FROM org.role_assignment WHERE organization_id = $1 AND user_id = $2;
 

@@ -55,7 +55,7 @@ func New(d Deps) *Handler {
 		accounts:       accounts{uc: d.Accounts, connections: d.Connections},
 		intake:         intake{uc: d.Intake},
 		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),
-		organization:   organization{structure: d.Structure},
+		organization:   organization{structure: d.Structure, access: d.Access, connections: d.Connections},
 		administration: administration{users: d.Users, audit: d.Audit, protocols: d.Protocols},
 	}
 }

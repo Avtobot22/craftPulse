@@ -27,7 +27,9 @@ const (
 var errMalformedPage = errors.New("handler: limit, sort or cursor is invalid")
 
 type organization struct {
-	structure usecase.Structure
+	structure   usecase.Structure
+	access      usecase.Access
+	connections usecase.Connections
 }
 
 func (h *organization) GetOrganizationStructure(ctx context.Context, _ openapi.GetOrganizationStructureRequestObject) (openapi.GetOrganizationStructureResponseObject, error) {
@@ -70,50 +72,110 @@ func (h *organization) ReplaceOrganizationStructure(ctx context.Context, req ope
 }
 
 func (h *organization) ListTeams(ctx context.Context, req openapi.ListTeamsRequestObject) (openapi.ListTeamsResponseObject, error) {
-	page, err := h.list(ctx, entity.AreaTeam, entity.AreaFilter{}, req.Params.Limit, req.Params.Cursor, (*string)(req.Params.Sort))
+	s, scope, err := subjectScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page, err := h.list(ctx, s, scope, entity.AreaTeam, entity.AreaFilter{}, req.Params.Limit, req.Params.Cursor, (*string)(req.Params.Sort))
 	if err != nil {
 		return nil, err
 	}
 	return openapi.ListTeams200JSONResponse(page), nil
 }
 
+// ListProjects keeps the projects open in at least one of their sources for the user now (TZ 7.7).
 func (h *organization) ListProjects(ctx context.Context, req openapi.ListProjectsRequestObject) (openapi.ListProjectsResponseObject, error) {
+	s, scope, err := subjectScope(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var f entity.AreaFilter
 	if req.Params.TeamId != nil {
 		f.TeamID = entity.ID(*req.Params.TeamId)
 	}
-	page, err := h.list(ctx, entity.AreaProject, f, req.Params.Limit, req.Params.Cursor, (*string)(req.Params.Sort))
+	if _, err := pageRequest(entity.AreaProject, req.Params.Limit, req.Params.Cursor, (*string)(req.Params.Sort)); err != nil {
+		return nil, err
+	}
+	scope, err = h.access.Decide(ctx, s, scope, entity.SourceQuery{Operation: "listProjects", Projects: true})
 	if err != nil {
 		return nil, err
 	}
-	return openapi.ListProjects200JSONResponse(openapi.ProjectPage(page)), nil
+	page, err := h.list(ctx, s, scope, entity.AreaProject, f, req.Params.Limit, req.Params.Cursor, (*string)(req.Params.Sort))
+	if err != nil {
+		return nil, err
+	}
+	return openapi.ListProjects200JSONResponse(openapi.ProjectPage{
+		Data: page.Data, NextCursor: page.NextCursor, AccessLimited: scope.Limited(), AccessNotes: response.AccessNotes(scope.Notes()),
+	}), nil
 }
 
 func (h *organization) ListServices(ctx context.Context, req openapi.ListServicesRequestObject) (openapi.ListServicesResponseObject, error) {
-	page, err := h.list(ctx, entity.AreaService, entity.AreaFilter{}, req.Params.Limit, req.Params.Cursor, (*string)(req.Params.Sort))
+	s, scope, err := subjectScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page, err := h.list(ctx, s, scope, entity.AreaService, entity.AreaFilter{}, req.Params.Limit, req.Params.Cursor, (*string)(req.Params.Sort))
 	if err != nil {
 		return nil, err
 	}
 	return openapi.ListServices200JSONResponse(openapi.ServicePage(page)), nil
 }
 
-// ListAreas has nothing to list yet: source areas come from connections, and this build has none.
-func (*organization) ListAreas(_ context.Context, req openapi.ListAreasRequestObject) (openapi.ListAreasResponseObject, error) {
-	if _, err := pageRequest(entity.AreaKind("source_area"), req.Params.Limit, req.Params.Cursor, nil); err != nil {
-		return nil, err
-	}
-	return openapi.ListAreas200JSONResponse{Data: []openapi.AreaRef{}, NextCursor: nil}, nil
-}
+// _sourceAreaCursor names the cursor of listAreas; its Sort binds the filters the cursor came from.
+const _sourceAreaCursor = "source_area"
 
-func (h *organization) list(ctx context.Context, kind entity.AreaKind, f entity.AreaFilter, limit *int, cursor, sort *string) (openapi.TeamPage, error) {
+// ListAreas pages the source areas of active connections of the organization.
+func (h *organization) ListAreas(ctx context.Context, req openapi.ListAreasRequestObject) (openapi.ListAreasResponseObject, error) {
 	s, ok := middleware.SubjectFrom(ctx)
 	if !ok {
-		return openapi.TeamPage{}, entity.ErrAuthRequired
+		return nil, entity.ErrAuthRequired
+	}
+	limit, err := pageLimit(req.Params.Limit)
+	if err != nil {
+		return nil, err
+	}
+	f := entity.SourceAreaFilter{Limit: limit}
+	if req.Params.Kind != nil {
+		f.Kind = entity.ScopeKind(*req.Params.Kind)
+	}
+	if req.Params.ConnectionId != nil {
+		f.ConnectionID = entity.ID(*req.Params.ConnectionId)
+	}
+	filter := string(f.Kind) + "/" + f.ConnectionID.String()
+	if req.Params.Cursor != nil {
+		c, ok := decodeCursor(*req.Params.Cursor)
+		if !ok || c.Kind != _sourceAreaCursor || c.Sort != filter || c.ID == uuid.Nil {
+			return nil, errMalformedPage
+		}
+		f.After = entity.ID(c.ID)
+	}
+	page, err := h.connections.ListAreas(ctx, s, f)
+	if err != nil {
+		return nil, err
+	}
+	out := openapi.ListAreas200JSONResponse{Data: response.SourceAreas(page.Items)}
+	if page.Next != nil {
+		next := encodeCursor(cursorData{Kind: _sourceAreaCursor, Sort: filter, ID: uuid.UUID(*page.Next)})
+		out.NextCursor = &next
+	}
+	return out, nil
+}
+
+func subjectScope(ctx context.Context) (entity.Subject, entity.Scope, error) {
+	s, ok := middleware.SubjectFrom(ctx)
+	if !ok {
+		return entity.Subject{}, entity.Scope{}, entity.ErrAuthRequired
 	}
 	scope, ok := middleware.ScopeFrom(ctx)
 	if !ok {
-		return openapi.TeamPage{}, entity.ErrForbidden
+		return entity.Subject{}, entity.Scope{}, entity.ErrForbidden
 	}
+	return s, scope, nil
+}
+
+func (h *organization) list(ctx context.Context, s entity.Subject, scope entity.Scope, kind entity.AreaKind, f entity.AreaFilter,
+	limit *int, cursor, sort *string,
+) (openapi.TeamPage, error) {
 	p, err := pageRequest(kind, limit, cursor, sort)
 	if err != nil {
 		return openapi.TeamPage{}, err
@@ -231,8 +293,11 @@ func structureInput(b *openapi.OrganizationStructureInput) (entity.StructureInpu
 		Services:     areaInputs(b.Services),
 		TeamProjects: make([]entity.LinkInput, len(b.TeamProjects)),
 		TeamMembers:  make([]entity.LinkInput, len(b.TeamMembers)),
-		ProjectAreas: len(b.ProjectAreas),
+		ProjectAreas: make([]entity.LinkInput, len(b.ProjectAreas)),
 		Components:   len(b.Components),
+	}
+	for i, l := range b.ProjectAreas {
+		in.ProjectAreas[i] = entity.LinkInput{From: entity.ID(l.ProjectId), To: entity.ID(l.AreaId), ValidFrom: l.ValidFrom, ValidTo: l.ValidTo}
 	}
 	for i, l := range b.TeamProjects {
 		in.TeamProjects[i] = entity.LinkInput{From: entity.ID(l.TeamId), To: entity.ID(l.ProjectId), ValidFrom: l.ValidFrom, ValidTo: l.ValidTo}

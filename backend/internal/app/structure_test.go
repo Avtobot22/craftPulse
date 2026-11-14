@@ -62,6 +62,11 @@ func (s structureBody) input() structureBody {
 			l[i].ValidFrom, l[i].ValidTo = nil, nil
 		}
 	}
+	for _, l := range in.ProjectAreas {
+		if m, ok := l.(map[string]any); ok {
+			m["valid_from"], m["valid_to"] = nil, nil
+		}
+	}
 	return in
 }
 
@@ -374,7 +379,7 @@ func TestStructure_LinksAndTeamArea(t *testing.T) {
 	projects := e.do(t, member, http.MethodGet, "/api/v1/projects?team_id="+team.String(), nil)
 	assert.Contains(t, projects.Body.String(), project.String())
 	empty := e.do(t, member, http.MethodGet, "/api/v1/projects?team_id="+v1.team("Mobile").String(), nil)
-	assert.JSONEq(t, `{"data":[],"next_cursor":null}`, empty.Body.String())
+	assert.JSONEq(t, `{"data":[],"next_cursor":null,"access_limited":false,"access_notes":[]}`, empty.Body.String())
 
 	e.clock.Advance(50 * time.Minute)
 	unlinked := v2.input()

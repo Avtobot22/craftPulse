@@ -422,7 +422,10 @@ paths:
     get:
       operationId: listProjects
       summary: Список доступных проектов
-      description: Проекты в области пользователя, доступные хотя бы в одном источнике проекта (раздел 7.7).
+      description: |
+        Проекты в области пользователя, доступные хотя бы в одном источнике проекта (раздел 7.7).
+        Проект без областей источников виден по роли. Права источника не старше 60 с; скрытые
+        проекты не дают строк и количества, ответ помечается `access_limited` с причинами в `access_notes`.
       tags: [organization]
       security: [{cookieSession: []}, {apiKey: []}]
       x-craftpulse-action: org.read
@@ -439,7 +442,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ProjectPage'}
-              example: {data: [{id: 0193a5b0-4444-7000-8000-000000000001, name: Core, status: active}], next_cursor: null}
+              example: {data: [{id: 0193a5b0-4444-7000-8000-000000000001, name: Core, status: active}], next_cursor: null, access_limited: false, access_notes: []}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
   /services:
@@ -5633,10 +5636,12 @@ components:
         next_cursor: {type: [string, 'null']}
     ProjectPage:
       type: object
-      required: [data, next_cursor]
+      required: [data, next_cursor, access_limited, access_notes]
       properties:
         data: {type: array, items: {$ref: '#/components/schemas/Project'}}
         next_cursor: {type: [string, 'null']}
+        access_limited: {type: boolean}
+        access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}
     ServicePage:
       type: object
       required: [data, next_cursor]

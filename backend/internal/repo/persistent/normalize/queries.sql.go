@@ -570,6 +570,52 @@ func (q *Queries) PlaceObjects(ctx context.Context, arg PlaceObjectsParams) erro
 	return err
 }
 
+const restrictedObjects = `-- name: RestrictedObjects :many
+SELECT id, current_area_id::uuid AS area_id, object_kind, native_ns, native_id FROM normalize.source_object
+WHERE organization_id = $1 AND current_area_id = ANY ($2::uuid[])
+    AND restricted AND deleted_at IS NULL
+ORDER BY current_area_id, id
+`
+
+type RestrictedObjectsParams struct {
+	OrganizationID uuid.UUID
+	AreaIds        []uuid.UUID
+}
+
+type RestrictedObjectsRow struct {
+	ID         uuid.UUID
+	AreaID     uuid.UUID
+	ObjectKind string
+	NativeNs   string
+	NativeID   string
+}
+
+func (q *Queries) RestrictedObjects(ctx context.Context, arg RestrictedObjectsParams) ([]RestrictedObjectsRow, error) {
+	rows, err := q.db.Query(ctx, restrictedObjects, arg.OrganizationID, arg.AreaIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RestrictedObjectsRow
+	for rows.Next() {
+		var i RestrictedObjectsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AreaID,
+			&i.ObjectKind,
+			&i.NativeNs,
+			&i.NativeID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setAreaChangeSeq = `-- name: SetAreaChangeSeq :exec
 UPDATE normalize.area SET last_change_seq = $1
 WHERE organization_id = $2 AND area_id = ANY ($3::uuid[])
@@ -700,20 +746,28 @@ func (q *Queries) TaskEventRevisions(ctx context.Context, arg TaskEventRevisions
 }
 
 const taskEventsAt = `-- name: TaskEventsAt :many
-SELECT organization_id, id, task_id, area_id, event_key, source_revision, content_hash, known_seq, superseded_seq, superseded_at, receipt_id, record_no, event_kind, field_native_id, before_value, after_value, before_account_id, after_account_id, actor_account_id, event_time, event_offset_s, observed_at, observed_via FROM normalize.task_event
-WHERE organization_id = $1 AND area_id = $2 AND known_seq <= $3
-    AND (superseded_seq IS NULL OR superseded_seq > $3)
-ORDER BY event_time, id
+SELECT e.organization_id, e.id, e.task_id, e.area_id, e.event_key, e.source_revision, e.content_hash, e.known_seq, e.superseded_seq, e.superseded_at, e.receipt_id, e.record_no, e.event_kind, e.field_native_id, e.before_value, e.after_value, e.before_account_id, e.after_account_id, e.actor_account_id, e.event_time, e.event_offset_s, e.observed_at, e.observed_via FROM normalize.task_event e
+JOIN normalize.source_object o ON o.organization_id = e.organization_id AND o.id = e.task_id
+WHERE e.organization_id = $1 AND e.area_id = $2 AND e.known_seq <= $3
+    AND (e.superseded_seq IS NULL OR e.superseded_seq > $3)
+    AND (NOT o.restricted OR o.id = ANY ($4::uuid[]))
+ORDER BY e.event_time, e.id
 `
 
 type TaskEventsAtParams struct {
 	OrganizationID uuid.UUID
 	AreaID         uuid.UUID
 	KnownSeq       int64
+	Allowed        []uuid.UUID
 }
 
 func (q *Queries) TaskEventsAt(ctx context.Context, arg TaskEventsAtParams) ([]NormalizeTaskEvent, error) {
-	rows, err := q.db.Query(ctx, taskEventsAt, arg.OrganizationID, arg.AreaID, arg.KnownSeq)
+	rows, err := q.db.Query(ctx, taskEventsAt,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.KnownSeq,
+		arg.Allowed,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -793,20 +847,28 @@ func (q *Queries) TaskRevisions(ctx context.Context, arg TaskRevisionsParams) ([
 }
 
 const taskVersionsAt = `-- name: TaskVersionsAt :many
-SELECT organization_id, id, task_id, area_id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, source_updated_at, task_key, title, type_native_id, status_native_id, resolution_native_id, created_src_at, size_native, team_native, assignee_account_id, parent_task_id, restriction_native, raw_fields FROM normalize.task_version
-WHERE organization_id = $1 AND area_id = $2 AND known_seq <= $3
-    AND (superseded_seq IS NULL OR superseded_seq > $3)
-ORDER BY task_id
+SELECT v.organization_id, v.id, v.task_id, v.area_id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.source_updated_at, v.task_key, v.title, v.type_native_id, v.status_native_id, v.resolution_native_id, v.created_src_at, v.size_native, v.team_native, v.assignee_account_id, v.parent_task_id, v.restriction_native, v.raw_fields FROM normalize.task_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.task_id
+WHERE v.organization_id = $1 AND v.area_id = $2 AND v.known_seq <= $3
+    AND (v.superseded_seq IS NULL OR v.superseded_seq > $3)
+    AND (NOT o.restricted OR o.id = ANY ($4::uuid[]))
+ORDER BY v.task_id
 `
 
 type TaskVersionsAtParams struct {
 	OrganizationID uuid.UUID
 	AreaID         uuid.UUID
 	KnownSeq       int64
+	Allowed        []uuid.UUID
 }
 
 func (q *Queries) TaskVersionsAt(ctx context.Context, arg TaskVersionsAtParams) ([]NormalizeTaskVersion, error) {
-	rows, err := q.db.Query(ctx, taskVersionsAt, arg.OrganizationID, arg.AreaID, arg.KnownSeq)
+	rows, err := q.db.Query(ctx, taskVersionsAt,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.KnownSeq,
+		arg.Allowed,
+	)
 	if err != nil {
 		return nil, err
 	}

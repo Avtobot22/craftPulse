@@ -143,3 +143,23 @@ UPDATE connect.probe SET status = sqlc.arg(status), finished_at = sqlc.arg(finis
     contract_version = sqlc.narg(contract_version), access_mode = sqlc.narg(access_mode),
     capabilities = sqlc.arg(capabilities), reason_code = sqlc.narg(reason_code)
 WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND status IN ('pending', 'running');
+
+-- name: AreaSources :many
+SELECT s.area_id::uuid AS area_id, s.connection_id, s.instance_id, s.scope_kind, s.native_scope_id, s.status AS scope_status,
+    c.status AS connection_status, c.paused_until
+FROM connect.connection_scope s
+JOIN connect.connection c ON c.organization_id = s.organization_id AND c.id = s.connection_id
+WHERE s.organization_id = sqlc.arg(organization_id) AND s.area_id = ANY (sqlc.arg(area_ids)::uuid[])
+ORDER BY s.area_id, s.added_at DESC, s.id;
+
+-- name: PageSourceAreas :many
+SELECT s.area_id::uuid AS area_id, s.scope_kind, s.display_name, s.connection_id
+FROM connect.connection_scope s
+JOIN connect.connection c ON c.organization_id = s.organization_id AND c.id = s.connection_id
+WHERE s.organization_id = sqlc.arg(organization_id) AND s.status = 'active' AND c.status = 'active'
+    AND s.area_id IS NOT NULL
+    AND (sqlc.narg(scope_kind)::text IS NULL OR s.scope_kind = sqlc.narg(scope_kind)::text)
+    AND (sqlc.narg(connection_id)::uuid IS NULL OR s.connection_id = sqlc.narg(connection_id)::uuid)
+    AND (sqlc.narg(after)::uuid IS NULL OR s.area_id > sqlc.narg(after)::uuid)
+ORDER BY s.area_id
+LIMIT sqlc.arg(row_limit);

@@ -36,11 +36,21 @@ type normalizeEnv struct {
 func newNormalizeEnv(t *testing.T) *normalizeEnv {
 	t.Helper()
 	e := &normalizeEnv{ingestEnv: newIngestEnv(t)}
-	orgs, _ := newOrgAccess(e.app, e.clock)
+	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
 	var err error
 	e.norm, err = newNormalize(e.app, e.store, e.uc, orgs, e.clock)
 	require.NoError(t, err)
 	return e
+}
+
+// areaScope is the scope access grants the subject for reading the source areas.
+func (e *ingestEnv) areaScope(t *testing.T, s entity.Subject, areas ...entity.ID) entity.Scope {
+	t.Helper()
+	scope, err := e.rights.Authorize(t.Context(), s, entity.AccessRequest{Action: "org.read"})
+	require.NoError(t, err)
+	scope, err = e.rights.Decide(t.Context(), s, scope, entity.SourceQuery{Areas: areas})
+	require.NoError(t, err)
+	return scope
 }
 
 type pendingJob struct {
@@ -334,6 +344,8 @@ func TestNormalize_SliceSeesTheVersionOfItsKnowledgeNumber(t *testing.T) {
 	area, err := e.norm.AreaOf(t.Context(), e.orgID, *rc.SourceInstanceID, entity.ObjectTrackerProject, "10000")
 	require.NoError(t, err)
 
+	scope := e.areaScope(t, e.admin, area)
+
 	tests := []struct {
 		name      string
 		giveSlice int64
@@ -344,13 +356,13 @@ func TestNormalize_SliceSeesTheVersionOfItsKnowledgeNumber(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := e.norm.TasksAt(t.Context(), e.orgID, area, tt.giveSlice)
+			got, err := e.norm.TasksAt(t.Context(), scope, e.orgID, area, tt.giveSlice)
 			require.NoError(t, err)
 			require.Len(t, got, 1)
 			assert.Equal(t, tt.wantTitle, got[0].Title)
 		})
 	}
-	empty, err := e.norm.TasksAt(t.Context(), e.orgID, area, k1-1)
+	empty, err := e.norm.TasksAt(t.Context(), scope, e.orgID, area, k1-1)
 	require.NoError(t, err)
 	assert.Empty(t, empty, "a slice before the first version sees nothing")
 }
