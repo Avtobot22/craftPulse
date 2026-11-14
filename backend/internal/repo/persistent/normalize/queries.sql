@@ -157,3 +157,12 @@ SELECT a.area_id FROM normalize.area a
 JOIN normalize.source_object o ON o.organization_id = a.organization_id AND o.id = a.area_id
 WHERE o.organization_id = sqlc.arg(organization_id) AND o.instance_id = sqlc.arg(instance_id) AND o.object_kind = sqlc.arg(object_kind)
     AND o.native_ns = '' AND o.native_id = sqlc.arg(native_id);
+
+-- name: AreaInstances :many
+SELECT id, instance_id FROM normalize.source_object
+WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(area_ids)::uuid[]);
+
+-- name: DictionariesOfAreas :many
+SELECT area_id, entry_kind, native_id, name, attributes FROM normalize.dictionary_entry
+WHERE organization_id = sqlc.arg(organization_id) AND area_id = ANY (sqlc.arg(area_ids)::uuid[]) AND superseded_seq IS NULL
+ORDER BY area_id, entry_kind, native_id;

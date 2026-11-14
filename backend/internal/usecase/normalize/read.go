@@ -2,6 +2,7 @@ package normalize
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 
@@ -75,6 +76,62 @@ func (u *UseCase) Dictionary(ctx context.Context, orgID, areaID entity.ID, kind 
 		return err
 	})
 	return out, err
+}
+
+// Dictionaries reads the current dictionaries of the areas with the instance of each; an area normalize has not
+// seen yet is left out. The status category and the field type come from the record as the source sent it.
+func (u *UseCase) Dictionaries(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaDictionary, error) {
+	if len(areaIDs) == 0 {
+		return nil, nil
+	}
+	var (
+		instances map[entity.ID]entity.ID
+		entries   []entity.DictionaryEntry
+	)
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		if instances, err = u.d.Repo.AreaInstances(ctx, orgID, areaIDs); err != nil {
+			return err
+		}
+		entries, err = u.d.Repo.Dictionaries(ctx, orgID, areaIDs)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	byArea := make(map[entity.ID]int, len(instances))
+	out := make([]entity.AreaDictionary, 0, len(instances))
+	for _, area := range areaIDs {
+		instance, ok := instances[area]
+		if _, seen := byArea[area]; !ok || seen {
+			continue
+		}
+		byArea[area] = len(out)
+		out = append(out, entity.AreaDictionary{AreaID: area, InstanceID: instance})
+	}
+	for i := range entries {
+		at, ok := byArea[entries[i].AreaID]
+		if !ok {
+			continue
+		}
+		item, err := dictionaryItem(&entries[i])
+		if err != nil {
+			return nil, err
+		}
+		out[at].Items = append(out[at].Items, item)
+	}
+	return out, nil
+}
+
+func dictionaryItem(e *entity.DictionaryEntry) (entity.DictionaryItem, error) {
+	var attrs struct {
+		Category  string `json:"category"`
+		ValueType string `json:"value_type"`
+	}
+	if err := json.Unmarshal(e.Attributes, &attrs); err != nil {
+		return entity.DictionaryItem{}, errorf("decode %s %s: %w", e.Kind, e.NativeID, err)
+	}
+	return entity.DictionaryItem{Kind: e.Kind, NativeID: e.NativeID, Name: e.Name, Category: attrs.Category, ValueType: attrs.ValueType}, nil
 }
 
 // AreaOf finds the area of a scope of a source instance; entity.ErrNotFound until it is first normalized.

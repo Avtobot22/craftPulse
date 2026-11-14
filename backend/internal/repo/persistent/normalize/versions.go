@@ -310,3 +310,32 @@ func dictionaryEntries(rows []NormalizeDictionaryEntry) []entity.DictionaryEntry
 	}
 	return out
 }
+
+// AreaInstances maps the areas to their source instances; an area normalize does not know is left out.
+func (r *Repo) AreaInstances(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) (map[entity.ID]entity.ID, error) {
+	rows, err := r.q(ctx).AreaInstances(ctx, AreaInstancesParams{OrganizationID: uuid.UUID(orgID), AreaIds: ids(areaIDs)})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: area instances: %w", err)
+	}
+	out := make(map[entity.ID]entity.ID, len(rows))
+	for _, row := range rows {
+		out[entity.ID(row.ID)] = entity.ID(row.InstanceID)
+	}
+	return out, nil
+}
+
+// Dictionaries reads the current entries of every kind of the areas, by area, kind and native ID.
+func (r *Repo) Dictionaries(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.DictionaryEntry, error) {
+	rows, err := r.q(ctx).DictionariesOfAreas(ctx, DictionariesOfAreasParams{OrganizationID: uuid.UUID(orgID), AreaIds: ids(areaIDs)})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: dictionaries: %w", err)
+	}
+	out := make([]entity.DictionaryEntry, len(rows))
+	for i, row := range rows {
+		out[i] = entity.DictionaryEntry{
+			AreaID: entity.ID(row.AreaID), Kind: entity.DictionaryKind(row.EntryKind), NativeID: row.NativeID, Name: row.Name,
+			Attributes: row.Attributes,
+		}
+	}
+	return out, nil
+}

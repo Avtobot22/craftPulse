@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -154,6 +155,30 @@ func (u *UseCase) read(ctx context.Context, orgID entity.ID, version int64, at t
 // transaction, as access reads it together with the profile.
 func (u *UseCase) ProjectAreas(ctx context.Context, orgID entity.ID, at time.Time) ([]entity.Link, error) {
 	return u.orgs.CurrentLinks(ctx, orgID, entity.LinkProjectArea, at)
+}
+
+// TeamAreas are the source areas of the projects of a team in force at the moment, for the settings of its
+// process (TZ 10.3).
+func (u *UseCase) TeamAreas(ctx context.Context, orgID, teamID entity.ID, at time.Time) ([]entity.ID, error) {
+	var out []entity.ID
+	err := u.tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		out = nil
+		projects, err := u.orgs.TeamProjectIDs(ctx, orgID, []entity.ID{teamID}, at)
+		if err != nil || len(projects) == 0 {
+			return err
+		}
+		links, err := u.orgs.CurrentLinks(ctx, orgID, entity.LinkProjectArea, at)
+		if err != nil {
+			return err
+		}
+		for _, l := range links {
+			if slices.Contains(projects, l.From) && !slices.Contains(out, l.To) {
+				out = append(out, l.To)
+			}
+		}
+		return nil
+	})
+	return out, err
 }
 
 // knownAreas are the areas of the body some connection of the organization collected; a link may name only

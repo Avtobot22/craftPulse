@@ -57,6 +57,41 @@ func (q *Queries) AreaChanges(ctx context.Context, arg AreaChangesParams) ([]Are
 	return items, nil
 }
 
+const areaInstances = `-- name: AreaInstances :many
+SELECT id, instance_id FROM normalize.source_object
+WHERE organization_id = $1 AND id = ANY ($2::uuid[])
+`
+
+type AreaInstancesParams struct {
+	OrganizationID uuid.UUID
+	AreaIds        []uuid.UUID
+}
+
+type AreaInstancesRow struct {
+	ID         uuid.UUID
+	InstanceID uuid.UUID
+}
+
+func (q *Queries) AreaInstances(ctx context.Context, arg AreaInstancesParams) ([]AreaInstancesRow, error) {
+	rows, err := q.db.Query(ctx, areaInstances, arg.OrganizationID, arg.AreaIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AreaInstancesRow
+	for rows.Next() {
+		var i AreaInstancesRow
+		if err := rows.Scan(&i.ID, &i.InstanceID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const areaOf = `-- name: AreaOf :one
 SELECT a.area_id FROM normalize.area a
 JOIN normalize.source_object o ON o.organization_id = a.organization_id AND o.id = a.area_id
@@ -309,6 +344,51 @@ func (q *Queries) CurrentTasksByNative(ctx context.Context, arg CurrentTasksByNa
 			&i.NormalizeTaskVersion.RestrictionNative,
 			&i.NormalizeTaskVersion.RawFields,
 			&i.NativeID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dictionariesOfAreas = `-- name: DictionariesOfAreas :many
+SELECT area_id, entry_kind, native_id, name, attributes FROM normalize.dictionary_entry
+WHERE organization_id = $1 AND area_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+ORDER BY area_id, entry_kind, native_id
+`
+
+type DictionariesOfAreasParams struct {
+	OrganizationID uuid.UUID
+	AreaIds        []uuid.UUID
+}
+
+type DictionariesOfAreasRow struct {
+	AreaID     uuid.UUID
+	EntryKind  string
+	NativeID   string
+	Name       string
+	Attributes []byte
+}
+
+func (q *Queries) DictionariesOfAreas(ctx context.Context, arg DictionariesOfAreasParams) ([]DictionariesOfAreasRow, error) {
+	rows, err := q.db.Query(ctx, dictionariesOfAreas, arg.OrganizationID, arg.AreaIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DictionariesOfAreasRow
+	for rows.Next() {
+		var i DictionariesOfAreasRow
+		if err := rows.Scan(
+			&i.AreaID,
+			&i.EntryKind,
+			&i.NativeID,
+			&i.Name,
+			&i.Attributes,
 		); err != nil {
 			return nil, err
 		}

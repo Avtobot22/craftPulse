@@ -22,6 +22,7 @@ type Handler struct {
 	accounts
 	connections
 	intake
+	process
 	fallback
 	session
 	organization
@@ -45,6 +46,7 @@ type Deps struct {
 	Intake       usecase.Intake
 	Sync         usecase.SyncStatus
 	Operations   usecase.Operations
+	Process      usecase.Process
 	Registerer   prometheus.Registerer
 }
 
@@ -54,6 +56,7 @@ func New(d Deps) *Handler {
 		connections:    connections{uc: d.Connections, sync: d.Sync, operations: d.Operations},
 		accounts:       accounts{uc: d.Accounts, connections: d.Connections},
 		intake:         intake{uc: d.Intake},
+		process:        process{uc: d.Process, connections: d.Connections},
 		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),
 		organization:   organization{structure: d.Structure, access: d.Access, connections: d.Connections},
 		administration: administration{users: d.Users, audit: d.Audit, protocols: d.Protocols},
