@@ -160,7 +160,23 @@ func (u *UseCase) ProjectAreas(ctx context.Context, orgID entity.ID, at time.Tim
 // TeamAreas are the source areas of the projects of a team in force at the moment, for the settings of its
 // process (TZ 10.3).
 func (u *UseCase) TeamAreas(ctx context.Context, orgID, teamID entity.ID, at time.Time) ([]entity.ID, error) {
+	links, err := u.TeamProjectAreas(ctx, orgID, teamID, at)
+	if err != nil {
+		return nil, err
+	}
 	var out []entity.ID
+	for _, l := range links {
+		if !slices.Contains(out, l.To) {
+			out = append(out, l.To)
+		}
+	}
+	return out, nil
+}
+
+// TeamProjectAreas are the links of the projects of a team to their source areas in force at the moment: From
+// is the project and To the area.
+func (u *UseCase) TeamProjectAreas(ctx context.Context, orgID, teamID entity.ID, at time.Time) ([]entity.Link, error) {
+	var out []entity.Link
 	err := u.tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
 		out = nil
 		projects, err := u.orgs.TeamProjectIDs(ctx, orgID, []entity.ID{teamID}, at)
@@ -172,8 +188,8 @@ func (u *UseCase) TeamAreas(ctx context.Context, orgID, teamID entity.ID, at tim
 			return err
 		}
 		for _, l := range links {
-			if slices.Contains(projects, l.From) && !slices.Contains(out, l.To) {
-				out = append(out, l.To)
+			if slices.Contains(projects, l.From) {
+				out = append(out, l)
 			}
 		}
 		return nil

@@ -67,6 +67,33 @@ func (u *UseCase) RestrictedObjects(ctx context.Context, scope entity.Scope, org
 	return out, err
 }
 
+// AreaFacts reads every task of an area known at the slice seq with its events, restricted ones included: calc
+// computes the whole area once, and access narrows what a reader sees of it (TZ 12.7).
+func (u *UseCase) AreaFacts(ctx context.Context, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error) {
+	out := entity.AreaFacts{AreaID: areaID}
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		instances, err := u.d.Repo.AreaInstances(ctx, orgID, []entity.ID{areaID})
+		if err != nil {
+			return err
+		}
+		out.InstanceID = instances[areaID]
+		restricted, err := u.d.Repo.RestrictedObjects(ctx, orgID, []entity.ID{areaID})
+		if err != nil {
+			return err
+		}
+		all := make([]entity.ID, len(restricted))
+		for i := range restricted {
+			all[i] = restricted[i].ID
+		}
+		if out.Tasks, err = u.d.Repo.TaskVersionsAt(ctx, orgID, areaID, seq, all); err != nil {
+			return err
+		}
+		out.Events, err = u.d.Repo.TaskEventsAt(ctx, orgID, areaID, seq, all)
+		return err
+	})
+	return out, err
+}
+
 // Dictionary reads the current statuses, resolutions, types or fields of an area.
 func (u *UseCase) Dictionary(ctx context.Context, orgID, areaID entity.ID, kind entity.DictionaryKind) ([]entity.DictionaryEntry, error) {
 	var out []entity.DictionaryEntry
