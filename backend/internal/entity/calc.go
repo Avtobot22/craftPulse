@@ -181,3 +181,150 @@ type CalcResult struct {
 	Series         []Series
 	Tasks          []TaskSlice
 }
+
+// RevisionStatus is the life of a revision of a series (TZ 12.7).
+type RevisionStatus string
+
+const (
+	RevisionBuilding   RevisionStatus = "building"
+	RevisionPublished  RevisionStatus = "published"
+	RevisionSuperseded RevisionStatus = "superseded"
+	RevisionFailed     RevisionStatus = "failed"
+)
+
+// Reasons a revision cannot be reproduced; its values stay.
+const (
+	IrreproducibleBasisDeleted      = "basis_deleted"
+	IrreproducibleBasisExpired      = "basis_expired"
+	IrreproducibleDefinitionRetired = "definition_retired"
+)
+
+// Inputs of a revision kept in calc.revision_input.
+const (
+	InputKindDefinition = "definition"
+	InputKindMapping    = "mapping"
+	InputKindCalendar   = "calendar"
+	InputKindStructure  = "structure"
+)
+
+// MetricSetFlow is the set of the flow metrics of a team.
+const MetricSetFlow = "task_flow"
+
+// CalcSeries is an area, a set of metrics and a step; Scope is canonical JSON and ScopeHash its SHA-256.
+type CalcSeries struct {
+	ID                ID
+	Scope             []byte
+	ScopeHash         []byte
+	MetricSet         string
+	Step              Step
+	CurrentRevisionID *ID
+	ConsumedSeq       int64
+}
+
+// CalcRevision is a revision of a series; it does not change after publication.
+type CalcRevision struct {
+	ID                   ID
+	SeriesID             ID
+	RevisionNo           int
+	Status               RevisionStatus
+	ProgressAt           time.Time
+	Window               Window
+	AsOf                 time.Time
+	KnowledgeSeq         int64
+	Timezone             string
+	InputHash            []byte
+	Loading              bool
+	StartedAt            time.Time
+	PublishedAt          *time.Time
+	SupersededAt         *time.Time
+	IrreproducibleReason string
+	PreviousRevisionID   *ID
+}
+
+// RevisionInput is a version of an input a revision was computed with.
+type RevisionInput struct {
+	Kind         string
+	ID           string
+	Version      string
+	Watermark    *time.Time
+	Completeness string
+}
+
+// SeriesPoint is a stored point of a metric and an estimator of a revision.
+type SeriesPoint struct {
+	MetricID  string
+	Estimator string
+	Unit      string
+	Point
+}
+
+// ContributionKey is the position of a page of contributions of a point.
+type ContributionKey struct {
+	ObjectID ID
+	ItemNo   int
+}
+
+// ContributionQuery reads the contributions of one point of a revision after the key.
+type ContributionQuery struct {
+	MetricID   string
+	Estimator  string
+	PointStart time.Time
+	After      *ContributionKey
+	Limit      int
+}
+
+// ContributionPage is a page of contributions; Next is set when more follow.
+type ContributionPage struct {
+	Items []Contribution
+	Next  *ContributionKey
+}
+
+// StoredPart is a computed part of a series ready to be saved: its points with their contributions, the
+// intervals of its tasks inside the part and the attributes the report cuts it by.
+type StoredPart struct {
+	InputHash []byte
+	MetricSet string
+	From, To  time.Time
+	Points    []SeriesPoint
+	Intervals []WorkflowInterval
+	Tasks     []TaskSlice
+}
+
+const (
+	KindCalcSlice  = "calc.slice"
+	KindCalcGC     = "calc.gc"
+	KindCalcGCTick = "calc.gc.tick"
+)
+
+// CalcSliceJob builds a revision of a series part by part (TZ 10.6). Without RevisionID it starts a chain; the
+// part number is not in the uniqueness, so a series has one chain of a window at a time.
+type CalcSliceJob struct {
+	OrganizationID ID        `json:"organization_id" river:"unique"`
+	SeriesID       ID        `json:"series_id" river:"unique"`
+	From           time.Time `json:"from" river:"unique"`
+	To             time.Time `json:"to" river:"unique"`
+	AsOf           time.Time `json:"as_of"`
+	RevisionID     ID        `json:"revision_id,omitzero"`
+	PartNo         int       `json:"part_no,omitempty"`
+	CorrelationID  ID        `json:"correlation_id"`
+}
+
+func (CalcSliceJob) Kind() string { return KindCalcSlice }
+
+func (CalcSliceJob) UniqueWhileActive() {}
+
+// CalcGCJob deletes a portion of the parts of an organization no revision refers to; AfterPartID is the
+// cursor of the portion before.
+type CalcGCJob struct {
+	OrganizationID ID `json:"organization_id" river:"unique"`
+	AfterPartID    ID `json:"after_part_id,omitzero"`
+}
+
+func (CalcGCJob) Kind() string { return KindCalcGC }
+
+func (CalcGCJob) UniqueWhileActive() {}
+
+// CalcGCTickJob queues the collection of parts of every organization once a day.
+type CalcGCTickJob struct{}
+
+func (CalcGCTickJob) Kind() string { return KindCalcGCTick }

@@ -176,6 +176,8 @@ type timeline struct {
 	episodes      []*episode
 	completions   []time.Time
 	terminations  []termination
+	// events are the changes replayed, for the hash of the input of a part.
+	events []entity.TaskEvent
 }
 
 type taskInput struct {
@@ -192,14 +194,14 @@ type taskInput struct {
 func buildTimeline(in *taskInput, rs *rules, asOf time.Time) *timeline {
 	v := &in.version
 	tl := &timeline{
-		slice: entity.TaskSlice{TaskID: v.TaskID, ProjectID: in.project, Created: v.CreatedSrcAt, HistoryFrom: in.historyFrom},
+		slice: entity.TaskSlice{TaskID: v.TaskID, ProjectID: in.project, Created: v.CreatedSrcAt.UTC(), HistoryFrom: utc(in.historyFrom)},
 		rules: rs, asOf: asOf, phase: phaseNotStarted,
 	}
 	if label, ok := rs.types[v.TypeNativeID]; ok {
 		tl.slice.TaskType = &label
 	}
-	from := v.CreatedSrcAt
-	if h := in.historyFrom; h != nil && h.After(from) {
+	from := tl.slice.Created
+	if h := tl.slice.HistoryFrom; h != nil && h.After(from) {
 		from = *h
 	} else {
 		tl.slice.HistoryFrom = nil
@@ -211,6 +213,7 @@ func buildTimeline(in *taskInput, rs *rules, asOf time.Time) *timeline {
 		end = len(all)
 	}
 	events := all[:end]
+	tl.events = events
 	unmapped := map[string]bool{}
 	tl.note(unmapped)
 
@@ -260,6 +263,7 @@ func history(events []entity.TaskEvent, rs *rules) []entity.TaskEvent {
 		}
 		seen[e.ID] = true
 		out = append(out, *e)
+		out[len(out)-1].EventTime = e.EventTime.UTC()
 	}
 	slices.SortStableFunc(out, func(a, b entity.TaskEvent) int {
 		return cmp.Or(a.EventTime.Compare(b.EventTime), cmp.Compare(a.EventKey, b.EventKey))
@@ -475,6 +479,14 @@ func (ep *episode) classAt(t time.Time) entity.IntervalClass {
 		class = seg.class
 	}
 	return class
+}
+
+func utc(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	u := t.UTC()
+	return &u
 }
 
 func deref(s *string) string {

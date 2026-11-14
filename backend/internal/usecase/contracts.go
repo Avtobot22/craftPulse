@@ -146,3 +146,12 @@ type Process interface {
 	CreateCalendarVersion(ctx context.Context, s entity.Subject, teamID entity.ID, baseVersion int, key entity.ID,
 		d entity.CalendarDraft) (v entity.CalendarVersion, created bool, err error)
 }
+
+// Calculator runs the jobs of calc: the parts of a revision of a series and the collection of unused parts.
+type Calculator interface {
+	RunSlice(ctx context.Context, job entity.CalcSliceJob, complete func(context.Context) error) error
+	// FailSlice ends the revision of a job that spent its attempts; the current revision stays.
+	FailSlice(ctx context.Context, job entity.CalcSliceJob) error
+	RunGC(ctx context.Context, job entity.CalcGCJob, complete func(context.Context) error) error
+	TickGC(ctx context.Context) error
+}

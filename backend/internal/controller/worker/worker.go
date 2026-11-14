@@ -22,6 +22,7 @@ type Deps struct {
 	Packages   usecase.PackageProcessor
 	Collection usecase.Collector
 	Normalizer usecase.Normalizer
+	Calculator usecase.Calculator
 }
 
 // Register adds the handlers of the job kinds; the count matters: River refuses to fetch jobs without a
@@ -36,11 +37,18 @@ func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &dirtyWorker{collector: d.Collection})
 	river.AddWorker(w, &tickWorker{collector: d.Collection})
 	river.AddWorker(w, &scheduleWorker{collector: d.Collection})
-	return 9
+	river.AddWorker(w, &sliceWorker{calculator: d.Calculator})
+	river.AddWorker(w, &gcWorker{calculator: d.Calculator})
+	river.AddWorker(w, &gcTickWorker{calculator: d.Calculator})
+	return 12
 }
 
-// _tickEvery plans collection every hour, so a data kind waits no more than 24 h for its increment.
-const _tickEvery = time.Hour
+const (
+	// _tickEvery plans collection every hour, so a data kind waits no more than 24 h for its increment.
+	_tickEvery = time.Hour
+	// _gcEvery collects the unused parts of calc once a day.
+	_gcEvery = 24 * time.Hour
+)
 
 // Periodic are the periodic jobs; River runs them on the leader only, so several workers do not repeat them.
 func Periodic() []*river.PeriodicJob {
@@ -48,7 +56,42 @@ func Periodic() []*river.PeriodicJob {
 		river.NewPeriodicJob(river.PeriodicInterval(_tickEvery), func() (river.JobArgs, *river.InsertOpts) {
 			return entity.SyncTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
 		}, &river.PeriodicJobOpts{RunOnStart: true}),
+		river.NewPeriodicJob(river.PeriodicInterval(_gcEvery), func() (river.JobArgs, *river.InsertOpts) {
+			return entity.CalcGCTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
+		}, nil),
 	}
+}
+
+type sliceWorker struct {
+	river.WorkerDefaults[entity.CalcSliceJob]
+	calculator usecase.Calculator
+}
+
+// Work fails the revision of a part whose last attempt failed, so the series may start a new chain at once.
+func (w *sliceWorker) Work(ctx context.Context, job *river.Job[entity.CalcSliceJob]) error {
+	err := w.calculator.RunSlice(ctx, job.Args, completeIn(job))
+	if err != nil && job.Attempt >= job.MaxAttempts {
+		return errors.Join(err, w.calculator.FailSlice(context.WithoutCancel(ctx), job.Args))
+	}
+	return err
+}
+
+type gcWorker struct {
+	river.WorkerDefaults[entity.CalcGCJob]
+	calculator usecase.Calculator
+}
+
+func (w *gcWorker) Work(ctx context.Context, job *river.Job[entity.CalcGCJob]) error {
+	return w.calculator.RunGC(ctx, job.Args, completeIn(job))
+}
+
+type gcTickWorker struct {
+	river.WorkerDefaults[entity.CalcGCTickJob]
+	calculator usecase.Calculator
+}
+
+func (w *gcTickWorker) Work(ctx context.Context, _ *river.Job[entity.CalcGCTickJob]) error {
+	return w.calculator.TickGC(ctx)
 }
 
 type reconcileWorker struct {

@@ -23,6 +23,8 @@ type Transactor interface {
 type TenantRepo interface {
 	CreateTenant(ctx context.Context, orgID entity.ID, at time.Time) error
 	NextSeq(ctx context.Context, orgID entity.ID) (int64, error)
+	// Clock reads the knowledge counter without moving it; it runs in an organization transaction.
+	Clock(ctx context.Context, orgID entity.ID) (lastSeq, reproducibleFrom int64, err error)
 	// ActiveTenants reads the registry outside row-level security, for the scheduler of every organization.
 	ActiveTenants(ctx context.Context) ([]entity.ID, error)
 }
@@ -313,6 +315,41 @@ type ProcessRepo interface {
 	CalendarVersionByConfirmation(ctx context.Context, orgID, confirmationID entity.ID) (entity.CalendarVersion, error)
 	PageCalendarVersions(ctx context.Context, orgID, teamID entity.ID, p entity.VersionPageRequest) ([]entity.CalendarVersion, error)
 	InsertCalendarVersion(ctx context.Context, orgID entity.ID, v entity.CalendarVersion) error
+}
+
+// CalcRepo keeps the series of calc, their immutable revisions and the parts they share (TZ 12.5.8, 12.7).
+// Every call runs in an organization transaction; a missing series or revision is entity.ErrNotFound.
+type CalcRepo interface {
+	// EnsureSeries creates the series of the scope, set and step unless it exists, and returns it.
+	EnsureSeries(ctx context.Context, orgID entity.ID, s entity.CalcSeries) (entity.CalcSeries, error)
+	Series(ctx context.Context, orgID, id entity.ID) (entity.CalcSeries, error)
+	FailStaleRevisions(ctx context.Context, orgID, seriesID entity.ID, before time.Time) error
+	// CreateRevision writes a building revision with the next number; false when the series already builds one.
+	CreateRevision(ctx context.Context, orgID entity.ID, r entity.CalcRevision) (bool, error)
+	InsertRevisionInputs(ctx context.Context, orgID, revisionID entity.ID, inputs []entity.RevisionInput) error
+	Revision(ctx context.Context, orgID, id entity.ID) (entity.CalcRevision, error)
+	// TouchRevision, FailRevision and PublishRevision change a building revision only; false when it is not one.
+	TouchRevision(ctx context.Context, orgID, id entity.ID, at time.Time) (bool, error)
+	FailRevision(ctx context.Context, orgID, id entity.ID) (bool, error)
+	PublishRevision(ctx context.Context, orgID, id entity.ID, at time.Time) (bool, error)
+	SupersedeRevision(ctx context.Context, orgID, id entity.ID, at time.Time) error
+	// MoveCurrentRevision moves the pointer of the series from prev; false when another revision holds it.
+	MoveCurrentRevision(ctx context.Context, orgID, seriesID, revisionID entity.ID, prev *entity.ID, seq int64) (bool, error)
+	// SavePart stores a part under the new ID unless one with its input hash exists; it returns the ID of the
+	// part kept and whether it is new. The row of an existing part stays locked until the commit.
+	SavePart(ctx context.Context, orgID, newID entity.ID, p *entity.StoredPart, at time.Time) (entity.ID, bool, error)
+	LinkPart(ctx context.Context, orgID, revisionID entity.ID, partNo int, partID entity.ID) error
+	RevisionPoints(ctx context.Context, orgID, revisionID entity.ID) ([]entity.SeriesPoint, error)
+	PointContributions(ctx context.Context, orgID, revisionID entity.ID, q entity.ContributionQuery) ([]entity.Contribution, error)
+	TaskIntervals(ctx context.Context, orgID, revisionID, taskID entity.ID) ([]entity.WorkflowInterval, error)
+	RevisionInputs(ctx context.Context, orgID, revisionID entity.ID) ([]entity.RevisionInput, error)
+	MarkBasisDeleted(ctx context.Context, orgID, objectID entity.ID) (int64, error)
+	MarkBasisExpired(ctx context.Context, orgID entity.ID, reproducibleFrom int64) (int64, error)
+	// MarkDefinitionRetired marks revisions computed with a definition missing from current, "ID@version".
+	MarkDefinitionRetired(ctx context.Context, orgID entity.ID, current []string) (int64, error)
+	// UnusedParts locks up to limit parts after the cursor that no live revision refers to, created before before.
+	UnusedParts(ctx context.Context, orgID, after entity.ID, before time.Time, limit int) ([]entity.ID, error)
+	DeleteParts(ctx context.Context, orgID entity.ID, ids []entity.ID) error
 }
 
 // ViewRepo keeps the public descriptors of runs users asked for (TZ 12.5.8).
