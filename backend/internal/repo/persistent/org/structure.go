@@ -143,6 +143,12 @@ func (r *Repo) CurrentLinks(ctx context.Context, orgID entity.ID, kind entity.Li
 		var mr []ListCurrentTeamMembersRow
 		mr, err = q.ListCurrentTeamMembers(ctx, ListCurrentTeamMembersParams{OrganizationID: org, At: at})
 		rows = convert(mr, func(x ListCurrentTeamMembersRow) ListCurrentTeamProjectsRow { return ListCurrentTeamProjectsRow(x) })
+	case entity.LinkProjectArea:
+		var pr []ListCurrentProjectAreasRow
+		pr, err = q.ListCurrentProjectAreas(ctx, ListCurrentProjectAreasParams{OrganizationID: org, At: at})
+		rows = convert(pr, func(x ListCurrentProjectAreasRow) ListCurrentTeamProjectsRow {
+			return ListCurrentTeamProjectsRow{ID: x.ID, TeamID: x.ProjectID, ToID: x.ToID, ValidFrom: x.ValidFrom, ValidTo: x.ValidTo, Open: x.Open}
+		})
 	default:
 		return nil, fmt.Errorf("org: unknown link kind %q", kind)
 	}
@@ -166,6 +172,8 @@ func (r *Repo) SupersedeLink(ctx context.Context, orgID entity.ID, kind entity.L
 		err = q.SupersedeTeamProject(ctx, SupersedeTeamProjectParams{Seq: seq, At: at, OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(rowID)})
 	case entity.LinkTeamMember:
 		err = q.SupersedeTeamMember(ctx, SupersedeTeamMemberParams{Seq: seq, At: at, OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(rowID)})
+	case entity.LinkProjectArea:
+		err = q.SupersedeProjectArea(ctx, SupersedeProjectAreaParams{Seq: seq, At: at, OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(rowID)})
 	default:
 		return fmt.Errorf("org: unknown link kind %q", kind)
 	}
@@ -189,6 +197,10 @@ func (r *Repo) InsertLink(ctx context.Context, orgID entity.ID, kind entity.Link
 	case entity.LinkTeamMember:
 		err = q.InsertTeamMember(ctx, InsertTeamMemberParams{
 			OrganizationID: org, TeamID: from, ToID: to, ValidFrom: l.ValidFrom, ValidTo: validTo, Seq: seq,
+		})
+	case entity.LinkProjectArea:
+		err = q.InsertProjectArea(ctx, InsertProjectAreaParams{
+			OrganizationID: org, ProjectID: from, ToID: to, ValidFrom: l.ValidFrom, ValidTo: validTo, Seq: seq,
 		})
 	default:
 		return fmt.Errorf("org: unknown link kind %q", kind)
@@ -222,7 +234,7 @@ func (r *Repo) PageAreas(ctx context.Context, orgID entity.ID, kind entity.AreaK
 	switch kind {
 	case entity.AreaTeam:
 		arg := PageTeamsAscParams{
-			OrganizationID: org, Whole: scope.Whole, Ids: toUUIDs(scope.Teams),
+			OrganizationID: org, Whole: scope.Whole(), Ids: toUUIDs(scope.Teams()),
 			After: after.After, AfterName: after.AfterName, AfterID: after.AfterID, RowLimit: limit,
 		}
 		if p.Desc {
@@ -234,7 +246,7 @@ func (r *Repo) PageAreas(ctx context.Context, orgID entity.ID, kind entity.AreaK
 		}
 	case entity.AreaProject:
 		arg := PageProjectsAscParams{
-			OrganizationID: org, Whole: scope.Whole, Ids: toUUIDs(scope.Projects),
+			OrganizationID: org, Whole: scope.Whole(), Ids: toUUIDs(scope.Projects()),
 			TeamID: uuid.NullUUID{UUID: uuid.UUID(f.TeamID), Valid: !f.TeamID.IsZero()}, At: at,
 			After: after.After, AfterName: after.AfterName, AfterID: after.AfterID, RowLimit: limit,
 		}
@@ -249,7 +261,7 @@ func (r *Repo) PageAreas(ctx context.Context, orgID entity.ID, kind entity.AreaK
 		}
 	case entity.AreaService:
 		arg := PageServicesAscParams{
-			OrganizationID: org, Whole: scope.Whole, Ids: toUUIDs(scope.Services),
+			OrganizationID: org, Whole: scope.Whole(), Ids: toUUIDs(scope.Services()),
 			After: after.After, AfterName: after.AfterName, AfterID: after.AfterID, RowLimit: limit,
 		}
 		if p.Desc {

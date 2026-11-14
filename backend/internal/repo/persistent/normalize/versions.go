@@ -68,8 +68,10 @@ func (r *Repo) InsertTaskVersions(ctx context.Context, orgID entity.ID, versions
 	return nil
 }
 
-func (r *Repo) TaskVersionsAt(ctx context.Context, orgID, areaID entity.ID, seq int64) ([]entity.TaskVersion, error) {
-	rows, err := r.q(ctx).TaskVersionsAt(ctx, TaskVersionsAtParams{OrganizationID: uuid.UUID(orgID), AreaID: uuid.UUID(areaID), KnownSeq: seq})
+func (r *Repo) TaskVersionsAt(ctx context.Context, orgID, areaID entity.ID, seq int64, allowed []entity.ID) ([]entity.TaskVersion, error) {
+	rows, err := r.q(ctx).TaskVersionsAt(ctx, TaskVersionsAtParams{
+		OrganizationID: uuid.UUID(orgID), AreaID: uuid.UUID(areaID), KnownSeq: seq, Allowed: ids(allowed),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("normalize: task versions at: %w", err)
 	}
@@ -177,12 +179,30 @@ func (r *Repo) InsertTaskEvents(ctx context.Context, orgID entity.ID, events []e
 	return nil
 }
 
-func (r *Repo) TaskEventsAt(ctx context.Context, orgID, areaID entity.ID, seq int64) ([]entity.TaskEvent, error) {
-	rows, err := r.q(ctx).TaskEventsAt(ctx, TaskEventsAtParams{OrganizationID: uuid.UUID(orgID), AreaID: uuid.UUID(areaID), KnownSeq: seq})
+func (r *Repo) TaskEventsAt(ctx context.Context, orgID, areaID entity.ID, seq int64, allowed []entity.ID) ([]entity.TaskEvent, error) {
+	rows, err := r.q(ctx).TaskEventsAt(ctx, TaskEventsAtParams{
+		OrganizationID: uuid.UUID(orgID), AreaID: uuid.UUID(areaID), KnownSeq: seq, Allowed: ids(allowed),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("normalize: task events at: %w", err)
 	}
 	return taskEvents(rows), nil
+}
+
+// RestrictedObjects are the objects of the areas with their own restriction at the last collection (TZ 13.5).
+func (r *Repo) RestrictedObjects(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.RestrictedObject, error) {
+	rows, err := r.q(ctx).RestrictedObjects(ctx, RestrictedObjectsParams{OrganizationID: uuid.UUID(orgID), AreaIds: ids(areaIDs)})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: restricted objects: %w", err)
+	}
+	out := make([]entity.RestrictedObject, len(rows))
+	for i, row := range rows {
+		out[i] = entity.RestrictedObject{
+			ID: entity.ID(row.ID), AreaID: entity.ID(row.AreaID), Kind: entity.ObjectKind(row.ObjectKind),
+			NativeNS: row.NativeNs, NativeID: row.NativeID,
+		}
+	}
+	return out, nil
 }
 
 func taskEvents(rows []NormalizeTaskEvent) []entity.TaskEvent {

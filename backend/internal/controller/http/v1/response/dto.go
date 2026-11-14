@@ -37,6 +37,25 @@ func Areas(in []entity.Area) []openapi.Team {
 	return out
 }
 
+// AccessNotes mark a restricted answer; a note of the whole answer has no connection.
+func AccessNotes(in []entity.AccessNote) []openapi.AccessNote {
+	out := make([]openapi.AccessNote, len(in))
+	for i, n := range in {
+		out[i] = openapi.AccessNote{Code: openapi.AccessNoteCode(n.Code), ConnectionId: optionalID(n.ConnectionID)}
+	}
+	return out
+}
+
+func SourceAreas(in []entity.SourceArea) []openapi.AreaRef {
+	out := make([]openapi.AreaRef, len(in))
+	for i, a := range in {
+		out[i] = openapi.AreaRef{
+			Id: openapi_types.UUID(a.ID), Kind: openapi.AreaRefKind(a.Kind), DisplayName: a.DisplayName, ConnectionId: optionalID(a.ConnectionID),
+		}
+	}
+	return out
+}
+
 func optionalID(id entity.ID) *openapi_types.UUID {
 	if id.IsZero() {
 		return nil
@@ -59,13 +78,19 @@ func Structure(st entity.Structure) openapi.OrganizationStructure {
 		Projects:     Areas(st.Projects),
 		Services:     Areas(st.Services),
 		Components:   []openapi.Component{},
-		ProjectAreas: []openapi.ProjectAreaLink{},
+		ProjectAreas: make([]openapi.ProjectAreaLink, len(st.ProjectAreas)),
 		TeamProjects: make([]openapi.TeamProjectLink, len(st.TeamProjects)),
 		TeamMembers:  make([]openapi.TeamMemberLink, len(st.TeamMembers)),
 	}
 	for i, l := range st.TeamProjects {
 		out.TeamProjects[i] = openapi.TeamProjectLink{
 			TeamId: openapi_types.UUID(l.From), ProjectId: openapi_types.UUID(l.To),
+			ValidFrom: l.ValidFrom.UTC(), ValidTo: optionalTime(l.ValidTo),
+		}
+	}
+	for i, l := range st.ProjectAreas {
+		out.ProjectAreas[i] = openapi.ProjectAreaLink{
+			ProjectId: openapi_types.UUID(l.From), AreaId: openapi_types.UUID(l.To),
 			ValidFrom: l.ValidFrom.UTC(), ValidTo: optionalTime(l.ValidTo),
 		}
 	}

@@ -174,6 +174,8 @@ type ConnectRepo interface {
 	RemoveScopes(ctx context.Context, orgID, connectionID entity.ID, at time.Time) error
 	SetScopeHistory(ctx context.Context, orgID, scopeID entity.ID, from *time.Time) error
 	SetScopeArea(ctx context.Context, orgID, scopeID, areaID entity.ID) (bool, error)
+	AreaSources(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaSource, error)
+	PageSourceAreas(ctx context.Context, orgID entity.ID, f entity.SourceAreaFilter) ([]entity.SourceArea, error)
 	Capabilities(ctx context.Context, orgID, connectionID entity.ID) ([]entity.Capability, error)
 	CapabilitiesOf(ctx context.Context, orgID entity.ID, connectionIDs []entity.ID) (map[entity.ID][]entity.Capability, error)
 	ReplaceCapabilities(ctx context.Context, orgID, connectionID entity.ID, caps []entity.Capability) error
@@ -273,14 +275,16 @@ type NormalizeRepo interface {
 	TaskRevisions(ctx context.Context, orgID entity.ID, taskIDs []entity.ID) (map[entity.ID][]entity.Revision, error)
 	SupersedeTaskVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
 	InsertTaskVersions(ctx context.Context, orgID entity.ID, versions []entity.TaskVersion) error
-	TaskVersionsAt(ctx context.Context, orgID, areaID entity.ID, seq int64) ([]entity.TaskVersion, error)
+	// TaskVersionsAt and TaskEventsAt skip tasks with their own restriction that are not among allowed.
+	TaskVersionsAt(ctx context.Context, orgID, areaID entity.ID, seq int64, allowed []entity.ID) ([]entity.TaskVersion, error)
 	CurrentTasksByNative(ctx context.Context, orgID, areaID entity.ID, nativeIDs []string) (map[string]entity.TaskVersion, error)
 
 	CurrentTaskEvents(ctx context.Context, orgID entity.ID, keys []entity.EventKey) ([]entity.TaskEvent, error)
 	TaskEventRevisions(ctx context.Context, orgID entity.ID, keys []entity.EventKey) (map[entity.EventKey][]entity.Revision, error)
 	SupersedeTaskEvents(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
 	InsertTaskEvents(ctx context.Context, orgID entity.ID, events []entity.TaskEvent) error
-	TaskEventsAt(ctx context.Context, orgID, areaID entity.ID, seq int64) ([]entity.TaskEvent, error)
+	TaskEventsAt(ctx context.Context, orgID, areaID entity.ID, seq int64, allowed []entity.ID) ([]entity.TaskEvent, error)
+	RestrictedObjects(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.RestrictedObject, error)
 
 	CurrentDictionaryEntries(ctx context.Context, orgID entity.ID, keys []entity.DictionaryKey) ([]entity.DictionaryEntry, error)
 	DictionaryRevisions(ctx context.Context, orgID entity.ID, keys []entity.DictionaryKey) (map[entity.DictionaryKey][]entity.Revision, error)

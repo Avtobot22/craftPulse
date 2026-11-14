@@ -13,6 +13,60 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const areaSources = `-- name: AreaSources :many
+SELECT s.area_id::uuid AS area_id, s.connection_id, s.instance_id, s.scope_kind, s.native_scope_id, s.status AS scope_status,
+    c.status AS connection_status, c.paused_until
+FROM connect.connection_scope s
+JOIN connect.connection c ON c.organization_id = s.organization_id AND c.id = s.connection_id
+WHERE s.organization_id = $1 AND s.area_id = ANY ($2::uuid[])
+ORDER BY s.area_id, s.added_at DESC, s.id
+`
+
+type AreaSourcesParams struct {
+	OrganizationID uuid.UUID
+	AreaIds        []uuid.UUID
+}
+
+type AreaSourcesRow struct {
+	AreaID           uuid.UUID
+	ConnectionID     uuid.UUID
+	InstanceID       uuid.UUID
+	ScopeKind        string
+	NativeScopeID    string
+	ScopeStatus      string
+	ConnectionStatus string
+	PausedUntil      pgtype.Timestamptz
+}
+
+func (q *Queries) AreaSources(ctx context.Context, arg AreaSourcesParams) ([]AreaSourcesRow, error) {
+	rows, err := q.db.Query(ctx, areaSources, arg.OrganizationID, arg.AreaIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AreaSourcesRow
+	for rows.Next() {
+		var i AreaSourcesRow
+		if err := rows.Scan(
+			&i.AreaID,
+			&i.ConnectionID,
+			&i.InstanceID,
+			&i.ScopeKind,
+			&i.NativeScopeID,
+			&i.ScopeStatus,
+			&i.ConnectionStatus,
+			&i.PausedUntil,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const capabilitiesOf = `-- name: CapabilitiesOf :many
 SELECT connection_id, capability, state, reason_code, checked_at, source_version FROM connect.capability
 WHERE organization_id = $1 AND connection_id = ANY($2::uuid[])
@@ -720,6 +774,65 @@ func (q *Queries) PageConnections(ctx context.Context, arg PageConnectionsParams
 			&i.CredentialsSetAt,
 			&i.SyncPaused,
 			&i.Provider,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageSourceAreas = `-- name: PageSourceAreas :many
+SELECT s.area_id::uuid AS area_id, s.scope_kind, s.display_name, s.connection_id
+FROM connect.connection_scope s
+JOIN connect.connection c ON c.organization_id = s.organization_id AND c.id = s.connection_id
+WHERE s.organization_id = $1 AND s.status = 'active' AND c.status = 'active'
+    AND s.area_id IS NOT NULL
+    AND ($2::text IS NULL OR s.scope_kind = $2::text)
+    AND ($3::uuid IS NULL OR s.connection_id = $3::uuid)
+    AND ($4::uuid IS NULL OR s.area_id > $4::uuid)
+ORDER BY s.area_id
+LIMIT $5
+`
+
+type PageSourceAreasParams struct {
+	OrganizationID uuid.UUID
+	ScopeKind      pgtype.Text
+	ConnectionID   uuid.NullUUID
+	After          uuid.NullUUID
+	RowLimit       int32
+}
+
+type PageSourceAreasRow struct {
+	AreaID       uuid.UUID
+	ScopeKind    string
+	DisplayName  string
+	ConnectionID uuid.UUID
+}
+
+func (q *Queries) PageSourceAreas(ctx context.Context, arg PageSourceAreasParams) ([]PageSourceAreasRow, error) {
+	rows, err := q.db.Query(ctx, pageSourceAreas,
+		arg.OrganizationID,
+		arg.ScopeKind,
+		arg.ConnectionID,
+		arg.After,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageSourceAreasRow
+	for rows.Next() {
+		var i PageSourceAreasRow
+		if err := rows.Scan(
+			&i.AreaID,
+			&i.ScopeKind,
+			&i.DisplayName,
+			&i.ConnectionID,
 		); err != nil {
 			return nil, err
 		}

@@ -73,7 +73,7 @@ func newSyncEnv(t *testing.T, scenario testadapter.Config) *syncEnv {
 	require.NoError(t, err)
 	e.connect, err = newConnect(e.app, adapterKeyring(t), caller, e.clock)
 	require.NoError(t, err)
-	orgs, rights := newOrgAccess(e.app, e.clock)
+	orgs, rights := newOrgAccess(e.app, e.clock, e.connect, nil)
 	intake, err := newIngest(e.app, sharedStore(t), e.connect, rights, e.clock, reg)
 	require.NoError(t, err)
 	e.intake = intake

@@ -124,16 +124,26 @@ WHERE organization_id = sqlc.arg(organization_id) AND area_id = sqlc.arg(area_id
 ORDER BY native_id;
 
 -- name: TaskVersionsAt :many
-SELECT * FROM normalize.task_version
-WHERE organization_id = sqlc.arg(organization_id) AND area_id = sqlc.arg(area_id) AND known_seq <= sqlc.arg(known_seq)
-    AND (superseded_seq IS NULL OR superseded_seq > sqlc.arg(known_seq))
-ORDER BY task_id;
+SELECT v.* FROM normalize.task_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.task_id
+WHERE v.organization_id = sqlc.arg(organization_id) AND v.area_id = sqlc.arg(area_id) AND v.known_seq <= sqlc.arg(known_seq)
+    AND (v.superseded_seq IS NULL OR v.superseded_seq > sqlc.arg(known_seq))
+    AND (NOT o.restricted OR o.id = ANY (sqlc.arg(allowed)::uuid[]))
+ORDER BY v.task_id;
 
 -- name: TaskEventsAt :many
-SELECT * FROM normalize.task_event
-WHERE organization_id = sqlc.arg(organization_id) AND area_id = sqlc.arg(area_id) AND known_seq <= sqlc.arg(known_seq)
-    AND (superseded_seq IS NULL OR superseded_seq > sqlc.arg(known_seq))
-ORDER BY event_time, id;
+SELECT e.* FROM normalize.task_event e
+JOIN normalize.source_object o ON o.organization_id = e.organization_id AND o.id = e.task_id
+WHERE e.organization_id = sqlc.arg(organization_id) AND e.area_id = sqlc.arg(area_id) AND e.known_seq <= sqlc.arg(known_seq)
+    AND (e.superseded_seq IS NULL OR e.superseded_seq > sqlc.arg(known_seq))
+    AND (NOT o.restricted OR o.id = ANY (sqlc.arg(allowed)::uuid[]))
+ORDER BY e.event_time, e.id;
+
+-- name: RestrictedObjects :many
+SELECT id, current_area_id::uuid AS area_id, object_kind, native_ns, native_id FROM normalize.source_object
+WHERE organization_id = sqlc.arg(organization_id) AND current_area_id = ANY (sqlc.arg(area_ids)::uuid[])
+    AND restricted AND deleted_at IS NULL
+ORDER BY current_area_id, id;
 
 -- name: CurrentTasksByNative :many
 SELECT sqlc.embed(v), o.native_id FROM normalize.task_version v

@@ -53,8 +53,12 @@ func (u *UseCase) Structure(ctx context.Context, s entity.Subject) (entity.Struc
 // to the current structure changes nothing.
 func (u *UseCase) ReplaceStructure(ctx context.Context, s entity.Subject, baseVersion int64, in entity.StructureInput) (entity.Structure, error) {
 	orgID := s.OrganizationID
+	known, err := u.knownAreas(ctx, orgID, in.ProjectAreas)
+	if err != nil {
+		return entity.Structure{}, err
+	}
 	var out entity.Structure
-	err := u.tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+	err = u.tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
 		version, err := u.orgs.LockStructureVersion(ctx, orgID)
 		if err != nil {
 			return err
@@ -67,7 +71,7 @@ func (u *UseCase) ReplaceStructure(ctx context.Context, s entity.Subject, baseVe
 		if err != nil {
 			return err
 		}
-		plan, err := u.plan(ctx, orgID, current, in)
+		plan, err := u.plan(ctx, orgID, current, in, known)
 		if err != nil {
 			return err
 		}
@@ -139,12 +143,44 @@ func (u *UseCase) read(ctx context.Context, orgID entity.ID, version int64, at t
 	if out.TeamProjects, err = u.orgs.CurrentLinks(ctx, orgID, entity.LinkTeamProject, at); err != nil {
 		return out, err
 	}
-	out.TeamMembers, err = u.orgs.CurrentLinks(ctx, orgID, entity.LinkTeamMember, at)
+	if out.TeamMembers, err = u.orgs.CurrentLinks(ctx, orgID, entity.LinkTeamMember, at); err != nil {
+		return out, err
+	}
+	out.ProjectAreas, err = u.orgs.CurrentLinks(ctx, orgID, entity.LinkProjectArea, at)
 	return out, err
 }
 
+// ProjectAreas are the source areas of projects in force at the moment; it runs in the caller's organization
+// transaction, as access reads it together with the profile.
+func (u *UseCase) ProjectAreas(ctx context.Context, orgID entity.ID, at time.Time) ([]entity.Link, error) {
+	return u.orgs.CurrentLinks(ctx, orgID, entity.LinkProjectArea, at)
+}
+
+// knownAreas are the areas of the body some connection of the organization collected; a link may name only
+// such an area (FR-012).
+func (u *UseCase) knownAreas(ctx context.Context, orgID entity.ID, links []entity.LinkInput) (map[entity.ID]bool, error) {
+	if len(links) == 0 {
+		return nil, nil
+	}
+	ids := make([]entity.ID, len(links))
+	for i, l := range links {
+		ids[i] = l.To
+	}
+	sources, err := u.sources.AreaSources(ctx, orgID, ids)
+	if err != nil {
+		return nil, err
+	}
+	known := make(map[entity.ID]bool, len(sources))
+	for _, src := range sources {
+		known[src.AreaID] = true
+	}
+	return known, nil
+}
+
 // plan checks the whole body against the current structure and reports every field error at once.
-func (u *UseCase) plan(ctx context.Context, orgID entity.ID, cur entity.Structure, in entity.StructureInput) (structurePlan, error) {
+func (u *UseCase) plan(ctx context.Context, orgID entity.ID, cur entity.Structure, in entity.StructureInput,
+	knownAreas map[entity.ID]bool,
+) (structurePlan, error) {
 	p := structurePlan{
 		created: map[entity.AreaKind][]entity.Area{},
 		updated: map[entity.AreaKind][]entity.Area{},
@@ -167,10 +203,7 @@ func (u *UseCase) plan(ctx context.Context, orgID entity.ID, cur entity.Structur
 	}
 	planLinks(p, verr, entity.LinkTeamProject, cur.TeamProjects, in.TeamProjects, given[entity.AreaTeam], given[entity.AreaProject])
 	planLinks(p, verr, entity.LinkTeamMember, cur.TeamMembers, in.TeamMembers, given[entity.AreaTeam], persons)
-	// Areas of sources come from connections; this build has none, so every reference is unknown.
-	for i := range in.ProjectAreas {
-		verr.Add(fmt.Sprintf("/project_areas/%d/area_id", i), entity.FieldUnknownReference, "source area is not known from connections")
-	}
+	planLinks(p, verr, entity.LinkProjectArea, cur.ProjectAreas, in.ProjectAreas, given[entity.AreaProject], knownAreas)
 	for i := range in.Components {
 		verr.Add(fmt.Sprintf("/components/%d/repository_area_id", i), entity.FieldUnknownReference, "repository is not known from connections")
 	}
@@ -247,10 +280,7 @@ func planLinks(p structurePlan, verr *entity.ValidationError, kind entity.LinkKi
 	if len(in) > entity.MaxLinks {
 		verr.Add(field, entity.FieldOutOfRange, fmt.Sprintf("at most %d items", entity.MaxLinks))
 	}
-	toField := "/project_id"
-	if kind == entity.LinkTeamMember {
-		toField = "/person_id"
-	}
+	fromField, toField := linkFields(kind)
 	type pair struct{ from, to entity.ID }
 	wanted := make(map[pair]bool, len(in))
 	for i, l := range in {
@@ -262,10 +292,10 @@ func planLinks(p structurePlan, verr *entity.ValidationError, kind entity.LinkKi
 			verr.Add(at+"/valid_to", entity.FieldNotAllowedValue, "dates of links are set from M1; send null")
 		}
 		if !froms[l.From] {
-			verr.Add(at+"/team_id", entity.FieldUnknownReference, "team is not in the structure")
+			verr.Add(at+fromField, entity.FieldUnknownReference, "the record is not in the structure")
 		}
 		if !tos[l.To] {
-			verr.Add(at+toField, entity.FieldUnknownReference, "the linked record is not in the structure")
+			verr.Add(at+toField, entity.FieldUnknownReference, "the linked record is not in the structure or not known from connections")
 		}
 		k := pair{l.From, l.To}
 		if wanted[k] {
@@ -307,7 +337,7 @@ func (u *UseCase) apply(ctx context.Context, orgID entity.ID, p structurePlan, n
 	if err != nil {
 		return err
 	}
-	for _, kind := range []entity.LinkKind{entity.LinkTeamProject, entity.LinkTeamMember} {
+	for _, kind := range []entity.LinkKind{entity.LinkTeamProject, entity.LinkTeamMember, entity.LinkProjectArea} {
 		for _, l := range p.closed[kind] {
 			if err := u.closeLink(ctx, orgID, kind, l, seq, now); err != nil {
 				return err
@@ -334,6 +364,17 @@ func (u *UseCase) closeLink(ctx context.Context, orgID entity.ID, kind entity.Li
 	}
 	l.ValidTo = now
 	return overlap(kind, u.orgs.InsertLink(ctx, orgID, kind, l, seq))
+}
+
+func linkFields(kind entity.LinkKind) (from, to string) {
+	switch kind {
+	case entity.LinkTeamMember:
+		return "/team_id", "/person_id"
+	case entity.LinkProjectArea:
+		return "/project_id", "/area_id"
+	case entity.LinkTeamProject:
+	}
+	return "/team_id", "/project_id"
 }
 
 func overlap(kind entity.LinkKind, err error) error {

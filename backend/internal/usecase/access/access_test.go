@@ -74,7 +74,7 @@ func TestUploadSubjectScope(t *testing.T) {
 	for _, action := range []string{"ingest.upload", "receipts.read"} {
 		scope, err := u.Authorize(t.Context(), s, entity.AccessRequest{Action: action, Area: entity.AreaRef{Kind: entity.AreaProject, ID: project}})
 		assert.NoError(t, err)
-		assert.Equal(t, entity.Scope{Projects: []entity.ID{project}}, scope)
+		assert.Equal(t, entity.GrantScope(entity.ScopeGrant{Projects: []entity.ID{project}}), scope)
 		_, err = u.Authorize(t.Context(), s, entity.AccessRequest{Action: action, Area: entity.AreaRef{Kind: entity.AreaProject, ID: entity.ID{4}}})
 		assert.ErrorIs(t, err, entity.ErrNotFound)
 	}

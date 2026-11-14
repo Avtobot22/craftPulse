@@ -61,6 +61,10 @@ func (f fakeAccess) Authorize(context.Context, entity.Subject, entity.AccessRequ
 	return entity.Scope{}, f.err
 }
 
+func (fakeAccess) Decide(_ context.Context, _ entity.Subject, scope entity.Scope, _ entity.SourceQuery) (entity.Scope, error) {
+	return scope, nil
+}
+
 func (fakeAccess) CurrentUser(context.Context, entity.Subject) (entity.CurrentUser, error) {
 	return entity.CurrentUser{}, nil
 }

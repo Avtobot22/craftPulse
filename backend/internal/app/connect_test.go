@@ -93,11 +93,17 @@ func (ca *testCA) serverTLS(t *testing.T, notAfter time.Time, names ...string) (
 // adapterServer serves h over TLS and counts the calls of the contract that reach it.
 type adapterServer struct {
 	*httptest.Server
-	src  *testadapter.Adapter
-	db   adapterDB
-	hits atomic.Int64
-	mu   sync.Mutex
-	auth []string
+	src     *testadapter.Adapter
+	db      adapterDB
+	journal *lockedBuffer
+	hits    atomic.Int64
+	mu      sync.Mutex
+	auth    []string
+}
+
+// calls counts the lines of the request journal of an adapter for its operation.
+func (b *lockedBuffer) calls(operation string) int {
+	return strings.Count(b.String(), `"operation":"`+operation+`"`)
 }
 
 func serveTLSAdapter(t *testing.T, cfg *tls.Config, h http.Handler) *adapterServer {
@@ -124,13 +130,14 @@ func testAdapter(t *testing.T, tlsCfg *tls.Config, scenario testadapter.Config, 
 	db := newAdapterDB(t, true)
 	src, err := testadapter.New(scenario)
 	require.NoError(t, err)
+	journal := &lockedBuffer{}
 	h, err := adaptersdk.NewHandler(adaptersdk.Options{
 		Source: src, Store: adaptersdk.NewStore(db.pool(t, "app"), adapterKeyring(t)), ServiceKeys: []string{key},
-		Log: zerolog.Nop(), Probes: health.Probes{Ready: &health.Readiness{}}, SpoolDir: t.TempDir(),
+		Log: zerolog.New(journal), Probes: health.Probes{Ready: &health.Readiness{}}, SpoolDir: t.TempDir(),
 	})
 	require.NoError(t, err)
 	srv := serveTLSAdapter(t, tlsCfg, h)
-	srv.db, srv.src = db, src
+	srv.db, srv.src, srv.journal = db, src, journal
 	return srv
 }
 

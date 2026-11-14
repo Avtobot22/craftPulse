@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/rs/zerolog"
@@ -24,6 +25,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/adapterapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/oidc"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/access"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
 
@@ -66,6 +68,7 @@ type probeBody struct {
 // connectionsEnv is the api with the test adapter as the built-in Jira adapter and a worker taking jobs.
 type connectionsEnv struct {
 	*loginEnv
+	rights  *access.UseCase
 	adapter *adapterServer
 	admin   *browser
 	runner  jobRunner
@@ -85,16 +88,19 @@ func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEn
 	require.NoError(t, err)
 	uc, err := newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	orgs, rights := newOrgAccess(e.app, e.clock)
+	metrics, err := newAccessMetrics(reg)
+	require.NoError(t, err)
+	orgs, rights := newOrgAccess(e.app, e.clock, uc, metrics)
 	intake, err := newIngest(e.app, sharedStore(t), uc, rights, e.clock, reg)
 	require.NoError(t, err)
 	normalizer, err := newNormalize(e.app, sharedStore(t), intake, orgs, e.clock)
 	require.NoError(t, err)
 	collection, err := newSync(e.app, uc, intake, normalizer, e.clock, reg)
 	require.NoError(t, err)
-	modules := apiModules{connections: uc, intake: intake, sync: collection, operations: newView(e.app, collection, rights, e.clock)}
+	modules := apiModules{orgs: orgs, access: rights, connections: uc, intake: intake, sync: collection, operations: newView(e.app, collection, rights, e.clock)}
 	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, modules)
 	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
+	e.metrics = promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 
 	workers := river.NewWorkers()
 	workerctrl.Register(workers, workerctrl.Deps{Probes: uc})
@@ -111,7 +117,7 @@ func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEn
 	})
 	e.secrets = append(e.secrets, _jiraToken, _adapterKey)
 	runner := jobRunner{owner: e.owner, clock: e.clock, sync: collection, norm: normalizer}
-	return &connectionsEnv{loginEnv: e, adapter: srv, admin: e.admin(t, "demo"), runner: runner}
+	return &connectionsEnv{loginEnv: e, rights: rights, adapter: srv, admin: e.admin(t, "demo"), runner: runner}
 }
 
 func jiraConnection(baseURL, project string) map[string]any {

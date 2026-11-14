@@ -33,6 +33,7 @@ linters:
 
     # архитектура
     - depguard         # запрет импортов по правилам
+    - forbidigo        # запрет вызовов по правилам
 
     # производительность
     - prealloc         # подсказывает make([]T, 0, n)
@@ -435,6 +436,11 @@ linters:
             - pkg: "github.com/Avtobot22/craftPulse/backend/internal/repo/"
               desc: "modules must be connected through interfaces in internal/app"
 
+    forbidigo:
+      forbid:
+        - pattern: ^entity\.GrantScope$
+          msg: "only access builds entity.Scope (TZ 13.4)"
+
     gosec:
       excludes:
         - G104                       # дубли с errcheck
@@ -461,6 +467,11 @@ linters:
           - gosec
           - dupword
           - unparam
+      # область чтения создаёт только сценарий access
+      - path: internal/usecase/access/
+        linters:
+          - forbidigo
+        text: "entity.GrantScope"
       # main.go — допускаем log.Fatal и Exit
       - path: cmd/.+/main\.go
         linters:

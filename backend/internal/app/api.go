@@ -12,15 +12,19 @@ import (
 	authrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/auth"
 	installrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/install"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/access"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/auth"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/install"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/org"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 	"github.com/Avtobot22/craftPulse/backend/pkg/crypto"
 )
 
 // apiModules are the modules the api process builds before its handlers.
 type apiModules struct {
+	orgs        *org.UseCase
+	access      *access.UseCase
 	connections usecase.Connections
 	intake      usecase.Intake
 	sync        usecase.SyncStatus
@@ -33,7 +37,7 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 	tx := persistent.NewTransactor(pool)
 	sessions := authrepo.NewRepo(pool)
 	auditor := audit.New(auditrepo.NewRepo(pool), tx, c)
-	orgs, decisions := newOrgAccess(pool, c)
+	orgs, decisions := m.orgs, m.access
 	logins := auth.New(auth.Deps{
 		Tokens: sessions, Access: decisions,
 		Repo:     sessions,

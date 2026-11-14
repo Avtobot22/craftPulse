@@ -7080,8 +7080,10 @@ type ProjectOverviewSourcesCompleteness string
 
 // ProjectPage defines model for ProjectPage.
 type ProjectPage struct {
-	Data       []Project `json:"data"`
-	NextCursor *string   `json:"next_cursor"`
+	AccessLimited bool         `json:"access_limited"`
+	AccessNotes   []AccessNote `json:"access_notes"`
+	Data          []Project    `json:"data"`
+	NextCursor    *string      `json:"next_cursor"`
 }
 
 // Provider Вид источника. Клиент показывает неизвестное значение как «другой источник».

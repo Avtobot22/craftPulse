@@ -14,6 +14,11 @@ type Auditor interface {
 	Record(ctx context.Context, e entity.AuditEvent) error
 }
 
+// Sources is the connect module: it knows which source areas its connections collected (TZ 10.3).
+type Sources interface {
+	AreaSources(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaSource, error)
+}
+
 // Deps of the module; installation uses only Orgs, Tenants and Clock.
 type Deps struct {
 	Orgs        repo.OrgRepo
@@ -21,6 +26,7 @@ type Deps struct {
 	Tx          repo.Transactor
 	Auditor     Auditor
 	Credentials Credentials
+	Sources     Sources
 	Clock       clock.Clock
 	NewID       func() (entity.ID, error)
 }
@@ -31,6 +37,7 @@ type UseCase struct {
 	tx          repo.Transactor
 	auditor     Auditor
 	credentials Credentials
+	sources     Sources
 	clock       clock.Clock
 	newID       func() (entity.ID, error)
 }
@@ -38,7 +45,7 @@ type UseCase struct {
 func New(d Deps) *UseCase {
 	return &UseCase{
 		orgs: d.Orgs, tenants: d.Tenants, tx: d.Tx, auditor: d.Auditor, credentials: d.Credentials,
-		clock: d.Clock, newID: d.NewID,
+		sources: d.Sources, clock: d.Clock, newID: d.NewID,
 	}
 }
 

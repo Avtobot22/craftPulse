@@ -31,6 +31,7 @@ import (
 	connectrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/connect"
 	ingestrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/ingest"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/access"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/connect"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/ingest"
@@ -85,6 +86,7 @@ type ingestEnv struct {
 	*loginEnv
 	store   *objstore.Store
 	connect *connect.UseCase
+	rights  *access.UseCase
 	uc      *ingest.UseCase
 	reg     *prometheus.Registry
 	admin   entity.Subject
@@ -102,8 +104,8 @@ func newIngestEnv(t *testing.T) *ingestEnv {
 	require.NoError(t, err)
 	e.connect, err = newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	_, rights := newOrgAccess(e.app, e.clock)
-	e.uc, err = newIngest(e.app, e.store, e.connect, rights, e.clock, e.reg)
+	_, e.rights = newOrgAccess(e.app, e.clock, e.connect, nil)
+	e.uc, err = newIngest(e.app, e.store, e.connect, e.rights, e.clock, e.reg)
 	require.NoError(t, err)
 	return e
 }
@@ -480,7 +482,7 @@ func TestIngest_InterruptedJobGivesTheSameJournal(t *testing.T) {
 	jobs, err := riverInsertClient(e.app)
 	require.NoError(t, err)
 	q := &failingQueue{JobQueue: queue.New(jobs), fail: true}
-	_, rights := newOrgAccess(e.app, e.clock)
+	_, rights := newOrgAccess(e.app, e.clock, nil, nil)
 	uc := ingest.New(ingest.Deps{
 		Repo: ingestrepo.NewRepo(e.app), Objects: e.store, Queue: q, Tx: persistent.NewTransactor(e.app),
 		Connect: e.connect, Access: rights, Metrics: ingestMetrics{rejected: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "x"}, []string{"channel", "reason"})},

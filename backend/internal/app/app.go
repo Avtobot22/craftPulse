@@ -83,7 +83,11 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return err
 	}
-	orgs, rights := newOrgAccess(pool, clock.System{})
+	metrics, err := newAccessMetrics(reg)
+	if err != nil {
+		return err
+	}
+	orgs, rights := newOrgAccess(pool, clock.System{}, connections, metrics)
 	store := newObjectStore(cfg.ObjectStore)
 	intake, err := newIngest(pool, store, connections, rights, clock.System{}, reg)
 	if err != nil {
@@ -97,7 +101,10 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return err
 	}
-	modules := apiModules{connections: connections, intake: intake, sync: collection, operations: newView(pool, collection, rights, clock.System{})}
+	modules := apiModules{
+		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection,
+		operations: newView(pool, collection, rights, clock.System{}),
+	}
 	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules))
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Msg("api started")
@@ -140,7 +147,11 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	orgs, rights := newOrgAccess(pool, clock.System{})
+	metrics, err := newAccessMetrics(reg)
+	if err != nil {
+		return err
+	}
+	orgs, rights := newOrgAccess(pool, clock.System{}, connections, metrics)
 	store := newObjectStore(cfg.ObjectStore)
 	packages, err := newIngest(pool, store, connections, rights, clock.System{}, reg)
 	if err != nil {

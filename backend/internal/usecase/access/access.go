@@ -13,8 +13,11 @@ import (
 
 // Reasons of a denied access in the audit (TZ 13.8).
 const (
-	ReasonOutsideScope = "outside_scope"
-	ReasonNoPermission = "no_permission"
+	ReasonOutsideScope      = "outside_scope"
+	ReasonNoPermission      = "no_permission"
+	ReasonSourceDenied      = "source_denied"
+	ReasonSourceUnavailable = "source_check_unavailable"
+	ReasonSourceAccessLost  = "source_access_lost"
 )
 
 type rule int
@@ -55,15 +58,70 @@ type Auditor interface {
 	RecordSeparately(ctx context.Context, e entity.AuditEvent) error
 }
 
-type UseCase struct {
-	tx       repo.Transactor
-	profiles Profiles
-	auditor  Auditor
-	clock    clock.Clock
+// Structure is the org module; ProjectAreas runs in the caller's organization transaction.
+type Structure interface {
+	ProjectAreas(ctx context.Context, orgID entity.ID, at time.Time) ([]entity.Link, error)
 }
 
-func New(tx repo.Transactor, p Profiles, a Auditor, c clock.Clock) *UseCase {
-	return &UseCase{tx: tx, profiles: p, auditor: a, clock: c}
+// Accounts is the org module: the account of a user in an instance by the confirmed link of their person.
+type Accounts interface {
+	UserSourceAccount(ctx context.Context, orgID, userID, instanceID entity.ID) (entity.UserAccount, bool, error)
+}
+
+// Sources is the connect module, the only caller of adapters (TZ 10.3).
+type Sources interface {
+	AreaSources(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaSource, error)
+	CheckAccess(ctx context.Context, orgID, connectionID entity.ID, in entity.SourceAccessInput) (entity.SourceAccessResult, error)
+}
+
+// Metrics count the lookups of the cache of decisions and the failed checks of every connection.
+type Metrics interface {
+	CacheLookup(hit bool)
+	CheckFailed(connectionID entity.ID)
+}
+
+type Deps struct {
+	Tx        repo.Transactor
+	Profiles  Profiles
+	Structure Structure
+	Accounts  Accounts
+	Sources   Sources
+	Auditor   Auditor
+	Metrics   Metrics
+	Clock     clock.Clock
+	// CacheSize bounds the decisions kept in memory; _cacheSize when zero.
+	CacheSize int
+	// CheckTimeout is the budget of one CheckAccess on the path of a read; _checkTimeout when zero.
+	CheckTimeout time.Duration
+}
+
+type UseCase struct {
+	tx        repo.Transactor
+	profiles  Profiles
+	structure Structure
+	accounts  Accounts
+	sources   Sources
+	auditor   Auditor
+	metrics   Metrics
+	clock     clock.Clock
+	checks    *checks
+}
+
+func New(d Deps) *UseCase {
+	if d.CacheSize == 0 {
+		d.CacheSize = _cacheSize
+	}
+	if d.CheckTimeout == 0 {
+		d.CheckTimeout = _checkTimeout
+	}
+	if d.Metrics == nil {
+		d.Metrics = noMetrics{}
+	}
+	return &UseCase{
+		tx: d.Tx, profiles: d.Profiles, structure: d.Structure, accounts: d.Accounts, sources: d.Sources,
+		auditor: d.Auditor, metrics: d.Metrics, clock: d.Clock,
+		checks: newChecks(d.Sources, d.Metrics, d.Clock, d.CacheSize, d.CheckTimeout),
+	}
 }
 
 // Authorize returns entity.ErrNotFound when the area is not visible to the subject and entity.ErrForbidden
@@ -77,7 +135,7 @@ func (u *UseCase) Authorize(ctx context.Context, s entity.Subject, r entity.Acce
 		if !r.Area.ID.IsZero() && (r.Area.Kind != entity.AreaProject || r.Area.ID != s.ProjectID) {
 			return entity.Scope{}, entity.ErrNotFound
 		}
-		return entity.Scope{Projects: []entity.ID{s.ProjectID}}, nil
+		return entity.GrantScope(entity.ScopeGrant{Projects: []entity.ID{s.ProjectID}}), nil
 	}
 	p, err := u.profile(ctx, s)
 	if err != nil {
@@ -186,5 +244,7 @@ func scope(p entity.Profile) entity.Scope {
 		}
 		return out
 	}
-	return entity.Scope{Whole: p.Whole, Teams: ids(p.Areas.Teams), Projects: ids(p.Areas.Projects), Services: ids(p.Areas.Services)}
+	return entity.GrantScope(entity.ScopeGrant{
+		Whole: p.Whole, Teams: ids(p.Areas.Teams), Projects: ids(p.Areas.Projects), Services: ids(p.Areas.Services),
+	})
 }

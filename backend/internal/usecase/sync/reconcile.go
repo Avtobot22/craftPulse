@@ -102,6 +102,13 @@ func (u *UseCase) compare(ctx context.Context, org, conn entity.ID, scope *entit
 	if err != nil && !errors.Is(err, entity.ErrNotFound) {
 		return nil, err
 	}
+	// The first reconciliation that finds the area binds it to the scope: access checks the area in this
+	// connection, and listAreas offers it for projects.
+	if !area.IsZero() && scope.AreaID == nil {
+		if err := u.d.Connect.SetScopeArea(ctx, org, scope.ID, area); err != nil {
+			return nil, err
+		}
+	}
 	in := entity.ManifestInput{
 		SchemaID: schema, Scope: entity.ScopeRef{Kind: scope.Kind, NativeScopeID: scope.NativeScopeID},
 		Period: entity.Period{From: scope.HistoryFrom}, Limit: _manifestPage,

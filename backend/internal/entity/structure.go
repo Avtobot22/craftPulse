@@ -25,6 +25,7 @@ type LinkKind string
 const (
 	LinkTeamProject LinkKind = "team_project"
 	LinkTeamMember  LinkKind = "team_member"
+	LinkProjectArea LinkKind = "project_area"
 )
 
 // Link is a current interval [ValidFrom, ValidTo) of a pair; a zero ValidTo is open.
@@ -43,6 +44,7 @@ type Structure struct {
 	Services     []Area
 	TeamProjects []Link
 	TeamMembers  []Link
+	ProjectAreas []Link
 }
 
 // AreaInput is a team, project or service of a confirmed structure; a zero ID is a new record.
@@ -66,9 +68,10 @@ type StructureInput struct {
 	Services     []AreaInput
 	TeamProjects []LinkInput
 	TeamMembers  []LinkInput
-	// ProjectAreas and Components count the entries that reference source areas.
-	ProjectAreas int
-	Components   int
+	// ProjectAreas link a project (From) to a source area of a connection (To).
+	ProjectAreas []LinkInput
+	// Components counts the entries that reference repositories.
+	Components int
 }
 
 // Field error codes of the contract (FieldError).
@@ -105,14 +108,6 @@ func (e *ValidationError) Error() string {
 
 func (e *ValidationError) Add(field, code, detail string) {
 	e.Fields = append(e.Fields, FieldError{Field: field, Code: code, Detail: detail})
-}
-
-// Scope is the set of areas the subject may read; only access builds it (TZ 13.4).
-type Scope struct {
-	Whole    bool
-	Teams    []ID
-	Projects []ID
-	Services []ID
 }
 
 type PageKey struct {
