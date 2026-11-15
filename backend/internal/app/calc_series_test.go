@@ -49,7 +49,8 @@ func newSeriesEnv(t *testing.T) *seriesEnv {
 		},
 	})
 	require.NoError(t, err)
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	e.calc, err = newCalc(e.app, calcModules{structure: orgs, facts: e.runner.norm, settings: e.process}, e.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
 	e.series, err = e.calc.TeamSeries(t.Context(), e.orgID, entity.ID(e.team), entity.StepWeek)

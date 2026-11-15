@@ -101,7 +101,8 @@ func (e *loginEnv) modules(t *testing.T) apiModules {
 	require.NoError(t, err)
 	conn, err := newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	orgs, rights := newOrgAccess(e.app, e.clock, conn, nil)
+	orgs, rights, err := newOrgAccess(e.app, e.clock, conn, nil)
+	require.NoError(t, err)
 	return apiModules{orgs: orgs, access: rights, connections: conn}
 }
 

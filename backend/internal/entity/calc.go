@@ -173,7 +173,8 @@ type AreaFacts struct {
 	Events     []TaskEvent
 }
 
-// CalcRequest asks for the flow of a team over a window at the knowledge number KnowledgeSeq.
+// CalcRequest asks for the flow of a team over a window at the knowledge number KnowledgeSeq. Sources is the state
+// of collection a chain fixed at its start; nil reads the current one.
 type CalcRequest struct {
 	OrganizationID ID
 	TeamID         ID
@@ -181,6 +182,7 @@ type CalcRequest struct {
 	Window         Window
 	AsOf           time.Time
 	GroupBy        GroupBy
+	Sources        *[]AreaCollection
 }
 
 // CalcResult is a calculation of the flow metrics: the series and the tasks they were computed from.
@@ -308,16 +310,19 @@ const (
 )
 
 // CalcSliceJob builds a revision of a series part by part (TZ 10.6). Without RevisionID it starts a chain; the
-// part number is not in the uniqueness, so a series has one chain of a window at a time.
+// part number is not in the uniqueness, so a series has one chain of a window at a time. Sources is the state of
+// collection and Structure the version of the structure the start fixed for the parts of the chain.
 type CalcSliceJob struct {
-	OrganizationID ID        `json:"organization_id" river:"unique"`
-	SeriesID       ID        `json:"series_id" river:"unique"`
-	From           time.Time `json:"from" river:"unique"`
-	To             time.Time `json:"to" river:"unique"`
-	AsOf           time.Time `json:"as_of"`
-	RevisionID     ID        `json:"revision_id,omitzero"`
-	PartNo         int       `json:"part_no,omitempty"`
-	CorrelationID  ID        `json:"correlation_id"`
+	OrganizationID ID                `json:"organization_id" river:"unique"`
+	SeriesID       ID                `json:"series_id" river:"unique"`
+	From           time.Time         `json:"from" river:"unique"`
+	To             time.Time         `json:"to" river:"unique"`
+	AsOf           time.Time         `json:"as_of"`
+	RevisionID     ID                `json:"revision_id,omitzero"`
+	PartNo         int               `json:"part_no,omitempty"`
+	Sources        *[]AreaCollection `json:"sources,omitempty"`
+	Structure      int64             `json:"structure,omitempty"`
+	CorrelationID  ID                `json:"correlation_id"`
 }
 
 func (CalcSliceJob) Kind() string { return KindCalcSlice }
@@ -330,8 +335,9 @@ const (
 	KindCalcExtendTick = "calc.extend.tick"
 )
 
-// CalcRecountJob asks calc for a new chain of the series the facts of an area or the settings of a team feed;
-// normalize and process queue it without depending on calc (TZ 10.3, rule 6).
+// CalcRecountJob asks calc for a new chain of the series the facts of an area or the settings of a team feed, or
+// of every series of the organization when neither is set; normalize, process and org queue it without depending
+// on calc (TZ 10.3, rule 6).
 type CalcRecountJob struct {
 	OrganizationID ID `json:"organization_id" river:"unique"`
 	AreaID         ID `json:"area_id,omitzero" river:"unique"`

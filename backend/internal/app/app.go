@@ -87,7 +87,10 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return err
 	}
-	orgs, rights := newOrgAccess(pool, clock.System{}, connections, metrics)
+	orgs, rights, err := newOrgAccess(pool, clock.System{}, connections, metrics)
+	if err != nil {
+		return err
+	}
 	store := newObjectStore(cfg.ObjectStore)
 	intake, err := newIngest(pool, store, connections, rights, clock.System{}, reg)
 	if err != nil {
@@ -160,7 +163,10 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	orgs, rights := newOrgAccess(pool, clock.System{}, connections, metrics)
+	orgs, rights, err := newOrgAccess(pool, clock.System{}, connections, metrics)
+	if err != nil {
+		return err
+	}
 	store := newObjectStore(cfg.ObjectStore)
 	packages, err := newIngest(pool, store, connections, rights, clock.System{}, reg)
 	if err != nil {

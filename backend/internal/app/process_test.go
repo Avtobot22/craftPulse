@@ -119,8 +119,8 @@ func newProcessEnv(t *testing.T) *processEnv {
 	rec = e.replace(t, e.admin, rec.Header().Get("ETag"), in)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
-	var err error
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	e.process, err = newProcess(e.app, orgs, e.runner.norm, e.clock)
 	require.NoError(t, err)
 	return e

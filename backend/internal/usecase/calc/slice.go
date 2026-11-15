@@ -140,6 +140,10 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		t := &targets[i]
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindTarget, ID: t.ID.String(), Version: strconv.Itoa(t.VersionNo)})
 	}
+	structure, err := u.d.Structure.StructureVersion(ctx, org)
+	if err != nil {
+		return err
+	}
 	sources, err := u.teamCollection(ctx, org, team)
 	if err != nil {
 		return err
@@ -150,6 +154,8 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		})
 	}
 	rev.Loading = loading(sources)
+	// Not nil, so the parts read this state even when no connection collects the areas.
+	fixed := append([]entity.AreaCollection{}, sources...)
 	rev.InputHash = revisionHash(&series, &rev, inputs)
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		if err := u.d.Repo.FailStaleRevisions(ctx, org, series.ID, now.Add(-_staleAfter)); err != nil {
@@ -169,7 +175,7 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 			return err
 		}
 		next := job
-		next.RevisionID, next.PartNo = rev.ID, 1
+		next.RevisionID, next.PartNo, next.Sources, next.Structure = rev.ID, 1, &fixed, structure
 		return u.d.Queue.Enqueue(ctx, next, entity.QueueBulk)
 	})
 }
@@ -226,7 +232,7 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 	}
 	in, err := u.input(ctx, entity.CalcRequest{
 		OrganizationID: org, TeamID: team, KnowledgeSeq: rev.KnowledgeSeq, Window: entity.Window{From: rev.Window.From, To: rev.Window.To, Step: series.Step},
-		AsOf: rev.AsOf,
+		AsOf: rev.AsOf, Sources: job.Sources,
 	})
 	if err != nil {
 		return err
@@ -322,8 +328,8 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 }
 
 // again queues the chain of the job once more when the facts of the areas or the settings of the team are newer
-// than the cutoff of the revision; it runs after the job completed itself, or the copy would match the job
-// that is still active and be dropped (TZ 10.6).
+// than the cutoff of the revision or the structure is not the one of the start; it runs after the job completed
+// itself, or the copy would match the job that is still active and be dropped (TZ 10.6).
 func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entity.CalcRevision, team entity.ID, areas []entity.ID,
 	now time.Time,
 ) error {
@@ -335,7 +341,11 @@ func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entit
 	if err != nil {
 		return err
 	}
-	if max(facts, settings) <= rev.KnowledgeSeq {
+	structure, err := u.d.Structure.StructureVersion(ctx, job.OrganizationID)
+	if err != nil {
+		return err
+	}
+	if max(facts, settings) <= rev.KnowledgeSeq && structure == job.Structure {
 		return nil
 	}
 	at := now.Add(_recountDelay)
@@ -343,7 +353,7 @@ func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entit
 		at = now.Add(_loadingEvery)
 	}
 	next := job
-	next.RevisionID, next.PartNo, next.AsOf = entity.ID{}, 0, at
+	next.RevisionID, next.PartNo, next.AsOf, next.Sources, next.Structure = entity.ID{}, 0, at, nil, 0
 	return u.d.Queue.EnqueueAt(ctx, next, entity.QueueBulk, at)
 }
 

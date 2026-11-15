@@ -79,7 +79,8 @@ func TestCalc_TargetDefinitionKeepsFollowUp(t *testing.T) {
 func TestQuality_TwoTargetVersionsAndStoppedCollection(t *testing.T) {
 	t.Parallel()
 	e := newTargetEnv(t)
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	c, err := newCalc(e.app, calcModules{structure: orgs, facts: e.runner.norm, settings: e.process, collection: e.runner.sync}, e.clock,
 		prometheus.NewRegistry())
 	require.NoError(t, err)

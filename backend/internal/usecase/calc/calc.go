@@ -13,9 +13,10 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 )
 
-// Structure is the org module: the source areas of the projects of a team.
+// Structure is the org module: the source areas of the projects of a team and the version of the structure.
 type Structure interface {
 	TeamProjectAreas(ctx context.Context, orgID, teamID entity.ID, at time.Time) ([]entity.Link, error)
+	StructureVersion(ctx context.Context, orgID entity.ID) (int64, error)
 }
 
 // Facts is the normalize module: the tasks and events of an area at a knowledge number, all of them for a
@@ -143,6 +144,10 @@ func (u *UseCase) input(ctx context.Context, req entity.CalcRequest) (input, err
 		return in, err
 	}
 	in.targets = targetsOf(targets)
+	if req.Sources != nil {
+		in.collection = *req.Sources
+		return in, nil
+	}
 	if u.d.Collection != nil && len(areas) > 0 {
 		if in.collection, err = u.d.Collection.AreaCollection(ctx, org, areas); err != nil {
 			return in, err

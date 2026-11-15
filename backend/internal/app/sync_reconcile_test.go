@@ -164,7 +164,12 @@ func TestSync_V06_StatusChangesOnlyAfterReconcile(t *testing.T) {
 	assert.Contains(t, failed.AffectedMetrics, "T08", "the metrics the gap touches")
 	assert.Equal(t, entity.ConnectionActive, st.ConnectionStatus)
 
+	_, err := e.owner.Exec(t.Context(), "UPDATE river_job SET state = 'completed', finalized_at = now() WHERE kind = $1", entity.KindCalcRecount)
+	require.NoError(t, err)
 	e.runner().settle(t)
+	recounts := count(t, t.Context(), e.owner, `SELECT count(*) FROM river_job j JOIN connect.connection_scope s
+		ON s.area_id::text = j.args->>'area_id' WHERE j.kind = '`+entity.KindCalcRecount+`' AND j.state = 'available' AND s.connection_id = '`+conn.String()+`'`)
+	assert.Equal(t, 1, recounts, "the reconciliation queues the recount of its area, the pages read again changed no fact")
 	st, done := e.status(t, conn)
 	assert.False(t, done.FailedPagePresent)
 	assert.Equal(t, "complete", done.Completeness)

@@ -36,8 +36,8 @@ type normalizeEnv struct {
 func newNormalizeEnv(t *testing.T) *normalizeEnv {
 	t.Helper()
 	e := &normalizeEnv{ingestEnv: newIngestEnv(t)}
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
-	var err error
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	e.norm, err = newNormalize(e.app, e.store, e.uc, orgs, e.clock)
 	require.NoError(t, err)
 	return e

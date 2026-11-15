@@ -9,13 +9,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	workerctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/worker"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
+	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 )
 
 // recountEnv is the series of seriesEnv with the collection of sync and the metrics of calc in their own registry.
@@ -27,7 +32,8 @@ type recountEnv struct {
 func newRecountEnv(t *testing.T) *recountEnv {
 	t.Helper()
 	e := &recountEnv{seriesEnv: newSeriesEnv(t), reg: prometheus.NewRegistry()}
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	c, err := newCalc(e.app, calcModules{structure: orgs, facts: e.runner.norm, settings: e.process, collection: e.runner.sync}, e.clock, e.reg)
 	require.NoError(t, err)
 	e.calc = c
@@ -435,7 +441,8 @@ func TestRecount_ChainStartedWhileAnotherPublishes(t *testing.T) {
 	e.runJobs(t, 4)
 	require.Len(t, e.building(t), 1, "the first chain waits for its last part")
 
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	settings := &publishingSettings{Settings: e.process, publish: func() { e.runJobs(t, 0) }}
 	starter, err := newCalc(e.app, calcModules{structure: orgs, facts: e.runner.norm, settings: settings, collection: e.runner.sync}, e.clock,
 		prometheus.NewRegistry())
@@ -454,4 +461,131 @@ func TestRecount_ChainStartedWhileAnotherPublishes(t *testing.T) {
 	replaced, err := e.calc.Revision(t.Context(), e.orgID, e.series.ID, &published.ID)
 	require.NoError(t, err)
 	assert.Equal(t, entity.RevisionSuperseded, replaced.Status)
+}
+
+// TestRecount_PartsReadCollectionOfTheStart: the parts of a chain read the state of collection the first part fixed,
+// so a reconciliation that ends during the chain does not split the revision.
+func TestRecount_PartsReadCollectionOfTheStart(t *testing.T) {
+	t.Parallel()
+	e := newRecountEnv(t)
+	first := e.build(t)
+
+	e.refresh(t, _seriesAsOf)
+	e.runJobs(t, 2)
+	_, err := e.owner.Exec(t.Context(), `UPDATE sync.state SET completeness = CASE completeness WHEN 'complete' THEN 'partial' ELSE 'complete' END
+		WHERE connection_id = $1`, e.conn)
+	require.NoError(t, err)
+	e.runJobs(t, 0)
+	during := e.current(t)
+	require.Greater(t, during.RevisionNo, first.RevisionNo)
+	assert.Equal(t, e.parts(t, first.ID), e.parts(t, during.ID), "every part reads the collection of the start")
+
+	after := e.build(t)
+	assert.NotEqual(t, e.parts(t, first.ID), e.parts(t, after.ID), "the next chain reads the changed collection")
+}
+
+// TestRecount_StructureChange: a new structure queues the recount of every series of the organization, and a chain
+// during which the structure changed queues itself again.
+func TestRecount_StructureChange(t *testing.T) {
+	t.Parallel()
+	e := newRecountEnv(t)
+	e.recount(t)
+	e.refresh(t, _seriesAsOf)
+	e.runJobs(t, 2)
+	building := e.building(t)
+	require.Len(t, building, 1)
+
+	st, tag := e.structure(t, e.admin)
+	in := st.input()
+	in.Projects = append(in.Projects, named{Name: "Platform", Status: "active"})
+	rec := e.replace(t, e.admin, tag, in)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, 1, count(t, t.Context(), e.owner, `SELECT count(*) FROM river_job WHERE kind = '`+entity.KindCalcRecount+
+		`' AND state = 'available' AND NOT args ? 'area_id' AND NOT args ? 'team_id'`), "the recount of the whole organization")
+
+	for {
+		j, ok := e.nextJob(t)
+		if !ok {
+			break
+		}
+		require.NoError(t, e.calc.RunSlice(t.Context(), j.args, completeJob(j.id)))
+	}
+	during, err := e.calc.Revision(t.Context(), e.orgID, e.series.ID, (*entity.ID)(&building[0]))
+	require.NoError(t, err)
+	assert.Equal(t, entity.RevisionPublished, during.Status)
+	assert.Equal(t, 1, count(t, t.Context(), e.owner, `SELECT count(*) FROM river_job WHERE kind = '`+entity.KindCalcSlice+
+		`' AND state = 'scheduled' AND (args->>'from')::timestamptz = '`+_seriesWindow.From.Format(time.RFC3339)+`'`),
+		"the chain that read the previous structure queues itself again")
+
+	e.recount(t)
+	assert.Greater(t, e.current(t).RevisionNo, during.RevisionNo)
+}
+
+// TestRecount_RiverWorkerRunsTheChain runs the jobs of calc in a River client as the worker does: the recounts of the
+// setup, a manual refresh and a new mapping each end in a published revision. The clock of calc is an hour behind,
+// so the delayed chains are due at once.
+func TestRecount_RiverWorkerRunsTheChain(t *testing.T) {
+	t.Parallel()
+	e := newRecountEnv(t)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
+	behind := clock.NewManual(time.Now().Add(-time.Hour))
+	worker, err := newCalc(e.app, calcModules{structure: orgs, facts: e.runner.norm, settings: e.process, collection: e.runner.sync}, behind,
+		prometheus.NewRegistry())
+	require.NoError(t, err)
+	workers := river.NewWorkers()
+	workerctrl.Register(workers, workerctrl.Deps{Collection: e.runner.sync, Normalizer: e.runner.norm, Calculator: worker})
+	client, err := river.NewClient(riverpgxv5.New(e.app), &river.Config{
+		Queues: map[string]river.QueueConfig{entity.QueueBulk: {MaxWorkers: 2}}, Workers: workers,
+		JobTimeout: _jobTimeout, RescueStuckJobsAfter: _rescueAfter, FetchCooldown: 20 * time.Millisecond, FetchPollInterval: 50 * time.Millisecond,
+	})
+	require.NoError(t, err)
+	require.NoError(t, client.Start(context.WithoutCancel(t.Context())))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = client.Stop(ctx)
+	})
+	settled := func() bool {
+		return count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind LIKE 'calc.%' AND state NOT IN ('completed', 'discarded')") == 0
+	}
+	published := func() int {
+		return count(t, t.Context(), e.owner, "SELECT count(*) FROM calc.revision WHERE series_id = '"+e.series.ID.String()+"' AND status = 'published'")
+	}
+	require.Eventually(t, func() bool { return settled() && published() == 1 }, 30*time.Second, 100*time.Millisecond,
+		"the recounts of the setup publish the first revision")
+	first := e.current(t)
+
+	code, op, location := e.refreshSeries(t, e.admin, e.series.ID)
+	require.Equal(t, http.StatusAccepted, code)
+	require.Eventually(t, func() bool {
+		_, got := e.operation(t, e.admin, location)
+		return got.Status == "succeeded"
+	}, 30*time.Second, 100*time.Millisecond, "the refresh ends in a revision")
+	_, done := e.operation(t, e.admin, location)
+	assert.Equal(t, op.ID, done.ID)
+	manual := e.current(t)
+	assert.Greater(t, manual.RevisionNo, first.RevisionNo)
+	assert.Equal(t, "/api/v1/revisions/"+manual.ID.String(), *done.ResultURI)
+
+	admin := entity.Subject{OrganizationID: e.orgID, UserID: entity.ID(e.adminID)}
+	rule := func(kind entity.RuleKind, ref, meaning string) entity.MappingRule {
+		return entity.MappingRule{Kind: kind, InstanceID: entity.ID(e.instance), NativeRef: ref, Meaning: meaning}
+	}
+	_, _, err = e.process.CreateMappingVersion(t.Context(), admin, entity.ID(e.team), 1, entity.ID(uuid.New()), entity.MappingDraft{
+		Timezone: "Europe/Moscow", Rules: []entity.MappingRule{
+			rule(entity.RuleStatus, "1", entity.MeaningIntake), rule(entity.RuleStatus, "3", entity.MeaningActive),
+			rule(entity.RuleStatus, "5", entity.MeaningDone), rule(entity.RuleResolution, "10000", entity.MeaningAccepted),
+		},
+	})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return settled() && e.mappingInput(t, e.current(t).ID) == "2" }, 30*time.Second, 100*time.Millisecond,
+		"the new mapping is counted by the worker")
+	assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM calc.revision WHERE series_id = '"+e.series.ID.String()+"' AND status = 'failed'"))
+	var failures []string
+	rows, err := e.owner.Query(t.Context(), "SELECT kind || ': ' || errors::text FROM river_job WHERE kind LIKE 'calc.%' AND errors IS NOT NULL")
+	require.NoError(t, err)
+	failures, err = pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	assert.Empty(t, failures, "no job of calc failed an attempt")
 }

@@ -46,7 +46,8 @@ func TestCalc_DefinitionRowsFollowRegistry(t *testing.T) {
 func TestCalc_FlowOfCollectedTasks(t *testing.T) {
 	t.Parallel()
 	e := newProcessEnv(t)
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	uc := calc.New(calc.Deps{Structure: orgs, Facts: e.runner.norm, Settings: e.process, Clock: e.clock})
 	req := entity.CalcRequest{
 		OrganizationID: e.orgID, TeamID: entity.ID(e.team), KnowledgeSeq: e.lastSeq(t),

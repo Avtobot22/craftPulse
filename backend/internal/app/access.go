@@ -12,6 +12,7 @@ import (
 	authrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/auth"
 	orgrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/org"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/access"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/auth"
@@ -21,18 +22,25 @@ import (
 
 // newOrgAccess builds the org module and the access decisions on it, which every process checks rights with.
 // sources is connect: it knows the areas of connections and calls CheckAccess. A process builds them once,
-// so its cache of decisions is one; nil metrics count nothing.
-func newOrgAccess(pool *pgxpool.Pool, c clock.Clock, sources access.Sources, metrics access.Metrics) (orgs *org.UseCase, rights *access.UseCase) {
+// so its cache of decisions is one; nil metrics count nothing. The recount of calc after a new structure goes through
+// the queue of jobs.
+func newOrgAccess(pool *pgxpool.Pool, c clock.Clock, sources access.Sources, metrics access.Metrics) (
+	orgs *org.UseCase, rights *access.UseCase, err error,
+) {
+	jobs, err := riverInsertClient(pool)
+	if err != nil {
+		return nil, nil, err
+	}
 	tx := persistent.NewTransactor(pool)
 	auditor := audit.New(auditrepo.NewRepo(pool), tx, c)
 	orgs = org.New(org.Deps{
 		Orgs: orgrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Auditor: auditor,
-		Credentials: auth.NewCredentials(authrepo.NewRepo(pool)), Sources: sources, Clock: c, NewID: newID,
+		Credentials: auth.NewCredentials(authrepo.NewRepo(pool)), Sources: sources, Queue: queue.New(jobs), Clock: c, NewID: newID,
 	})
 	rights = access.New(access.Deps{
 		Tx: tx, Profiles: orgs, Structure: orgs, Accounts: orgs, Sources: sources, Auditor: auditor, Metrics: metrics, Clock: c,
 	})
-	return orgs, rights
+	return orgs, rights, nil
 }
 
 type accessMetrics struct {

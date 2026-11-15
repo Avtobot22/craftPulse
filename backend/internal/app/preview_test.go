@@ -183,7 +183,8 @@ func TestPreview_V14MatchesConfirmedVersion(t *testing.T) {
 
 	rec := e.confirm(t, e.admin, _mappingVersions, `"0"`, uuid.New(), e.previewDraft())
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	uc := calc.New(calc.Deps{Structure: orgs, Facts: e.runner.norm, Settings: e.process, Clock: e.clock})
 	r, err := uc.Calculate(t.Context(), entity.CalcRequest{
 		OrganizationID: e.orgID, TeamID: entity.ID(e.team), KnowledgeSeq: e.lastSeq(t), AsOf: p.AsOf,

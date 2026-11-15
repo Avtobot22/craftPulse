@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -192,6 +193,10 @@ func (u *UseCase) closeRun(ctx context.Context, job entity.SyncReconcileJob, run
 			return u.end(ctx, org, conn, holder, complete)
 		})
 	}
+	areas, err := u.reconciledAreas(ctx, org, conn, job.DataKind)
+	if err != nil {
+		return err
+	}
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		st, found, err := u.d.Repo.State(ctx, org, conn, job.DataKind)
 		if err != nil {
@@ -224,10 +229,35 @@ func (u *UseCase) closeRun(ctx context.Context, job entity.SyncReconcileJob, run
 				return err
 			}
 		}
+		for _, area := range areas {
+			recount := entity.CalcRecountJob{OrganizationID: org, AreaID: area, CorrelationID: job.CorrelationID}
+			if err := u.d.Queue.Enqueue(ctx, recount, entity.QueueBulk); err != nil {
+				return err
+			}
+		}
 		zerolog.Ctx(ctx).Info().Str("connection_id", conn.String()).Str("data_kind", job.DataKind).Str("outcome", run.Outcome).
 			Str("reason", run.ReasonCode).Str("correlation_id", job.CorrelationID.String()).Msg("reconciliation finished")
 		return u.end(ctx, org, conn, holder, complete)
 	})
+}
+
+// reconciledAreas are the areas whose completeness of tasks a finished reconciliation decides: calc recounts their
+// series, since the completeness of a collection is an input of T39-T42 (TZ 10.3, rule 6).
+func (u *UseCase) reconciledAreas(ctx context.Context, org, conn entity.ID, dataKind string) ([]entity.ID, error) {
+	if dataKind != _dataTasks {
+		return nil, nil
+	}
+	scopes, err := u.d.Connect.Scopes(ctx, org, conn)
+	if err != nil {
+		return nil, err
+	}
+	var out []entity.ID
+	for i := range scopes {
+		if a := scopes[i].AreaID; scopes[i].Active && a != nil && !slices.Contains(out, *a) {
+			out = append(out, *a)
+		}
+	}
+	return out, nil
 }
 
 // recheck puts the differences into the set to read again and, after the finished run, queues the next

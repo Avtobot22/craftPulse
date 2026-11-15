@@ -104,7 +104,8 @@ func newIngestEnv(t *testing.T) *ingestEnv {
 	require.NoError(t, err)
 	e.connect, err = newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	_, e.rights = newOrgAccess(e.app, e.clock, e.connect, nil)
+	_, e.rights, err = newOrgAccess(e.app, e.clock, e.connect, nil)
+	require.NoError(t, err)
 	e.uc, err = newIngest(e.app, e.store, e.connect, e.rights, e.clock, e.reg)
 	require.NoError(t, err)
 	return e
@@ -488,7 +489,8 @@ func TestIngest_InterruptedJobGivesTheSameJournal(t *testing.T) {
 	jobs, err := riverInsertClient(e.app)
 	require.NoError(t, err)
 	q := &failingQueue{JobQueue: queue.New(jobs), fail: true}
-	_, rights := newOrgAccess(e.app, e.clock, nil, nil)
+	_, rights, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	uc := ingest.New(ingest.Deps{
 		Repo: ingestrepo.NewRepo(e.app), Objects: e.store, Queue: q, Tx: persistent.NewTransactor(e.app),
 		Connect: e.connect, Access: rights, Metrics: ingestMetrics{rejected: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "x"}, []string{"channel", "reason"})},
