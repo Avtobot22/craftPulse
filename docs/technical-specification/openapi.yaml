@@ -1723,9 +1723,20 @@ paths:
       operationId: previewMapping
       summary: Предпросмотр сопоставления на задачах
       description: |
-        Применяет черновик правил к 10-20 задачам команды и считает три контрольных показателя
-        на одну дату (FR-017). Ничего не сохраняет; повтор безопасен. Черновик с правилом для
-        неизвестного ID экземпляра - `422`.
+        Применяет черновик правил к задачам проектов команды, которые пользователь видит сейчас
+        с учётом прав в источниках, и показывает до 20 из них: сначала по одной задаче каждого
+        вида (в работе, не начата, завершена, отменена или дубликат, с блокировкой, без размера,
+        с неизвестным статусом), затем недавно изменённые. Задачи закрытых для пользователя
+        проектов и задачи с собственным ограничением без доступа в выборку и расчёт не попадают.
+
+        Контрольные показатели считаются тем же определением, что в отчёте, по всем видимым
+        задачам команды на одну дату `as_of`: T05 (завершено) и T08 с оценкой p50 (медиана
+        цикла) за неделю отчёта `period` от понедельника 00:00 в часовом поясе черновика до
+        `as_of`, T12 (в работе) на `as_of` (FR-017).
+
+        Ничего не сохраняет: версии, ревизии расчёта и записи аудита не создаются, повтор
+        безопасен. Черновик с правилом для неизвестного ID экземпляра или недопустимым `meaning`
+        - `422` с ошибками полей.
       tags: [process]
       x-craftpulse-action: process.manage
       x-craftpulse-delivery: M0
@@ -1752,6 +1763,7 @@ paths:
               schema: {$ref: '#/components/schemas/MappingPreview'}
               example:
                 as_of: '2026-11-08T00:00:00Z'
+                period: {from: '2026-11-01T21:00:00Z', to: '2026-11-08T00:00:00Z'}
                 tasks:
                   - task: {kind: task, id: 0193a5b0-f000-7000-8000-000000000001, display_key: CORE-12, title: Ошибка экспорта, source_url: 'https://example.atlassian.net/browse/CORE-12'}
                     started_at: '2026-10-02T09:00:00Z'
@@ -1768,6 +1780,7 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /teams/{team_id}/mapping-versions:
     get:
@@ -6541,9 +6554,12 @@ components:
         next_cursor: {type: [string, 'null']}
     MappingPreview:
       type: object
-      required: [as_of, tasks, control_values, unmapped_statuses]
+      required: [as_of, period, tasks, control_values, unmapped_statuses]
       properties:
         as_of: {type: string, format: date-time}
+        period:
+          $ref: '#/components/schemas/Period'
+          description: Неделя отчёта до `as_of`, за которую считаются T05 и T08.
         tasks:
           type: array
           maxItems: 20

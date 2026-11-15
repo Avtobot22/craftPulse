@@ -328,3 +328,50 @@ func (CalcGCJob) UniqueWhileActive() {}
 type CalcGCTickJob struct{}
 
 func (CalcGCTickJob) Kind() string { return KindCalcGCTick }
+
+// PreviewOutcome is the state of a task of a preview at as_of.
+type PreviewOutcome string
+
+const (
+	PreviewOpen      PreviewOutcome = "open"
+	PreviewCompleted PreviewOutcome = "completed"
+	PreviewCancelled PreviewOutcome = "cancelled"
+	PreviewDuplicate PreviewOutcome = "duplicate"
+	// PreviewUnknown is a task whose current status or resolution has no rule, or whose history conflicts.
+	PreviewUnknown PreviewOutcome = "unknown"
+)
+
+// PreviewTask is how a draft of the mapping reads one task: the first start and completion seen in its known
+// history, its outcome at as_of and the statuses it passed without a rule. BlockedSeconds is nil when the
+// order of its events conflicts.
+type PreviewTask struct {
+	TaskID         ID
+	DisplayKey     string
+	Title          string
+	Created        time.Time
+	StartedAt      *time.Time
+	CompletedAt    *time.Time
+	Outcome        PreviewOutcome
+	BlockedSeconds *int64
+	TaskType       *string
+	SizeLabel      *string
+	Unmapped       []string
+}
+
+// ControlValue is a control metric of a preview over its period, computed by the definition of the report.
+type ControlValue struct {
+	MetricID  string
+	Estimator string
+	Unit      string
+	Point     Point
+}
+
+// MappingPreview is a draft of the mapping applied to the visible tasks of a team without saving it (FR-017):
+// a sample of them and the control metrics over Period, the week of the report up to AsOf.
+type MappingPreview struct {
+	AsOf     time.Time
+	Period   Window
+	Tasks    []PreviewTask
+	Controls []ControlValue
+	Unmapped []NativeStatusRef
+}

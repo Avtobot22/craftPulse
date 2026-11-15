@@ -18,14 +18,24 @@ type Structure interface {
 	TeamProjectAreas(ctx context.Context, orgID, teamID entity.ID, at time.Time) ([]entity.Link, error)
 }
 
-// Facts is the normalize module: the tasks and events of an area at a knowledge number.
+// Facts is the normalize module: the tasks and events of an area at a knowledge number, all of them for a
+// series and the ones a scope allows for a reader.
 type Facts interface {
 	AreaFacts(ctx context.Context, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error)
+	VisibleAreaFacts(ctx context.Context, scope entity.Scope, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error)
+	RestrictedObjects(ctx context.Context, scope entity.Scope, orgID entity.ID, areaIDs []entity.ID) ([]entity.RestrictedObject, error)
 }
 
-// Settings is the process module: the mapping of a team in force at a knowledge number.
+// Settings is the process module: the mapping of a team in force at a knowledge number and the check of a draft
+// of it; errors of the fields of a draft are *entity.ValidationError.
 type Settings interface {
 	MappingAt(ctx context.Context, orgID, teamID entity.ID, seq int64) (entity.MappingVersion, bool, error)
+	CheckDraft(ctx context.Context, orgID, teamID entity.ID, d entity.MappingDraft) error
+}
+
+// Rights is the access module: what the sources allow the subject to read now (TZ 13.4, 13.5).
+type Rights interface {
+	Decide(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.SourceQuery) (entity.Scope, error)
 }
 
 // Metrics count the revisions that failed and the parts a revision took from earlier ones.
@@ -38,6 +48,7 @@ type Deps struct {
 	Structure Structure
 	Facts     Facts
 	Settings  Settings
+	Rights    Rights
 	Repo      repo.CalcRepo
 	Tenants   repo.TenantRepo
 	Queue     repo.JobQueue

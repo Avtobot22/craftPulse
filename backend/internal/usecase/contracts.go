@@ -147,6 +147,12 @@ type Process interface {
 		d entity.CalendarDraft) (v entity.CalendarVersion, created bool, err error)
 }
 
+// MappingPreviews is the calc module for process owners: a draft of the mapping of a team applied to the tasks
+// the owner may read, without saving it (UC-07, FR-017).
+type MappingPreviews interface {
+	PreviewMapping(ctx context.Context, s entity.Subject, scope entity.Scope, teamID entity.ID, d entity.MappingDraft) (entity.MappingPreview, error)
+}
+
 // Calculator runs the jobs of calc: the parts of a revision of a series and the collection of unused parts.
 type Calculator interface {
 	RunSlice(ctx context.Context, job entity.CalcSliceJob, complete func(context.Context) error) error

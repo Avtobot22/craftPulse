@@ -41,6 +41,7 @@ var (
 
 type process struct {
 	uc          usecase.Process
+	previews    usecase.MappingPreviews
 	connections usecase.Connections
 }
 
@@ -144,6 +145,48 @@ func (h *process) CreateMappingVersion(ctx context.Context, req openapi.CreateMa
 	return openapi.CreateMappingVersion201JSONResponse{
 		Body: mappingVersionBody(&v), Headers: openapi.CreateMappingVersion201ResponseHeaders{ETag: &tag, Location: &location},
 	}, nil
+}
+
+// PreviewMapping applies the draft to the tasks the scope of the request allows; nothing is saved.
+func (h *process) PreviewMapping(ctx context.Context, req openapi.PreviewMappingRequestObject) (openapi.PreviewMappingResponseObject, error) {
+	s, scope, err := subjectScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil || req.Body.Rules == nil {
+		return nil, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/rules", Code: entity.FieldRequired}}}
+	}
+	p, err := h.previews.PreviewMapping(ctx, s, scope, entity.ID(req.TeamId), mappingDraft(req.Body))
+	if err != nil {
+		return nil, err
+	}
+	out := openapi.MappingPreview{
+		AsOf: p.AsOf, Period: openapi.Period{From: p.Period.From, To: p.Period.To},
+		Tasks: emptyOf(openapi.MappingPreview{}.Tasks, len(p.Tasks)), ControlValues: emptyOf(openapi.MappingPreview{}.ControlValues, len(p.Controls)),
+		UnmappedStatuses: make([]openapi.NativeStatusRef, len(p.Unmapped)),
+	}
+	for i := range p.Tasks {
+		t := &p.Tasks[i]
+		item := elemOf(out.Tasks)
+		item.Task = openapi.ObjectRef{Kind: openapi.ObjectRefKindTask, Id: uuid.UUID(t.TaskID), DisplayKey: optional(t.DisplayKey), Title: optional(t.Title)}
+		item.StartedAt, item.CompletedAt, item.Outcome = t.StartedAt, t.CompletedAt, openapi.MappingPreviewTasksOutcome(t.Outcome)
+		item.TaskType, item.SizeLabel, item.Unmapped = t.TaskType, t.SizeLabel, append([]string{}, t.Unmapped...)
+		if t.BlockedSeconds != nil {
+			seconds := int(*t.BlockedSeconds)
+			item.BlockedSeconds = &seconds
+		}
+		out.Tasks = append(out.Tasks, *item)
+	}
+	for i := range p.Controls {
+		c := &p.Controls[i]
+		v := elemOf(out.ControlValues)
+		v.MetricId, v.Value = c.MetricID, metricValue(c.Unit, &c.Point)
+		out.ControlValues = append(out.ControlValues, *v)
+	}
+	for i, ref := range p.Unmapped {
+		out.UnmappedStatuses[i] = openapi.NativeStatusRef{InstanceId: uuid.UUID(ref.InstanceID), NativeId: ref.NativeID}
+	}
+	return openapi.PreviewMapping200JSONResponse(out), nil
 }
 
 func (h *process) ListCalendarVersions(ctx context.Context, req openapi.ListCalendarVersionsRequestObject) (openapi.ListCalendarVersionsResponseObject, error) {
@@ -340,4 +383,29 @@ func nextVersionCursor(next *int, kind string, teamID entity.ID) *string {
 	}
 	c := encodeCursor(cursorData{Kind: kind, Sort: teamID.String(), Name: strconv.Itoa(*next)})
 	return &c
+}
+
+// metricValue is a point as the contract shows it: a value only in ASSESSED and PROVISIONAL, a bound only in
+// BOUNDED, which the formula already ensures.
+func metricValue(unit string, p *entity.Point) openapi.MetricValue {
+	out := openapi.MetricValue{
+		State: openapi.DataState(p.State), Unit: unit, Value: float32Of(p.Value), Numerator: float32Of(p.Numerator),
+		Denominator: float32Of(p.Denominator), N: p.N, LowSample: p.LowSample, ExcludedCount: p.ExcludedCount,
+		MissingCount: p.MissingCount, ReasonCode: optional(p.ReasonCode),
+	}
+	if p.Bound != nil {
+		out.Bound = &struct {
+			Kind  openapi.MetricValueBoundKind `json:"kind"`
+			Value float32                      `json:"value"`
+		}{Kind: openapi.MetricValueBoundKind(p.Bound.Kind), Value: float32(p.Bound.Value)}
+	}
+	return out
+}
+
+func float32Of(v *float64) *float32 {
+	if v == nil {
+		return nil
+	}
+	f := float32(*v)
+	return &f
 }
