@@ -59,8 +59,7 @@ type loginEnv struct {
 
 func newLoginEnv(t *testing.T) *loginEnv {
 	t.Helper()
-	db := newDB(t)
-	db.migrate(t)
+	db := newMigratedDB(t)
 	keyring, err := crypto.NewKeyring(crypto.MasterKey{Version: 1, Key: bytes.Repeat([]byte{9}, 32)})
 	require.NoError(t, err)
 	e := &loginEnv{
@@ -303,6 +302,7 @@ func (e *loginEnv) metric(t *testing.T, line string) bool {
 }
 
 func TestLogin_FirstAdministrator(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b := newBrowser()
 
@@ -351,6 +351,7 @@ func TestLogin_FirstAdministrator(t *testing.T) {
 }
 
 func TestLogin_OnlyDeclaredAccountBecomesAdministrator(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		giveSubject string
@@ -392,6 +393,7 @@ func TestLogin_OnlyDeclaredAccountBecomesAdministrator(t *testing.T) {
 }
 
 func TestLogin_RejectsForgedResponse(t *testing.T) {
+	t.Parallel()
 	other := newTestIDP(t, nil)
 	tests := []struct {
 		name      string
@@ -411,6 +413,7 @@ func TestLogin_RejectsForgedResponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			e := newLoginEnv(t)
 			b := newBrowser()
 			var edit []func(*grant)
@@ -437,6 +440,7 @@ func TestLogin_RejectsForgedResponse(t *testing.T) {
 }
 
 func TestLogin_ReplayedResponse(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b := newBrowser()
 	location := e.startLogin(t, b, "/")
@@ -459,6 +463,7 @@ func TestLogin_ReplayedResponse(t *testing.T) {
 }
 
 func TestLogin_UnknownOrganizationLooksLikeUnavailableProvider(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 
 	rec := e.do(t, newBrowser(), http.MethodGet, "/o/nobody/login", nil)
@@ -468,6 +473,7 @@ func TestLogin_UnknownOrganizationLooksLikeUnavailableProvider(t *testing.T) {
 }
 
 func TestLogin_ReturnPathStaysOnSite(t *testing.T) {
+	t.Parallel()
 	for _, give := range []string{"https://evil.test/x", "//evil.test", "/\\evil.test", "/%2F/evil.test", "teams"} {
 		t.Run(give, func(t *testing.T) {
 			e := newLoginEnv(t)
@@ -481,6 +487,7 @@ func TestLogin_ReturnPathStaysOnSite(t *testing.T) {
 }
 
 func TestSession_Expires(t *testing.T) {
+	t.Parallel()
 	t.Run("one hour without activity", func(t *testing.T) {
 		e := newLoginEnv(t)
 		b := newBrowser()
@@ -519,6 +526,7 @@ func TestSession_Expires(t *testing.T) {
 }
 
 func TestSession_EleventhClosesOldest(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	first := newBrowser()
 	require.Equal(t, http.StatusFound, e.login(t, first, _adminSub).Code)
@@ -538,6 +546,7 @@ func TestSession_EleventhClosesOldest(t *testing.T) {
 }
 
 func TestSession_Logout(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b, other := newBrowser(), newBrowser()
 	require.Equal(t, http.StatusFound, e.login(t, b, _adminSub).Code)
@@ -564,6 +573,7 @@ func TestSession_Logout(t *testing.T) {
 }
 
 func TestSession_ForeignOriginChangesNothing(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b := newBrowser()
 	require.Equal(t, http.StatusFound, e.login(t, b, _adminSub).Code)
@@ -582,6 +592,7 @@ func TestSession_ForeignOriginChangesNothing(t *testing.T) {
 }
 
 func TestAccess_RolesApplyToNextRequest(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	require.Equal(t, http.StatusFound, e.login(t, newBrowser(), _adminSub).Code)
 	b := newBrowser()
@@ -629,6 +640,7 @@ func TestAccess_RolesApplyToNextRequest(t *testing.T) {
 }
 
 func TestLogin_BlockedUser(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	require.Equal(t, http.StatusFound, e.login(t, newBrowser(), _adminSub).Code)
 	_, err := e.owner.Exec(t.Context(), "UPDATE org.app_user SET status = 'blocked', blocked_at = now()")

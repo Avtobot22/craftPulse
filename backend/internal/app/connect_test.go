@@ -151,8 +151,7 @@ type connectEnv struct {
 
 func newConnectEnv(t *testing.T, cfg adapterapi.Config) *connectEnv {
 	t.Helper()
-	db := newDB(t)
-	db.migrate(t)
+	db := newMigratedDB(t)
 	e := &connectEnv{
 		app: db.pool(t, "craftpulse_app"), owner: db.pool(t, "craftpulse_owner"),
 		clock: clock.NewManual(time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)), reg: prometheus.NewRegistry(),
@@ -400,22 +399,26 @@ func TestConnect_AdapterSilenceIsNotASourceTimeout(t *testing.T) {
 		{Operation: testadapter.OpProbe, Attempts: []int{1}, Kind: testadapter.FaultHang},
 		{Operation: testadapter.OpProbe, Attempts: []int{2}, Kind: testadapter.FaultHang, DelayMS: 50},
 	}}, _adapterKey)
+	// The core waits 40 s in production; a shorter bound keeps the test fast and tells the same apart.
+	const bound = 2 * time.Second
 	env := newConnectEnv(t, adapterapi.Config{
 		InternalCA: ca.pool,
 		Builtin:    map[entity.Provider]adapterapi.Builtin{entity.ProviderJiraCloud: {URL: srv.URL, Key: _adapterKey}},
+		Timeout:    bound,
 	})
 	org := entity.ID(uuid.New())
 	id := env.connection(t, org, "", "")
 	require.NoError(t, env.uc.PutCredentials(t.Context(), org, id, collect()))
 
+	assert.Less(t, adapterapi.CallTimeout, 45*time.Second, "by default the core gives up before the adapter's own 45 s")
 	started := time.Now()
 	_, err := env.uc.Probe(t.Context(), org, id, _probeIn)
 	waited := time.Since(started)
 	ae := adapterErr(t, err)
-	assert.Equal(t, entity.CallAdapterUnavailable, ae.Class, "an adapter silent for 40 s is unavailable")
+	assert.Equal(t, entity.CallAdapterUnavailable, ae.Class, "an adapter silent past the bound of the core is unavailable")
 	assert.Equal(t, entity.AdapterTimeout, ae.Code)
 	assert.ErrorIs(t, err, entity.ErrAdapterUnavailable)
-	assert.GreaterOrEqual(t, waited, adapterapi.CallTimeout)
+	assert.GreaterOrEqual(t, waited, bound)
 	assert.Less(t, waited, 45*time.Second, "the core does not wait for the adapter's own 45 s")
 
 	_, err = env.uc.Probe(t.Context(), org, id, _probeIn)

@@ -161,6 +161,7 @@ func (e *loginEnv) person(t *testing.T, orgID entity.ID, name string) uuid.UUID 
 }
 
 func TestStructure_ConcurrentAdministrators(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	first := e.admin(t, "demo")
 	second := newBrowser()
@@ -207,6 +208,7 @@ func TestStructure_ConcurrentAdministrators(t *testing.T) {
 }
 
 func TestStructure_IfMatchAndRepeat(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b := e.admin(t, "demo")
 	body := emptyStructure()
@@ -227,6 +229,7 @@ func TestStructure_IfMatchAndRepeat(t *testing.T) {
 }
 
 func TestStructure_AuditFailureKeepsStructure(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	uc := org.New(org.Deps{
 		Orgs: orgrepo.NewRepo(e.app), Tenants: platform.NewRepo(e.app), Tx: persistent.NewTransactor(e.app),
@@ -243,6 +246,7 @@ func TestStructure_AuditFailureKeepsStructure(t *testing.T) {
 }
 
 func TestStructure_RejectsInvalidBody(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b := e.admin(t, "demo")
 	person := e.person(t, e.orgID, "Anna")
@@ -346,6 +350,7 @@ func TestStructure_RejectsInvalidBody(t *testing.T) {
 }
 
 func TestStructure_LinksAndTeamArea(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b := e.admin(t, "demo")
 	member := newBrowser()
@@ -394,6 +399,7 @@ func TestStructure_LinksAndTeamArea(t *testing.T) {
 }
 
 func TestLists_PaginationAndIsolation(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	demo, other := e.admin(t, "demo"), e.admin(t, "other")
 	names := []named{

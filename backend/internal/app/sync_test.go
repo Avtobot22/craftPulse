@@ -54,8 +54,7 @@ type syncEnv struct {
 
 func newSyncEnv(t *testing.T, scenario testadapter.Config) *syncEnv {
 	t.Helper()
-	db := newDB(t)
-	db.migrate(t)
+	db := newMigratedDB(t)
 	ca := newTestCA(t, "internal CA")
 	cfg, _ := ca.serverTLS(t, time.Now().Add(time.Hour))
 	e := &syncEnv{

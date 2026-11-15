@@ -141,6 +141,7 @@ func (e *importsEnv) accepted(t *testing.T) int {
 }
 
 func TestImports_UniversalImportOfTasks(t *testing.T) {
+	t.Parallel()
 	e := newImportsEnv(t)
 	file := taskJSON(t, taskRecord(t, "IMP-1", _secretTitle, ""), taskRecord(t, "", "no id", ""))
 
@@ -193,6 +194,7 @@ func TestImports_UniversalImportOfTasks(t *testing.T) {
 }
 
 func TestImports_RightsAndOrganizations(t *testing.T) {
+	t.Parallel()
 	e := newImportsEnv(t)
 	other := e.tokenProject(t, e.orgID)
 	lead := newBrowser()
@@ -233,6 +235,7 @@ type conflictBody struct {
 }
 
 func TestImports_ConflictsAreResolvedOnce(t *testing.T) {
+	t.Parallel()
 	e := newImportsEnv(t)
 	for _, id := range []string{"IMP-10", "IMP-11", "IMP-12"} {
 		_, base := e.imported(t, e.admin, importForm(e.project, "1"), "application/json", taskJSON(t, taskRecord(t, id, "first", "5")))

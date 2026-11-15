@@ -233,6 +233,7 @@ func (e *processEnv) lastSeq(t *testing.T) int64 {
 }
 
 func TestProcess_WorkflowCatalogListsUnmappedStatuses(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	e.grantProcessOwner(t, e.adminID)
 
@@ -260,6 +261,7 @@ func TestProcess_WorkflowCatalogListsUnmappedStatuses(t *testing.T) {
 }
 
 func TestProcess_StaleFormConflicts(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	e.grantProcessOwner(t, e.adminID)
 	e.grantProcessOwner(t, e.memberID)
@@ -296,6 +298,7 @@ func TestProcess_StaleFormConflicts(t *testing.T) {
 }
 
 func TestProcess_ParallelFormsOfOneVersion(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	authors := []entity.Subject{
 		{OrganizationID: e.orgID, UserID: entity.ID(e.adminID)},
@@ -327,6 +330,7 @@ func TestProcess_ParallelFormsOfOneVersion(t *testing.T) {
 }
 
 func TestProcess_RepeatAndEqualContentKeepVersion(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	e.grantProcessOwner(t, e.adminID)
 	e.grantProcessOwner(t, e.memberID)
@@ -361,6 +365,7 @@ func TestProcess_RepeatAndEqualContentKeepVersion(t *testing.T) {
 }
 
 func TestProcess_DraftErrors(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	e.grantProcessOwner(t, e.adminID)
 	foreign := e.rule("status", "1", "", "intake")
@@ -405,6 +410,7 @@ func TestProcess_DraftErrors(t *testing.T) {
 }
 
 func TestProcess_RolesAndOrganizations(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	other := e.loginEnv.admin(t, "other")
 	setup := emptyStructure()
@@ -430,6 +436,7 @@ func TestProcess_RolesAndOrganizations(t *testing.T) {
 }
 
 func TestProcess_VersionAtKnowledgeNumber(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	e.grantProcessOwner(t, e.adminID)
 	org, team := e.orgID, entity.ID(e.team)
@@ -463,6 +470,7 @@ func TestProcess_VersionAtKnowledgeNumber(t *testing.T) {
 }
 
 func TestProcess_CalendarVersions(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	e.grantProcessOwner(t, e.adminID)
 	start, end := "10:00", "19:00"
@@ -516,6 +524,7 @@ func TestProcess_CalendarVersions(t *testing.T) {
 }
 
 func TestProcess_ListPages(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	e.grantProcessOwner(t, e.adminID)
 	meanings := []string{"intake", "active", "wait"}

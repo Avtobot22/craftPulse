@@ -90,6 +90,7 @@ func (e *connectionsEnv) operation(t *testing.T, b *browser, location string) (i
 }
 
 func TestConnections_SyncStatusAndLastSuccess(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 	id := e.activeConnection(t)
 
@@ -128,6 +129,7 @@ func TestConnections_SyncStatusAndLastSuccess(t *testing.T) {
 }
 
 func TestConnections_SyncRunsAreBackgroundOperations(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 	id := e.activeConnection(t)
 

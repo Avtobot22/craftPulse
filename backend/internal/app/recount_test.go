@@ -100,6 +100,7 @@ func (e *recountEnv) refreshSeries(t *testing.T, b *browser, series entity.ID) (
 // TestRecount_NewPackageGetsRevision is AC-14: a normalized package queues the recount of the area after the delay,
 // the series gets a new revision without a request and the previous one reads its values.
 func TestRecount_NewPackageGetsRevision(t *testing.T) {
+	t.Parallel()
 	e := newRecountEnv(t)
 	e.recount(t)
 	first := e.current(t)
@@ -130,6 +131,7 @@ func TestRecount_NewPackageGetsRevision(t *testing.T) {
 // week of the event and the last one, whose as_of moved, are computed; the others are taken from the previous
 // revision, which stays readable.
 func TestRecount_LateEventRecountsItsWeek(t *testing.T) {
+	t.Parallel()
 	e := newRecountEnv(t)
 	e.recount(t)
 	first := e.current(t)
@@ -164,6 +166,7 @@ func TestRecount_LateEventRecountsItsWeek(t *testing.T) {
 // TestRecount_FactDuringChainQueuesItAgain: a fact normalized while the chain builds is not read by its parts, and
 // the chain queues itself again before it ends instead of losing the fact (TZ 10.6).
 func TestRecount_FactDuringChainQueuesItAgain(t *testing.T) {
+	t.Parallel()
 	e := newRecountEnv(t)
 	e.recount(t)
 	e.flag(t, "20004", time.Date(2026, 2, 17, 10, 0, 0, 0, time.UTC), time.Date(2026, 2, 18, 10, 0, 0, 0, time.UTC))
@@ -188,6 +191,7 @@ func TestRecount_FactDuringChainQueuesItAgain(t *testing.T) {
 // TestRecount_NewMappingVersion is AC-03 for revisions: a new version of the mapping queues the recount of the team;
 // the revision on the previous version keeps it among its inputs.
 func TestRecount_NewMappingVersion(t *testing.T) {
+	t.Parallel()
 	e := newRecountEnv(t)
 	e.recount(t)
 	first := e.current(t)
@@ -217,6 +221,7 @@ func TestRecount_NewMappingVersion(t *testing.T) {
 // TestRecount_LoadingLimitsChains: while the history of an area loads, a series gets one chain in 5 minutes and its
 // revisions are marked loading (FR-015).
 func TestRecount_LoadingLimitsChains(t *testing.T) {
+	t.Parallel()
 	e := newRecountEnv(t)
 	_, err := e.owner.Exec(t.Context(), "UPDATE sync.state SET phase = 'backfill' WHERE connection_id = $1", e.conn)
 	require.NoError(t, err)
@@ -237,6 +242,7 @@ func TestRecount_LoadingLimitsChains(t *testing.T) {
 // during the chain queues nothing more and returns the same descriptor, which leads to the new revision. A series
 // of a team outside the area of the user is not found.
 func TestRecount_RefreshSeries(t *testing.T) {
+	t.Parallel()
 	e := newRecountEnv(t)
 	e.recount(t)
 	planned := e.current(t)
@@ -297,6 +303,7 @@ func TestRecount_RefreshSeries(t *testing.T) {
 // TestRecount_DailyExtension: the hourly tick queues the extension of the window at the minute of the series in
 // 01:00-05:00 of the time zone of the team by the managed clock, once a night.
 func TestRecount_DailyExtension(t *testing.T) {
+	t.Parallel()
 	e := newRecountEnv(t)
 	e.recount(t)
 	first := e.current(t)

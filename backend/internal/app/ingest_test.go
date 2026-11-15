@@ -248,6 +248,7 @@ func raw(t *testing.T, entries ...rawEntry) []byte {
 }
 
 func TestIngest_RefusesUnsafePackagesAtOnce(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	large := make([]byte, envelope.DefaultLimits.MaxPackageBytes+1)
 	_, err := rand.Read(large)
@@ -303,6 +304,7 @@ func gathered(t *testing.T, reg *prometheus.Registry, name, label string) float6
 }
 
 func TestIngest_JournalOfImports(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 
 	partial := e.imported(t, e.admin, pack(t, importManifest("1"), task(t, "IMP-1", "A", ""), task(t, "", "B", "")))
@@ -392,6 +394,7 @@ func (e *ingestEnv) scope(t *testing.T, native string) (conn, scope entity.ID) {
 }
 
 func TestIngest_PagesOfSync(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	conn, scope := e.scope(t, "10000")
 
@@ -414,6 +417,7 @@ func TestIngest_PagesOfSync(t *testing.T) {
 }
 
 func TestIngest_NewPayloadSchemaIsNoConflict(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	conn, scope := e.scope(t, "10000")
 	inst, err := e.connect.EnsureInstance(t.Context(), e.orgID, entity.ProviderJiraCloud, _jiraInstance)
@@ -444,6 +448,7 @@ func TestIngest_NewPayloadSchemaIsNoConflict(t *testing.T) {
 }
 
 func TestIngest_ConcurrentDeliveriesOfOneRecord(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	ids := make([]entity.ID, 2)
 	for i := range ids {
@@ -478,6 +483,7 @@ func (q *failingQueue) Enqueue(ctx context.Context, job entity.Job, name string)
 }
 
 func TestIngest_InterruptedJobGivesTheSameJournal(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	jobs, err := riverInsertClient(e.app)
 	require.NoError(t, err)

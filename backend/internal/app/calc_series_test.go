@@ -224,6 +224,7 @@ func (e *seriesEnv) formula(t *testing.T, r entity.CalcRevision) entity.CalcResu
 }
 
 func TestCalcSeries_BuildsAndPublishesRevisionInParts(t *testing.T) {
+	t.Parallel()
 	e := newSeriesEnv(t)
 	first := e.build(t)
 	assert.Equal(t, entity.RevisionPublished, first.Status)
@@ -278,6 +279,7 @@ func TestCalcSeries_BuildsAndPublishesRevisionInParts(t *testing.T) {
 }
 
 func TestCalcSeries_LateEventRecountsItsPartOnly(t *testing.T) {
+	t.Parallel()
 	e := newSeriesEnv(t)
 	first := e.build(t)
 	before := e.parts(t, first.ID)
@@ -311,6 +313,7 @@ func TestCalcSeries_LateEventRecountsItsPartOnly(t *testing.T) {
 }
 
 func TestCalcSeries_ChainSurvivesCrashTakeoverAndRace(t *testing.T) {
+	t.Parallel()
 	e := newSeriesEnv(t)
 	e.refresh(t, _seriesAsOf)
 	e.runJobs(t, 1)
@@ -361,6 +364,7 @@ func TestCalcSeries_ChainSurvivesCrashTakeoverAndRace(t *testing.T) {
 }
 
 func TestCalcSeries_DeletedBasisAndCollection(t *testing.T) {
+	t.Parallel()
 	e := newSeriesEnv(t)
 	first := e.build(t)
 	stored := e.points(t, first.ID)

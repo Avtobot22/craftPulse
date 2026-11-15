@@ -180,6 +180,7 @@ func manualTarget(seconds int64) targetDraftBody {
 // TestTarget_V16BaselineAndVersions reads the historical p85 of the groups, confirms v1 and v2 of Story S by
 // V-07, recounts the series after each of them and keeps the basis of a p85 after its revision is deleted.
 func TestTarget_V16BaselineAndVersions(t *testing.T) {
+	t.Parallel()
 	e := newTargetEnv(t)
 	assert.Equal(t, http.StatusNotFound, e.baselines(t).Code, "no revision of the series yet")
 	r0 := e.build(t)
@@ -269,6 +270,7 @@ func TestTarget_V16BaselineAndVersions(t *testing.T) {
 }
 
 func TestTarget_DraftErrors(t *testing.T) {
+	t.Parallel()
 	e := newTargetEnv(t)
 	e.build(t)
 	unknown := uuid.New()

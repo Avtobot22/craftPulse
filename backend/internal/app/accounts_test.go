@@ -114,6 +114,7 @@ func decision(account uuid.UUID, kind string, person, base *uuid.UUID, create bo
 }
 
 func TestAccounts_ProposalsAndConfirmedLinks(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 	jira, _, ids := e.accountsFixture(t)
 
@@ -217,6 +218,7 @@ func TestAccounts_ProposalsAndConfirmedLinks(t *testing.T) {
 }
 
 func TestAccounts_FiltersAndPages(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 	_, imported, ids := e.accountsFixture(t)
 	code, _ := e.assign(t, uuid.New(), decision(ids["JIRAUSER3"], "bot", nil, nil, false))

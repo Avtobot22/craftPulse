@@ -59,8 +59,8 @@ func (e *targetEnv) watermarks(t *testing.T, revision entity.ID) []entity.Revisi
 }
 
 func TestCalc_TargetDefinitionKeepsFollowUp(t *testing.T) {
-	db := newDB(t)
-	db.migrate(t)
+	t.Parallel()
+	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
 	var raw []byte
 	require.NoError(t, app.QueryRow(t.Context(), "SELECT parameters FROM calc.definition WHERE metric_id = 'T23' AND definition_version = 1").Scan(&raw))
@@ -77,6 +77,7 @@ func TestCalc_TargetDefinitionKeepsFollowUp(t *testing.T) {
 // TestQuality_TwoTargetVersionsAndStoppedCollection builds the series of the team with v1 and then v2 of the
 // target of Story S, and again after its collection stopped on a failed page.
 func TestQuality_TwoTargetVersionsAndStoppedCollection(t *testing.T) {
+	t.Parallel()
 	e := newTargetEnv(t)
 	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
 	c, err := newCalc(e.app, calcModules{structure: orgs, facts: e.runner.norm, settings: e.process, collection: e.runner.sync}, e.clock,

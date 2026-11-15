@@ -214,6 +214,7 @@ func capabilityState(caps []capabilityBody, name string) string {
 }
 
 func TestConnections_ConnectProbeAndActivate(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 
 	rec := e.do(t, e.admin, http.MethodGet, "/api/v1/adapters", nil)
@@ -329,6 +330,7 @@ func TestConnections_ProbeFailures(t *testing.T) {
 }
 
 func TestConnections_RefusedChanges(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 
 	for _, base := range []string{"https://127.0.0.1:8443", "https://jira.loop.test"} {
@@ -380,6 +382,7 @@ func TestConnections_RefusedChanges(t *testing.T) {
 }
 
 func TestConnections_DeleteRemovesCredentials(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 	c, _ := e.create(t, jiraConnection("https://jira.example.org", "10000"))
 	require.Equal(t, 1, e.credentials(t, c.ID))

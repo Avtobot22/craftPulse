@@ -58,6 +58,8 @@ func runWithPostgres(m *testing.M) int {
 		postgres.WithInitScripts("../../../deploy/postgres/init.sh"),
 		testcontainers.WithFiles(files...),
 		testcontainers.WithEnv(env),
+		// Parallel tests hold pools of their own databases at once.
+		testcontainers.WithCmdArgs("-c", "max_connections=500"),
 		postgres.BasicWaitStrategies(),
 	)
 	if err != nil {
@@ -75,17 +77,56 @@ func runWithPostgres(m *testing.M) int {
 		return 1
 	}
 	_hostPort = host + ":" + port.Port()
+	if err := migrateTemplate(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "migrate template:", err)
+		return 1
+	}
 	return m.Run()
+}
+
+// _migratedTemplate is the template the migrations ran on once, so a test database cloned from it skips them.
+const _migratedTemplate = "craftpulse_migrated"
+
+func migrateTemplate(ctx context.Context) error {
+	if err := psqlRun(ctx, "postgres", fmt.Sprintf("CREATE DATABASE %s TEMPLATE craftpulse OWNER craftpulse_owner", _migratedTemplate)); err != nil {
+		return err
+	}
+	pool, err := pg.New(ctx, testDB{name: _migratedTemplate}.url("craftpulse_owner"), _passwords["craftpulse_owner"], pg.RuntimeParam("lock_timeout", "3s"))
+	if err != nil {
+		return err
+	}
+	_, err = migrate(ctx, pool)
+	pool.Close()
+	if err != nil {
+		return err
+	}
+	// A database with a session cannot be a template: the closed pool must not leave one behind.
+	if err := psqlRun(ctx, "postgres", fmt.Sprintf("ALTER DATABASE %s ALLOW_CONNECTIONS false", _migratedTemplate)); err != nil {
+		return err
+	}
+	return psqlRun(ctx, "postgres", fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s'", _migratedTemplate))
 }
 
 type testDB struct {
 	name string
 }
 
+// newDB is a database without migrations, for the tests of migrating itself.
 func newDB(t *testing.T) testDB {
 	t.Helper()
+	return cloneDB(t, "craftpulse")
+}
+
+// newMigratedDB is a database with every migration applied, cloned from the template migrated once.
+func newMigratedDB(t *testing.T) testDB {
+	t.Helper()
+	return cloneDB(t, _migratedTemplate)
+}
+
+func cloneDB(t *testing.T, template string) testDB {
+	t.Helper()
 	name := fmt.Sprintf("craftpulse_t%d", _dbSeq.Add(1))
-	psql(t, "postgres", fmt.Sprintf("CREATE DATABASE %s TEMPLATE craftpulse OWNER craftpulse_owner", name))
+	psql(t, "postgres", fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s OWNER craftpulse_owner", name, template))
 	psql(t, "postgres", fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO craftpulse_app, craftpulse_backup", name))
 	return testDB{name: name}
 }
@@ -112,6 +153,22 @@ func psql(t *testing.T, db, sql string) {
 	t.Helper()
 	code, out := exec(t, []string{"psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db, "-c", sql})
 	require.Zero(t, code, out)
+}
+
+// psqlRun is psql outside a test, for TestMain.
+func psqlRun(ctx context.Context, db, sql string) error {
+	code, r, err := _container.Exec(ctx, []string{"psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db, "-c", sql}, tcexec.Multiplexed())
+	if err != nil {
+		return err
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("psql exited with %d: %s", code, out)
+	}
+	return nil
 }
 
 func exec(t *testing.T, cmd []string, opts ...tcexec.ProcessOption) (exitCode int, output string) {

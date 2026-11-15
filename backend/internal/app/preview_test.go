@@ -141,6 +141,7 @@ func (e *processEnv) rows(t *testing.T) []int {
 // draft and computes the definitions by the version at the same as_of: the controls agree and the preview
 // writes nothing.
 func TestPreview_V14MatchesConfirmedVersion(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	e.grantProcessOwner(t, e.adminID)
 	moscow, err := time.LoadLocation("Europe/Moscow")
@@ -207,6 +208,7 @@ func TestPreview_V14MatchesConfirmedVersion(t *testing.T) {
 }
 
 func TestPreview_ErrorsAndRights(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	code, raw := e.preview(t, e.admin, e.previewDraft())
 	assert.Equal(t, http.StatusForbidden, code, "an administrator without process_owner: %s", raw)
