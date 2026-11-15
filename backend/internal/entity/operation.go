@@ -4,7 +4,10 @@ import "time"
 
 type OperationKind string
 
-const OperationSyncRun OperationKind = "sync_run"
+const (
+	OperationSyncRun       OperationKind = "sync_run"
+	OperationSeriesRefresh OperationKind = "series_refresh"
+)
 
 type OperationStatus string
 
@@ -19,6 +22,7 @@ const (
 const (
 	OperationSourceUnavailable = "source_unavailable"
 	OperationAccessLost        = "access_lost"
+	OperationCalculationFailed = "calculation_failed"
 )
 
 // Operation is the public descriptor of a run a user asked for (TZ 12.5.8): its job in the queue is not shown.

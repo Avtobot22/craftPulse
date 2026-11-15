@@ -6,6 +6,7 @@ package normalize
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo"
@@ -80,24 +81,51 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 		}
 	}
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		areas := job.Areas
 		if in != nil {
 			seq, err := u.d.Tenants.NextSeq(ctx, org)
 			if err != nil {
 				return err
 			}
-			if err := u.write(ctx, org, seq, in, job.ResolvedNo); err != nil {
+			changed, err := u.write(ctx, org, seq, in, job.ResolvedNo)
+			if err != nil {
 				return err
 			}
+			areas = union(areas, changed)
 		}
 		if more {
 			next := job
-			next.AfterNo = part[len(part)-1].No
+			next.AfterNo, next.Areas = part[len(part)-1].No, areas
 			if err := u.d.Queue.Enqueue(ctx, next, queueOf(rc)); err != nil {
 				return err
 			}
+		} else if err := u.recount(ctx, org, areas, job.CorrelationID); err != nil {
+			return err
 		}
 		return complete(ctx)
 	})
+}
+
+// recount asks calc to recount the areas the receipt changed once its last part is written (TZ 10.3, rule 6).
+func (u *UseCase) recount(ctx context.Context, org entity.ID, areas []entity.ID, corr entity.ID) error {
+	for _, area := range areas {
+		job := entity.CalcRecountJob{OrganizationID: org, AreaID: area, CorrelationID: corr}
+		if err := u.d.Queue.Enqueue(ctx, job, entity.QueueBulk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// union adds the areas missing from a, in their order.
+func union(a, b []entity.ID) []entity.ID {
+	out := slices.Clone(a)
+	for _, id := range b {
+		if !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // part is the accepted records after the cursor, at most PartSize of them, and whether more follow.

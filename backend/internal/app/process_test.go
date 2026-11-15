@@ -120,7 +120,9 @@ func newProcessEnv(t *testing.T) *processEnv {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
-	e.process = newProcess(e.app, orgs, e.runner.norm, e.clock)
+	var err error
+	e.process, err = newProcess(e.app, orgs, e.runner.norm, e.clock)
+	require.NoError(t, err)
 	return e
 }
 

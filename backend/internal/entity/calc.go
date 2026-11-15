@@ -324,6 +324,53 @@ func (CalcSliceJob) Kind() string { return KindCalcSlice }
 
 func (CalcSliceJob) UniqueWhileActive() {}
 
+const (
+	KindCalcRecount    = "calc.recount"
+	KindCalcExtend     = "calc.extend"
+	KindCalcExtendTick = "calc.extend.tick"
+)
+
+// CalcRecountJob asks calc for a new chain of the series the facts of an area or the settings of a team feed;
+// normalize and process queue it without depending on calc (TZ 10.3, rule 6).
+type CalcRecountJob struct {
+	OrganizationID ID `json:"organization_id" river:"unique"`
+	AreaID         ID `json:"area_id,omitzero" river:"unique"`
+	TeamID         ID `json:"team_id,omitzero" river:"unique"`
+	CorrelationID  ID `json:"correlation_id"`
+}
+
+func (CalcRecountJob) Kind() string { return KindCalcRecount }
+
+func (CalcRecountJob) UniqueWhileActive() {}
+
+// CalcExtendJob queues the daily extension of the windows of the series of an organization due before the next
+// tick (TZ 10.6).
+type CalcExtendJob struct {
+	OrganizationID ID `json:"organization_id" river:"unique"`
+}
+
+func (CalcExtendJob) Kind() string { return KindCalcExtend }
+
+func (CalcExtendJob) UniqueWhileActive() {}
+
+// CalcExtendTickJob queues the extension of every organization every hour.
+type CalcExtendTickJob struct{}
+
+func (CalcExtendTickJob) Kind() string { return KindCalcExtendTick }
+
+// SeriesRefresh is a manual refresh of a series queued in the transaction of its descriptor: a revision numbered
+// after AfterRevisionNo answers it.
+type SeriesRefresh struct {
+	SeriesID        ID
+	AfterRevisionNo int
+}
+
+// RefreshStatus is where a manual refresh is: the revision that answers it, once it exists.
+type RefreshStatus struct {
+	Status     OperationStatus
+	RevisionID *ID
+}
+
 // CalcGCJob deletes a portion of the parts of an organization no revision refers to; AfterPartID is the
 // cursor of the portion before.
 type CalcGCJob struct {
@@ -422,4 +469,6 @@ type AreaCollection struct {
 	Watermark     *time.Time
 	LastSuccessAt *time.Time
 	Reconcile     *ReconcileRun
+	// Phase is the phase of the collection of tasks; empty before the first page.
+	Phase SyncPhase
 }

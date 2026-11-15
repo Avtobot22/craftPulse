@@ -43,6 +43,10 @@ SET earliest_event_time = LEAST(normalize.area_change.earliest_event_time, EXCLU
 UPDATE normalize.area SET last_change_seq = sqlc.arg(known_seq)
 WHERE organization_id = sqlc.arg(organization_id) AND area_id = ANY (sqlc.arg(area_ids)::uuid[]);
 
+-- name: AreaChangeSeq :one
+SELECT COALESCE(max(last_change_seq), 0)::bigint FROM normalize.area
+WHERE organization_id = sqlc.arg(organization_id) AND area_id = ANY (sqlc.arg(area_ids)::uuid[]);
+
 -- name: AreaChanges :many
 SELECT area_id, known_seq, earliest_event_time, fact_kinds FROM normalize.area_change
 WHERE organization_id = sqlc.arg(organization_id) AND area_id = sqlc.arg(area_id) AND known_seq > sqlc.arg(after_seq)

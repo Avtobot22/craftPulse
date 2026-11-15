@@ -90,7 +90,7 @@ func TestQuality_TwoTargetVersionsAndStoppedCollection(t *testing.T) {
 
 	v1 := e.confirm(t, e.admin, _targetVersions, `"0"`, uuid.New(), manualTarget(2*_day))
 	require.Equal(t, http.StatusCreated, v1.Code, v1.Body.String())
-	e.runJobs(t, 0)
+	e.recount(t)
 	r1 := e.current(t)
 	violated := e.pointOf(t, r1.ID, "T10", "", _weekOfTG1)
 	assert.Equal(t, entity.StateAssessed, violated.State)
@@ -100,7 +100,7 @@ func TestQuality_TwoTargetVersionsAndStoppedCollection(t *testing.T) {
 
 	v2 := e.confirm(t, e.admin, _targetVersions, `"1"`, uuid.New(), manualTarget(4*_day))
 	require.Equal(t, http.StatusCreated, v2.Code, v2.Body.String())
-	e.runJobs(t, 0)
+	e.recount(t)
 	r2 := e.current(t)
 	require.NotEqual(t, r1.ID, r2.ID)
 	assert.Equal(t, 1.0, *e.pointOf(t, r2.ID, "T10", "", _weekOfTG1).Value, "the new revision uses v2 = 4 days")

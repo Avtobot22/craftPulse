@@ -78,8 +78,8 @@ func (u *UseCase) ListTargetVersions(ctx context.Context, s entity.Subject, team
 	return page, err
 }
 
-// ConfirmTargetVersion saves the draft as version baseVersion+1 of its group in the transaction of the caller,
-// which calc opens to queue the recalculation with it (TZ 10.3, rule 2). It follows CreateMappingVersion: a repeat
+// ConfirmTargetVersion saves the draft as version baseVersion+1 of its group with the recount of the series of
+// the team in the transaction of the caller, which calc opens (TZ 10.3, rule 2). It follows CreateMappingVersion: a repeat
 // of the key first, then If-Match, then a draft equal to the version in force. basis is the baseline of a
 // historical p85 as calc read it from the revision.
 func (u *UseCase) ConfirmTargetVersion(ctx context.Context, s entity.Subject, teamID entity.ID, baseVersion int, key entity.ID,
@@ -132,6 +132,9 @@ func (u *UseCase) ConfirmTargetVersion(ctx context.Context, s entity.Subject, te
 		return entity.TargetVersion{}, 0, err
 	}
 	if err := u.record(ctx, s, _operationConfirmTarget, "target_version", v.ID, teamID, latest, v.Confirmation); err != nil {
+		return entity.TargetVersion{}, 0, err
+	}
+	if err := u.recount(ctx, org, teamID); err != nil {
 		return entity.TargetVersion{}, 0, err
 	}
 	return v, entity.SaveInserted, nil

@@ -415,6 +415,23 @@ func (q *Queries) InsertTaskSlices(ctx context.Context, arg InsertTaskSlicesPara
 	return err
 }
 
+const lastRevisionID = `-- name: LastRevisionID :one
+SELECT id FROM calc.revision WHERE organization_id = $1 AND series_id = $2
+ORDER BY revision_no DESC LIMIT 1
+`
+
+type LastRevisionIDParams struct {
+	OrganizationID uuid.UUID
+	SeriesID       uuid.UUID
+}
+
+func (q *Queries) LastRevisionID(ctx context.Context, arg LastRevisionIDParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lastRevisionID, arg.OrganizationID, arg.SeriesID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const linkPart = `-- name: LinkPart :exec
 INSERT INTO calc.revision_part (organization_id, revision_id, part_no, part_id)
 VALUES ($1, $2, $3, $4)
@@ -525,6 +542,60 @@ func (q *Queries) MoveCurrentRevision(ctx context.Context, arg MoveCurrentRevisi
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const orgSeries = `-- name: OrgSeries :many
+SELECT organization_id, id, scope_hash, scope, metric_set, step, current_revision_id, consumed_seq FROM calc.series WHERE organization_id = $1 AND metric_set = $2 ORDER BY id
+`
+
+type OrgSeriesParams struct {
+	OrganizationID uuid.UUID
+	MetricSet      string
+}
+
+func (q *Queries) OrgSeries(ctx context.Context, arg OrgSeriesParams) ([]CalcSeries, error) {
+	rows, err := q.db.Query(ctx, orgSeries, arg.OrganizationID, arg.MetricSet)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CalcSeries
+	for rows.Next() {
+		var i CalcSeries
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.ScopeHash,
+			&i.Scope,
+			&i.MetricSet,
+			&i.Step,
+			&i.CurrentRevisionID,
+			&i.ConsumedSeq,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const partByHash = `-- name: PartByHash :one
+SELECT id FROM calc.part WHERE organization_id = $1 AND input_hash = $2
+`
+
+type PartByHashParams struct {
+	OrganizationID uuid.UUID
+	InputHash      []byte
+}
+
+func (q *Queries) PartByHash(ctx context.Context, arg PartByHashParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, partByHash, arg.OrganizationID, arg.InputHash)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const pointContributions = `-- name: PointContributions :many
@@ -681,6 +752,25 @@ func (q *Queries) PublishRevision(ctx context.Context, arg PublishRevisionParams
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const revisionIDAfter = `-- name: RevisionIDAfter :one
+SELECT id FROM calc.revision
+WHERE organization_id = $1 AND series_id = $2 AND revision_no > $3::integer
+ORDER BY revision_no LIMIT 1
+`
+
+type RevisionIDAfterParams struct {
+	OrganizationID uuid.UUID
+	SeriesID       uuid.UUID
+	AfterNo        int32
+}
+
+func (q *Queries) RevisionIDAfter(ctx context.Context, arg RevisionIDAfterParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, revisionIDAfter, arg.OrganizationID, arg.SeriesID, arg.AfterNo)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const revisionInputs = `-- name: RevisionInputs :many

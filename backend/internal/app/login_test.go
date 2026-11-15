@@ -323,7 +323,7 @@ func TestLogin_FirstAdministrator(t *testing.T) {
 	assert.Equal(t, "Same Name", cu.User.DisplayName)
 	require.Len(t, cu.Roles, 1)
 	assert.Equal(t, "administrator", cu.Roles[0].Role)
-	assert.Equal(t, []string{"accounts.manage", "audit.read", "connections.manage", "installation.read", "org.manage", "org.read", "receipts.read", "session.manage", "session.read", "sync.read", "users.manage"}, cu.Actions)
+	assert.Equal(t, []string{"accounts.manage", "audit.read", "connections.manage", "installation.read", "org.manage", "org.read", "receipts.read", "report.read", "session.manage", "session.read", "sync.read", "users.manage"}, cu.Actions)
 	assert.Equal(t, _now.Add(12*time.Hour), cu.Session.ExpiresAt)
 	assert.Equal(t, _now.Add(time.Hour), cu.Session.IdleExpiresAt)
 
@@ -616,8 +616,7 @@ func TestAccess_RolesApplyToNextRequest(t *testing.T) {
 	assert.Contains(t, listed.Body.String(), teams[0].String())
 	assert.NotContains(t, listed.Body.String(), teams[1].String())
 	visible := e.do(t, b, http.MethodGet, "/api/v1/teams/"+teams[0].String()+"/report", nil)
-	assert.Equal(t, http.StatusForbidden, visible.Code, "the team is visible, report.read is not granted yet")
-	assert.Equal(t, "forbidden", problemCode(t, visible))
+	assert.Equal(t, http.StatusBadRequest, visible.Code, "the team is visible and report.read is granted; the request lacks its period")
 	assert.Equal(t, http.StatusNotFound, e.do(t, b, http.MethodGet, "/api/v1/teams/"+teams[1].String()+"/report", nil).Code)
 
 	_, err = e.owner.Exec(t.Context(), "UPDATE org.role_assignment SET revoked_at = now(), revoked_by = user_id WHERE role = 'developer'")
@@ -625,7 +624,7 @@ func TestAccess_RolesApplyToNextRequest(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, e.do(t, b, http.MethodGet, "/api/v1/teams", nil).Code, "a revoked role stops on the next request")
 
 	denials := count(t, t.Context(), e.owner, "SELECT count(*) FROM audit.event WHERE outcome = 'denied' AND operation <> 'session.login'")
-	assert.Equal(t, 6, denials)
+	assert.Equal(t, 5, denials)
 	assert.True(t, e.metric(t, fmt.Sprintf(`craftpulse_api_access_denied_total{reason="outside_scope",subject=%q} 2`, cu.User.ID)))
 }
 

@@ -149,6 +149,7 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 			Kind: entity.InputKindWatermark, ID: c.ConnectionID.String(), Watermark: c.Watermark, Completeness: c.Completeness,
 		})
 	}
+	rev.Loading = loading(sources)
 	rev.InputHash = revisionHash(&series, &rev, inputs)
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		if err := u.d.Repo.FailStaleRevisions(ctx, org, series.ID, now.Add(-_staleAfter)); err != nil {
@@ -171,7 +172,9 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 }
 
 // part computes its part on the facts and the mapping of the knowledge cutoff of the revision outside a
-// transaction, then saves it with the next job in one. A part whose input hash is stored is taken as it is.
+// transaction, then saves it with the next job in one. A part whose input hash is stored is taken as it is and not
+// computed. The last part publishes the revision and, when the facts or the settings of the team changed after
+// the cutoff, queues the chain again after completing itself (TZ 10.6).
 func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Complete) error {
 	org := job.OrganizationID
 	var (
@@ -204,19 +207,43 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 		return err
 	}
 	chunks := chunk(periods(in.window, in.asOf, in.location), u.d.PartPoints)
-	var stored *entity.StoredPart
+	var (
+		stored *entity.StoredPart
+		kept   entity.ID
+		reused bool
+	)
 	if job.PartNo <= len(chunks) {
 		c := chunks[job.PartNo-1]
 		pr := prepare(in)
 		from, to := c[0].start, c[len(c)-1].end
-		stored = storedPart(pr.calculate(c), pr.partHash(series.ScopeHash, series.Step, from, to), from, to)
+		hash := pr.partHash(series.ScopeHash, series.Step, from, to)
+		err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+			var err error
+			kept, reused, err = u.d.Repo.PartByHash(ctx, org, hash)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		if !reused {
+			stored = storedPart(pr.calculate(c), hash, from, to)
+		}
+	}
+	last := job.PartNo >= len(chunks)
+	var areas []entity.ID
+	if last {
+		if areas, err = u.teamAreas(ctx, org, team); err != nil {
+			return err
+		}
 	}
 	newID, err := u.d.NewID()
 	if err != nil {
 		return fmt.Errorf("calc: new part id: %w", err)
 	}
 	now := u.d.Clock.Now()
-	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+	var published bool
+	err = u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		published = false
 		alive, err := u.d.Repo.TouchRevision(ctx, org, rev.ID, now)
 		if err != nil {
 			return err
@@ -225,18 +252,18 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 			return complete(ctx)
 		}
 		if stored != nil {
-			partID, created, err := u.d.Repo.SavePart(ctx, org, newID, stored, now)
-			if err != nil {
+			var created bool
+			if kept, created, err = u.d.Repo.SavePart(ctx, org, newID, stored, now); err != nil {
 				return err
 			}
-			if !created {
-				u.d.Metrics.PartReused()
-			}
-			if err := u.d.Repo.LinkPart(ctx, org, rev.ID, job.PartNo, partID); err != nil {
+			reused = !created
+		}
+		if job.PartNo <= len(chunks) {
+			if err := u.d.Repo.LinkPart(ctx, org, rev.ID, job.PartNo, kept); err != nil {
 				return err
 			}
 		}
-		if job.PartNo < len(chunks) {
+		if !last {
 			if err := complete(ctx); err != nil {
 				return err
 			}
@@ -247,8 +274,52 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 		if err := u.publish(ctx, org, &rev, now); err != nil {
 			return err
 		}
-		return complete(ctx)
+		if err := complete(ctx); err != nil {
+			return err
+		}
+		published = true
+		return u.again(ctx, job, &rev, team, areas, now)
 	})
+	if err != nil {
+		return err
+	}
+	switch {
+	case job.PartNo > len(chunks):
+	case reused:
+		u.d.Metrics.PartReused()
+	default:
+		u.d.Metrics.PartComputed()
+	}
+	if published {
+		u.d.Metrics.ChainPublished(now.Sub(rev.StartedAt))
+	}
+	return nil
+}
+
+// again queues the chain of the job once more when the facts of the areas or the settings of the team are newer
+// than the cutoff of the revision; it runs after the job completed itself, or the copy would match the job
+// that is still active and be dropped (TZ 10.6).
+func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entity.CalcRevision, team entity.ID, areas []entity.ID,
+	now time.Time,
+) error {
+	facts, err := u.d.Facts.AreaChangeSeq(ctx, job.OrganizationID, areas)
+	if err != nil {
+		return err
+	}
+	settings, err := u.d.Settings.LastSettingsSeq(ctx, job.OrganizationID, team)
+	if err != nil {
+		return err
+	}
+	if max(facts, settings) <= rev.KnowledgeSeq {
+		return nil
+	}
+	at := now.Add(_recountDelay)
+	if rev.Loading {
+		at = now.Add(_loadingEvery)
+	}
+	next := job
+	next.RevisionID, next.PartNo, next.AsOf = entity.ID{}, 0, at
+	return u.d.Queue.EnqueueAt(ctx, next, entity.QueueBulk, at)
 }
 
 // publish makes the revision current in one transaction: it becomes published, the one it replaces superseded,
@@ -352,6 +423,22 @@ func (u *UseCase) teamCollection(ctx context.Context, org, team entity.ID) ([]en
 	if u.d.Collection == nil {
 		return nil, nil
 	}
+	areas, err := u.teamAreas(ctx, org, team)
+	if err != nil {
+		return nil, err
+	}
+	return u.collectionOf(ctx, org, areas)
+}
+
+func (u *UseCase) collectionOf(ctx context.Context, org entity.ID, areas []entity.ID) ([]entity.AreaCollection, error) {
+	if u.d.Collection == nil || len(areas) == 0 {
+		return nil, nil
+	}
+	return u.d.Collection.AreaCollection(ctx, org, areas)
+}
+
+// teamAreas are the source areas of the projects of the team by the current structure.
+func (u *UseCase) teamAreas(ctx context.Context, org, team entity.ID) ([]entity.ID, error) {
 	links, err := u.d.Structure.TeamProjectAreas(ctx, org, team, u.d.Clock.Now())
 	if err != nil {
 		return nil, err
@@ -362,10 +449,12 @@ func (u *UseCase) teamCollection(ctx context.Context, org, team entity.ID) ([]en
 			areas = append(areas, l.To)
 		}
 	}
-	if len(areas) == 0 {
-		return nil, nil
-	}
-	return u.d.Collection.AreaCollection(ctx, org, areas)
+	return areas, nil
+}
+
+// loading tells a collection of the areas that still loads its history (FR-015).
+func loading(sources []entity.AreaCollection) bool {
+	return slices.ContainsFunc(sources, func(c entity.AreaCollection) bool { return c.Phase == entity.SyncBackfill })
 }
 
 // teamScopeOf is the canonical scope of the series of a team and its SHA-256.

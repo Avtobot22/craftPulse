@@ -39,6 +39,7 @@ var _rules = map[string]rule{
 	"session.read":         ruleSession,
 	"session.manage":       ruleSession,
 	"org.read":             ruleAreaRead,
+	"report.read":          ruleAreaRead,
 	"org.manage":           ruleAdministrator,
 	"users.manage":         ruleAdministrator,
 	"installation.read":    ruleAdministrator,

@@ -40,7 +40,10 @@ func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &sliceWorker{calculator: d.Calculator})
 	river.AddWorker(w, &gcWorker{calculator: d.Calculator})
 	river.AddWorker(w, &gcTickWorker{calculator: d.Calculator})
-	return 12
+	river.AddWorker(w, &recountWorker{calculator: d.Calculator})
+	river.AddWorker(w, &extendWorker{calculator: d.Calculator})
+	river.AddWorker(w, &extendTickWorker{calculator: d.Calculator})
+	return 15
 }
 
 const (
@@ -48,6 +51,8 @@ const (
 	_tickEvery = time.Hour
 	// _gcEvery collects the unused parts of calc once a day.
 	_gcEvery = 24 * time.Hour
+	// _extendEvery plans the daily extension of the series every hour, so each starts at its minute of the night.
+	_extendEvery = time.Hour
 )
 
 // Periodic are the periodic jobs; River runs them on the leader only, so several workers do not repeat them.
@@ -59,7 +64,37 @@ func Periodic() []*river.PeriodicJob {
 		river.NewPeriodicJob(river.PeriodicInterval(_gcEvery), func() (river.JobArgs, *river.InsertOpts) {
 			return entity.CalcGCTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
 		}, nil),
+		river.NewPeriodicJob(river.PeriodicInterval(_extendEvery), func() (river.JobArgs, *river.InsertOpts) {
+			return entity.CalcExtendTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
+		}, &river.PeriodicJobOpts{RunOnStart: true}),
 	}
+}
+
+type recountWorker struct {
+	river.WorkerDefaults[entity.CalcRecountJob]
+	calculator usecase.Calculator
+}
+
+func (w *recountWorker) Work(ctx context.Context, job *river.Job[entity.CalcRecountJob]) error {
+	return w.calculator.RunRecount(ctx, job.Args, completeIn(job))
+}
+
+type extendWorker struct {
+	river.WorkerDefaults[entity.CalcExtendJob]
+	calculator usecase.Calculator
+}
+
+func (w *extendWorker) Work(ctx context.Context, job *river.Job[entity.CalcExtendJob]) error {
+	return w.calculator.RunExtend(ctx, job.Args, completeIn(job))
+}
+
+type extendTickWorker struct {
+	river.WorkerDefaults[entity.CalcExtendTickJob]
+	calculator usecase.Calculator
+}
+
+func (w *extendTickWorker) Work(ctx context.Context, _ *river.Job[entity.CalcExtendTickJob]) error {
+	return w.calculator.TickExtend(ctx)
 }
 
 type sliceWorker struct {

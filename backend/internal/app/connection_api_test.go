@@ -97,12 +97,13 @@ func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEn
 	require.NoError(t, err)
 	collection, err := newSync(e.app, uc, intake, normalizer, e.clock, reg)
 	require.NoError(t, err)
-	settings := newProcess(e.app, orgs, normalizer, e.clock)
+	settings, err := newProcess(e.app, orgs, normalizer, e.clock)
+	require.NoError(t, err)
 	calculator, err := newCalc(e.app, calcModules{structure: orgs, facts: normalizer, settings: settings, collection: collection, rights: rights},
 		e.clock, reg)
 	require.NoError(t, err)
 	modules := apiModules{
-		orgs: orgs, access: rights, connections: uc, intake: intake, sync: collection, operations: newView(e.app, collection, rights, e.clock),
+		orgs: orgs, access: rights, connections: uc, intake: intake, sync: collection, operations: newView(e.app, collection, calculator, rights, e.clock),
 		process: settings, previews: calculator, targets: calculator,
 	}
 	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, modules)

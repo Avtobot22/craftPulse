@@ -11,6 +11,21 @@ WHERE organization_id = sqlc.arg(organization_id) AND scope_hash = sqlc.arg(scop
 -- name: SeriesByID :one
 SELECT * FROM calc.series WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id);
 
+-- name: OrgSeries :many
+SELECT * FROM calc.series WHERE organization_id = sqlc.arg(organization_id) AND metric_set = sqlc.arg(metric_set) ORDER BY id;
+
+-- name: LastRevisionID :one
+SELECT id FROM calc.revision WHERE organization_id = sqlc.arg(organization_id) AND series_id = sqlc.arg(series_id)
+ORDER BY revision_no DESC LIMIT 1;
+
+-- name: RevisionIDAfter :one
+SELECT id FROM calc.revision
+WHERE organization_id = sqlc.arg(organization_id) AND series_id = sqlc.arg(series_id) AND revision_no > sqlc.arg(after_no)::integer
+ORDER BY revision_no LIMIT 1;
+
+-- name: PartByHash :one
+SELECT id FROM calc.part WHERE organization_id = sqlc.arg(organization_id) AND input_hash = sqlc.arg(input_hash);
+
 -- name: FailStaleRevisions :exec
 UPDATE calc.revision SET status = 'failed'
 WHERE organization_id = sqlc.arg(organization_id) AND series_id = sqlc.arg(series_id) AND status = 'building'

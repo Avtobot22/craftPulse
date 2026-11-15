@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
@@ -15,8 +16,10 @@ import (
 )
 
 type calcMetrics struct {
-	failed prometheus.Counter
-	reused prometheus.Counter
+	failed   prometheus.Counter
+	reused   prometheus.Counter
+	computed prometheus.Counter
+	chain    prometheus.Histogram
 }
 
 func newCalcMetrics(reg prometheus.Registerer) (calcMetrics, error) {
@@ -29,8 +32,17 @@ func newCalcMetrics(reg prometheus.Registerer) (calcMetrics, error) {
 			Name: "craftpulse_calc_parts_reused_total",
 			Help: "Parts a revision took from an earlier one by the hash of their input.",
 		}),
+		computed: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "craftpulse_calc_parts_computed_total",
+			Help: "Parts a revision computed because no stored part had the hash of their input.",
+		}),
+		chain: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "craftpulse_calc_chain_duration_seconds",
+			Help:    "Time from the first part of a chain of calc.slice to the publication of its revision.",
+			Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1800},
+		}),
 	}
-	for _, c := range []prometheus.Collector{m.failed, m.reused} {
+	for _, c := range []prometheus.Collector{m.failed, m.reused, m.computed, m.chain} {
 		if err := reg.Register(c); err != nil {
 			return calcMetrics{}, fmt.Errorf("app: register calc metric: %w", err)
 		}
@@ -41,6 +53,10 @@ func newCalcMetrics(reg prometheus.Registerer) (calcMetrics, error) {
 func (m calcMetrics) RevisionFailed() { m.failed.Inc() }
 
 func (m calcMetrics) PartReused() { m.reused.Inc() }
+
+func (m calcMetrics) PartComputed() { m.computed.Inc() }
+
+func (m calcMetrics) ChainPublished(d time.Duration) { m.chain.Observe(d.Seconds()) }
 
 // calcModules are the modules calc reads (TZ 10.3): the projects of teams from org, the facts from normalize, the
 // settings and the confirmation of a target from process, the state of collection from sync and the rights of a

@@ -205,4 +205,19 @@ func (u *UseCase) AreaChanges(ctx context.Context, orgID, areaID entity.ID, afte
 	return out, err
 }
 
+// AreaChangeSeq is the knowledge number of the last change of the facts of the areas, 0 without one; a job of
+// calc compares it with the slice it read (TZ 10.6).
+func (u *UseCase) AreaChangeSeq(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) (int64, error) {
+	if len(areaIDs) == 0 {
+		return 0, nil
+	}
+	var seq int64
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		seq, err = u.d.Repo.AreaChangeSeq(ctx, orgID, areaIDs)
+		return err
+	})
+	return seq, err
+}
+
 func errorf(format string, args ...any) error { return fmt.Errorf("normalize: "+format, args...) }

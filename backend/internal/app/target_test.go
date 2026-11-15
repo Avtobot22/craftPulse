@@ -156,7 +156,7 @@ func (e *targetEnv) targets(t *testing.T, b *browser, group bool) (page versionP
 
 func (e *targetEnv) queued(t *testing.T) int {
 	t.Helper()
-	return count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = '"+entity.KindCalcSlice+"' AND state = 'available'")
+	return count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = '"+entity.KindCalcRecount+"' AND state = 'available'")
 }
 
 // targetInputs are the versions of targets a revision was computed with, as ID@number.
@@ -208,7 +208,7 @@ func TestTarget_V16BaselineAndVersions(t *testing.T) {
 	require.Equal(t, http.StatusCreated, v1.Code, v1.Body.String())
 	assert.Equal(t, `"1"`, v1.Header().Get("ETag"))
 	assert.Equal(t, before+1, e.queued(t), "the confirmation queues the recount of the series with it")
-	e.runJobs(t, 0)
+	e.recount(t)
 	r1 := e.current(t)
 	require.Len(t, e.targetInputs(t, r1.ID), 1)
 	assert.Empty(t, e.targetInputs(t, r0.ID), "the earlier revision keeps the settings it was computed with")
@@ -239,7 +239,7 @@ func TestTarget_V16BaselineAndVersions(t *testing.T) {
 	page, _ = e.targets(t, e.admin, false)
 	require.Len(t, page.Data, 2)
 
-	e.runJobs(t, 0)
+	e.recount(t)
 	r2 := e.current(t)
 	require.NotEqual(t, r1.ID, r2.ID)
 	assert.NotEqual(t, e.targetInputs(t, r1.ID), e.targetInputs(t, r2.ID), "v2 has its own revision")
