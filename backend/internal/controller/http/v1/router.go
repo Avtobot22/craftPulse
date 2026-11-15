@@ -29,7 +29,7 @@ type Deps struct {
 func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
 	// An unknown field of a body is refused (contract: 422 unknown_field); gin keeps the switch global.
 	_strictJSON.Do(func() { binding.EnableDecoderDisallowUnknownFields = true })
-	strict := openapi.NewStrictHandlerWithOptions(d.Handler, nil,
+	strict := openapi.NewStrictHandlerWithOptions(d.Handler, []openapi.StrictMiddlewareFunc{middleware.Detach},
 		openapi.StrictGinServerOptions{
 			RequestErrorHandlerFunc:  handler.RequestError,
 			HandlerErrorFunc:         handler.Error,
