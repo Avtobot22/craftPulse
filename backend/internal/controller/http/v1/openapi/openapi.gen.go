@@ -7729,6 +7729,12 @@ type TargetBaselineList struct {
 type TargetDraft struct {
 	Basis TargetDraftBasis `json:"basis"`
 
+	// BasisPeriod Период ориентира `[from,to)` из getTargetBaselines; обязателен для `historical_p85`.
+	BasisPeriod *struct {
+		From time.Time `json:"from"`
+		To   time.Time `json:"to"`
+	} `json:"basis_period"`
+
 	// BasisRevisionId Обязателен для `historical_p85`.
 	BasisRevisionId *openapi_types.UUID `json:"basis_revision_id"`
 	DurationSeconds int                 `json:"duration_seconds"`
@@ -7741,9 +7747,15 @@ type TargetDraftBasis string
 
 // TargetVersion Версия действует с момента подтверждения `confirmed_at` до подтверждения следующей версии той же группы; задним числом срок не задаётся, прежние результаты сохраняют свою версию (FR-019).
 type TargetVersion struct {
-	BaseVersionNo     *int                `json:"base_version_no"`
-	Basis             TargetVersionBasis  `json:"basis"`
-	BasisN            *int                `json:"basis_n"`
+	BaseVersionNo *int               `json:"base_version_no"`
+	Basis         TargetVersionBasis `json:"basis"`
+	BasisN        *int               `json:"basis_n"`
+
+	// BasisPeriod Окно ориентира, по которому посчитаны значение и n основания.
+	BasisPeriod *struct {
+		From time.Time `json:"from"`
+		To   time.Time `json:"to"`
+	} `json:"basis_period"`
 	BasisRevisionId   *openapi_types.UUID `json:"basis_revision_id"`
 	BasisValueSeconds *int                `json:"basis_value_seconds"`
 	ConfirmedAt       time.Time           `json:"confirmed_at"`

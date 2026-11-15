@@ -315,6 +315,13 @@ type ProcessRepo interface {
 	CalendarVersionByConfirmation(ctx context.Context, orgID, confirmationID entity.ID) (entity.CalendarVersion, error)
 	PageCalendarVersions(ctx context.Context, orgID, teamID entity.ID, p entity.VersionPageRequest) ([]entity.CalendarVersion, error)
 	InsertCalendarVersion(ctx context.Context, orgID entity.ID, v entity.CalendarVersion) error
+
+	LatestTargetVersionNo(ctx context.Context, orgID, teamID entity.ID, g entity.TargetGroup) (int, error)
+	CurrentTargetVersion(ctx context.Context, orgID, teamID entity.ID, g entity.TargetGroup) (entity.TargetVersion, error)
+	TargetVersionByConfirmation(ctx context.Context, orgID, confirmationID entity.ID) (entity.TargetVersion, error)
+	PageTargetVersions(ctx context.Context, orgID, teamID entity.ID, f entity.TargetVersionFilter) ([]entity.TargetVersion, error)
+	TargetVersionsAt(ctx context.Context, orgID, teamID entity.ID, seq int64) ([]entity.TargetVersion, error)
+	InsertTargetVersion(ctx context.Context, orgID entity.ID, v entity.TargetVersion) error
 }
 
 // CalcRepo keeps the series of calc, their immutable revisions and the parts they share (TZ 12.5.8, 12.7).
@@ -340,6 +347,11 @@ type CalcRepo interface {
 	SavePart(ctx context.Context, orgID, newID entity.ID, p *entity.StoredPart, at time.Time) (entity.ID, bool, error)
 	LinkPart(ctx context.Context, orgID, revisionID entity.ID, partNo int, partID entity.ID) error
 	RevisionPoints(ctx context.Context, orgID, revisionID entity.ID) ([]entity.SeriesPoint, error)
+	// ScopeSeries are the series of a scope and a set of metrics, one per step.
+	ScopeSeries(ctx context.Context, orgID entity.ID, scopeHash []byte, metricSet string) ([]entity.CalcSeries, error)
+	// PointSamples reads the contributions of the points of a metric and an estimator lying within the window,
+	// with the type and the size of their tasks.
+	PointSamples(ctx context.Context, orgID, revisionID entity.ID, metricID, estimator string, w entity.Window) ([]entity.PointSample, error)
 	PointContributions(ctx context.Context, orgID, revisionID entity.ID, q entity.ContributionQuery) ([]entity.Contribution, error)
 	TaskIntervals(ctx context.Context, orgID, revisionID, taskID entity.ID) ([]entity.WorkflowInterval, error)
 	RevisionInputs(ctx context.Context, orgID, revisionID entity.ID) ([]entity.RevisionInput, error)

@@ -1983,9 +1983,16 @@ paths:
       operationId: getTargetBaselines
       summary: Исторический p85 как ориентир целевого срока
       description: |
-        p85 длительности по типу и размеру за выбранный период с n и полнотой (FR-019). Это
-        ориентир, а не срок: при n < 20 `low_sample = true`, и надёжного автоматического срока
-        нет. Задачи без размера идут отдельной группой с `size_label = null`.
+        p85 длительности цикла T08 по типу и размеру за выбранный период с n и полнотой (FR-019).
+        Это ориентир, а не срок: при n < 20 `low_sample = true`, и надёжного автоматического срока
+        нет. Задачи без размера идут отдельной группой с `size_label = null` и
+        `reason_code = size_unknown`; срок для неё не задаётся. Задачи без типа в группы не входят.
+
+        Значение строится по сохранённым вкладам T08 текущей ревизии недельного ряда команды
+        `revision_id`: в период входят недели, целиком лежащие в `[from,to)`, задача считается по
+        типу и размеру на своём первом начале. `missing_count` - задачи с неполной историей,
+        `excluded_count` - завершения без начала и исходы без результата. Пока у команды нет
+        опубликованной ревизии ряда - `404`.
       tags: [process]
       x-craftpulse-action: process.manage
       x-craftpulse-delivery: M0
@@ -2041,7 +2048,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/TargetVersionPage'}
               example:
-                data: [{task_type: Bug, size_label: S, version_no: 1, base_version_no: null, duration_seconds: 172800, basis: manual, basis_revision_id: null, basis_value_seconds: null, basis_n: null, confirmed_by: 0193a5b0-1111-7000-8000-000000000003, confirmed_at: '2026-10-02T12:00:00Z'}]
+                data: [{task_type: Bug, size_label: S, version_no: 1, base_version_no: null, duration_seconds: 172800, basis: manual, basis_revision_id: null, basis_value_seconds: null, basis_n: null, basis_period: null, confirmed_by: 0193a5b0-1111-7000-8000-000000000003, confirmed_at: '2026-10-02T12:00:00Z'}]
                 next_cursor: null
           headers:
             ETag:
@@ -2068,6 +2075,15 @@ paths:
 
         Если содержимое равно действующей версии, возвращается 200 без создания версии.
         Повтор Idempotency-Key возвращает исходный статус и ответ до проверки If-Match.
+
+        Для `historical_p85` передаются ревизия ориентира `basis_revision_id` и его период
+        `basis_period`, как их показал `getTargetBaselines`: значение основания, n и окно
+        (период в пределах окна ревизии) считываются из этой ревизии и сохраняются в версии,
+        даже когда ревизия потом удаляется по сроку хранения. Ревизия другой команды или группа
+        без значения p85 за период - `422`. Для `manual` оба поля - `null`.
+
+        Новая версия ставит пересчёт рядов команды в той же транзакции; прежние ревизии
+        сохраняют версию срока, с которой они посчитаны.
       tags: [process]
       x-craftpulse-action: process.manage
       x-craftpulse-delivery: M0
@@ -2081,7 +2097,7 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/TargetDraft'}
-            example: {task_type: Bug, size_label: S, duration_seconds: 345600, basis: historical_p85, basis_revision_id: 0193a5b0-a1a1-7000-8000-000000000001}
+            example: {task_type: Bug, size_label: S, duration_seconds: 345600, basis: historical_p85, basis_revision_id: 0193a5b0-a1a1-7000-8000-000000000001, basis_period: {from: '2026-08-03T00:00:00Z', to: '2026-11-02T00:00:00Z'}}
       responses:
         '201':
           description: Новая версия срока.
@@ -2090,7 +2106,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/TargetVersion'}
-              example: {task_type: Bug, size_label: S, version_no: 2, base_version_no: 1, duration_seconds: 345600, basis: historical_p85, basis_revision_id: 0193a5b0-a1a1-7000-8000-000000000001, basis_value_seconds: 259200, basis_n: 9, confirmed_by: 0193a5b0-1111-7000-8000-000000000003, confirmed_at: '2026-11-08T11:30:00Z'}
+              example: {task_type: Bug, size_label: S, version_no: 2, base_version_no: 1, duration_seconds: 345600, basis: historical_p85, basis_revision_id: 0193a5b0-a1a1-7000-8000-000000000001, basis_value_seconds: 259200, basis_n: 9, basis_period: {from: '2026-08-03T00:00:00Z', to: '2026-11-02T00:00:00Z'}, confirmed_by: 0193a5b0-1111-7000-8000-000000000003, confirmed_at: '2026-11-08T11:30:00Z'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -2117,6 +2133,7 @@ paths:
                 basis_revision_id: 0193a5b0-a1a1-7000-8000-000000000001
                 basis_value_seconds: 259200
                 basis_n: 9
+                basis_period: {from: '2026-08-03T00:00:00Z', to: '2026-11-02T00:00:00Z'}
                 confirmed_by: 0193a5b0-1111-7000-8000-000000000003
                 confirmed_at: 2026-11-08T11:30:00Z
   /teams/{team_id}/report:
@@ -6632,17 +6649,24 @@ components:
     TargetDraft:
       type: object
       additionalProperties: false
-      required: [task_type, size_label, duration_seconds, basis, basis_revision_id]
+      required: [task_type, size_label, duration_seconds, basis, basis_revision_id, basis_period]
       properties:
         task_type: {type: string, minLength: 1, maxLength: 200}
         size_label: {type: string, minLength: 1, maxLength: 200}
         duration_seconds: {type: integer, minimum: 1}
         basis: {type: string, enum: [manual, historical_p85]}
         basis_revision_id: {type: [string, 'null'], format: uuid, description: Обязателен для `historical_p85`.}
+        basis_period:
+          description: Период ориентира `[from,to)` из getTargetBaselines; обязателен для `historical_p85`.
+          type: [object, 'null']
+          required: [from, to]
+          properties:
+            from: {type: string, format: date-time}
+            to: {type: string, format: date-time}
     TargetVersion:
       type: object
       description: Версия действует с момента подтверждения `confirmed_at` до подтверждения следующей версии той же группы; задним числом срок не задаётся, прежние результаты сохраняют свою версию (FR-019).
-      required: [task_type, size_label, version_no, base_version_no, duration_seconds, basis, basis_revision_id, basis_value_seconds, basis_n, confirmed_by, confirmed_at]
+      required: [task_type, size_label, version_no, base_version_no, duration_seconds, basis, basis_revision_id, basis_value_seconds, basis_n, basis_period, confirmed_by, confirmed_at]
       properties:
         task_type: {type: string}
         size_label: {type: string}
@@ -6653,6 +6677,13 @@ components:
         basis_revision_id: {type: [string, 'null'], format: uuid}
         basis_value_seconds: {type: [integer, 'null']}
         basis_n: {type: [integer, 'null']}
+        basis_period:
+          description: Окно ориентира, по которому посчитаны значение и n основания.
+          type: [object, 'null']
+          required: [from, to]
+          properties:
+            from: {type: string, format: date-time}
+            to: {type: string, format: date-time}
         confirmed_by: {type: string, format: uuid}
         confirmed_at: {type: string, format: date-time}
     TargetVersionPage:

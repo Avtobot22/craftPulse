@@ -26,11 +26,16 @@ type Facts interface {
 	RestrictedObjects(ctx context.Context, scope entity.Scope, orgID entity.ID, areaIDs []entity.ID) ([]entity.RestrictedObject, error)
 }
 
-// Settings is the process module: the mapping of a team in force at a knowledge number and the check of a draft
-// of it; errors of the fields of a draft are *entity.ValidationError.
+// Settings is the process module: the mapping and the targets of a team in force at a knowledge number, the
+// checks of their drafts and the confirmation of a target in the transaction of the caller. Errors of the fields
+// of a draft are *entity.ValidationError.
 type Settings interface {
 	MappingAt(ctx context.Context, orgID, teamID entity.ID, seq int64) (entity.MappingVersion, bool, error)
 	CheckDraft(ctx context.Context, orgID, teamID entity.ID, d entity.MappingDraft) error
+	TargetVersionsAt(ctx context.Context, orgID, teamID entity.ID, seq int64) ([]entity.TargetVersion, error)
+	CheckTargetDraft(d entity.TargetDraft) error
+	ConfirmTargetVersion(ctx context.Context, s entity.Subject, teamID entity.ID, baseVersion int, key entity.ID, d entity.TargetDraft,
+		basis *entity.TargetBasis) (entity.TargetVersion, entity.SaveResult, error)
 }
 
 // Rights is the access module: what the sources allow the subject to read now (TZ 13.4, 13.5).

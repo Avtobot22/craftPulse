@@ -102,13 +102,13 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 		return err
 	}
 	settings := newProcess(pool, orgs, normalizer, clock.System{})
-	previews, err := newCalc(pool, orgs, normalizer, settings, rights, clock.System{}, reg)
+	calculator, err := newCalc(pool, orgs, normalizer, settings, rights, clock.System{}, reg)
 	if err != nil {
 		return err
 	}
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection,
-		operations: newView(pool, collection, rights, clock.System{}), process: settings, previews: previews,
+		operations: newView(pool, collection, rights, clock.System{}), process: settings, previews: calculator, targets: calculator,
 	}
 	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules))
 
