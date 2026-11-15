@@ -180,3 +180,20 @@ DELETE FROM calc.revision_part WHERE organization_id = sqlc.arg(organization_id)
 
 -- name: DeleteParts :exec
 DELETE FROM calc.part WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(part_ids)::uuid[]);
+
+-- name: ScopeSeries :many
+SELECT * FROM calc.series
+WHERE organization_id = sqlc.arg(organization_id) AND scope_hash = sqlc.arg(scope_hash) AND metric_set = sqlc.arg(metric_set)
+ORDER BY step;
+
+-- name: PointSamples :many
+SELECT c.object_id, c.role, COALESCE(c.value, 0)::float8 AS value, (c.value IS NOT NULL)::boolean AS has_value, c.reason_code,
+    s.task_type, s.size_label
+FROM calc.revision_part rp
+JOIN calc.point p ON p.organization_id = rp.organization_id AND p.part_id = rp.part_id
+JOIN calc.contribution c ON c.organization_id = p.organization_id AND c.part_id = p.part_id AND c.metric_id = p.metric_id
+    AND c.estimator = p.estimator AND c.point_start = p.point_start
+LEFT JOIN calc.task_slice s ON s.organization_id = c.organization_id AND s.part_id = c.part_id AND s.task_id = c.object_id
+WHERE rp.organization_id = sqlc.arg(organization_id) AND rp.revision_id = sqlc.arg(revision_id) AND p.metric_id = sqlc.arg(metric_id)
+    AND p.estimator = sqlc.arg(estimator) AND p.point_start >= sqlc.arg(from_at) AND p.point_end <= sqlc.arg(to_at)
+ORDER BY p.point_start, c.object_id, c.item_no;

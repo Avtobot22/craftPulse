@@ -6,7 +6,9 @@ SELECT GREATEST(
     (SELECT COALESCE(max(known_seq), 0) FROM process.mapping_version m
         WHERE m.organization_id = sqlc.arg(organization_id) AND m.team_id = sqlc.arg(team_id)),
     (SELECT COALESCE(max(known_seq), 0) FROM process.calendar_version c
-        WHERE c.organization_id = sqlc.arg(organization_id) AND c.team_id = sqlc.arg(team_id))
+        WHERE c.organization_id = sqlc.arg(organization_id) AND c.team_id = sqlc.arg(team_id)),
+    (SELECT COALESCE(max(known_seq), 0) FROM process.target_version t
+        WHERE t.organization_id = sqlc.arg(organization_id) AND t.team_id = sqlc.arg(team_id))
 )::bigint;
 
 -- name: LatestMappingVersionNo :one
@@ -81,3 +83,54 @@ INSERT INTO process.calendar_version (organization_id, id, team_id, version_no, 
 VALUES (sqlc.arg(organization_id), sqlc.arg(id), sqlc.arg(team_id), sqlc.arg(version_no), sqlc.narg(base_version_no),
     sqlc.arg(timezone), sqlc.arg(workdays), sqlc.narg(work_start), sqlc.narg(work_end), sqlc.arg(holidays), sqlc.arg(known_seq),
     sqlc.arg(confirmed_by), sqlc.arg(confirmed_at), sqlc.arg(confirmation_id));
+
+-- name: LatestTargetVersionNo :one
+SELECT COALESCE(max(version_no), 0)::integer FROM process.target_version
+WHERE organization_id = sqlc.arg(organization_id) AND team_id = sqlc.arg(team_id) AND task_type = sqlc.arg(task_type)
+    AND size_label = sqlc.arg(size_label);
+
+-- name: CurrentTargetVersion :one
+SELECT id, team_id, task_type, size_label, version_no, base_version_no, duration_s, basis, basis_revision_id, basis_value_s, basis_n,
+    basis_window, known_seq, confirmed_by, confirmed_at,
+    confirmation_id
+FROM process.target_version
+WHERE organization_id = sqlc.arg(organization_id) AND team_id = sqlc.arg(team_id) AND task_type = sqlc.arg(task_type)
+    AND size_label = sqlc.arg(size_label)
+ORDER BY version_no DESC
+LIMIT 1;
+
+-- name: TargetVersionByConfirmation :one
+SELECT id, team_id, task_type, size_label, version_no, base_version_no, duration_s, basis, basis_revision_id, basis_value_s, basis_n,
+    basis_window, known_seq, confirmed_by, confirmed_at,
+    confirmation_id
+FROM process.target_version
+WHERE organization_id = sqlc.arg(organization_id) AND confirmation_id = sqlc.arg(confirmation_id);
+
+-- name: PageTargetVersions :many
+SELECT id, team_id, task_type, size_label, version_no, base_version_no, duration_s, basis, basis_revision_id, basis_value_s, basis_n,
+    basis_window, known_seq, confirmed_by, confirmed_at,
+    confirmation_id
+FROM process.target_version
+WHERE organization_id = sqlc.arg(organization_id) AND team_id = sqlc.arg(team_id)
+    AND (sqlc.narg(task_type)::text IS NULL OR task_type = sqlc.narg(task_type)::text)
+    AND (sqlc.narg(size_label)::text IS NULL OR size_label = sqlc.narg(size_label)::text)
+    AND (sqlc.narg(before)::bigint IS NULL OR known_seq < sqlc.narg(before)::bigint)
+ORDER BY known_seq DESC
+LIMIT sqlc.arg(row_limit);
+
+-- name: TargetVersionsAt :many
+SELECT DISTINCT ON (task_type, size_label) id, team_id, task_type, size_label, version_no, base_version_no, duration_s, basis,
+    basis_revision_id, basis_value_s, basis_n, basis_window, known_seq, confirmed_by, confirmed_at, confirmation_id
+FROM process.target_version
+WHERE organization_id = sqlc.arg(organization_id) AND team_id = sqlc.arg(team_id) AND known_seq <= sqlc.arg(known_seq)
+ORDER BY task_type, size_label, version_no DESC;
+
+-- name: InsertTargetVersion :exec
+INSERT INTO process.target_version (organization_id, id, team_id, task_type, size_label, version_no, base_version_no, duration_s, basis,
+    basis_revision_id, basis_value_s, basis_n, basis_window, known_seq, confirmed_by, confirmed_at, confirmation_id)
+VALUES (sqlc.arg(organization_id), sqlc.arg(id), sqlc.arg(team_id), sqlc.arg(task_type), sqlc.arg(size_label), sqlc.arg(version_no),
+    sqlc.narg(base_version_no), sqlc.arg(duration_s), sqlc.arg(basis), sqlc.narg(basis_revision_id), sqlc.narg(basis_value_s),
+    sqlc.narg(basis_n),
+    CASE WHEN sqlc.narg(basis_from)::timestamptz IS NULL THEN NULL
+        ELSE tstzrange(sqlc.narg(basis_from)::timestamptz, sqlc.narg(basis_to)::timestamptz, '[)') END,
+    sqlc.arg(known_seq), sqlc.arg(confirmed_by), sqlc.arg(confirmed_at), sqlc.arg(confirmation_id));

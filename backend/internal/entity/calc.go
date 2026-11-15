@@ -204,6 +204,7 @@ const (
 	InputKindDefinition = "definition"
 	InputKindMapping    = "mapping"
 	InputKindCalendar   = "calendar"
+	InputKindTarget     = "target"
 	InputKindStructure  = "structure"
 )
 
@@ -374,4 +375,29 @@ type MappingPreview struct {
 	Tasks    []PreviewTask
 	Controls []ControlValue
 	Unmapped []NativeStatusRef
+}
+
+// PointSample is a contribution of a task to a point with the type and the size the task is counted by.
+type PointSample struct {
+	TaskID     ID
+	Role       ContributionRole
+	Value      *float64
+	ReasonCode string
+	TaskType   *string
+	SizeLabel  *string
+}
+
+// TargetBaseline is the historical p85 of the cycle time of a group of tasks; a nil size is the group of tasks
+// without a size.
+type TargetBaseline struct {
+	TaskType  string
+	SizeLabel *string
+	Unit      string
+	P85       Point
+}
+
+// TargetBaselines are the baselines of a team over a period read from one revision of its weekly series.
+type TargetBaselines struct {
+	RevisionID ID
+	Items      []TargetBaseline
 }

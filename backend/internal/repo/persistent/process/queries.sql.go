@@ -113,6 +113,72 @@ func (q *Queries) CalendarVersionByNo(ctx context.Context, arg CalendarVersionBy
 	return i, err
 }
 
+const currentTargetVersion = `-- name: CurrentTargetVersion :one
+SELECT id, team_id, task_type, size_label, version_no, base_version_no, duration_s, basis, basis_revision_id, basis_value_s, basis_n,
+    basis_window, known_seq, confirmed_by, confirmed_at,
+    confirmation_id
+FROM process.target_version
+WHERE organization_id = $1 AND team_id = $2 AND task_type = $3
+    AND size_label = $4
+ORDER BY version_no DESC
+LIMIT 1
+`
+
+type CurrentTargetVersionParams struct {
+	OrganizationID uuid.UUID
+	TeamID         uuid.UUID
+	TaskType       string
+	SizeLabel      string
+}
+
+type CurrentTargetVersionRow struct {
+	ID              uuid.UUID
+	TeamID          uuid.UUID
+	TaskType        string
+	SizeLabel       string
+	VersionNo       int32
+	BaseVersionNo   pgtype.Int4
+	DurationS       int64
+	Basis           string
+	BasisRevisionID uuid.NullUUID
+	BasisValueS     pgtype.Int8
+	BasisN          pgtype.Int4
+	BasisWindow     pgtype.Range[pgtype.Timestamptz]
+	KnownSeq        int64
+	ConfirmedBy     uuid.UUID
+	ConfirmedAt     time.Time
+	ConfirmationID  uuid.UUID
+}
+
+func (q *Queries) CurrentTargetVersion(ctx context.Context, arg CurrentTargetVersionParams) (CurrentTargetVersionRow, error) {
+	row := q.db.QueryRow(ctx, currentTargetVersion,
+		arg.OrganizationID,
+		arg.TeamID,
+		arg.TaskType,
+		arg.SizeLabel,
+	)
+	var i CurrentTargetVersionRow
+	err := row.Scan(
+		&i.ID,
+		&i.TeamID,
+		&i.TaskType,
+		&i.SizeLabel,
+		&i.VersionNo,
+		&i.BaseVersionNo,
+		&i.DurationS,
+		&i.Basis,
+		&i.BasisRevisionID,
+		&i.BasisValueS,
+		&i.BasisN,
+		&i.BasisWindow,
+		&i.KnownSeq,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.ConfirmationID,
+	)
+	return i, err
+}
+
 const insertCalendarVersion = `-- name: InsertCalendarVersion :exec
 INSERT INTO process.calendar_version (organization_id, id, team_id, version_no, base_version_no, timezone, workdays, work_start,
     work_end, holidays, known_seq, confirmed_by, confirmed_at, confirmation_id)
@@ -199,12 +265,70 @@ func (q *Queries) InsertMappingVersion(ctx context.Context, arg InsertMappingVer
 	return err
 }
 
+const insertTargetVersion = `-- name: InsertTargetVersion :exec
+INSERT INTO process.target_version (organization_id, id, team_id, task_type, size_label, version_no, base_version_no, duration_s, basis,
+    basis_revision_id, basis_value_s, basis_n, basis_window, known_seq, confirmed_by, confirmed_at, confirmation_id)
+VALUES ($1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10, $11,
+    $12,
+    CASE WHEN $13::timestamptz IS NULL THEN NULL
+        ELSE tstzrange($13::timestamptz, $14::timestamptz, '[)') END,
+    $15, $16, $17, $18)
+`
+
+type InsertTargetVersionParams struct {
+	OrganizationID  uuid.UUID
+	ID              uuid.UUID
+	TeamID          uuid.UUID
+	TaskType        string
+	SizeLabel       string
+	VersionNo       int32
+	BaseVersionNo   pgtype.Int4
+	DurationS       int64
+	Basis           string
+	BasisRevisionID uuid.NullUUID
+	BasisValueS     pgtype.Int8
+	BasisN          pgtype.Int4
+	BasisFrom       pgtype.Timestamptz
+	BasisTo         pgtype.Timestamptz
+	KnownSeq        int64
+	ConfirmedBy     uuid.UUID
+	ConfirmedAt     time.Time
+	ConfirmationID  uuid.UUID
+}
+
+func (q *Queries) InsertTargetVersion(ctx context.Context, arg InsertTargetVersionParams) error {
+	_, err := q.db.Exec(ctx, insertTargetVersion,
+		arg.OrganizationID,
+		arg.ID,
+		arg.TeamID,
+		arg.TaskType,
+		arg.SizeLabel,
+		arg.VersionNo,
+		arg.BaseVersionNo,
+		arg.DurationS,
+		arg.Basis,
+		arg.BasisRevisionID,
+		arg.BasisValueS,
+		arg.BasisN,
+		arg.BasisFrom,
+		arg.BasisTo,
+		arg.KnownSeq,
+		arg.ConfirmedBy,
+		arg.ConfirmedAt,
+		arg.ConfirmationID,
+	)
+	return err
+}
+
 const lastSettingsSeq = `-- name: LastSettingsSeq :one
 SELECT GREATEST(
     (SELECT COALESCE(max(known_seq), 0) FROM process.mapping_version m
         WHERE m.organization_id = $1 AND m.team_id = $2),
     (SELECT COALESCE(max(known_seq), 0) FROM process.calendar_version c
-        WHERE c.organization_id = $1 AND c.team_id = $2)
+        WHERE c.organization_id = $1 AND c.team_id = $2),
+    (SELECT COALESCE(max(known_seq), 0) FROM process.target_version t
+        WHERE t.organization_id = $1 AND t.team_id = $2)
 )::bigint
 `
 
@@ -249,6 +373,31 @@ type LatestMappingVersionNoParams struct {
 
 func (q *Queries) LatestMappingVersionNo(ctx context.Context, arg LatestMappingVersionNoParams) (int32, error) {
 	row := q.db.QueryRow(ctx, latestMappingVersionNo, arg.OrganizationID, arg.TeamID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const latestTargetVersionNo = `-- name: LatestTargetVersionNo :one
+SELECT COALESCE(max(version_no), 0)::integer FROM process.target_version
+WHERE organization_id = $1 AND team_id = $2 AND task_type = $3
+    AND size_label = $4
+`
+
+type LatestTargetVersionNoParams struct {
+	OrganizationID uuid.UUID
+	TeamID         uuid.UUID
+	TaskType       string
+	SizeLabel      string
+}
+
+func (q *Queries) LatestTargetVersionNo(ctx context.Context, arg LatestTargetVersionNoParams) (int32, error) {
+	row := q.db.QueryRow(ctx, latestTargetVersionNo,
+		arg.OrganizationID,
+		arg.TeamID,
+		arg.TaskType,
+		arg.SizeLabel,
+	)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -475,6 +624,217 @@ func (q *Queries) PageMappingVersions(ctx context.Context, arg PageMappingVersio
 			&i.ProcessMappingVersion.ConfirmedAt,
 			&i.ProcessMappingVersion.ConfirmationID,
 			&i.CalendarVersionNo,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pageTargetVersions = `-- name: PageTargetVersions :many
+SELECT id, team_id, task_type, size_label, version_no, base_version_no, duration_s, basis, basis_revision_id, basis_value_s, basis_n,
+    basis_window, known_seq, confirmed_by, confirmed_at,
+    confirmation_id
+FROM process.target_version
+WHERE organization_id = $1 AND team_id = $2
+    AND ($3::text IS NULL OR task_type = $3::text)
+    AND ($4::text IS NULL OR size_label = $4::text)
+    AND ($5::bigint IS NULL OR known_seq < $5::bigint)
+ORDER BY known_seq DESC
+LIMIT $6
+`
+
+type PageTargetVersionsParams struct {
+	OrganizationID uuid.UUID
+	TeamID         uuid.UUID
+	TaskType       pgtype.Text
+	SizeLabel      pgtype.Text
+	Before         pgtype.Int8
+	RowLimit       int32
+}
+
+type PageTargetVersionsRow struct {
+	ID              uuid.UUID
+	TeamID          uuid.UUID
+	TaskType        string
+	SizeLabel       string
+	VersionNo       int32
+	BaseVersionNo   pgtype.Int4
+	DurationS       int64
+	Basis           string
+	BasisRevisionID uuid.NullUUID
+	BasisValueS     pgtype.Int8
+	BasisN          pgtype.Int4
+	BasisWindow     pgtype.Range[pgtype.Timestamptz]
+	KnownSeq        int64
+	ConfirmedBy     uuid.UUID
+	ConfirmedAt     time.Time
+	ConfirmationID  uuid.UUID
+}
+
+func (q *Queries) PageTargetVersions(ctx context.Context, arg PageTargetVersionsParams) ([]PageTargetVersionsRow, error) {
+	rows, err := q.db.Query(ctx, pageTargetVersions,
+		arg.OrganizationID,
+		arg.TeamID,
+		arg.TaskType,
+		arg.SizeLabel,
+		arg.Before,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PageTargetVersionsRow
+	for rows.Next() {
+		var i PageTargetVersionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamID,
+			&i.TaskType,
+			&i.SizeLabel,
+			&i.VersionNo,
+			&i.BaseVersionNo,
+			&i.DurationS,
+			&i.Basis,
+			&i.BasisRevisionID,
+			&i.BasisValueS,
+			&i.BasisN,
+			&i.BasisWindow,
+			&i.KnownSeq,
+			&i.ConfirmedBy,
+			&i.ConfirmedAt,
+			&i.ConfirmationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const targetVersionByConfirmation = `-- name: TargetVersionByConfirmation :one
+SELECT id, team_id, task_type, size_label, version_no, base_version_no, duration_s, basis, basis_revision_id, basis_value_s, basis_n,
+    basis_window, known_seq, confirmed_by, confirmed_at,
+    confirmation_id
+FROM process.target_version
+WHERE organization_id = $1 AND confirmation_id = $2
+`
+
+type TargetVersionByConfirmationParams struct {
+	OrganizationID uuid.UUID
+	ConfirmationID uuid.UUID
+}
+
+type TargetVersionByConfirmationRow struct {
+	ID              uuid.UUID
+	TeamID          uuid.UUID
+	TaskType        string
+	SizeLabel       string
+	VersionNo       int32
+	BaseVersionNo   pgtype.Int4
+	DurationS       int64
+	Basis           string
+	BasisRevisionID uuid.NullUUID
+	BasisValueS     pgtype.Int8
+	BasisN          pgtype.Int4
+	BasisWindow     pgtype.Range[pgtype.Timestamptz]
+	KnownSeq        int64
+	ConfirmedBy     uuid.UUID
+	ConfirmedAt     time.Time
+	ConfirmationID  uuid.UUID
+}
+
+func (q *Queries) TargetVersionByConfirmation(ctx context.Context, arg TargetVersionByConfirmationParams) (TargetVersionByConfirmationRow, error) {
+	row := q.db.QueryRow(ctx, targetVersionByConfirmation, arg.OrganizationID, arg.ConfirmationID)
+	var i TargetVersionByConfirmationRow
+	err := row.Scan(
+		&i.ID,
+		&i.TeamID,
+		&i.TaskType,
+		&i.SizeLabel,
+		&i.VersionNo,
+		&i.BaseVersionNo,
+		&i.DurationS,
+		&i.Basis,
+		&i.BasisRevisionID,
+		&i.BasisValueS,
+		&i.BasisN,
+		&i.BasisWindow,
+		&i.KnownSeq,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.ConfirmationID,
+	)
+	return i, err
+}
+
+const targetVersionsAt = `-- name: TargetVersionsAt :many
+SELECT DISTINCT ON (task_type, size_label) id, team_id, task_type, size_label, version_no, base_version_no, duration_s, basis,
+    basis_revision_id, basis_value_s, basis_n, basis_window, known_seq, confirmed_by, confirmed_at, confirmation_id
+FROM process.target_version
+WHERE organization_id = $1 AND team_id = $2 AND known_seq <= $3
+ORDER BY task_type, size_label, version_no DESC
+`
+
+type TargetVersionsAtParams struct {
+	OrganizationID uuid.UUID
+	TeamID         uuid.UUID
+	KnownSeq       int64
+}
+
+type TargetVersionsAtRow struct {
+	ID              uuid.UUID
+	TeamID          uuid.UUID
+	TaskType        string
+	SizeLabel       string
+	VersionNo       int32
+	BaseVersionNo   pgtype.Int4
+	DurationS       int64
+	Basis           string
+	BasisRevisionID uuid.NullUUID
+	BasisValueS     pgtype.Int8
+	BasisN          pgtype.Int4
+	BasisWindow     pgtype.Range[pgtype.Timestamptz]
+	KnownSeq        int64
+	ConfirmedBy     uuid.UUID
+	ConfirmedAt     time.Time
+	ConfirmationID  uuid.UUID
+}
+
+func (q *Queries) TargetVersionsAt(ctx context.Context, arg TargetVersionsAtParams) ([]TargetVersionsAtRow, error) {
+	rows, err := q.db.Query(ctx, targetVersionsAt, arg.OrganizationID, arg.TeamID, arg.KnownSeq)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TargetVersionsAtRow
+	for rows.Next() {
+		var i TargetVersionsAtRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamID,
+			&i.TaskType,
+			&i.SizeLabel,
+			&i.VersionNo,
+			&i.BaseVersionNo,
+			&i.DurationS,
+			&i.Basis,
+			&i.BasisRevisionID,
+			&i.BasisValueS,
+			&i.BasisN,
+			&i.BasisWindow,
+			&i.KnownSeq,
+			&i.ConfirmedBy,
+			&i.ConfirmedAt,
+			&i.ConfirmationID,
 		); err != nil {
 			return nil, err
 		}

@@ -36,11 +36,10 @@ type teamScope struct {
 // TeamSeries finds the series of the flow of a team by the step and creates it on the first request. The scope
 // is canonical JSON with ordered keys, so one team always finds one series (TZ 12.7).
 func (u *UseCase) TeamSeries(ctx context.Context, orgID, teamID entity.ID, step entity.Step) (entity.CalcSeries, error) {
-	scope, err := json.Marshal(teamScope{Kind: "team", TeamID: teamID})
+	scope, sum, err := teamScopeOf(teamID)
 	if err != nil {
-		return entity.CalcSeries{}, fmt.Errorf("calc: encode scope: %w", err)
+		return entity.CalcSeries{}, err
 	}
-	sum := sha256.Sum256(scope)
 	id, err := u.d.NewID()
 	if err != nil {
 		return entity.CalcSeries{}, fmt.Errorf("calc: new series id: %w", err)
@@ -48,7 +47,7 @@ func (u *UseCase) TeamSeries(ctx context.Context, orgID, teamID entity.ID, step 
 	var out entity.CalcSeries
 	err = u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
 		out, err = u.d.Repo.EnsureSeries(ctx, orgID, entity.CalcSeries{
-			ID: id, Scope: scope, ScopeHash: sum[:], MetricSet: entity.MetricSetFlow, Step: step,
+			ID: id, Scope: scope, ScopeHash: sum, MetricSet: entity.MetricSetFlow, Step: step,
 		})
 		return err
 	})
@@ -117,6 +116,10 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 	if err != nil {
 		return err
 	}
+	targets, err := u.d.Settings.TargetVersionsAt(ctx, org, team, seq)
+	if err != nil {
+		return err
+	}
 	id, err := u.d.NewID()
 	if err != nil {
 		return fmt.Errorf("calc: new revision id: %w", err)
@@ -131,6 +134,10 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 	if mapped {
 		rev.Timezone = mapping.Timezone
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindMapping, ID: mapping.ID.String(), Version: strconv.Itoa(mapping.VersionNo)})
+	}
+	for i := range targets {
+		t := &targets[i]
+		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindTarget, ID: t.ID.String(), Version: strconv.Itoa(t.VersionNo)})
 	}
 	rev.InputHash = revisionHash(&series, &rev, inputs)
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
@@ -328,6 +335,16 @@ func revisionHash(s *entity.CalcSeries, r *entity.CalcRevision, inputs []entity.
 		d.text(in.Version)
 	}
 	return d.sum()
+}
+
+// teamScopeOf is the canonical scope of the series of a team and its SHA-256.
+func teamScopeOf(teamID entity.ID) (scope, hash []byte, err error) {
+	scope, err = json.Marshal(teamScope{Kind: "team", TeamID: teamID})
+	if err != nil {
+		return nil, nil, fmt.Errorf("calc: encode scope: %w", err)
+	}
+	sum := sha256.Sum256(scope)
+	return scope, sum[:], nil
 }
 
 func scopeTeam(raw []byte) (entity.ID, error) {

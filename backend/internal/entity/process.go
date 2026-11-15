@@ -174,3 +174,79 @@ type WorkflowCatalog struct {
 	Instances []CatalogInstance
 	Unmapped  []NativeStatusRef
 }
+
+// Bases of a target duration (FR-019): set by hand or taken from the historical p85 of a revision.
+const (
+	TargetManual        = "manual"
+	TargetHistoricalP85 = "historical_p85"
+)
+
+// ReasonSizeUnknown marks the baseline of tasks without a size, which no target applies to (BR-007).
+const ReasonSizeUnknown = "size_unknown"
+
+// TargetGroup is the type and the size a target applies to.
+type TargetGroup struct {
+	TaskType  string
+	SizeLabel string
+}
+
+// TargetDraft is the form of a target of a group; a historical p85 names the revision and the period of its
+// baseline.
+type TargetDraft struct {
+	TargetGroup
+	DurationSeconds int64
+	Basis           string
+	BasisRevisionID *ID
+	BasisPeriod     *Window
+}
+
+// TargetBasis is the historical p85 of a group read from a revision, kept with the version it founded.
+type TargetBasis struct {
+	RevisionID   ID
+	ValueSeconds int64
+	N            int
+	Window       Window
+}
+
+// TargetVersion is an immutable confirmed target of a group of a team; it holds from its confirmation until the
+// next version of the group, and earlier results keep their version (FR-019).
+type TargetVersion struct {
+	ID     ID
+	TeamID ID
+	TargetGroup
+	VersionNo       int
+	BaseVersionNo   *int
+	DurationSeconds int64
+	Basis           string
+	BasisOf         *TargetBasis
+	KnownSeq        int64
+	Confirmation
+}
+
+// TargetVersionFilter narrows the versions of a team to a type or to one group; Before is the knowledge number
+// the previous page ended on.
+type TargetVersionFilter struct {
+	TaskType  *string
+	SizeLabel *string
+	Limit     int
+	Before    *int64
+}
+
+// TargetVersionPage is a page of versions newest first; Latest is the last version number of the group when the
+// filter names one, 0 without versions.
+type TargetVersionPage struct {
+	Items  []TargetVersion
+	Next   *int64
+	Latest *int
+}
+
+// SaveResult tells how a confirmation of a version ended.
+type SaveResult int
+
+const (
+	SaveInserted SaveResult = iota + 1
+	// SaveRepeated is a repeat of the idempotency key: the version it saved before.
+	SaveRepeated
+	// SaveUnchanged is a form equal to the version in force, which stays.
+	SaveUnchanged
+)

@@ -145,6 +145,16 @@ type Process interface {
 	ListCalendarVersions(ctx context.Context, s entity.Subject, teamID entity.ID, p entity.VersionPageRequest) (entity.CalendarVersionPage, error)
 	CreateCalendarVersion(ctx context.Context, s entity.Subject, teamID entity.ID, baseVersion int, key entity.ID,
 		d entity.CalendarDraft) (v entity.CalendarVersion, created bool, err error)
+	ListTargetVersions(ctx context.Context, s entity.Subject, teamID entity.ID, f entity.TargetVersionFilter) (entity.TargetVersionPage, error)
+}
+
+// Targets is the calc module for process owners: the historical p85 of a group as a baseline and the
+// confirmation of a target, which process keeps as a version (UC-09, FR-019). created tells a new or repeated
+// version from the version in force a form equal to it returns.
+type Targets interface {
+	TargetBaselines(ctx context.Context, s entity.Subject, teamID entity.ID, w entity.Window) (entity.TargetBaselines, error)
+	CreateTargetVersion(ctx context.Context, s entity.Subject, teamID entity.ID, baseVersion int, key entity.ID,
+		d entity.TargetDraft) (v entity.TargetVersion, created bool, err error)
 }
 
 // MappingPreviews is the calc module for process owners: a draft of the mapping of a team applied to the tasks

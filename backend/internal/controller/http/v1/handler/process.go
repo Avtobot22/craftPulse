@@ -42,6 +42,7 @@ var (
 type process struct {
 	uc          usecase.Process
 	previews    usecase.MappingPreviews
+	targets     usecase.Targets
 	connections usecase.Connections
 }
 

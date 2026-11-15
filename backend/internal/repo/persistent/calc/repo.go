@@ -486,3 +486,43 @@ func deref(s *string) string {
 	}
 	return *s
 }
+
+// ScopeSeries are the series of a scope and a set of metrics, one per step.
+func (r *Repo) ScopeSeries(ctx context.Context, orgID entity.ID, scopeHash []byte, metricSet string) ([]entity.CalcSeries, error) {
+	rows, err := r.q(ctx).ScopeSeries(ctx, ScopeSeriesParams{OrganizationID: uuid.UUID(orgID), ScopeHash: scopeHash, MetricSet: metricSet})
+	if err != nil {
+		return nil, fmt.Errorf("calc: scope series: %w", err)
+	}
+	out := make([]entity.CalcSeries, len(rows))
+	for i := range rows {
+		out[i] = series(&rows[i])
+	}
+	return out, nil
+}
+
+// PointSamples reads the contributions of the points of a metric and an estimator of a revision that lie within
+// the window, with the type and the size of the task in the part of the point.
+func (r *Repo) PointSamples(ctx context.Context, orgID, revisionID entity.ID, metricID, estimator string, w entity.Window) ([]entity.PointSample, error) {
+	rows, err := r.q(ctx).PointSamples(ctx, PointSamplesParams{
+		OrganizationID: uuid.UUID(orgID), RevisionID: uuid.UUID(revisionID), MetricID: metricID, Estimator: estimator, FromAt: w.From, ToAt: w.To,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("calc: point samples: %w", err)
+	}
+	out := make([]entity.PointSample, len(rows))
+	for i := range rows {
+		row := &rows[i]
+		out[i] = entity.PointSample{
+			TaskID: entity.ID(row.ObjectID), Role: entity.ContributionRole(row.Role), Value: optional(row.Value, row.HasValue),
+			ReasonCode: row.ReasonCode.String, TaskType: textPtr(row.TaskType), SizeLabel: textPtr(row.SizeLabel),
+		}
+	}
+	return out, nil
+}
+
+func textPtr(t pgtype.Text) *string {
+	if !t.Valid {
+		return nil
+	}
+	return &t.String
+}

@@ -592,6 +592,73 @@ func (q *Queries) PointContributions(ctx context.Context, arg PointContributions
 	return items, nil
 }
 
+const pointSamples = `-- name: PointSamples :many
+SELECT c.object_id, c.role, COALESCE(c.value, 0)::float8 AS value, (c.value IS NOT NULL)::boolean AS has_value, c.reason_code,
+    s.task_type, s.size_label
+FROM calc.revision_part rp
+JOIN calc.point p ON p.organization_id = rp.organization_id AND p.part_id = rp.part_id
+JOIN calc.contribution c ON c.organization_id = p.organization_id AND c.part_id = p.part_id AND c.metric_id = p.metric_id
+    AND c.estimator = p.estimator AND c.point_start = p.point_start
+LEFT JOIN calc.task_slice s ON s.organization_id = c.organization_id AND s.part_id = c.part_id AND s.task_id = c.object_id
+WHERE rp.organization_id = $1 AND rp.revision_id = $2 AND p.metric_id = $3
+    AND p.estimator = $4 AND p.point_start >= $5 AND p.point_end <= $6
+ORDER BY p.point_start, c.object_id, c.item_no
+`
+
+type PointSamplesParams struct {
+	OrganizationID uuid.UUID
+	RevisionID     uuid.UUID
+	MetricID       string
+	Estimator      string
+	FromAt         time.Time
+	ToAt           time.Time
+}
+
+type PointSamplesRow struct {
+	ObjectID   uuid.UUID
+	Role       string
+	Value      float64
+	HasValue   bool
+	ReasonCode pgtype.Text
+	TaskType   pgtype.Text
+	SizeLabel  pgtype.Text
+}
+
+func (q *Queries) PointSamples(ctx context.Context, arg PointSamplesParams) ([]PointSamplesRow, error) {
+	rows, err := q.db.Query(ctx, pointSamples,
+		arg.OrganizationID,
+		arg.RevisionID,
+		arg.MetricID,
+		arg.Estimator,
+		arg.FromAt,
+		arg.ToAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PointSamplesRow
+	for rows.Next() {
+		var i PointSamplesRow
+		if err := rows.Scan(
+			&i.ObjectID,
+			&i.Role,
+			&i.Value,
+			&i.HasValue,
+			&i.ReasonCode,
+			&i.TaskType,
+			&i.SizeLabel,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const publishRevision = `-- name: PublishRevision :execrows
 UPDATE calc.revision SET status = 'published', published_at = $1::timestamptz
 WHERE organization_id = $2 AND id = $3 AND status = 'building'
@@ -723,6 +790,47 @@ func (q *Queries) RevisionPoints(ctx context.Context, arg RevisionPointsParams) 
 			&i.ExcludedCount,
 			&i.MissingCount,
 			&i.LowSample,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const scopeSeries = `-- name: ScopeSeries :many
+SELECT organization_id, id, scope_hash, scope, metric_set, step, current_revision_id, consumed_seq FROM calc.series
+WHERE organization_id = $1 AND scope_hash = $2 AND metric_set = $3
+ORDER BY step
+`
+
+type ScopeSeriesParams struct {
+	OrganizationID uuid.UUID
+	ScopeHash      []byte
+	MetricSet      string
+}
+
+func (q *Queries) ScopeSeries(ctx context.Context, arg ScopeSeriesParams) ([]CalcSeries, error) {
+	rows, err := q.db.Query(ctx, scopeSeries, arg.OrganizationID, arg.ScopeHash, arg.MetricSet)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CalcSeries
+	for rows.Next() {
+		var i CalcSeries
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.ScopeHash,
+			&i.Scope,
+			&i.MetricSet,
+			&i.Step,
+			&i.CurrentRevisionID,
+			&i.ConsumedSeq,
 		); err != nil {
 			return nil, err
 		}
