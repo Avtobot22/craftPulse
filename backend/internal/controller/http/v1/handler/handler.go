@@ -47,6 +47,7 @@ type Deps struct {
 	Sync         usecase.SyncStatus
 	Operations   usecase.Operations
 	Process      usecase.Process
+	Previews     usecase.MappingPreviews
 	Registerer   prometheus.Registerer
 }
 
@@ -56,7 +57,7 @@ func New(d Deps) *Handler {
 		connections:    connections{uc: d.Connections, sync: d.Sync, operations: d.Operations},
 		accounts:       accounts{uc: d.Accounts, connections: d.Connections},
 		intake:         intake{uc: d.Intake},
-		process:        process{uc: d.Process, connections: d.Connections},
+		process:        process{uc: d.Process, previews: d.Previews, connections: d.Connections},
 		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),
 		organization:   organization{structure: d.Structure, access: d.Access, connections: d.Connections},
 		administration: administration{users: d.Users, audit: d.Audit, protocols: d.Protocols},

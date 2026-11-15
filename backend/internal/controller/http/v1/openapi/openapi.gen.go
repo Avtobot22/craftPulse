@@ -6441,7 +6441,10 @@ type MappingPreview struct {
 		// выдаётся (FR-003).
 		Value MetricValue `json:"value"`
 	} `json:"control_values"`
-	Tasks []struct {
+
+	// Period Неделя отчёта до `as_of`, за которую считаются T05 и T08.
+	Period Period `json:"period"`
+	Tasks  []struct {
 		BlockedSeconds *int                       `json:"blocked_seconds"`
 		CompletedAt    *time.Time                 `json:"completed_at"`
 		Outcome        MappingPreviewTasksOutcome `json:"outcome"`

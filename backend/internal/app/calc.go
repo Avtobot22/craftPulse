@@ -42,9 +42,10 @@ func (m calcMetrics) RevisionFailed() { m.failed.Inc() }
 
 func (m calcMetrics) PartReused() { m.reused.Inc() }
 
-// newCalc reads the projects of teams from org, the facts from normalize and the mapping from process (TZ 10.3).
-func newCalc(pool *pgxpool.Pool, structure calc.Structure, facts calc.Facts, settings calc.Settings, c clock.Clock,
-	reg prometheus.Registerer,
+// newCalc reads the projects of teams from org, the facts from normalize, the mapping and the check of its draft
+// from process and the rights of a reader from access (TZ 10.3); process does not depend on it.
+func newCalc(pool *pgxpool.Pool, structure calc.Structure, facts calc.Facts, settings calc.Settings, rights calc.Rights,
+	c clock.Clock, reg prometheus.Registerer,
 ) (*calc.UseCase, error) {
 	metrics, err := newCalcMetrics(reg)
 	if err != nil {
@@ -55,7 +56,7 @@ func newCalc(pool *pgxpool.Pool, structure calc.Structure, facts calc.Facts, set
 		return nil, err
 	}
 	return calc.New(calc.Deps{
-		Structure: structure, Facts: facts, Settings: settings, Repo: calcrepo.NewRepo(pool), Tenants: platform.NewRepo(pool),
+		Structure: structure, Facts: facts, Settings: settings, Rights: rights, Repo: calcrepo.NewRepo(pool), Tenants: platform.NewRepo(pool),
 		Queue: queue.New(jobs), Tx: persistent.NewTransactor(pool), Metrics: metrics, Clock: c, NewID: newID,
 	}), nil
 }

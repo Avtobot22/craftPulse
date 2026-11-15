@@ -94,6 +94,28 @@ func (u *UseCase) AreaFacts(ctx context.Context, orgID, areaID entity.ID, seq in
 	return out, err
 }
 
+// VisibleAreaFacts reads the tasks and events of an area known at the slice seq by the rules of TasksAt: an
+// area outside the scope gives nothing, and a task with its own restriction comes only when the scope allows it.
+func (u *UseCase) VisibleAreaFacts(ctx context.Context, scope entity.Scope, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error) {
+	out := entity.AreaFacts{AreaID: areaID}
+	if !scope.Area(areaID) {
+		return out, nil
+	}
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		instances, err := u.d.Repo.AreaInstances(ctx, orgID, []entity.ID{areaID})
+		if err != nil {
+			return err
+		}
+		out.InstanceID = instances[areaID]
+		if out.Tasks, err = u.d.Repo.TaskVersionsAt(ctx, orgID, areaID, seq, scope.Objects()); err != nil {
+			return err
+		}
+		out.Events, err = u.d.Repo.TaskEventsAt(ctx, orgID, areaID, seq, scope.Objects())
+		return err
+	})
+	return out, err
+}
+
 // Dictionary reads the current statuses, resolutions, types or fields of an area.
 func (u *UseCase) Dictionary(ctx context.Context, orgID, areaID entity.ID, kind entity.DictionaryKind) ([]entity.DictionaryEntry, error) {
 	var out []entity.DictionaryEntry
