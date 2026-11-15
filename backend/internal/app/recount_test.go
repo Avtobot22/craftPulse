@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
 )
 
 // recountEnv is the series of seriesEnv with the collection of sync and the metrics of calc in their own registry.
@@ -367,4 +369,89 @@ func TestRecount_DailyExtension(t *testing.T) {
 	e.clock.Advance(time.Hour)
 	extend()
 	assert.Empty(t, e.scheduled(t), "the series is extended once a night")
+}
+
+// TestRecount_RefreshTakesOverStoppedChain: a refresh while the series holds a building revision without progress
+// for 30 minutes is answered by the new chain that takes it over, not by the failed one.
+func TestRecount_RefreshTakesOverStoppedChain(t *testing.T) {
+	t.Parallel()
+	e := newRecountEnv(t)
+	e.recount(t)
+	e.refresh(t, _seriesAsOf)
+	e.runJobs(t, 2)
+	stopped := e.building(t)
+	require.Len(t, stopped, 1)
+	_, err := e.owner.Exec(t.Context(), "UPDATE calc.revision SET progress_at = $1 WHERE id = $2", e.clock.Now().Add(-31*time.Minute), stopped[0])
+	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), "UPDATE river_job SET state = 'discarded', finalized_at = now() WHERE kind = $1 AND state = 'available'",
+		entity.KindCalcSlice)
+	require.NoError(t, err)
+
+	code, op, location := e.refreshSeries(t, e.admin, e.series.ID)
+	require.Equal(t, http.StatusAccepted, code)
+	e.runJobs(t, 0)
+	taken, err := e.calc.Revision(t.Context(), e.orgID, e.series.ID, (*entity.ID)(&stopped[0]))
+	require.NoError(t, err)
+	assert.Equal(t, entity.RevisionFailed, taken.Status, "the new chain takes the stopped revision over")
+	code, done := e.operation(t, e.admin, location)
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, op.ID, done.ID)
+	assert.Equal(t, "succeeded", done.Status, "the refresh is answered by the revision of the new chain")
+	require.NotNil(t, done.ResultURI)
+	assert.Equal(t, "/api/v1/revisions/"+e.current(t).ID.String(), *done.ResultURI)
+}
+
+// TestRecount_SkipsSeriesOfAnotherScope: a series whose scope is not a team does not stop the recount of the others.
+func TestRecount_SkipsSeriesOfAnotherScope(t *testing.T) {
+	t.Parallel()
+	e := newRecountEnv(t)
+	_, err := e.owner.Exec(t.Context(), `INSERT INTO calc.series (organization_id, scope_hash, scope, metric_set, step, consumed_seq)
+		VALUES ($1, sha256('project'), '{"kind": "project"}', $2, 'week', 0)`, uuid.UUID(e.orgID), entity.MetricSetFlow)
+	require.NoError(t, err)
+	e.recount(t)
+	assert.Equal(t, entity.RevisionPublished, e.current(t).Status, "the series of the team is counted")
+}
+
+// publishingSettings finishes the chain of another revision once, when a start reads the mapping: after the start
+// read the series and before it writes its revision.
+type publishingSettings struct {
+	calc.Settings
+	once    sync.Once
+	publish func()
+}
+
+func (s *publishingSettings) MappingAt(ctx context.Context, orgID, teamID entity.ID, seq int64) (entity.MappingVersion, bool, error) {
+	s.once.Do(s.publish)
+	return s.Settings.MappingAt(ctx, orgID, teamID, seq)
+}
+
+// TestRecount_ChainStartedWhileAnotherPublishes: a chain whose start read the series before another chain published
+// replaces the revision that chain published and publishes itself.
+func TestRecount_ChainStartedWhileAnotherPublishes(t *testing.T) {
+	t.Parallel()
+	e := newRecountEnv(t)
+	e.recount(t)
+	e.refresh(t, _seriesAsOf)
+	e.runJobs(t, 4)
+	require.Len(t, e.building(t), 1, "the first chain waits for its last part")
+
+	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	settings := &publishingSettings{Settings: e.process, publish: func() { e.runJobs(t, 0) }}
+	starter, err := newCalc(e.app, calcModules{structure: orgs, facts: e.runner.norm, settings: settings, collection: e.runner.sync}, e.clock,
+		prometheus.NewRegistry())
+	require.NoError(t, err)
+	first := e.current(t)
+	job := entity.CalcSliceJob{OrganizationID: e.orgID, SeriesID: e.series.ID, From: _seriesWindow.From, To: _seriesWindow.To, AsOf: _seriesAsOf}
+	require.NoError(t, starter.RunSlice(t.Context(), job, func(context.Context) error { return nil }))
+	published := e.current(t)
+	require.NotEqual(t, first.ID, published.ID, "the other chain published during the start")
+
+	e.runJobs(t, 0)
+	second := e.current(t)
+	require.NotEqual(t, published.ID, second.ID, "the chain of the start publishes after the other one")
+	require.NotNil(t, second.PreviousRevisionID)
+	assert.Equal(t, published.ID, *second.PreviousRevisionID)
+	replaced, err := e.calc.Revision(t.Context(), e.orgID, e.series.ID, &published.ID)
+	require.NoError(t, err)
+	assert.Equal(t, entity.RevisionSuperseded, replaced.Status)
 }

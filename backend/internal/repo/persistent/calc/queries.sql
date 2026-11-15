@@ -42,6 +42,10 @@ WHERE r.organization_id = sqlc.arg(organization_id) AND r.series_id = sqlc.arg(s
 ON CONFLICT DO NOTHING
 RETURNING revision_no;
 
+-- name: SetRevisionPrevious :exec
+UPDATE calc.revision SET previous_revision_id = sqlc.narg(previous_revision_id)::uuid
+WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND status = 'building';
+
 -- name: InsertRevisionInputs :exec
 INSERT INTO calc.revision_input (organization_id, revision_id, input_kind, input_id, version, watermark, completeness)
 SELECT sqlc.arg(organization_id), sqlc.arg(revision_id), (sqlc.arg(kinds)::text[])[i], (sqlc.arg(input_ids)::text[])[i],

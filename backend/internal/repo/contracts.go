@@ -343,6 +343,8 @@ type CalcRepo interface {
 	FailStaleRevisions(ctx context.Context, orgID, seriesID entity.ID, before time.Time) error
 	// CreateRevision writes a building revision with the next number; false when the series already builds one.
 	CreateRevision(ctx context.Context, orgID entity.ID, r entity.CalcRevision) (bool, error)
+	// SetRevisionPrevious names the revision a building one replaces.
+	SetRevisionPrevious(ctx context.Context, orgID, revisionID entity.ID, prev *entity.ID) error
 	InsertRevisionInputs(ctx context.Context, orgID, revisionID entity.ID, inputs []entity.RevisionInput) error
 	Revision(ctx context.Context, orgID, id entity.ID) (entity.CalcRevision, error)
 	// TouchRevision, FailRevision and PublishRevision change a building revision only; false when it is not one.

@@ -996,6 +996,22 @@ func (q *Queries) SeriesByScope(ctx context.Context, arg SeriesByScopeParams) (C
 	return i, err
 }
 
+const setRevisionPrevious = `-- name: SetRevisionPrevious :exec
+UPDATE calc.revision SET previous_revision_id = $1::uuid
+WHERE organization_id = $2 AND id = $3 AND status = 'building'
+`
+
+type SetRevisionPreviousParams struct {
+	PreviousRevisionID uuid.NullUUID
+	OrganizationID     uuid.UUID
+	ID                 uuid.UUID
+}
+
+func (q *Queries) SetRevisionPrevious(ctx context.Context, arg SetRevisionPreviousParams) error {
+	_, err := q.db.Exec(ctx, setRevisionPrevious, arg.PreviousRevisionID, arg.OrganizationID, arg.ID)
+	return err
+}
+
 const supersedeRevision = `-- name: SupersedeRevision :exec
 UPDATE calc.revision SET status = 'superseded', superseded_at = $1::timestamptz
 WHERE organization_id = $2 AND id = $3 AND status = 'published'

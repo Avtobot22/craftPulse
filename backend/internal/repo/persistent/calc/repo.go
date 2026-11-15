@@ -129,6 +129,16 @@ func (r *Repo) CreateRevision(ctx context.Context, orgID entity.ID, rev entity.C
 	return true, nil
 }
 
+func (r *Repo) SetRevisionPrevious(ctx context.Context, orgID, revisionID entity.ID, prev *entity.ID) error {
+	err := r.q(ctx).SetRevisionPrevious(ctx, SetRevisionPreviousParams{
+		OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(revisionID), PreviousRevisionID: nullID(prev),
+	})
+	if err != nil {
+		return fmt.Errorf("calc: set previous revision: %w", err)
+	}
+	return nil
+}
+
 func (r *Repo) InsertRevisionInputs(ctx context.Context, orgID, revisionID entity.ID, inputs []entity.RevisionInput) error {
 	p := InsertRevisionInputsParams{OrganizationID: uuid.UUID(orgID), RevisionID: uuid.UUID(revisionID)}
 	for _, in := range inputs {

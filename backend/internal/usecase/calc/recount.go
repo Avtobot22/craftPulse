@@ -47,11 +47,11 @@ func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, com
 	var plans []due
 	for i := range all {
 		s := &all[i]
-		team, err := scopeTeam(s.Scope)
+		team, ok, err := teamOf(s.Scope)
 		if err != nil {
 			return err
 		}
-		if !job.TeamID.IsZero() && team != job.TeamID {
+		if !ok || (!job.TeamID.IsZero() && team != job.TeamID) {
 			continue
 		}
 		areas, err := u.teamAreas(ctx, org, team)
@@ -93,7 +93,7 @@ func (u *UseCase) TickExtend(ctx context.Context) error {
 }
 
 // RunExtend is the job calc.extend: a series whose minute in the night window of today comes before the next tick
-// and that has no revision started since gets a chain at that minute. After 05:00 the day is not caught up; the
+// and that has no revision started since, other than a failed one, gets a chain at that minute. After 05:00 the day is not caught up; the
 // next night extends the window.
 func (u *UseCase) RunExtend(ctx context.Context, job entity.CalcExtendJob, complete Complete) error {
 	org := job.OrganizationID
@@ -105,9 +105,12 @@ func (u *UseCase) RunExtend(ctx context.Context, job entity.CalcExtendJob, compl
 	var plans []due
 	for i := range all {
 		s := &all[i]
-		team, err := scopeTeam(s.Scope)
+		team, ok, err := teamOf(s.Scope)
 		if err != nil {
 			return err
+		}
+		if !ok {
+			continue
 		}
 		cur, last, err := u.revisions(ctx, org, s)
 		if err != nil {
@@ -118,7 +121,7 @@ func (u *UseCase) RunExtend(ctx context.Context, job entity.CalcExtendJob, compl
 			return err
 		}
 		slot, ok := extendSlot(s.ID, now, loc)
-		if !ok || (last != nil && !last.StartedAt.Before(slot)) {
+		if !ok || (last != nil && last.Status != entity.RevisionFailed && !last.StartedAt.Before(slot)) {
 			continue
 		}
 		areas, err := u.teamAreas(ctx, org, team)
@@ -185,10 +188,11 @@ func (u *UseCase) RequestRefresh(ctx context.Context, orgID, seriesID, corr enti
 	if err != nil {
 		return entity.SeriesRefresh{}, err
 	}
+	// A building revision answers the refresh unless it stopped: the new chain fails that one and builds the next.
 	out := entity.SeriesRefresh{SeriesID: s.ID}
 	if last != nil {
 		out.AfterRevisionNo = last.RevisionNo
-		if last.Status == entity.RevisionBuilding {
+		if last.Status == entity.RevisionBuilding && !last.ProgressAt.Before(now.Add(-_staleAfter)) {
 			out.AfterRevisionNo--
 		}
 	}

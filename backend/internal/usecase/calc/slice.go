@@ -159,6 +159,9 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		if err != nil || !created {
 			return errors.Join(err, complete(ctx))
 		}
+		if err := u.followCurrent(ctx, org, &rev); err != nil {
+			return err
+		}
 		if err := u.d.Repo.InsertRevisionInputs(ctx, org, rev.ID, inputs); err != nil {
 			return err
 		}
@@ -169,6 +172,28 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		next.RevisionID, next.PartNo = rev.ID, 1
 		return u.d.Queue.Enqueue(ctx, next, entity.QueueBulk)
 	})
+}
+
+// followCurrent makes the new revision replace the current one of the series as it is after the insert: another
+// chain may have published since the start read the series. The pointer cannot move after that, as the series
+// builds no other revision.
+func (u *UseCase) followCurrent(ctx context.Context, org entity.ID, rev *entity.CalcRevision) error {
+	s, err := u.d.Repo.Series(ctx, org, rev.SeriesID)
+	if err != nil {
+		return err
+	}
+	if sameID(s.CurrentRevisionID, rev.PreviousRevisionID) {
+		return nil
+	}
+	rev.PreviousRevisionID = s.CurrentRevisionID
+	return u.d.Repo.SetRevisionPrevious(ctx, org, rev.ID, rev.PreviousRevisionID)
+}
+
+func sameID(a, b *entity.ID) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // part computes its part on the facts and the mapping of the knowledge cutoff of the revision outside a
@@ -465,6 +490,15 @@ func teamScopeOf(teamID entity.ID) (scope, hash []byte, err error) {
 	}
 	sum := sha256.Sum256(scope)
 	return scope, sum[:], nil
+}
+
+// teamOf is the team of a scope; false for a scope of another kind, which the recount of teams leaves alone.
+func teamOf(raw []byte) (entity.ID, bool, error) {
+	var s teamScope
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return entity.ID{}, false, fmt.Errorf("calc: scope of the series: %w", err)
+	}
+	return s.TeamID, s.Kind == "team", nil
 }
 
 func scopeTeam(raw []byte) (entity.ID, error) {
