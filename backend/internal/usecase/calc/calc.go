@@ -38,6 +38,12 @@ type Settings interface {
 		basis *entity.TargetBasis) (entity.TargetVersion, entity.SaveResult, error)
 }
 
+// Collection is the sync module: the state of the collection of the source areas, for the completeness of a
+// calculation (T39, T40, T42).
+type Collection interface {
+	AreaCollection(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaCollection, error)
+}
+
 // Rights is the access module: what the sources allow the subject to read now (TZ 13.4, 13.5).
 type Rights interface {
 	Decide(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.SourceQuery) (entity.Scope, error)
@@ -53,14 +59,16 @@ type Deps struct {
 	Structure Structure
 	Facts     Facts
 	Settings  Settings
-	Rights    Rights
-	Repo      repo.CalcRepo
-	Tenants   repo.TenantRepo
-	Queue     repo.JobQueue
-	Tx        repo.Transactor
-	Metrics   Metrics
-	Clock     clock.Clock
-	NewID     func() (entity.ID, error)
+	// Collection is nil where no source is collected; then only the history of the facts tells completeness.
+	Collection Collection
+	Rights     Rights
+	Repo       repo.CalcRepo
+	Tenants    repo.TenantRepo
+	Queue      repo.JobQueue
+	Tx         repo.Transactor
+	Metrics    Metrics
+	Clock      clock.Clock
+	NewID      func() (entity.ID, error)
 	// PartPoints is the points of one part of a window; _partPoints when zero.
 	PartPoints int
 	// GCBatch is the parts one portion of the collection deletes; _gcBatch when zero.
@@ -98,7 +106,7 @@ func (u *UseCase) Calculate(ctx context.Context, req entity.CalcRequest) (entity
 // input reads what a calculation of the request needs; it holds no transaction across modules.
 func (u *UseCase) input(ctx context.Context, req entity.CalcRequest) (input, error) {
 	org := req.OrganizationID
-	in := input{team: req.TeamID, window: req.Window, asOf: req.AsOf, location: time.UTC, groupBy: req.GroupBy}
+	in := input{team: req.TeamID, window: req.Window, asOf: req.AsOf, location: time.UTC, groupBy: req.GroupBy, followUp: _followUp}
 	mapping, ok, err := u.d.Settings.MappingAt(ctx, org, req.TeamID, req.KnowledgeSeq)
 	if err != nil || !ok {
 		return in, err
@@ -112,18 +120,39 @@ func (u *UseCase) input(ctx context.Context, req entity.CalcRequest) (input, err
 		return in, err
 	}
 	seen := map[entity.ID]bool{}
+	var areas []entity.ID
 	for _, l := range links {
 		if seen[l.To] {
 			continue
 		}
 		seen[l.To] = true
+		areas = append(areas, l.To)
 		facts, err := u.d.Facts.AreaFacts(ctx, org, l.To, req.KnowledgeSeq)
 		if err != nil {
 			return in, err
 		}
 		in.tasks = append(in.tasks, tasksOf(&facts, l.From)...)
 	}
+	targets, err := u.d.Settings.TargetVersionsAt(ctx, org, req.TeamID, req.KnowledgeSeq)
+	if err != nil {
+		return in, err
+	}
+	in.targets = targetsOf(targets)
+	if u.d.Collection != nil && len(areas) > 0 {
+		if in.collection, err = u.d.Collection.AreaCollection(ctx, org, areas); err != nil {
+			return in, err
+		}
+	}
 	return in, nil
+}
+
+// targetsOf are the durations of the versions in force by group.
+func targetsOf(versions []entity.TargetVersion) map[entity.TargetGroup]int64 {
+	out := make(map[entity.TargetGroup]int64, len(versions))
+	for i := range versions {
+		out[versions[i].TargetGroup] = versions[i].DurationSeconds
+	}
+	return out
 }
 
 type noMetrics struct{}
@@ -142,7 +171,7 @@ func tasksOf(f *entity.AreaFacts, project entity.ID) []taskInput {
 	out := make([]taskInput, len(f.Tasks))
 	for i := range f.Tasks {
 		v := f.Tasks[i]
-		out[i] = taskInput{version: v, instance: f.InstanceID, project: project, events: byTask[v.TaskID]}
+		out[i] = taskInput{version: v, instance: f.InstanceID, area: f.AreaID, project: project, events: byTask[v.TaskID]}
 	}
 	return out
 }

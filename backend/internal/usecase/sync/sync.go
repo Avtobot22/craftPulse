@@ -56,6 +56,7 @@ type Connect interface {
 	Fetch(ctx context.Context, orgID, connectionID entity.ID, in entity.FetchInput) (io.ReadCloser, error)
 	Manifest(ctx context.Context, orgID, connectionID entity.ID, in entity.ManifestInput) (entity.ManifestPage, error)
 	SetScopeArea(ctx context.Context, orgID, scopeID, areaID entity.ID) error
+	AreaSources(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaSource, error)
 }
 
 // Ingest is the intake of a page: cleaned before the transaction, written in it.

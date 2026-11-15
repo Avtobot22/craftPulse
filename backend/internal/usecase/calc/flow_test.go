@@ -416,7 +416,7 @@ func TestFlow_MissingMappingGivesNotEvaluated(t *testing.T) {
 		in.tasks = append(in.tasks, s.input())
 	}
 	r := compute(in)
-	assert.Len(t, r.Series, 11, "nine metrics, two of them with two estimators")
+	assert.Len(t, r.Series, 25, "seventeen metrics, six of them with two or four estimators")
 	for _, s := range r.Series {
 		require.Len(t, s.Points, 2, s.MetricID)
 		for _, p := range s.Points {

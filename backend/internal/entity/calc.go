@@ -17,14 +17,23 @@ const (
 
 // Reasons of a state or of a contribution.
 const (
-	ReasonMappingMissing     = "mapping_missing"
-	ReasonHistoryIncomplete  = "history_incomplete"
-	ReasonEventOrderConflict = "event_order_conflict"
-	ReasonNoStart            = "no_start"
-	ReasonRepeatCompletion   = "repeat_completion"
-	ReasonFullAge            = "full_age"
-	ReasonStarted            = "started"
-	ReasonCompleted          = "completed"
+	ReasonMappingMissing      = "mapping_missing"
+	ReasonHistoryIncomplete   = "history_incomplete"
+	ReasonEventOrderConflict  = "event_order_conflict"
+	ReasonNoStart             = "no_start"
+	ReasonRepeatCompletion    = "repeat_completion"
+	ReasonFullAge             = "full_age"
+	ReasonStarted             = "started"
+	ReasonCompleted           = "completed"
+	ReasonTypeUnknown         = "type_unknown"
+	ReasonTargetMissing       = "target_missing"
+	ReasonImmature            = "immature"
+	ReasonStatusUnmapped      = "status_unmapped"
+	ReasonCollectionPartial   = "collection_incomplete"
+	ReasonAsOfOnly            = "as_of_only"
+	ReasonWatermarkMissing    = "watermark_missing"
+	ReasonReconcileMissing    = "reconcile_missing"
+	ReasonReconcileUnfinished = "reconcile_unfinished"
 )
 
 // ContributionRole is what an object gives a point (TZ 12.5.8).
@@ -205,6 +214,7 @@ const (
 	InputKindMapping    = "mapping"
 	InputKindCalendar   = "calendar"
 	InputKindTarget     = "target"
+	InputKindWatermark  = "source_watermark"
 	InputKindStructure  = "structure"
 )
 
@@ -400,4 +410,16 @@ type TargetBaseline struct {
 type TargetBaselines struct {
 	RevisionID ID
 	Items      []TargetBaseline
+}
+
+// AreaCollection is the state of the collection of tasks of a source area by one of its connections, for the
+// completeness of a calculation (T39, T40, T42). Completeness is complete only after a reconciliation without
+// differences (BR-022).
+type AreaCollection struct {
+	AreaID        ID
+	ConnectionID  ID
+	Completeness  string
+	Watermark     *time.Time
+	LastSuccessAt *time.Time
+	Reconcile     *ReconcileRun
 }

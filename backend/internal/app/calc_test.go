@@ -2,6 +2,7 @@ package app
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ func TestCalc_DefinitionRowsFollowRegistry(t *testing.T) {
 	for _, def := range defs {
 		want = append(want, calc.Definition{ID: def.ID, Version: def.Version, Unit: def.Unit, CatalogRef: def.CatalogRef})
 	}
+	slices.SortFunc(want, func(a, b calc.Definition) int { return strings.Compare(a.ID, b.ID) })
 	assert.Equal(t, want, got, "the release migration adds the rows of the registry")
 	_, err = app.Exec(t.Context(), "UPDATE calc.definition SET unit = 'count' WHERE metric_id = 'T08'")
 	assert.Error(t, err, "the application does not change definitions")

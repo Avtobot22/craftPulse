@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -138,6 +139,15 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 	for i := range targets {
 		t := &targets[i]
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindTarget, ID: t.ID.String(), Version: strconv.Itoa(t.VersionNo)})
+	}
+	sources, err := u.teamCollection(ctx, org, team)
+	if err != nil {
+		return err
+	}
+	for _, c := range (&pointContext{collection: sources}).connections() {
+		inputs = append(inputs, entity.RevisionInput{
+			Kind: entity.InputKindWatermark, ID: c.ConnectionID.String(), Watermark: c.Watermark, Completeness: c.Completeness,
+		})
 	}
 	rev.InputHash = revisionHash(&series, &rev, inputs)
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
@@ -335,6 +345,27 @@ func revisionHash(s *entity.CalcSeries, r *entity.CalcRevision, inputs []entity.
 		d.text(in.Version)
 	}
 	return d.sum()
+}
+
+// teamCollection is the state of the collection of the areas of the projects of the team now.
+func (u *UseCase) teamCollection(ctx context.Context, org, team entity.ID) ([]entity.AreaCollection, error) {
+	if u.d.Collection == nil {
+		return nil, nil
+	}
+	links, err := u.d.Structure.TeamProjectAreas(ctx, org, team, u.d.Clock.Now())
+	if err != nil {
+		return nil, err
+	}
+	areas := make([]entity.ID, 0, len(links))
+	for _, l := range links {
+		if !slices.Contains(areas, l.To) {
+			areas = append(areas, l.To)
+		}
+	}
+	if len(areas) == 0 {
+		return nil, nil
+	}
+	return u.d.Collection.AreaCollection(ctx, org, areas)
 }
 
 // teamScopeOf is the canonical scope of the series of a team and its SHA-256.

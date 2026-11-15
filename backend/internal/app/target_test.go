@@ -96,7 +96,7 @@ func newTargetEnv(t *testing.T) *targetEnv {
 	require.NoError(t, err)
 	p.collectSized(t)
 	orgs, _ := newOrgAccess(p.app, p.clock, nil, nil)
-	c, err := newCalc(p.app, orgs, p.runner.norm, p.process, nil, p.clock, prometheus.NewRegistry())
+	c, err := newCalc(p.app, calcModules{structure: orgs, facts: p.runner.norm, settings: p.process}, p.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
 	series, err := c.TeamSeries(t.Context(), p.orgID, entity.ID(p.team), entity.StepWeek)
 	require.NoError(t, err)

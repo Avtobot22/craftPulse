@@ -36,6 +36,9 @@ const (
 	ReconcileFailed     = "failed"
 )
 
+// CollectionComplete is the completeness of a data kind reconciled without differences (BR-022).
+const CollectionComplete = "complete"
+
 // ReconcileRun compares the identities and versions of a manifest with the current versions of normalize.
 type ReconcileRun struct {
 	ID            ID

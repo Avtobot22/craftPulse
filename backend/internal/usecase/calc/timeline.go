@@ -161,9 +161,16 @@ type termination struct {
 	reason string
 }
 
+// statusEntry is a status the task entered and whether a rule gives it a meaning (T41).
+type statusEntry struct {
+	at     time.Time
+	mapped bool
+}
+
 // timeline is the reconstructed workflow of one task up to as_of (DR-007).
 type timeline struct {
 	slice  entity.TaskSlice
+	area   entity.ID
 	rules  *rules
 	asOf   time.Time
 	values map[string]string
@@ -178,11 +185,14 @@ type timeline struct {
 	terminations  []termination
 	// events are the changes replayed, for the hash of the input of a part.
 	events []entity.TaskEvent
+	// entries are the statuses entered in the known history, the one at its beginning first.
+	entries []statusEntry
 }
 
 type taskInput struct {
 	version     entity.TaskVersion
 	instance    entity.ID
+	area        entity.ID
 	project     entity.ID
 	events      []entity.TaskEvent
 	historyFrom *time.Time
@@ -195,7 +205,7 @@ func buildTimeline(in *taskInput, rs *rules, asOf time.Time) *timeline {
 	v := &in.version
 	tl := &timeline{
 		slice: entity.TaskSlice{TaskID: v.TaskID, ProjectID: in.project, Created: v.CreatedSrcAt.UTC(), HistoryFrom: utc(in.historyFrom)},
-		rules: rs, asOf: asOf, phase: phaseNotStarted,
+		rules: rs, asOf: asOf, phase: phaseNotStarted, area: in.area,
 	}
 	if label, ok := rs.types[v.TypeNativeID]; ok {
 		tl.slice.TaskType = &label
@@ -225,8 +235,10 @@ func buildTimeline(in *taskInput, rs *rules, asOf time.Time) *timeline {
 		start++
 	}
 	tl.begin(from)
+	tl.enter(from)
 	for i := start; i < len(events); {
 		at := events[i].EventTime
+		status := tl.values[_fieldStatus]
 		var ids []entity.ID
 		for ; i < len(events) && events[i].EventTime.Equal(at); i++ {
 			e := &events[i]
@@ -235,6 +247,9 @@ func buildTimeline(in *taskInput, rs *rules, asOf time.Time) *timeline {
 			}
 			tl.values[e.FieldNativeID] = deref(e.AfterValue)
 			ids = append(ids, e.ID)
+		}
+		if tl.values[_fieldStatus] != status {
+			tl.enter(at)
 		}
 		tl.note(unmapped)
 		tl.step(at, ids)
@@ -301,6 +316,15 @@ func rawFields(v *entity.TaskVersion) map[string]*string {
 		return map[string]*string{}
 	}
 	return raw
+}
+
+func (tl *timeline) enter(at time.Time) {
+	status := tl.values[_fieldStatus]
+	if status == "" {
+		return
+	}
+	_, mapped := tl.rules.status[status]
+	tl.entries = append(tl.entries, statusEntry{at: at, mapped: mapped})
 }
 
 func (tl *timeline) note(unmapped map[string]bool) {
