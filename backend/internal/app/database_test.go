@@ -45,8 +45,7 @@ func TestMigrate_AppliesOnce(t *testing.T) {
 }
 
 func TestRowLevelSecurity(t *testing.T) {
-	db := newDB(t)
-	db.migrate(t)
+	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
 	ctx := t.Context()
 	orgA, orgB := uuid.New(), uuid.New()
@@ -78,8 +77,7 @@ func TestRowLevelSecurity(t *testing.T) {
 }
 
 func TestPool_DoesNotCarryOrganization(t *testing.T) {
-	db := newDB(t)
-	db.migrate(t)
+	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app", pg.MaxConns(1))
 	ctx := t.Context()
 	org := uuid.New()
@@ -97,8 +95,7 @@ func TestPool_DoesNotCarryOrganization(t *testing.T) {
 }
 
 func TestBackupRole(t *testing.T) {
-	db := newDB(t)
-	db.migrate(t)
+	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
 	ctx := t.Context()
 	orgs := []uuid.UUID{uuid.New(), uuid.New()}
@@ -145,8 +142,7 @@ func TestReadiness(t *testing.T) {
 }
 
 func TestInOrgTx_RollsBackOnError(t *testing.T) {
-	db := newDB(t)
-	db.migrate(t)
+	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
 	ctx := t.Context()
 	org := uuid.New()

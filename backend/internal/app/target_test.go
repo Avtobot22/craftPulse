@@ -95,7 +95,8 @@ func newTargetEnv(t *testing.T) *targetEnv {
 	})
 	require.NoError(t, err)
 	p.collectSized(t)
-	orgs, _ := newOrgAccess(p.app, p.clock, nil, nil)
+	orgs, _, err := newOrgAccess(p.app, p.clock, nil, nil)
+	require.NoError(t, err)
 	c, err := newCalc(p.app, calcModules{structure: orgs, facts: p.runner.norm, settings: p.process}, p.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
 	series, err := c.TeamSeries(t.Context(), p.orgID, entity.ID(p.team), entity.StepWeek)
@@ -156,7 +157,7 @@ func (e *targetEnv) targets(t *testing.T, b *browser, group bool) (page versionP
 
 func (e *targetEnv) queued(t *testing.T) int {
 	t.Helper()
-	return count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = '"+entity.KindCalcSlice+"' AND state = 'available'")
+	return count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = '"+entity.KindCalcRecount+"' AND state = 'available'")
 }
 
 // targetInputs are the versions of targets a revision was computed with, as ID@number.
@@ -180,6 +181,7 @@ func manualTarget(seconds int64) targetDraftBody {
 // TestTarget_V16BaselineAndVersions reads the historical p85 of the groups, confirms v1 and v2 of Story S by
 // V-07, recounts the series after each of them and keeps the basis of a p85 after its revision is deleted.
 func TestTarget_V16BaselineAndVersions(t *testing.T) {
+	t.Parallel()
 	e := newTargetEnv(t)
 	assert.Equal(t, http.StatusNotFound, e.baselines(t).Code, "no revision of the series yet")
 	r0 := e.build(t)
@@ -208,7 +210,7 @@ func TestTarget_V16BaselineAndVersions(t *testing.T) {
 	require.Equal(t, http.StatusCreated, v1.Code, v1.Body.String())
 	assert.Equal(t, `"1"`, v1.Header().Get("ETag"))
 	assert.Equal(t, before+1, e.queued(t), "the confirmation queues the recount of the series with it")
-	e.runJobs(t, 0)
+	e.recount(t)
 	r1 := e.current(t)
 	require.Len(t, e.targetInputs(t, r1.ID), 1)
 	assert.Empty(t, e.targetInputs(t, r0.ID), "the earlier revision keeps the settings it was computed with")
@@ -239,7 +241,7 @@ func TestTarget_V16BaselineAndVersions(t *testing.T) {
 	page, _ = e.targets(t, e.admin, false)
 	require.Len(t, page.Data, 2)
 
-	e.runJobs(t, 0)
+	e.recount(t)
 	r2 := e.current(t)
 	require.NotEqual(t, r1.ID, r2.ID)
 	assert.NotEqual(t, e.targetInputs(t, r1.ID), e.targetInputs(t, r2.ID), "v2 has its own revision")
@@ -269,6 +271,7 @@ func TestTarget_V16BaselineAndVersions(t *testing.T) {
 }
 
 func TestTarget_DraftErrors(t *testing.T) {
+	t.Parallel()
 	e := newTargetEnv(t)
 	e.build(t)
 	unknown := uuid.New()

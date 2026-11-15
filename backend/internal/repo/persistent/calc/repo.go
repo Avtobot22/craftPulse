@@ -56,6 +56,56 @@ func (r *Repo) Series(ctx context.Context, orgID, id entity.ID) (entity.CalcSeri
 	return series(&row), nil
 }
 
+func (r *Repo) OrgSeries(ctx context.Context, orgID entity.ID, metricSet string) ([]entity.CalcSeries, error) {
+	rows, err := r.q(ctx).OrgSeries(ctx, OrgSeriesParams{OrganizationID: uuid.UUID(orgID), MetricSet: metricSet})
+	if err != nil {
+		return nil, fmt.Errorf("calc: org series: %w", err)
+	}
+	out := make([]entity.CalcSeries, len(rows))
+	for i := range rows {
+		out[i] = series(&rows[i])
+	}
+	return out, nil
+}
+
+func (r *Repo) LastRevision(ctx context.Context, orgID, seriesID entity.ID) (entity.CalcRevision, bool, error) {
+	id, err := r.q(ctx).LastRevisionID(ctx, LastRevisionIDParams{OrganizationID: uuid.UUID(orgID), SeriesID: uuid.UUID(seriesID)})
+	return r.found(ctx, orgID, id, err, "last revision")
+}
+
+func (r *Repo) RevisionAfter(ctx context.Context, orgID, seriesID entity.ID, afterNo int) (entity.CalcRevision, bool, error) {
+	if afterNo > math.MaxInt32 {
+		return entity.CalcRevision{}, false, errOutOfRange
+	}
+	id, err := r.q(ctx).RevisionIDAfter(ctx, RevisionIDAfterParams{
+		OrganizationID: uuid.UUID(orgID), SeriesID: uuid.UUID(seriesID), AfterNo: int32(afterNo), //nolint:gosec // checked above
+	})
+	return r.found(ctx, orgID, id, err, "revision after")
+}
+
+// found reads the revision a lookup returned; a lookup without a row is false.
+func (r *Repo) found(ctx context.Context, orgID entity.ID, id uuid.UUID, err error, op string) (entity.CalcRevision, bool, error) {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.CalcRevision{}, false, nil
+	}
+	if err != nil {
+		return entity.CalcRevision{}, false, fmt.Errorf("calc: %s: %w", op, err)
+	}
+	rev, err := r.Revision(ctx, orgID, entity.ID(id))
+	return rev, err == nil, err
+}
+
+func (r *Repo) PartByHash(ctx context.Context, orgID entity.ID, inputHash []byte) (entity.ID, bool, error) {
+	id, err := r.q(ctx).PartByHash(ctx, PartByHashParams{OrganizationID: uuid.UUID(orgID), InputHash: inputHash})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.ID{}, false, nil
+	}
+	if err != nil {
+		return entity.ID{}, false, fmt.Errorf("calc: part by hash: %w", err)
+	}
+	return entity.ID(id), true, nil
+}
+
 func (r *Repo) FailStaleRevisions(ctx context.Context, orgID, seriesID entity.ID, before time.Time) error {
 	err := r.q(ctx).FailStaleRevisions(ctx, FailStaleRevisionsParams{OrganizationID: uuid.UUID(orgID), SeriesID: uuid.UUID(seriesID), Before: before})
 	if err != nil {
@@ -77,6 +127,16 @@ func (r *Repo) CreateRevision(ctx context.Context, orgID entity.ID, rev entity.C
 		return false, fmt.Errorf("calc: create revision: %w", err)
 	}
 	return true, nil
+}
+
+func (r *Repo) SetRevisionPrevious(ctx context.Context, orgID, revisionID entity.ID, prev *entity.ID) error {
+	err := r.q(ctx).SetRevisionPrevious(ctx, SetRevisionPreviousParams{
+		OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(revisionID), PreviousRevisionID: nullID(prev),
+	})
+	if err != nil {
+		return fmt.Errorf("calc: set previous revision: %w", err)
+	}
+	return nil
 }
 
 func (r *Repo) InsertRevisionInputs(ctx context.Context, orgID, revisionID entity.ID, inputs []entity.RevisionInput) error {

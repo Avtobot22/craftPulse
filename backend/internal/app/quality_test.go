@@ -59,8 +59,8 @@ func (e *targetEnv) watermarks(t *testing.T, revision entity.ID) []entity.Revisi
 }
 
 func TestCalc_TargetDefinitionKeepsFollowUp(t *testing.T) {
-	db := newDB(t)
-	db.migrate(t)
+	t.Parallel()
+	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
 	var raw []byte
 	require.NoError(t, app.QueryRow(t.Context(), "SELECT parameters FROM calc.definition WHERE metric_id = 'T23' AND definition_version = 1").Scan(&raw))
@@ -77,8 +77,10 @@ func TestCalc_TargetDefinitionKeepsFollowUp(t *testing.T) {
 // TestQuality_TwoTargetVersionsAndStoppedCollection builds the series of the team with v1 and then v2 of the
 // target of Story S, and again after its collection stopped on a failed page.
 func TestQuality_TwoTargetVersionsAndStoppedCollection(t *testing.T) {
+	t.Parallel()
 	e := newTargetEnv(t)
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	c, err := newCalc(e.app, calcModules{structure: orgs, facts: e.runner.norm, settings: e.process, collection: e.runner.sync}, e.clock,
 		prometheus.NewRegistry())
 	require.NoError(t, err)
@@ -90,7 +92,7 @@ func TestQuality_TwoTargetVersionsAndStoppedCollection(t *testing.T) {
 
 	v1 := e.confirm(t, e.admin, _targetVersions, `"0"`, uuid.New(), manualTarget(2*_day))
 	require.Equal(t, http.StatusCreated, v1.Code, v1.Body.String())
-	e.runJobs(t, 0)
+	e.recount(t)
 	r1 := e.current(t)
 	violated := e.pointOf(t, r1.ID, "T10", "", _weekOfTG1)
 	assert.Equal(t, entity.StateAssessed, violated.State)
@@ -100,7 +102,7 @@ func TestQuality_TwoTargetVersionsAndStoppedCollection(t *testing.T) {
 
 	v2 := e.confirm(t, e.admin, _targetVersions, `"1"`, uuid.New(), manualTarget(4*_day))
 	require.Equal(t, http.StatusCreated, v2.Code, v2.Body.String())
-	e.runJobs(t, 0)
+	e.recount(t)
 	r2 := e.current(t)
 	require.NotEqual(t, r1.ID, r2.ID)
 	assert.Equal(t, 1.0, *e.pointOf(t, r2.ID, "T10", "", _weekOfTG1).Value, "the new revision uses v2 = 4 days")

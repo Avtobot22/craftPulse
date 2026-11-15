@@ -9,7 +9,8 @@ import (
 const _dataTasks = "tasks"
 
 // AreaCollection is the state of the collection of tasks of the active connections that collect the areas, with
-// their last reconciliation, for the completeness of calc (T39, T40, T42). An area only imported has none.
+// their last reconciliation and phase, for the completeness of calc (T39, T40, T42) and the initial load of
+// history. An area only imported has none.
 func (u *UseCase) AreaCollection(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaCollection, error) {
 	sources, err := u.d.Connect.AreaSources(ctx, orgID, areaIDs)
 	if err != nil || len(sources) == 0 {
@@ -28,7 +29,7 @@ func (u *UseCase) AreaCollection(ctx context.Context, orgID entity.ID, areaIDs [
 				return err
 			}
 			if ok {
-				item.Completeness, item.Watermark, item.LastSuccessAt = st.Completeness, st.Watermark, st.LastSuccessAt
+				item.Completeness, item.Watermark, item.LastSuccessAt, item.Phase = st.Completeness, st.Watermark, st.LastSuccessAt, st.Phase
 			}
 			last, found, err := u.d.Repo.LastReconcile(ctx, orgID, src.ConnectionID, _dataTasks)
 			if err != nil {

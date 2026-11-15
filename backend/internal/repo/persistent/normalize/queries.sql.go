@@ -13,6 +13,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const areaChangeSeq = `-- name: AreaChangeSeq :one
+SELECT COALESCE(max(last_change_seq), 0)::bigint FROM normalize.area
+WHERE organization_id = $1 AND area_id = ANY ($2::uuid[])
+`
+
+type AreaChangeSeqParams struct {
+	OrganizationID uuid.UUID
+	AreaIds        []uuid.UUID
+}
+
+func (q *Queries) AreaChangeSeq(ctx context.Context, arg AreaChangeSeqParams) (int64, error) {
+	row := q.db.QueryRow(ctx, areaChangeSeq, arg.OrganizationID, arg.AreaIds)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const areaChanges = `-- name: AreaChanges :many
 SELECT area_id, known_seq, earliest_event_time, fact_kinds FROM normalize.area_change
 WHERE organization_id = $1 AND area_id = $2 AND known_seq > $3

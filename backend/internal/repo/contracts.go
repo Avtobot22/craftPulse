@@ -270,6 +270,8 @@ type NormalizeRepo interface {
 	PlaceObjects(ctx context.Context, orgID entity.ID, placements []entity.ObjectPlacement) error
 	// RecordAreaChanges writes the changes of areas at seq and moves their last change to it.
 	RecordAreaChanges(ctx context.Context, orgID entity.ID, seq int64, changes []entity.AreaChange, at time.Time) error
+	// AreaChangeSeq is the last knowledge number that changed the facts of any of the areas, 0 without one.
+	AreaChangeSeq(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) (int64, error)
 	AreaChanges(ctx context.Context, orgID, areaID entity.ID, afterSeq int64) ([]entity.AreaChange, error)
 	AreaOf(ctx context.Context, orgID, instanceID entity.ID, kind entity.ObjectKind, nativeID string) (entity.ID, error)
 
@@ -330,9 +332,19 @@ type CalcRepo interface {
 	// EnsureSeries creates the series of the scope, set and step unless it exists, and returns it.
 	EnsureSeries(ctx context.Context, orgID entity.ID, s entity.CalcSeries) (entity.CalcSeries, error)
 	Series(ctx context.Context, orgID, id entity.ID) (entity.CalcSeries, error)
+	// OrgSeries are the series of a set of metrics of the organization.
+	OrgSeries(ctx context.Context, orgID entity.ID, metricSet string) ([]entity.CalcSeries, error)
+	// LastRevision is the revision of the series with the highest number; false before the first one.
+	LastRevision(ctx context.Context, orgID, seriesID entity.ID) (entity.CalcRevision, bool, error)
+	// RevisionAfter is the first revision of the series numbered after afterNo; false when there is none yet.
+	RevisionAfter(ctx context.Context, orgID, seriesID entity.ID, afterNo int) (entity.CalcRevision, bool, error)
+	// PartByHash finds a stored part by the hash of its input.
+	PartByHash(ctx context.Context, orgID entity.ID, inputHash []byte) (entity.ID, bool, error)
 	FailStaleRevisions(ctx context.Context, orgID, seriesID entity.ID, before time.Time) error
 	// CreateRevision writes a building revision with the next number; false when the series already builds one.
 	CreateRevision(ctx context.Context, orgID entity.ID, r entity.CalcRevision) (bool, error)
+	// SetRevisionPrevious names the revision a building one replaces.
+	SetRevisionPrevious(ctx context.Context, orgID, revisionID entity.ID, prev *entity.ID) error
 	InsertRevisionInputs(ctx context.Context, orgID, revisionID entity.ID, inputs []entity.RevisionInput) error
 	Revision(ctx context.Context, orgID, id entity.ID) (entity.CalcRevision, error)
 	// TouchRevision, FailRevision and PublishRevision change a building revision only; false when it is not one.

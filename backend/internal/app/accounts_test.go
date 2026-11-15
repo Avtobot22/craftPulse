@@ -44,7 +44,8 @@ type assignmentResult struct {
 // accountsFixture writes the accounts of a Jira instance and of a universal import as normalization does.
 func (e *connectionsEnv) accountsFixture(t *testing.T) (jira, imported entity.ID, ids map[string]uuid.UUID) {
 	t.Helper()
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	caller := newConnectForTest(t, e)
 	jiraInst, err := caller.EnsureInstance(t.Context(), e.orgID, entity.ProviderJiraCloud, _jiraInstance)
 	require.NoError(t, err)
@@ -114,6 +115,7 @@ func decision(account uuid.UUID, kind string, person, base *uuid.UUID, create bo
 }
 
 func TestAccounts_ProposalsAndConfirmedLinks(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 	jira, _, ids := e.accountsFixture(t)
 
@@ -168,7 +170,8 @@ func TestAccounts_ProposalsAndConfirmedLinks(t *testing.T) {
 	code, toBot := e.assign(t, uuid.New(), decision(ids["imp-1"], "bot", nil, &humanLink, false))
 	require.Equal(t, http.StatusOK, code)
 	assert.Equal(t, "saved", toBot.Items[0].Outcome)
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	old, found, err := orgs.AssignmentAt(t.Context(), e.orgID, entity.ID(ids["imp-1"]), humanSeq)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -217,6 +220,7 @@ func TestAccounts_ProposalsAndConfirmedLinks(t *testing.T) {
 }
 
 func TestAccounts_FiltersAndPages(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 	_, imported, ids := e.accountsFixture(t)
 	code, _ := e.assign(t, uuid.New(), decision(ids["JIRAUSER3"], "bot", nil, nil, false))

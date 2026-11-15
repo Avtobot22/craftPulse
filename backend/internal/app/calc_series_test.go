@@ -49,7 +49,8 @@ func newSeriesEnv(t *testing.T) *seriesEnv {
 		},
 	})
 	require.NoError(t, err)
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	e.calc, err = newCalc(e.app, calcModules{structure: orgs, facts: e.runner.norm, settings: e.process}, e.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
 	e.series, err = e.calc.TeamSeries(t.Context(), e.orgID, entity.ID(e.team), entity.StepWeek)
@@ -65,6 +66,10 @@ type calcJob struct {
 	args entity.CalcSliceJob
 }
 
+// _waitingJob is the oldest job of a kind that may run at the time of the test clock.
+const _waitingJob = "SELECT id, args FROM river_job WHERE kind = $1 AND (state = 'available' OR state = 'scheduled' AND scheduled_at <= $2) " +
+	"ORDER BY id LIMIT 1"
+
 // nextJob is the oldest waiting job of calc.slice.
 func (e *seriesEnv) nextJob(t *testing.T) (calcJob, bool) {
 	t.Helper()
@@ -72,8 +77,7 @@ func (e *seriesEnv) nextJob(t *testing.T) (calcJob, bool) {
 		j   calcJob
 		raw []byte
 	)
-	err := e.owner.QueryRow(t.Context(), "SELECT id, args FROM river_job WHERE kind = $1 AND state = 'available' ORDER BY id LIMIT 1",
-		entity.KindCalcSlice).Scan(&j.id, &raw)
+	err := e.owner.QueryRow(t.Context(), _waitingJob, entity.KindCalcSlice, e.clock.Now()).Scan(&j.id, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return j, false
 	}
@@ -82,11 +86,13 @@ func (e *seriesEnv) nextJob(t *testing.T) (calcJob, bool) {
 	return j, true
 }
 
-// runJobs runs up to n waiting jobs of calc.slice, all of them when n is 0, in the order they were queued.
+// runJobs runs up to n waiting jobs of calc.slice, all of them when n is 0, in the order they were queued; the
+// jobs of calc.recount queued before them run first and are not counted.
 func (e *seriesEnv) runJobs(t *testing.T, n int) int {
 	t.Helper()
 	ran := 0
 	for n == 0 || ran < n {
+		e.runRecounts(t)
 		j, ok := e.nextJob(t)
 		if !ok {
 			break
@@ -95,6 +101,53 @@ func (e *seriesEnv) runJobs(t *testing.T, n int) int {
 		ran++
 	}
 	return ran
+}
+
+// recount runs the chains the recounts queued with their delay, moving the test clock to each, until none is left.
+func (e *seriesEnv) recount(t *testing.T) {
+	t.Helper()
+	for {
+		e.runJobs(t, 0)
+		if !e.wake(t) {
+			return
+		}
+	}
+}
+
+// wake moves the test clock to the earliest scheduled job of calc; false when none is scheduled.
+func (e *seriesEnv) wake(t *testing.T) bool {
+	t.Helper()
+	var at *time.Time
+	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT min(scheduled_at) FROM river_job WHERE kind IN ($1, $2) AND state = 'scheduled'",
+		entity.KindCalcSlice, entity.KindCalcRecount).Scan(&at))
+	if at == nil {
+		return false
+	}
+	if d := at.Sub(e.clock.Now()); d > 0 {
+		e.clock.Advance(d)
+	}
+	return true
+}
+
+// runRecounts runs the waiting jobs of calc.recount.
+func (e *seriesEnv) runRecounts(t *testing.T) int {
+	t.Helper()
+	ran := 0
+	for {
+		var (
+			id  int64
+			raw []byte
+			job entity.CalcRecountJob
+		)
+		err := e.owner.QueryRow(t.Context(), _waitingJob, entity.KindCalcRecount, e.clock.Now()).Scan(&id, &raw)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ran
+		}
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal(raw, &job))
+		require.NoError(t, e.calc.RunRecount(t.Context(), job, completeJob(id)))
+		ran++
+	}
 }
 
 func (e *seriesEnv) refresh(t *testing.T, asOf time.Time) {
@@ -172,6 +225,7 @@ func (e *seriesEnv) formula(t *testing.T, r entity.CalcRevision) entity.CalcResu
 }
 
 func TestCalcSeries_BuildsAndPublishesRevisionInParts(t *testing.T) {
+	t.Parallel()
 	e := newSeriesEnv(t)
 	first := e.build(t)
 	assert.Equal(t, entity.RevisionPublished, first.Status)
@@ -226,6 +280,7 @@ func TestCalcSeries_BuildsAndPublishesRevisionInParts(t *testing.T) {
 }
 
 func TestCalcSeries_LateEventRecountsItsPartOnly(t *testing.T) {
+	t.Parallel()
 	e := newSeriesEnv(t)
 	first := e.build(t)
 	before := e.parts(t, first.ID)
@@ -247,15 +302,19 @@ func TestCalcSeries_LateEventRecountsItsPartOnly(t *testing.T) {
 	building := e.building(t)
 	require.Len(t, building, 1)
 	e.flag(t, "20003", time.Date(2025, 12, 2, 10, 0, 0, 0, time.UTC), time.Date(2025, 12, 3, 10, 0, 0, 0, time.UTC))
-	e.runJobs(t, 0)
-	third := e.current(t)
-	assert.Equal(t, building[0], uuid.UUID(third.ID))
+	e.recount(t)
+	third, err := e.calc.Revision(t.Context(), e.orgID, e.series.ID, (*entity.ID)(&building[0]))
+	require.NoError(t, err)
+	assert.Contains(t, []entity.RevisionStatus{entity.RevisionPublished, entity.RevisionSuperseded}, third.Status)
 	assert.Equal(t, after, e.parts(t, third.ID), "a fact that came during the chain is not read by its parts")
 	assert.Less(t, third.KnowledgeSeq, e.lastSeq(t))
-	assert.NotEqual(t, after[2], e.parts(t, e.build(t).ID)[2], "the next revision reads it")
+	latest := e.current(t)
+	require.Greater(t, latest.RevisionNo, third.RevisionNo, "the fact that came during the chain queues it again")
+	assert.NotEqual(t, after[2], e.parts(t, latest.ID)[2], "the next revision reads it")
 }
 
 func TestCalcSeries_ChainSurvivesCrashTakeoverAndRace(t *testing.T) {
+	t.Parallel()
 	e := newSeriesEnv(t)
 	e.refresh(t, _seriesAsOf)
 	e.runJobs(t, 1)
@@ -306,6 +365,7 @@ func TestCalcSeries_ChainSurvivesCrashTakeoverAndRace(t *testing.T) {
 }
 
 func TestCalcSeries_DeletedBasisAndCollection(t *testing.T) {
+	t.Parallel()
 	e := newSeriesEnv(t)
 	first := e.build(t)
 	stored := e.points(t, first.ID)

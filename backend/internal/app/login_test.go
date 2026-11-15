@@ -59,8 +59,7 @@ type loginEnv struct {
 
 func newLoginEnv(t *testing.T) *loginEnv {
 	t.Helper()
-	db := newDB(t)
-	db.migrate(t)
+	db := newMigratedDB(t)
 	keyring, err := crypto.NewKeyring(crypto.MasterKey{Version: 1, Key: bytes.Repeat([]byte{9}, 32)})
 	require.NoError(t, err)
 	e := &loginEnv{
@@ -102,7 +101,8 @@ func (e *loginEnv) modules(t *testing.T) apiModules {
 	require.NoError(t, err)
 	conn, err := newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	orgs, rights := newOrgAccess(e.app, e.clock, conn, nil)
+	orgs, rights, err := newOrgAccess(e.app, e.clock, conn, nil)
+	require.NoError(t, err)
 	return apiModules{orgs: orgs, access: rights, connections: conn}
 }
 
@@ -303,6 +303,7 @@ func (e *loginEnv) metric(t *testing.T, line string) bool {
 }
 
 func TestLogin_FirstAdministrator(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b := newBrowser()
 
@@ -323,7 +324,7 @@ func TestLogin_FirstAdministrator(t *testing.T) {
 	assert.Equal(t, "Same Name", cu.User.DisplayName)
 	require.Len(t, cu.Roles, 1)
 	assert.Equal(t, "administrator", cu.Roles[0].Role)
-	assert.Equal(t, []string{"accounts.manage", "audit.read", "connections.manage", "installation.read", "org.manage", "org.read", "receipts.read", "session.manage", "session.read", "sync.read", "users.manage"}, cu.Actions)
+	assert.Equal(t, []string{"accounts.manage", "audit.read", "connections.manage", "installation.read", "org.manage", "org.read", "receipts.read", "report.read", "session.manage", "session.read", "sync.read", "users.manage"}, cu.Actions)
 	assert.Equal(t, _now.Add(12*time.Hour), cu.Session.ExpiresAt)
 	assert.Equal(t, _now.Add(time.Hour), cu.Session.IdleExpiresAt)
 
@@ -351,6 +352,7 @@ func TestLogin_FirstAdministrator(t *testing.T) {
 }
 
 func TestLogin_OnlyDeclaredAccountBecomesAdministrator(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		giveSubject string
@@ -392,6 +394,7 @@ func TestLogin_OnlyDeclaredAccountBecomesAdministrator(t *testing.T) {
 }
 
 func TestLogin_RejectsForgedResponse(t *testing.T) {
+	t.Parallel()
 	other := newTestIDP(t, nil)
 	tests := []struct {
 		name      string
@@ -411,6 +414,7 @@ func TestLogin_RejectsForgedResponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			e := newLoginEnv(t)
 			b := newBrowser()
 			var edit []func(*grant)
@@ -437,6 +441,7 @@ func TestLogin_RejectsForgedResponse(t *testing.T) {
 }
 
 func TestLogin_ReplayedResponse(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b := newBrowser()
 	location := e.startLogin(t, b, "/")
@@ -459,6 +464,7 @@ func TestLogin_ReplayedResponse(t *testing.T) {
 }
 
 func TestLogin_UnknownOrganizationLooksLikeUnavailableProvider(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 
 	rec := e.do(t, newBrowser(), http.MethodGet, "/o/nobody/login", nil)
@@ -468,6 +474,7 @@ func TestLogin_UnknownOrganizationLooksLikeUnavailableProvider(t *testing.T) {
 }
 
 func TestLogin_ReturnPathStaysOnSite(t *testing.T) {
+	t.Parallel()
 	for _, give := range []string{"https://evil.test/x", "//evil.test", "/\\evil.test", "/%2F/evil.test", "teams"} {
 		t.Run(give, func(t *testing.T) {
 			e := newLoginEnv(t)
@@ -481,6 +488,7 @@ func TestLogin_ReturnPathStaysOnSite(t *testing.T) {
 }
 
 func TestSession_Expires(t *testing.T) {
+	t.Parallel()
 	t.Run("one hour without activity", func(t *testing.T) {
 		e := newLoginEnv(t)
 		b := newBrowser()
@@ -519,6 +527,7 @@ func TestSession_Expires(t *testing.T) {
 }
 
 func TestSession_EleventhClosesOldest(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	first := newBrowser()
 	require.Equal(t, http.StatusFound, e.login(t, first, _adminSub).Code)
@@ -538,6 +547,7 @@ func TestSession_EleventhClosesOldest(t *testing.T) {
 }
 
 func TestSession_Logout(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b, other := newBrowser(), newBrowser()
 	require.Equal(t, http.StatusFound, e.login(t, b, _adminSub).Code)
@@ -564,6 +574,7 @@ func TestSession_Logout(t *testing.T) {
 }
 
 func TestSession_ForeignOriginChangesNothing(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	b := newBrowser()
 	require.Equal(t, http.StatusFound, e.login(t, b, _adminSub).Code)
@@ -582,6 +593,7 @@ func TestSession_ForeignOriginChangesNothing(t *testing.T) {
 }
 
 func TestAccess_RolesApplyToNextRequest(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	require.Equal(t, http.StatusFound, e.login(t, newBrowser(), _adminSub).Code)
 	b := newBrowser()
@@ -616,8 +628,7 @@ func TestAccess_RolesApplyToNextRequest(t *testing.T) {
 	assert.Contains(t, listed.Body.String(), teams[0].String())
 	assert.NotContains(t, listed.Body.String(), teams[1].String())
 	visible := e.do(t, b, http.MethodGet, "/api/v1/teams/"+teams[0].String()+"/report", nil)
-	assert.Equal(t, http.StatusForbidden, visible.Code, "the team is visible, report.read is not granted yet")
-	assert.Equal(t, "forbidden", problemCode(t, visible))
+	assert.Equal(t, http.StatusBadRequest, visible.Code, "the team is visible and report.read is granted; the request lacks its period")
 	assert.Equal(t, http.StatusNotFound, e.do(t, b, http.MethodGet, "/api/v1/teams/"+teams[1].String()+"/report", nil).Code)
 
 	_, err = e.owner.Exec(t.Context(), "UPDATE org.role_assignment SET revoked_at = now(), revoked_by = user_id WHERE role = 'developer'")
@@ -625,11 +636,12 @@ func TestAccess_RolesApplyToNextRequest(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, e.do(t, b, http.MethodGet, "/api/v1/teams", nil).Code, "a revoked role stops on the next request")
 
 	denials := count(t, t.Context(), e.owner, "SELECT count(*) FROM audit.event WHERE outcome = 'denied' AND operation <> 'session.login'")
-	assert.Equal(t, 6, denials)
+	assert.Equal(t, 5, denials)
 	assert.True(t, e.metric(t, fmt.Sprintf(`craftpulse_api_access_denied_total{reason="outside_scope",subject=%q} 2`, cu.User.ID)))
 }
 
 func TestLogin_BlockedUser(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	require.Equal(t, http.StatusFound, e.login(t, newBrowser(), _adminSub).Code)
 	_, err := e.owner.Exec(t.Context(), "UPDATE org.app_user SET status = 'blocked', blocked_at = now()")

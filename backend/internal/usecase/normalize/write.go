@@ -19,30 +19,39 @@ const (
 // write applies a part under the lock of the knowledge counter: it reads the current versions of the
 // objects the part touches, decides which versions become current and writes them with seq. resolved is
 // the record a conflict resolution accepted, the only one that may replace a version of the same revision.
-func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input, resolved int) error {
+// It returns the areas whose facts changed.
+func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input, resolved int) ([]entity.ID, error) {
 	now := u.d.Clock.Now()
 	accounts, err := u.d.Accounts.EnsureSourceAccounts(ctx, org, in.instance, sortedAccounts(in.accounts))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	objects, err := u.d.Repo.EnsureObjects(ctx, org, in.keys(), entity.IdentityStable, seq)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := u.placeAreas(ctx, org, in, objects); err != nil {
-		return err
+		return nil, err
 	}
 	w := &writer{u: u, org: org, seq: seq, now: now, resolved: resolved, objects: objects, accounts: accounts, changes: changes{}}
 	if err := w.tasks(ctx, in.tasks); err != nil {
-		return err
+		return nil, err
 	}
 	if err := w.events(ctx, in.events, objects[in.area].ID); err != nil {
-		return err
+		return nil, err
 	}
 	if err := w.entries(ctx, in.entries, objects[in.area].ID); err != nil {
-		return err
+		return nil, err
 	}
-	return u.d.Repo.RecordAreaChanges(ctx, org, seq, w.changes.list(), now)
+	list := w.changes.list()
+	if err := u.d.Repo.RecordAreaChanges(ctx, org, seq, list, now); err != nil {
+		return nil, err
+	}
+	areas := make([]entity.ID, len(list))
+	for i := range list {
+		areas[i] = list[i].AreaID
+	}
+	return areas, nil
 }
 
 // keys are the identities a part names: areas, tasks, their parents and the tasks of events.

@@ -95,7 +95,10 @@ func (u *UseCase) CreateMappingVersion(ctx context.Context, s entity.Subject, te
 			return err
 		}
 		created = true
-		return u.record(ctx, s, _operationConfirmMapping, "mapping_version", v.ID, teamID, latest, v.Confirmation)
+		if err := u.record(ctx, s, _operationConfirmMapping, "mapping_version", v.ID, teamID, latest, v.Confirmation); err != nil {
+			return err
+		}
+		return u.recount(ctx, org, teamID)
 	})
 	if err != nil {
 		return entity.MappingVersion{}, false, err

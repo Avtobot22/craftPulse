@@ -70,6 +70,7 @@ func (e *loginEnv) bearer(t *testing.T, value, target string) *httptest.Response
 }
 
 func TestUploadTokens_LifecycleAndPagination(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	admin := e.admin(t, "demo")
 	project := e.tokenProject(t, e.orgID)
@@ -140,6 +141,7 @@ func TestUploadTokens_LifecycleAndPagination(t *testing.T) {
 }
 
 func TestUploadTokens_ScopedRolesAndIsolation(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	admin, foreignAdmin := e.admin(t, "demo"), e.admin(t, "other")
 	own, hidden, foreign := e.tokenProject(t, e.orgID), e.tokenProject(t, e.orgID), e.tokenProject(t, e.otherID)
@@ -168,6 +170,7 @@ func TestUploadTokens_ScopedRolesAndIsolation(t *testing.T) {
 }
 
 func TestUploadTokens_QueryLeakRevokesBeforeAuthentication(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	admin := e.admin(t, "demo")
 	project := e.tokenProject(t, e.orgID)
@@ -203,6 +206,7 @@ func TestUploadTokens_QueryLeakRevokesBeforeAuthentication(t *testing.T) {
 }
 
 func TestUploadTokens_ConcurrentIssueRespectsTwoSlots(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	admin := e.admin(t, "demo")
 	project := e.tokenProject(t, e.orgID)

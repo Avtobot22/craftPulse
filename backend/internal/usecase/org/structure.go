@@ -49,6 +49,18 @@ func (u *UseCase) Structure(ctx context.Context, s entity.Subject) (entity.Struc
 	return out, err
 }
 
+// StructureVersion is the version of the structure in force, by which a job of calc tells a structure changed
+// during its chain.
+func (u *UseCase) StructureVersion(ctx context.Context, orgID entity.ID) (int64, error) {
+	var v int64
+	err := u.tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		v, err = u.orgs.StructureVersion(ctx, orgID)
+		return err
+	})
+	return v, err
+}
+
 // ReplaceStructure replaces the whole structure confirmed by an administrator who saw baseVersion
 // (FR-008, FR-012). The change, the new version and its audit record commit together; a body equal
 // to the current structure changes nothing.
@@ -100,6 +112,11 @@ func (u *UseCase) ReplaceStructure(ctx context.Context, s entity.Subject, baseVe
 			CorrelationID:  entity.ID(logger.CorrelationID(ctx)),
 		})
 		if err != nil {
+			return err
+		}
+		// The series of calc take the projects of teams by the current structure (TZ 10.3, rule 6).
+		recount := entity.CalcRecountJob{OrganizationID: orgID, CorrelationID: entity.ID(logger.CorrelationID(ctx))}
+		if err := u.queue.Enqueue(ctx, recount, entity.QueueBulk); err != nil {
 			return err
 		}
 		out, err = u.read(ctx, orgID, version+1, now)

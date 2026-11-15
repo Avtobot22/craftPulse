@@ -13,24 +13,27 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 )
 
-// Structure is the org module: the source areas of the projects of a team.
+// Structure is the org module: the source areas of the projects of a team and the version of the structure.
 type Structure interface {
 	TeamProjectAreas(ctx context.Context, orgID, teamID entity.ID, at time.Time) ([]entity.Link, error)
+	StructureVersion(ctx context.Context, orgID entity.ID) (int64, error)
 }
 
 // Facts is the normalize module: the tasks and events of an area at a knowledge number, all of them for a
-// series and the ones a scope allows for a reader.
+// series and the ones a scope allows for a reader, and the knowledge number of the last change of areas.
 type Facts interface {
 	AreaFacts(ctx context.Context, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error)
+	AreaChangeSeq(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) (int64, error)
 	VisibleAreaFacts(ctx context.Context, scope entity.Scope, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error)
 	RestrictedObjects(ctx context.Context, scope entity.Scope, orgID entity.ID, areaIDs []entity.ID) ([]entity.RestrictedObject, error)
 }
 
 // Settings is the process module: the mapping and the targets of a team in force at a knowledge number, the
-// checks of their drafts and the confirmation of a target in the transaction of the caller. Errors of the fields
-// of a draft are *entity.ValidationError.
+// knowledge number of its last version of settings, the checks of their drafts and the confirmation of a target
+// in the transaction of the caller. Errors of the fields of a draft are *entity.ValidationError.
 type Settings interface {
 	MappingAt(ctx context.Context, orgID, teamID entity.ID, seq int64) (entity.MappingVersion, bool, error)
+	LastSettingsSeq(ctx context.Context, orgID, teamID entity.ID) (int64, error)
 	CheckDraft(ctx context.Context, orgID, teamID entity.ID, d entity.MappingDraft) error
 	TargetVersionsAt(ctx context.Context, orgID, teamID entity.ID, seq int64) ([]entity.TargetVersion, error)
 	CheckTargetDraft(d entity.TargetDraft) error
@@ -38,8 +41,8 @@ type Settings interface {
 		basis *entity.TargetBasis) (entity.TargetVersion, entity.SaveResult, error)
 }
 
-// Collection is the sync module: the state of the collection of the source areas, for the completeness of a
-// calculation (T39, T40, T42).
+// Collection is the sync module: the state and the phase of the collection of the source areas, for the
+// completeness of a calculation (T39, T40, T42) and the initial load of history.
 type Collection interface {
 	AreaCollection(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaCollection, error)
 }
@@ -49,10 +52,13 @@ type Rights interface {
 	Decide(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.SourceQuery) (entity.Scope, error)
 }
 
-// Metrics count the revisions that failed and the parts a revision took from earlier ones.
+// Metrics count the revisions that failed, the parts a revision took from earlier ones and the parts it computed,
+// and time the chains of published revisions.
 type Metrics interface {
 	RevisionFailed()
 	PartReused()
+	PartComputed()
+	ChainPublished(d time.Duration)
 }
 
 type Deps struct {
@@ -138,6 +144,10 @@ func (u *UseCase) input(ctx context.Context, req entity.CalcRequest) (input, err
 		return in, err
 	}
 	in.targets = targetsOf(targets)
+	if req.Sources != nil {
+		in.collection = *req.Sources
+		return in, nil
+	}
 	if u.d.Collection != nil && len(areas) > 0 {
 		if in.collection, err = u.d.Collection.AreaCollection(ctx, org, areas); err != nil {
 			return in, err
@@ -160,6 +170,10 @@ type noMetrics struct{}
 func (noMetrics) RevisionFailed() {}
 
 func (noMetrics) PartReused() {}
+
+func (noMetrics) PartComputed() {}
+
+func (noMetrics) ChainPublished(time.Duration) {}
 
 // tasksOf joins the events of an area to their tasks; the history of an area is complete from the creation of
 // its tasks until the collection reports a boundary.

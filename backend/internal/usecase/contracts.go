@@ -115,9 +115,11 @@ type SyncStatus interface {
 	LastSuccess(ctx context.Context, orgID entity.ID) (map[entity.ID]*time.Time, error)
 }
 
-// Operations is the view module for the runs users ask for and their descriptors (TZ 12.5.8).
+// Operations is the view module for the runs users ask for and their descriptors (TZ 12.5.8): a run of collection
+// and a manual refresh of a series.
 type Operations interface {
 	RequestSyncRun(ctx context.Context, s entity.Subject, connectionID entity.ID, req entity.SyncRunRequest) (entity.Operation, error)
+	RequestSeriesRefresh(ctx context.Context, s entity.Subject, seriesID entity.ID) (entity.Operation, error)
 	Operation(ctx context.Context, s entity.Subject, id entity.ID) (entity.Operation, error)
 }
 
@@ -163,8 +165,12 @@ type MappingPreviews interface {
 	PreviewMapping(ctx context.Context, s entity.Subject, scope entity.Scope, teamID entity.ID, d entity.MappingDraft) (entity.MappingPreview, error)
 }
 
-// Calculator runs the jobs of calc: the parts of a revision of a series and the collection of unused parts.
+// Calculator runs the jobs of calc: the recount of the series of an area or a team, their daily extension, the
+// parts of a revision of a series and the collection of unused parts.
 type Calculator interface {
+	RunRecount(ctx context.Context, job entity.CalcRecountJob, complete func(context.Context) error) error
+	RunExtend(ctx context.Context, job entity.CalcExtendJob, complete func(context.Context) error) error
+	TickExtend(ctx context.Context) error
 	RunSlice(ctx context.Context, job entity.CalcSliceJob, complete func(context.Context) error) error
 	// FailSlice ends the revision of a job that spent its attempts; the current revision stays.
 	FailSlice(ctx context.Context, job entity.CalcSliceJob) error

@@ -579,6 +579,7 @@ func docsRepo() map[string]string {
 }
 
 func TestGitAdapter_PassesTheContract(t *testing.T) {
+	t.Parallel()
 	fx := newGitFixture(t)
 	fx.repo(t, "group/docs", docsRepo())
 	e := newGitAdapterEnv(t, fx)
@@ -596,6 +597,7 @@ func TestGitAdapter_PassesTheContract(t *testing.T) {
 }
 
 func TestGitAdapter_InventoryByHTTPSAndSSH(t *testing.T) {
+	t.Parallel()
 	fx := newGitFixture(t)
 	work := fx.repo(t, "group/docs", docsRepo())
 	first := fx.git(t, work, "rev-parse", "HEAD")
@@ -655,6 +657,7 @@ func TestGitAdapter_InventoryByHTTPSAndSSH(t *testing.T) {
 }
 
 func TestGitAdapter_IncrementReadsOnlyChangedPaths(t *testing.T) {
+	t.Parallel()
 	fx := newGitFixture(t)
 	fx.repo(t, "group/docs", docsRepo())
 	e := newGitAdapterEnv(t, fx)
@@ -767,6 +770,8 @@ func TestGitAdapter_RepositoryContentDoesNotRun(t *testing.T) {
 	assert.Contains(t, string(body), `"code":"invalid_request"`, "a file:// remote is refused")
 }
 
+// TestGitAdapter_LargeRepositoryAnswersPreparingAndRespectsLimits is not parallel: the peak memory of a git command
+// counts the peak of the test process it was started from, which the parallel tests raise.
 func TestGitAdapter_LargeRepositoryAnswersPreparingAndRespectsLimits(t *testing.T) {
 	fx := newGitFixture(t)
 	files := map[string]string{"README.md": "# big\n"}
@@ -831,6 +836,7 @@ func maxRSS(t *testing.T, journal string) int64 {
 }
 
 func TestGitAdapter_RefusesUnsafeAddressesBeforeGit(t *testing.T) {
+	t.Parallel()
 	fx := newGitFixture(t)
 	fx.repo(t, "group/docs", docsRepo())
 	e := newGitAdapterEnv(t, fx)

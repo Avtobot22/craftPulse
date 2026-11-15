@@ -87,7 +87,10 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return err
 	}
-	orgs, rights := newOrgAccess(pool, clock.System{}, connections, metrics)
+	orgs, rights, err := newOrgAccess(pool, clock.System{}, connections, metrics)
+	if err != nil {
+		return err
+	}
 	store := newObjectStore(cfg.ObjectStore)
 	intake, err := newIngest(pool, store, connections, rights, clock.System{}, reg)
 	if err != nil {
@@ -101,7 +104,10 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return err
 	}
-	settings := newProcess(pool, orgs, normalizer, clock.System{})
+	settings, err := newProcess(pool, orgs, normalizer, clock.System{})
+	if err != nil {
+		return err
+	}
 	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, settings: settings, collection: collection, rights: rights},
 		clock.System{}, reg)
 	if err != nil {
@@ -109,7 +115,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	}
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection,
-		operations: newView(pool, collection, rights, clock.System{}), process: settings, previews: calculator, targets: calculator,
+		operations: newView(pool, collection, calculator, rights, clock.System{}), process: settings, previews: calculator, targets: calculator,
 	}
 	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules))
 
@@ -157,7 +163,10 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	orgs, rights := newOrgAccess(pool, clock.System{}, connections, metrics)
+	orgs, rights, err := newOrgAccess(pool, clock.System{}, connections, metrics)
+	if err != nil {
+		return err
+	}
 	store := newObjectStore(cfg.ObjectStore)
 	packages, err := newIngest(pool, store, connections, rights, clock.System{}, reg)
 	if err != nil {
@@ -171,7 +180,10 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	settings := newProcess(pool, orgs, normalizer, clock.System{})
+	settings, err := newProcess(pool, orgs, normalizer, clock.System{})
+	if err != nil {
+		return err
+	}
 	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, settings: settings, collection: collection, rights: rights},
 		clock.System{}, reg)
 	if err != nil {

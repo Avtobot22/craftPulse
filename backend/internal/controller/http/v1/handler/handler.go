@@ -23,6 +23,7 @@ type Handler struct {
 	connections
 	intake
 	process
+	reports
 	fallback
 	session
 	organization
@@ -59,6 +60,7 @@ func New(d Deps) *Handler {
 		accounts:       accounts{uc: d.Accounts, connections: d.Connections},
 		intake:         intake{uc: d.Intake},
 		process:        process{uc: d.Process, previews: d.Previews, targets: d.Targets, connections: d.Connections},
+		reports:        reports{operations: d.Operations},
 		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),
 		organization:   organization{structure: d.Structure, access: d.Access, connections: d.Connections},
 		administration: administration{users: d.Users, audit: d.Audit, protocols: d.Protocols},

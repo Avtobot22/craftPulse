@@ -90,19 +90,21 @@ func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEn
 	require.NoError(t, err)
 	metrics, err := newAccessMetrics(reg)
 	require.NoError(t, err)
-	orgs, rights := newOrgAccess(e.app, e.clock, uc, metrics)
+	orgs, rights, err := newOrgAccess(e.app, e.clock, uc, metrics)
+	require.NoError(t, err)
 	intake, err := newIngest(e.app, sharedStore(t), uc, rights, e.clock, reg)
 	require.NoError(t, err)
 	normalizer, err := newNormalize(e.app, sharedStore(t), intake, orgs, e.clock)
 	require.NoError(t, err)
 	collection, err := newSync(e.app, uc, intake, normalizer, e.clock, reg)
 	require.NoError(t, err)
-	settings := newProcess(e.app, orgs, normalizer, e.clock)
+	settings, err := newProcess(e.app, orgs, normalizer, e.clock)
+	require.NoError(t, err)
 	calculator, err := newCalc(e.app, calcModules{structure: orgs, facts: normalizer, settings: settings, collection: collection, rights: rights},
 		e.clock, reg)
 	require.NoError(t, err)
 	modules := apiModules{
-		orgs: orgs, access: rights, connections: uc, intake: intake, sync: collection, operations: newView(e.app, collection, rights, e.clock),
+		orgs: orgs, access: rights, connections: uc, intake: intake, sync: collection, operations: newView(e.app, collection, calculator, rights, e.clock),
 		process: settings, previews: calculator, targets: calculator,
 	}
 	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, modules)
@@ -213,6 +215,7 @@ func capabilityState(caps []capabilityBody, name string) string {
 }
 
 func TestConnections_ConnectProbeAndActivate(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 
 	rec := e.do(t, e.admin, http.MethodGet, "/api/v1/adapters", nil)
@@ -328,6 +331,7 @@ func TestConnections_ProbeFailures(t *testing.T) {
 }
 
 func TestConnections_RefusedChanges(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 
 	for _, base := range []string{"https://127.0.0.1:8443", "https://jira.loop.test"} {
@@ -379,6 +383,7 @@ func TestConnections_RefusedChanges(t *testing.T) {
 }
 
 func TestConnections_DeleteRemovesCredentials(t *testing.T) {
+	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
 	c, _ := e.create(t, jiraConnection("https://jira.example.org", "10000"))
 	require.Equal(t, 1, e.credentials(t, c.ID))

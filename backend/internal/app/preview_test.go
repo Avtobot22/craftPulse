@@ -141,6 +141,7 @@ func (e *processEnv) rows(t *testing.T) []int {
 // draft and computes the definitions by the version at the same as_of: the controls agree and the preview
 // writes nothing.
 func TestPreview_V14MatchesConfirmedVersion(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	e.grantProcessOwner(t, e.adminID)
 	moscow, err := time.LoadLocation("Europe/Moscow")
@@ -182,7 +183,8 @@ func TestPreview_V14MatchesConfirmedVersion(t *testing.T) {
 
 	rec := e.confirm(t, e.admin, _mappingVersions, `"0"`, uuid.New(), e.previewDraft())
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	uc := calc.New(calc.Deps{Structure: orgs, Facts: e.runner.norm, Settings: e.process, Clock: e.clock})
 	r, err := uc.Calculate(t.Context(), entity.CalcRequest{
 		OrganizationID: e.orgID, TeamID: entity.ID(e.team), KnowledgeSeq: e.lastSeq(t), AsOf: p.AsOf,
@@ -207,6 +209,7 @@ func TestPreview_V14MatchesConfirmedVersion(t *testing.T) {
 }
 
 func TestPreview_ErrorsAndRights(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
 	code, raw := e.preview(t, e.admin, e.previewDraft())
 	assert.Equal(t, http.StatusForbidden, code, "an administrator without process_owner: %s", raw)

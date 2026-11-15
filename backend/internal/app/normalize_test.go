@@ -36,8 +36,8 @@ type normalizeEnv struct {
 func newNormalizeEnv(t *testing.T) *normalizeEnv {
 	t.Helper()
 	e := &normalizeEnv{ingestEnv: newIngestEnv(t)}
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
-	var err error
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	e.norm, err = newNormalize(e.app, e.store, e.uc, orgs, e.clock)
 	require.NoError(t, err)
 	return e
@@ -196,6 +196,7 @@ func statusRecord(t *testing.T, id, name string) *envelope.Record {
 }
 
 func TestNormalize_SameKeyInJiraAndUniversalImportGivesTwoObjects(t *testing.T) {
+	t.Parallel()
 	e := newNormalizeEnv(t)
 	conn, scope := e.scope(t, "10000")
 	rc := e.page(t, conn, scope, pack(t, jiraTasks("10000"), jiraTask(t, taskSpec{id: "20001", project: "10000", key: "PROJ-1", title: "A", updated: &_t1})))
@@ -229,6 +230,7 @@ func packCSV(t *testing.T, m *envelope.Manifest, rows []byte) []byte {
 }
 
 func TestNormalize_RepeatsAddNothing(t *testing.T) {
+	t.Parallel()
 	e := newNormalizeEnv(t)
 	tasks := pack(t, jiraTasks("10000"),
 		statusRecord(t, "3", "In Progress"), accountRecord(t, "u-1", "Same Name"),
@@ -270,6 +272,7 @@ func TestNormalize_RepeatsAddNothing(t *testing.T) {
 }
 
 func TestNormalize_MovedTaskKeepsItsIdentity(t *testing.T) {
+	t.Parallel()
 	e := newNormalizeEnv(t)
 	e.imported(t, e.admin, pack(t, jiraTasks("10000"), jiraTask(t, taskSpec{id: "20001", project: "10000", key: "PA-1", title: "A", updated: &_t1})))
 	e.drain(t)
@@ -292,6 +295,7 @@ func TestNormalize_MovedTaskKeepsItsIdentity(t *testing.T) {
 }
 
 func TestNormalize_LateEventKeepsItsEventTime(t *testing.T) {
+	t.Parallel()
 	e := newNormalizeEnv(t)
 	e.imported(t, e.admin, pack(t, jiraEvents("10000"), statusChange(t, "20001", "30020", _t2, "u-1")))
 	e.drain(t)
@@ -322,6 +326,7 @@ func TestNormalize_LateEventKeepsItsEventTime(t *testing.T) {
 }
 
 func TestNormalize_OlderStateDoesNotReplaceTheCurrentOne(t *testing.T) {
+	t.Parallel()
 	e := newNormalizeEnv(t)
 	e.imported(t, e.admin, pack(t, jiraTasks("10000"), jiraTask(t, taskSpec{id: "20001", project: "10000", key: "PA-1", title: "new", updated: &_t2})))
 	e.drain(t)
@@ -334,6 +339,7 @@ func TestNormalize_OlderStateDoesNotReplaceTheCurrentOne(t *testing.T) {
 }
 
 func TestNormalize_SliceSeesTheVersionOfItsKnowledgeNumber(t *testing.T) {
+	t.Parallel()
 	e := newNormalizeEnv(t)
 	rc := e.imported(t, e.admin, pack(t, jiraTasks("10000"), jiraTask(t, taskSpec{id: "20001", project: "10000", key: "PA-1", title: "v1", updated: &_t1})))
 	e.drain(t)
@@ -368,6 +374,7 @@ func TestNormalize_SliceSeesTheVersionOfItsKnowledgeNumber(t *testing.T) {
 }
 
 func TestNormalize_KnowledgeNumbersFollowCommits(t *testing.T) {
+	t.Parallel()
 	e := newNormalizeEnv(t)
 	receipts := make([]entity.ID, 0, 3)
 	for i := range 3 {
@@ -405,6 +412,7 @@ func TestNormalize_KnowledgeNumbersFollowCommits(t *testing.T) {
 }
 
 func TestNormalize_AccountsAreJoinedByNativeIDOnly(t *testing.T) {
+	t.Parallel()
 	e := newNormalizeEnv(t)
 	e.imported(t, e.admin, pack(t, jiraTasks("10000"),
 		accountRecord(t, "JIRAUSER10100", "Иван Петров"), accountRecord(t, "JIRAUSER10200", "Иван Петров"),
@@ -420,6 +428,7 @@ func TestNormalize_AccountsAreJoinedByNativeIDOnly(t *testing.T) {
 }
 
 func TestNormalize_TaskWithSecurityLevelIsRestricted(t *testing.T) {
+	t.Parallel()
 	e := newNormalizeEnv(t)
 	e.imported(t, e.admin, pack(t, jiraTasks("10000"),
 		jiraTask(t, taskSpec{id: "20001", project: "10000", key: "PA-1", title: "open", updated: &_t1}),
@@ -431,6 +440,7 @@ func TestNormalize_TaskWithSecurityLevelIsRestricted(t *testing.T) {
 }
 
 func TestNormalize_AcceptedNewMakesANewVersion(t *testing.T) {
+	t.Parallel()
 	e := newNormalizeEnv(t)
 	e.imported(t, e.admin, pack(t, jiraTasks("10000"), jiraTask(t, taskSpec{id: "20001", project: "10000", key: "PA-1", title: "A", updated: &_t1, revision: "7"})))
 	e.drain(t)
@@ -450,6 +460,7 @@ func TestNormalize_AcceptedNewMakesANewVersion(t *testing.T) {
 }
 
 func TestNormalize_InterruptedBatchContinuesFromItsCursor(t *testing.T) {
+	t.Parallel()
 	recs := make([]*envelope.Record, 0, 450)
 	for i := range 450 {
 		recs = append(recs, jiraTask(t, taskSpec{id: strconv.Itoa(40000 + i), project: "10000", key: fmt.Sprintf("PA-%d", i), title: "t", updated: &_t1}))

@@ -92,7 +92,10 @@ func (u *UseCase) CreateCalendarVersion(ctx context.Context, s entity.Subject, t
 			return err
 		}
 		created = true
-		return u.record(ctx, s, _operationConfirmCalendar, "calendar_version", v.ID, teamID, latest, v.Confirmation)
+		if err := u.record(ctx, s, _operationConfirmCalendar, "calendar_version", v.ID, teamID, latest, v.Confirmation); err != nil {
+			return err
+		}
+		return u.recount(ctx, org, teamID)
 	})
 	if err != nil {
 		return entity.CalendarVersion{}, false, err

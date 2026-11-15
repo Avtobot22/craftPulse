@@ -15,8 +15,8 @@ import (
 )
 
 func TestCalc_DefinitionRowsFollowRegistry(t *testing.T) {
-	db := newDB(t)
-	db.migrate(t)
+	t.Parallel()
+	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
 	rows, err := app.Query(t.Context(), "SELECT metric_id, definition_version, unit, catalog_ref FROM calc.definition ORDER BY metric_id")
 	require.NoError(t, err)
@@ -44,8 +44,10 @@ func TestCalc_DefinitionRowsFollowRegistry(t *testing.T) {
 // the mapping is confirmed every point is NOT_EVALUATED, after it the starts, the completion, the cycle time
 // and the blocked WIP follow the recorded history.
 func TestCalc_FlowOfCollectedTasks(t *testing.T) {
+	t.Parallel()
 	e := newProcessEnv(t)
-	orgs, _ := newOrgAccess(e.app, e.clock, nil, nil)
+	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	uc := calc.New(calc.Deps{Structure: orgs, Facts: e.runner.norm, Settings: e.process, Clock: e.clock})
 	req := entity.CalcRequest{
 		OrganizationID: e.orgID, TeamID: entity.ID(e.team), KnowledgeSeq: e.lastSeq(t),

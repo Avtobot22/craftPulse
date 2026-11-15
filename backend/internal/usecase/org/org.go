@@ -27,6 +27,7 @@ type Deps struct {
 	Auditor     Auditor
 	Credentials Credentials
 	Sources     Sources
+	Queue       repo.JobQueue
 	Clock       clock.Clock
 	NewID       func() (entity.ID, error)
 }
@@ -38,6 +39,7 @@ type UseCase struct {
 	auditor     Auditor
 	credentials Credentials
 	sources     Sources
+	queue       repo.JobQueue
 	clock       clock.Clock
 	newID       func() (entity.ID, error)
 }
@@ -45,7 +47,7 @@ type UseCase struct {
 func New(d Deps) *UseCase {
 	return &UseCase{
 		orgs: d.Orgs, tenants: d.Tenants, tx: d.Tx, auditor: d.Auditor, credentials: d.Credentials,
-		sources: d.Sources, clock: d.Clock, newID: d.NewID,
+		sources: d.Sources, queue: d.Queue, clock: d.Clock, newID: d.NewID,
 	}
 }
 

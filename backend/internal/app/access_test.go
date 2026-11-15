@@ -156,6 +156,7 @@ func (e *accessEnv) native(t *testing.T, id entity.ID) string {
 func (e *accessEnv) checks() int { return e.adapter.journal.calls(_checkAccess) }
 
 func TestAccess_ProjectFollowsTheRightInTheSource(t *testing.T) {
+	t.Parallel()
 	e := newAccessEnv(t)
 	e.link(t, _otherSub, "demo-person-02")
 	before := e.checks()
@@ -248,6 +249,7 @@ func TestAccess_AreaThatCannotBeCheckedIsClosed(t *testing.T) {
 }
 
 func TestAccess_TaskWithItsOwnRestriction(t *testing.T) {
+	t.Parallel()
 	e := newAccessEnv(t)
 	e.link(t, _otherSub, "demo-person-02")
 	_, err := e.owner.Exec(t.Context(), "UPDATE normalize.source_object SET restricted = true WHERE object_kind = 'task' AND native_id = '20002'")
@@ -278,6 +280,7 @@ func TestAccess_TaskWithItsOwnRestriction(t *testing.T) {
 }
 
 func TestAccess_ListAreas(t *testing.T) {
+	t.Parallel()
 	e := newAccessEnv(t)
 
 	page := decode[areaPageBody](t, e.do(t, e.admin, http.MethodGet, "/api/v1/areas", nil))

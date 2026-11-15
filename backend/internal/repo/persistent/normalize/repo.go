@@ -122,6 +122,14 @@ func (r *Repo) RecordAreaChanges(ctx context.Context, orgID entity.ID, seq int64
 	return nil
 }
 
+func (r *Repo) AreaChangeSeq(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) (int64, error) {
+	seq, err := r.q(ctx).AreaChangeSeq(ctx, AreaChangeSeqParams{OrganizationID: uuid.UUID(orgID), AreaIds: ids(areaIDs)})
+	if err != nil {
+		return 0, fmt.Errorf("normalize: area change seq: %w", err)
+	}
+	return seq, nil
+}
+
 func (r *Repo) AreaChanges(ctx context.Context, orgID, areaID entity.ID, afterSeq int64) ([]entity.AreaChange, error) {
 	rows, err := r.q(ctx).AreaChanges(ctx, AreaChangesParams{OrganizationID: uuid.UUID(orgID), AreaID: uuid.UUID(areaID), AfterSeq: afterSeq})
 	if err != nil {

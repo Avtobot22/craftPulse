@@ -11,6 +11,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
+	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
 )
 
 const (
@@ -39,6 +40,7 @@ type Deps struct {
 	Teams        Teams
 	Dictionaries Dictionaries
 	Auditor      Auditor
+	Queue        repo.JobQueue
 	Tx           repo.Transactor
 	Clock        clock.Clock
 	NewID        func() (entity.ID, error)
@@ -50,6 +52,13 @@ type UseCase struct {
 
 func New(d Deps) *UseCase {
 	return &UseCase{d: d}
+}
+
+// recount asks calc to recount the series of the team in the transaction of a new version of its settings
+// (TZ 10.3, rule 6).
+func (u *UseCase) recount(ctx context.Context, orgID, teamID entity.ID) error {
+	job := entity.CalcRecountJob{OrganizationID: orgID, TeamID: teamID, CorrelationID: entity.ID(logger.CorrelationID(ctx))}
+	return u.d.Queue.Enqueue(ctx, job, entity.QueueBulk)
 }
 
 func errorf(format string, args ...any) error { return fmt.Errorf("process: "+format, args...) }

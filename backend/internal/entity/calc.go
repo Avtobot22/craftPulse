@@ -173,7 +173,8 @@ type AreaFacts struct {
 	Events     []TaskEvent
 }
 
-// CalcRequest asks for the flow of a team over a window at the knowledge number KnowledgeSeq.
+// CalcRequest asks for the flow of a team over a window at the knowledge number KnowledgeSeq. Sources is the state
+// of collection a chain fixed at its start; nil reads the current one.
 type CalcRequest struct {
 	OrganizationID ID
 	TeamID         ID
@@ -181,6 +182,7 @@ type CalcRequest struct {
 	Window         Window
 	AsOf           time.Time
 	GroupBy        GroupBy
+	Sources        *[]AreaCollection
 }
 
 // CalcResult is a calculation of the flow metrics: the series and the tasks they were computed from.
@@ -308,21 +310,72 @@ const (
 )
 
 // CalcSliceJob builds a revision of a series part by part (TZ 10.6). Without RevisionID it starts a chain; the
-// part number is not in the uniqueness, so a series has one chain of a window at a time.
+// part number is not in the uniqueness, so a series has one chain of a window at a time. Sources is the state of
+// collection and Structure the version of the structure the start fixed for the parts of the chain.
 type CalcSliceJob struct {
-	OrganizationID ID        `json:"organization_id" river:"unique"`
-	SeriesID       ID        `json:"series_id" river:"unique"`
-	From           time.Time `json:"from" river:"unique"`
-	To             time.Time `json:"to" river:"unique"`
-	AsOf           time.Time `json:"as_of"`
-	RevisionID     ID        `json:"revision_id,omitzero"`
-	PartNo         int       `json:"part_no,omitempty"`
-	CorrelationID  ID        `json:"correlation_id"`
+	OrganizationID ID                `json:"organization_id" river:"unique"`
+	SeriesID       ID                `json:"series_id" river:"unique"`
+	From           time.Time         `json:"from" river:"unique"`
+	To             time.Time         `json:"to" river:"unique"`
+	AsOf           time.Time         `json:"as_of"`
+	RevisionID     ID                `json:"revision_id,omitzero"`
+	PartNo         int               `json:"part_no,omitempty"`
+	Sources        *[]AreaCollection `json:"sources,omitempty"`
+	Structure      int64             `json:"structure,omitempty"`
+	CorrelationID  ID                `json:"correlation_id"`
 }
 
 func (CalcSliceJob) Kind() string { return KindCalcSlice }
 
 func (CalcSliceJob) UniqueWhileActive() {}
+
+const (
+	KindCalcRecount    = "calc.recount"
+	KindCalcExtend     = "calc.extend"
+	KindCalcExtendTick = "calc.extend.tick"
+)
+
+// CalcRecountJob asks calc for a new chain of the series the facts of an area or the settings of a team feed, or
+// of every series of the organization when neither is set; normalize, process and org queue it without depending
+// on calc (TZ 10.3, rule 6).
+type CalcRecountJob struct {
+	OrganizationID ID `json:"organization_id" river:"unique"`
+	AreaID         ID `json:"area_id,omitzero" river:"unique"`
+	TeamID         ID `json:"team_id,omitzero" river:"unique"`
+	CorrelationID  ID `json:"correlation_id"`
+}
+
+func (CalcRecountJob) Kind() string { return KindCalcRecount }
+
+func (CalcRecountJob) UniqueWhileActive() {}
+
+// CalcExtendJob queues the daily extension of the windows of the series of an organization due before the next
+// tick (TZ 10.6).
+type CalcExtendJob struct {
+	OrganizationID ID `json:"organization_id" river:"unique"`
+}
+
+func (CalcExtendJob) Kind() string { return KindCalcExtend }
+
+func (CalcExtendJob) UniqueWhileActive() {}
+
+// CalcExtendTickJob queues the extension of every organization every hour.
+type CalcExtendTickJob struct{}
+
+func (CalcExtendTickJob) Kind() string { return KindCalcExtendTick }
+
+// SeriesRefresh is a manual refresh of a series queued in the transaction of its descriptor: a revision numbered
+// after AfterRevisionNo answers it.
+type SeriesRefresh struct {
+	SeriesID        ID
+	AfterRevisionNo int
+}
+
+// RefreshStatus is where a manual refresh is: the revision that answers it, once it exists.
+type RefreshStatus struct {
+	Status     OperationStatus
+	RevisionID *ID
+}
 
 // CalcGCJob deletes a portion of the parts of an organization no revision refers to; AfterPartID is the
 // cursor of the portion before.
@@ -422,4 +475,6 @@ type AreaCollection struct {
 	Watermark     *time.Time
 	LastSuccessAt *time.Time
 	Reconcile     *ReconcileRun
+	// Phase is the phase of the collection of tasks; empty before the first page.
+	Phase SyncPhase
 }

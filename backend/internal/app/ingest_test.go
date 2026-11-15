@@ -104,7 +104,8 @@ func newIngestEnv(t *testing.T) *ingestEnv {
 	require.NoError(t, err)
 	e.connect, err = newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	_, e.rights = newOrgAccess(e.app, e.clock, e.connect, nil)
+	_, e.rights, err = newOrgAccess(e.app, e.clock, e.connect, nil)
+	require.NoError(t, err)
 	e.uc, err = newIngest(e.app, e.store, e.connect, e.rights, e.clock, e.reg)
 	require.NoError(t, err)
 	return e
@@ -248,6 +249,7 @@ func raw(t *testing.T, entries ...rawEntry) []byte {
 }
 
 func TestIngest_RefusesUnsafePackagesAtOnce(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	large := make([]byte, envelope.DefaultLimits.MaxPackageBytes+1)
 	_, err := rand.Read(large)
@@ -303,6 +305,7 @@ func gathered(t *testing.T, reg *prometheus.Registry, name, label string) float6
 }
 
 func TestIngest_JournalOfImports(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 
 	partial := e.imported(t, e.admin, pack(t, importManifest("1"), task(t, "IMP-1", "A", ""), task(t, "", "B", "")))
@@ -392,6 +395,7 @@ func (e *ingestEnv) scope(t *testing.T, native string) (conn, scope entity.ID) {
 }
 
 func TestIngest_PagesOfSync(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	conn, scope := e.scope(t, "10000")
 
@@ -414,6 +418,7 @@ func TestIngest_PagesOfSync(t *testing.T) {
 }
 
 func TestIngest_NewPayloadSchemaIsNoConflict(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	conn, scope := e.scope(t, "10000")
 	inst, err := e.connect.EnsureInstance(t.Context(), e.orgID, entity.ProviderJiraCloud, _jiraInstance)
@@ -444,6 +449,7 @@ func TestIngest_NewPayloadSchemaIsNoConflict(t *testing.T) {
 }
 
 func TestIngest_ConcurrentDeliveriesOfOneRecord(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	ids := make([]entity.ID, 2)
 	for i := range ids {
@@ -478,11 +484,13 @@ func (q *failingQueue) Enqueue(ctx context.Context, job entity.Job, name string)
 }
 
 func TestIngest_InterruptedJobGivesTheSameJournal(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	jobs, err := riverInsertClient(e.app)
 	require.NoError(t, err)
 	q := &failingQueue{JobQueue: queue.New(jobs), fail: true}
-	_, rights := newOrgAccess(e.app, e.clock, nil, nil)
+	_, rights, err := newOrgAccess(e.app, e.clock, nil, nil)
+	require.NoError(t, err)
 	uc := ingest.New(ingest.Deps{
 		Repo: ingestrepo.NewRepo(e.app), Objects: e.store, Queue: q, Tx: persistent.NewTransactor(e.app),
 		Connect: e.connect, Access: rights, Metrics: ingestMetrics{rejected: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "x"}, []string{"channel", "reason"})},

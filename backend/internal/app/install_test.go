@@ -66,8 +66,7 @@ type installEnv struct {
 
 func newInstallEnv(t *testing.T) *installEnv {
 	t.Helper()
-	db := newDB(t)
-	db.migrate(t)
+	db := newMigratedDB(t)
 	keyring, err := crypto.NewKeyring(crypto.MasterKey{Version: 2, Key: bytes.Repeat([]byte{7}, 32)})
 	require.NoError(t, err)
 	e := &installEnv{db: db, app: db.pool(t, "craftpulse_app"), owner: db.pool(t, "craftpulse_owner"), keyring: keyring}
@@ -113,6 +112,7 @@ func (e *installEnv) count(t *testing.T, sql string) int {
 }
 
 func TestInstall_CreatesOrganizationsOnce(t *testing.T) {
+	t.Parallel()
 	e := newInstallEnv(t)
 	ctx := t.Context()
 	params := e.params()
@@ -153,6 +153,7 @@ func TestInstall_CreatesOrganizationsOnce(t *testing.T) {
 }
 
 func TestInstall_OrganizationTablesAreIsolated(t *testing.T) {
+	t.Parallel()
 	e := newInstallEnv(t)
 	ctx := t.Context()
 	applied, err := e.uc.Apply(ctx, e.params())
@@ -174,6 +175,7 @@ func TestInstall_OrganizationTablesAreIsolated(t *testing.T) {
 }
 
 func TestInstall_AuditFailureRollsBackOrganization(t *testing.T) {
+	t.Parallel()
 	e := newInstallEnv(t)
 	c := clock.NewManual(_now)
 	tx := persistent.NewTransactor(e.app)
@@ -196,6 +198,7 @@ func TestInstall_AuditFailureRollsBackOrganization(t *testing.T) {
 }
 
 func TestInstall_CheckWritesProtocol(t *testing.T) {
+	t.Parallel()
 	e := newInstallEnv(t)
 	ctx := logger.WithCorrelation(t.Context(), zerolog.Nop())
 	var out bytes.Buffer
@@ -222,6 +225,7 @@ func TestInstall_CheckWritesProtocol(t *testing.T) {
 }
 
 func TestInstall_CheckReportsUnavailableProvider(t *testing.T) {
+	t.Parallel()
 	e := newInstallEnv(t)
 	ctx := t.Context()
 	params := e.params()
@@ -246,6 +250,7 @@ func TestInstall_CheckReportsUnavailableProvider(t *testing.T) {
 }
 
 func TestInstall_SecretOnlyEncrypted(t *testing.T) {
+	t.Parallel()
 	e := newInstallEnv(t)
 	require.NoError(t, cli.Install(t.Context(), e.uc, e.params(), zerolog.Nop()))
 
@@ -259,6 +264,7 @@ func TestInstall_SecretOnlyEncrypted(t *testing.T) {
 }
 
 func TestAudit_Rules(t *testing.T) {
+	t.Parallel()
 	e := newInstallEnv(t)
 	ctx := t.Context()
 	applied, err := e.uc.Apply(ctx, e.params())

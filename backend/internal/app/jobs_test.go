@@ -57,8 +57,7 @@ type jobsFixture struct {
 
 func startJobs(t *testing.T, wd *watchdog, traced bool, stopTimeout time.Duration) jobsFixture {
 	t.Helper()
-	db := newDB(t)
-	db.migrate(t)
+	db := newMigratedDB(t)
 	var opts []pg.Option
 	if traced {
 		opts = append(opts, pg.Tracer(wd))

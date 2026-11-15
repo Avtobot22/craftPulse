@@ -8,7 +8,6 @@ import (
 	"slices"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
-	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
 )
 
 // TargetBaselines is the historical p85 of the cycle time T08 of every group «type, size» of a team over the
@@ -37,9 +36,8 @@ func (u *UseCase) TargetBaselines(ctx context.Context, s entity.Subject, teamID 
 }
 
 // CreateTargetVersion confirms the target of a group (UC-09, FR-019). A historical p85 is read from the revision
-// and the period of its baseline first; then process saves the version in one transaction with the
-// recalculation of the series of the team (TZ 10.3, rule 2). created is false for a form equal to the version in
-// force.
+// and the period of its baseline first; then process saves the version in one transaction with the recount of
+// the series of the team it queues (TZ 10.3, rule 2). created is false for a form equal to the version in force.
 func (u *UseCase) CreateTargetVersion(ctx context.Context, s entity.Subject, teamID entity.ID, baseVersion int, key entity.ID,
 	d entity.TargetDraft,
 ) (v entity.TargetVersion, created bool, err error) {
@@ -59,10 +57,7 @@ func (u *UseCase) CreateTargetVersion(ctx context.Context, s entity.Subject, tea
 	err = u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		var err error
 		v, res, err = u.d.Settings.ConfirmTargetVersion(ctx, s, teamID, baseVersion, key, d, basis)
-		if err != nil || res != entity.SaveInserted {
-			return err
-		}
-		return u.recount(ctx, org, teamID)
+		return err
 	})
 	if err != nil {
 		return entity.TargetVersion{}, false, err
@@ -133,37 +128,6 @@ func (u *UseCase) basis(ctx context.Context, org, teamID, revisionID entity.ID, 
 		return nil
 	})
 	return out, err
-}
-
-// recount queues a new revision of every series of the team with a current one, over its window at now, in
-// the transaction of the caller; the earlier revisions keep the settings they were computed with.
-func (u *UseCase) recount(ctx context.Context, org, teamID entity.ID) error {
-	_, hash, err := teamScopeOf(teamID)
-	if err != nil {
-		return err
-	}
-	all, err := u.d.Repo.ScopeSeries(ctx, org, hash, entity.MetricSetFlow)
-	if err != nil {
-		return err
-	}
-	now := u.d.Clock.Now().UTC()
-	for _, s := range all {
-		if s.CurrentRevisionID == nil {
-			continue
-		}
-		rev, err := u.d.Repo.Revision(ctx, org, *s.CurrentRevisionID)
-		if err != nil {
-			return err
-		}
-		job := entity.CalcSliceJob{
-			OrganizationID: org, SeriesID: s.ID, From: rev.Window.From, To: rev.Window.To, AsOf: now,
-			CorrelationID: entity.ID(logger.CorrelationID(ctx)),
-		}
-		if err := u.d.Queue.Enqueue(ctx, job, entity.QueueBulk); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // baselines group the contributions of T08 p85 by type and size: every task counts once, its cycle when it is a

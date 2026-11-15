@@ -99,6 +99,7 @@ func versions(ev auditEvent) [2]string {
 }
 
 func TestUsers_RolesBlockingAndSessions(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	admin := e.admin(t, "demo")
 	adminID := e.userID(t, e.orgID, _adminSub)
@@ -216,6 +217,7 @@ func TestUsers_RolesBlockingAndSessions(t *testing.T) {
 }
 
 func TestUsers_OtherOrganizationAndRoles(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	demo, other := e.admin(t, "demo"), e.admin(t, "other")
 	member := newBrowser()
@@ -264,6 +266,7 @@ func TestUsers_OtherOrganizationAndRoles(t *testing.T) {
 }
 
 func TestInstallation_LatestProtocol(t *testing.T) {
+	t.Parallel()
 	e := newLoginEnv(t)
 	admin := e.admin(t, "demo")
 	assert.Equal(t, http.StatusNotFound, e.do(t, admin, http.MethodGet, "/api/v1/installation/protocols/latest", nil).Code)
