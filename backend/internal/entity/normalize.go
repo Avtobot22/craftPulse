@@ -7,6 +7,8 @@ type ObjectKind string
 const (
 	ObjectTrackerProject ObjectKind = "tracker_project"
 	ObjectTask           ObjectKind = "task"
+	// ObjectConnection is the object of a contribution to a metric of collection (T40, T42).
+	ObjectConnection ObjectKind = "connection"
 )
 
 // IdentityQuality tells whether an identity may enter an exact count (BR-001): uncertain may not.

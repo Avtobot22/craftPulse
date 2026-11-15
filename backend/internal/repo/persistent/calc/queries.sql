@@ -28,9 +28,10 @@ ON CONFLICT DO NOTHING
 RETURNING revision_no;
 
 -- name: InsertRevisionInputs :exec
-INSERT INTO calc.revision_input (organization_id, revision_id, input_kind, input_id, version)
+INSERT INTO calc.revision_input (organization_id, revision_id, input_kind, input_id, version, watermark, completeness)
 SELECT sqlc.arg(organization_id), sqlc.arg(revision_id), (sqlc.arg(kinds)::text[])[i], (sqlc.arg(input_ids)::text[])[i],
-    NULLIF((sqlc.arg(versions)::text[])[i], '')
+    NULLIF((sqlc.arg(versions)::text[])[i], ''), NULLIF((sqlc.arg(watermarks)::text[])[i], '')::timestamptz,
+    NULLIF((sqlc.arg(completeness)::text[])[i], '')
 FROM generate_subscripts(sqlc.arg(kinds)::text[], 1) AS i;
 
 -- name: RevisionInputs :many

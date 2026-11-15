@@ -102,7 +102,8 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 		return err
 	}
 	settings := newProcess(pool, orgs, normalizer, clock.System{})
-	calculator, err := newCalc(pool, orgs, normalizer, settings, rights, clock.System{}, reg)
+	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, settings: settings, collection: collection, rights: rights},
+		clock.System{}, reg)
 	if err != nil {
 		return err
 	}
@@ -170,7 +171,9 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	calculator, err := newCalc(pool, orgs, normalizer, newProcess(pool, orgs, normalizer, clock.System{}), rights, clock.System{}, reg)
+	settings := newProcess(pool, orgs, normalizer, clock.System{})
+	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, settings: settings, collection: collection, rights: rights},
+		clock.System{}, reg)
 	if err != nil {
 		return err
 	}

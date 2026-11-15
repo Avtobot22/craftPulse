@@ -83,6 +83,11 @@ func (r *Repo) InsertRevisionInputs(ctx context.Context, orgID, revisionID entit
 	p := InsertRevisionInputsParams{OrganizationID: uuid.UUID(orgID), RevisionID: uuid.UUID(revisionID)}
 	for _, in := range inputs {
 		p.Kinds, p.InputIds, p.Versions = append(p.Kinds, in.Kind), append(p.InputIds, in.ID), append(p.Versions, in.Version)
+		watermark := ""
+		if in.Watermark != nil {
+			watermark = in.Watermark.UTC().Format(time.RFC3339Nano)
+		}
+		p.Watermarks, p.Completeness = append(p.Watermarks, watermark), append(p.Completeness, in.Completeness)
 	}
 	if err := r.q(ctx).InsertRevisionInputs(ctx, p); err != nil {
 		return fmt.Errorf("calc: insert revision inputs: %w", err)

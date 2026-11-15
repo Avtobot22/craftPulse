@@ -18,14 +18,37 @@ type input struct {
 	location *time.Location
 	groupBy  entity.GroupBy
 	tasks    []taskInput
+	// targets are the durations of the targets in force at the knowledge number by group (FR-019).
+	targets map[entity.TargetGroup]int64
+	// followUp is the window H of T23 (BR-008).
+	followUp   time.Duration
+	collection []entity.AreaCollection
 }
 
-// pointCalc builds the point of one metric over a period from the timelines.
-type pointCalc func(tls []*timeline, p period) []entity.Point
+// pointCalc builds the points of one metric over a period from the timelines, one per estimator.
+type pointCalc func(tls []*timeline, p period, x *pointContext) []entity.Point
+
+// pointContext is what a metric reads beyond the timelines of its tasks.
+type pointContext struct {
+	targets  map[entity.TargetGroup]int64
+	followUp time.Duration
+	asOf     time.Time
+	// last is the end of the last point of the window: the metrics of collection describe it only.
+	last       time.Time
+	collection []entity.AreaCollection
+	// incomplete are the areas a connection of which has not reconciled without differences.
+	incomplete map[entity.ID]bool
+}
 
 var _metrics = map[string]pointCalc{
-	"T04": startedPoint, "T05": completedPoint, "T07": cancelledPoint, "T08": cycleTimePoints, "T12": wipPoint,
-	"T13": blockedWIPPoint, "T14": agePoints, "T15": blockedTimePoint, "T18": balancePoint,
+	"T04": flowOnly(startedPoint), "T05": flowOnly(completedPoint), "T07": flowOnly(cancelledPoint), "T08": flowOnly(cycleTimePoints),
+	"T12": flowOnly(wipPoint), "T13": flowOnly(blockedWIPPoint), "T14": flowOnly(agePoints), "T15": flowOnly(blockedTimePoint),
+	"T18": flowOnly(balancePoint), "T10": withinTargetPoints, "T11": overTargetPoints, "T23": reopenedPoints, "T38": fieldPoints,
+	"T39": historyPoints, "T40": freshnessPoints, "T41": coveragePoints, "T42": variancePoints,
+}
+
+func flowOnly(f func(tls []*timeline, p period) []entity.Point) pointCalc {
+	return func(tls []*timeline, p period, _ *pointContext) []entity.Point { return f(tls, p) }
 }
 
 // compute is the flow of a team as a pure function of its facts, settings, window and as_of (TZ 10.3, rule 5).
@@ -37,11 +60,12 @@ func compute(in input) entity.CalcResult {
 type prepared struct {
 	in  input
 	tls []*timeline
+	ctx pointContext
 }
 
 // prepare replays the history of every task of the team known at as_of; without a mapping nothing is replayed.
 func prepare(in input) *prepared {
-	pr := &prepared{in: in}
+	pr := &prepared{in: in, ctx: contextOf(&in)}
 	if in.mapping == nil {
 		return pr
 	}
@@ -73,13 +97,34 @@ func (pr *prepared) calculate(periods []period) entity.CalcResult {
 		out.Tasks = append(out.Tasks, tl.slice)
 	}
 	if pr.in.groupBy == entity.GroupNone {
-		out.Series = series(pr.tls, periods, nil)
+		out.Series = series(pr.tls, periods, nil, &pr.ctx)
 		return out
 	}
 	for _, g := range groups(pr.tls, pr.in.groupBy) {
-		out.Series = append(out.Series, series(g.tasks, periods, &g.group)...)
+		out.Series = append(out.Series, series(g.tasks, periods, &g.group, &pr.ctx)...)
 	}
 	return out
+}
+
+// contextOf is the context of the points of an input; a zero window H is the one of the definition.
+func contextOf(in *input) pointContext {
+	x := pointContext{
+		targets: in.targets, followUp: in.followUp, asOf: in.asOf, last: in.window.To, collection: in.collection,
+		incomplete: map[entity.ID]bool{},
+	}
+	if x.followUp == 0 {
+		x.followUp = _followUp
+	}
+	if in.asOf.Before(x.last) {
+		x.last = in.asOf
+	}
+	x.last = x.last.UTC()
+	for _, c := range in.collection {
+		if c.Completeness != entity.CollectionComplete {
+			x.incomplete[c.AreaID] = true
+		}
+	}
+	return x
 }
 
 // ofTeam applies the rule of the team field: a task of an instance with such a rule belongs to the team whose
@@ -92,7 +137,7 @@ func (rs *rules) ofTeam(v *entity.TaskVersion, team entity.ID) bool {
 	return rs.teams[value] == team.String()
 }
 
-func series(tls []*timeline, periods []period, group *entity.SeriesGroup) []entity.Series {
+func series(tls []*timeline, periods []period, group *entity.SeriesGroup, x *pointContext) []entity.Series {
 	var out []entity.Series
 	for i := range _definitions {
 		def := &_definitions[i]
@@ -106,7 +151,7 @@ func series(tls []*timeline, periods []period, group *entity.SeriesGroup) []enti
 			ss[i] = entity.Series{MetricID: def.ID, DefinitionVersion: def.Version, Unit: def.Unit, Estimator: est, Group: group}
 		}
 		for _, p := range periods {
-			pts := calc(tls, p)
+			pts := calc(tls, p, x)
 			for i := range pts {
 				ss[i].Points = append(ss[i].Points, pts[i])
 			}

@@ -1,6 +1,10 @@
 package calc
 
-import "slices"
+import (
+	"maps"
+	"slices"
+	"time"
+)
 
 // Units of definitions.
 const (
@@ -15,12 +19,34 @@ const (
 	EstimatorP85 = "p85"
 )
 
+// Series of the metrics of completeness: the field of T38, the kind of freshness of T40, the unit of coverage of
+// T41 and the kind of difference of T42.
+const (
+	FieldSize          = "size"
+	FieldType          = "type"
+	FieldTeam          = "team"
+	FieldStart         = "start"
+	FreshnessLag       = "lag"
+	FreshnessSuccess   = "last_success_age"
+	CoverageTasks      = "tasks"
+	CoverageTransition = "transitions"
+	DifferenceMissing  = "missing"
+	DifferenceChanged  = "changed"
+)
+
 // Inputs a definition reads; a change of any of them makes a revision of its series stale.
 const (
 	InputDefinition = "definition"
 	InputMapping    = "mapping"
 	InputStructure  = "structure"
+	InputTarget     = "target"
+	InputWatermark  = "source_watermark"
 )
+
+// _followUpDays is the window H of T23 in version 1 of its definition (BR-008); another window is a new version.
+const _followUpDays = 30
+
+var _followUp = _followUpDays * 24 * time.Hour
 
 // _lowSample is the n below which a point is marked as a small sample; it is a product guard, not a rule of
 // statistics (TZ 4.4, BR-006).
@@ -41,11 +67,19 @@ type Definition struct {
 	// Roles are the roles its contributions take.
 	Roles  []string
 	Inputs []string
+	// Parameters are the fixed choices of the version, as calc.definition.parameters keeps them.
+	Parameters map[string]any
 }
 
 const _tasksCatalog = "docs/product/metrics/tasks.md#"
 
-var _flowInputs = []string{InputDefinition, InputMapping, InputStructure}
+var (
+	_flowInputs     = []string{InputDefinition, InputMapping, InputStructure}
+	_targetInputs   = []string{InputDefinition, InputMapping, InputStructure, InputTarget}
+	_sourceInputs   = []string{InputDefinition, InputMapping, InputStructure, InputWatermark}
+	_completeRoles  = []string{"numerator", "denominator", "missing"}
+	_collectedRoles = []string{"numerator"}
+)
 
 var _definitions = []Definition{
 	{
@@ -95,6 +129,59 @@ var _definitions = []Definition{
 		Formula: "tasks first started - tasks first completed in [from,to), next to the WIP of T12",
 		Roles:   []string{"numerator", "missing"}, Inputs: _flowInputs,
 	},
+	{
+		ID: "T10", Version: 1, Name: "Within target", Unit: UnitRatio, CatalogRef: _tasksCatalog + "t10",
+		Formula: "tasks first completed in [from,to) with cycle <= the target of their type and size in force at the knowledge number / " +
+			"those with a known start, size and target; the others are missing with the reason",
+		Roles: []string{"numerator", "denominator", "missing"}, Inputs: _targetInputs,
+	},
+	{
+		ID: "T11", Version: 1, Name: "Aging over target", Unit: UnitCount, CatalogRef: _tasksCatalog + "t11",
+		Formula: "tasks in WIP at t = end of the point whose current episode is older than their target, among those with a target; " +
+			"the ratio age/target of each is its contribution",
+		Roles: []string{"numerator", "denominator", "missing"}, Inputs: _targetInputs,
+	},
+	{
+		ID: "T23", Version: 1, Name: "Reopened", Unit: UnitRatio, CatalogRef: _tasksCatalog + "t23",
+		Formula: "tasks first completed in [from,to) reopened in [first_completed, first_completed + H) / those whose window ended by as_of; " +
+			"immature tasks are excluded and listed",
+		Roles: []string{"numerator", "denominator", "excluded", "missing"}, Inputs: _flowInputs,
+		Parameters: map[string]any{"follow_up_days": _followUpDays},
+	},
+	{
+		ID: "T38", Version: 1, Name: "Field completeness", Unit: UnitRatio, CatalogRef: _tasksCatalog + "t38",
+		Estimators: []string{FieldSize, FieldType, FieldTeam, FieldStart},
+		Formula: "tasks with the field known / eligible tasks at t = end of the point, field by field; the size counts the tasks started, " +
+			"as it is taken at the start, and the start the tasks started or completed",
+		Roles: _completeRoles, Inputs: _flowInputs,
+	},
+	{
+		ID: "T39", Version: 1, Name: "History completeness", Unit: UnitRatio, CatalogRef: _tasksCatalog + "t39",
+		Formula: "tasks with a confirmed full history / tasks created by t = end of the point; a history is confirmed when it has no " +
+			"boundary or conflict and every connection of its area reconciled without differences",
+		Roles: _completeRoles, Inputs: _sourceInputs,
+	},
+	{
+		ID: "T40", Version: 1, Name: "Freshness", Unit: UnitSeconds, CatalogRef: _tasksCatalog + "t40",
+		Estimators: []string{FreshnessLag, FreshnessSuccess},
+		Formula: "as_of - the watermark and as_of - the last success of the stalest connection of the team, at the last point; " +
+			"each connection is a contribution",
+		Roles: _collectedRoles, Inputs: _sourceInputs,
+	},
+	{
+		ID: "T41", Version: 1, Name: "Mapping coverage", Unit: UnitRatio, CatalogRef: _tasksCatalog + "t41",
+		Estimators: []string{CoverageTasks, CoverageTransition},
+		Formula: "tasks all of whose statuses entered by t = end of the point have a confirmed meaning / tasks created by t; " +
+			"and statuses entered with a confirmed meaning / statuses entered",
+		Roles: _completeRoles, Inputs: _flowInputs,
+	},
+	{
+		ID: "T42", Version: 1, Name: "Reconciliation variance", Unit: UnitCount, CatalogRef: _tasksCatalog + "t42",
+		Estimators: []string{DifferenceMissing, DifferenceChanged},
+		Formula: "tasks missing from craftPulse and tasks with another version than the source in the last reconciliation of each " +
+			"connection of the team, at the last point; the expected number is the denominator",
+		Roles: _collectedRoles, Inputs: _sourceInputs,
+	},
 }
 
 // Definitions is the registry of the definitions of the flow metrics in force.
@@ -104,6 +191,7 @@ func Definitions() []Definition {
 		out[i].Estimators = slices.Clone(out[i].Estimators)
 		out[i].Roles = slices.Clone(out[i].Roles)
 		out[i].Inputs = slices.Clone(out[i].Inputs)
+		out[i].Parameters = maps.Clone(out[i].Parameters)
 	}
 	return out
 }

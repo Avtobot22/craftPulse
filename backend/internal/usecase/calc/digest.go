@@ -2,9 +2,11 @@ package calc
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/binary"
 	"hash"
+	"maps"
 	"slices"
 	"time"
 
@@ -56,10 +58,12 @@ func (d *digest) optText(s *string) {
 func (d *digest) sum() []byte { return d.h.Sum(nil) }
 
 // partHash is SHA-256 of what the part [from, to) reads (TZ 12.7): the definitions and their versions, the
-// mapping version, the scope and the step, and for each task the state its earlier history leaves at from with
-// the changes inside the part by ID and known_seq. The knowledge number of the slice is not in it, so a fact of
-// another week leaves the part as it was, and a fact that changes the state carried into a later part changes
-// that part too.
+// mapping version, the targets in force and the window H, the scope and the step, and for each task the state
+// its earlier history leaves at from with the changes inside the part by ID and known_seq, whether its area is
+// fully collected and, for a task first completed in the part, whether its follow-up ended and saw a reopen. The
+// last part also reads the state of the collection at as_of. The knowledge number of the slice is not in it, so a
+// fact of another week leaves the part as it was, and a fact that changes the state carried into a later part
+// changes that part too.
 func (pr *prepared) partHash(scopeHash []byte, step entity.Step, from, to time.Time) []byte {
 	d := newDigest()
 	for i := range _definitions {
@@ -75,18 +79,58 @@ func (pr *prepared) partHash(scopeHash []byte, step entity.Step, from, to time.T
 		return d.sum()
 	}
 	d.id(pr.in.mapping.ID)
+	x := &pr.ctx
+	d.int(int64(x.followUp))
+	groups := slices.SortedFunc(maps.Keys(x.targets), func(a, b entity.TargetGroup) int {
+		return cmp.Or(cmp.Compare(a.TaskType, b.TaskType), cmp.Compare(a.SizeLabel, b.SizeLabel))
+	})
+	d.int(int64(len(groups)))
+	for _, g := range groups {
+		d.text(g.TaskType)
+		d.text(g.SizeLabel)
+		d.int(x.targets[g])
+	}
+	last := to.Equal(x.last)
+	d.flag(last)
+	if last {
+		x.digestCollection(d)
+	}
 	tls := slices.Clone(pr.tls)
 	slices.SortFunc(tls, func(a, b *timeline) int { return bytes.Compare(a.slice.TaskID[:], b.slice.TaskID[:]) })
 	for _, tl := range tls {
 		if tl.slice.Created.After(to) {
 			continue
 		}
-		tl.digestPart(d, from, to)
+		tl.digestPart(d, x, from, to)
 	}
 	return d.sum()
 }
 
-func (tl *timeline) digestPart(d *digest, from, to time.Time) {
+// digestCollection writes the state of the connections the last point of T40 and T42 reads at as_of.
+func (x *pointContext) digestCollection(d *digest) {
+	d.time(x.asOf)
+	conns := x.connections()
+	d.int(int64(len(conns)))
+	for _, c := range conns {
+		d.id(c.ConnectionID)
+		d.text(c.Completeness)
+		d.optTime(c.Watermark)
+		d.optTime(c.LastSuccessAt)
+		d.flag(c.Reconcile != nil)
+		if r := c.Reconcile; r != nil {
+			d.id(r.ID)
+			d.optTime(r.FinishedAt)
+			for _, n := range []*int{r.ExpectedCount, r.MissingCount, r.ChangedCount} {
+				d.flag(n != nil)
+				if n != nil {
+					d.int(int64(*n))
+				}
+			}
+		}
+	}
+}
+
+func (tl *timeline) digestPart(d *digest, x *pointContext, from, to time.Time) {
 	s := &tl.slice
 	d.id(s.TaskID)
 	d.id(s.ProjectID)
@@ -127,5 +171,23 @@ func (tl *timeline) digestPart(d *digest, from, to time.Time) {
 		}
 		d.id(e.ID)
 		d.int(e.KnownSeq)
+	}
+	d.flag(x.incomplete[tl.area])
+	entered, mapped := 0, 0
+	for _, e := range tl.entries {
+		if !e.at.Before(from) {
+			break
+		}
+		entered++
+		if e.mapped {
+			mapped++
+		}
+	}
+	d.int(int64(entered))
+	d.int(int64(mapped))
+	if first := s.FirstCompletion; first != nil && !first.Before(from) && first.Before(to) {
+		end := first.Add(x.followUp)
+		d.flag(end.After(x.asOf))
+		d.flag(tl.reopenedIn(*first, end))
 	}
 }

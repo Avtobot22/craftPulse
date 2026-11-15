@@ -357,9 +357,10 @@ func (q *Queries) InsertPoints(ctx context.Context, arg InsertPointsParams) erro
 }
 
 const insertRevisionInputs = `-- name: InsertRevisionInputs :exec
-INSERT INTO calc.revision_input (organization_id, revision_id, input_kind, input_id, version)
+INSERT INTO calc.revision_input (organization_id, revision_id, input_kind, input_id, version, watermark, completeness)
 SELECT $1, $2, ($3::text[])[i], ($4::text[])[i],
-    NULLIF(($5::text[])[i], '')
+    NULLIF(($5::text[])[i], ''), NULLIF(($6::text[])[i], '')::timestamptz,
+    NULLIF(($7::text[])[i], '')
 FROM generate_subscripts($3::text[], 1) AS i
 `
 
@@ -369,6 +370,8 @@ type InsertRevisionInputsParams struct {
 	Kinds          []string
 	InputIds       []string
 	Versions       []string
+	Watermarks     []string
+	Completeness   []string
 }
 
 func (q *Queries) InsertRevisionInputs(ctx context.Context, arg InsertRevisionInputsParams) error {
@@ -378,6 +381,8 @@ func (q *Queries) InsertRevisionInputs(ctx context.Context, arg InsertRevisionIn
 		arg.Kinds,
 		arg.InputIds,
 		arg.Versions,
+		arg.Watermarks,
+		arg.Completeness,
 	)
 	return err
 }
