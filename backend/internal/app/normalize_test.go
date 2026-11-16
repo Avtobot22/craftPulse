@@ -427,6 +427,36 @@ func TestNormalize_AccountsAreJoinedByNativeIDOnly(t *testing.T) {
 		"an account an event names appears without a description")
 }
 
+// TestNormalize_UserFieldKeepsAccountsNotNames: a change of a user field names its accounts, and the text values of
+// the source give way to their IDs, so the facts hold no name (TZ 12.9); a status change keeps its values.
+func TestNormalize_UserFieldKeepsAccountsNotNames(t *testing.T) {
+	t.Parallel()
+	e := newNormalizeEnv(t)
+	e.imported(t, e.admin, pack(t, jiraTasks("10000"),
+		jiraTask(t, taskSpec{id: "20001", project: "10000", key: "PA-1", title: "A", updated: &_t1, assignee: "JIRAUSER10200"})))
+	field, before, after, from, to := "assignee", "Иван Петров", "Мария Иванова", "JIRAUSER10100", "JIRAUSER10200"
+	raw, err := json.Marshal(envelope.TaskEventV1{
+		TaskNativeId: "20001", EventKind: envelope.TaskEventV1EventKindFieldChange, FieldNativeId: &field,
+		BeforeValue: &before, AfterValue: &after, BeforeAccountNativeId: &from, AfterAccountNativeId: &to,
+	})
+	require.NoError(t, err)
+	changelog := "30020"
+	assignee := &envelope.Record{
+		RecordClass: envelope.RecordRecordClassEvent, RecordKind: "task_event", PayloadSchema: "task_event/1", NativeNs: "20001",
+		NativeId: changelog + "/" + field, SourceRevision: &changelog, EventTime: &_t1, Payload: raw,
+	}
+	e.imported(t, e.admin, pack(t, jiraEvents("10000"), assignee, statusChange(t, "20001", "30010", _t1, "JIRAUSER10300")))
+	e.drain(t)
+
+	assert.Equal(t, 1, e.n(t, `SELECT count(*) FROM normalize.task_event v
+		JOIN org.source_account b ON b.id = v.before_account_id AND b.native_account_id = 'JIRAUSER10100'
+		JOIN org.source_account a ON a.id = v.after_account_id AND a.native_account_id = 'JIRAUSER10200'
+		WHERE v.before_value = b.id::text AND v.after_value = a.id::text`), "the values are the IDs of the accounts")
+	assert.Zero(t, e.n(t, "SELECT count(*) FROM normalize.task_event WHERE before_value LIKE '%Иван%' OR after_value LIKE '%Мария%'"))
+	assert.Equal(t, 1, e.n(t, "SELECT count(*) FROM normalize.task_event WHERE field_native_id = 'status' AND before_value = '1' AND after_value = '3'"),
+		"a field without accounts keeps its values")
+}
+
 func TestNormalize_TaskWithSecurityLevelIsRestricted(t *testing.T) {
 	t.Parallel()
 	e := newNormalizeEnv(t)
