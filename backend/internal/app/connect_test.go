@@ -675,3 +675,31 @@ func TestConnect_TablesAreIsolatedByOrganization(t *testing.T) {
 	assert.Zero(t, count(t, ctx, env.app, "SELECT count(*) FROM connect.connection"), "no organization set, no rows")
 	assert.Equal(t, 2, count(t, ctx, env.owner, "SELECT count(*) FROM connect.connection"))
 }
+
+// TestConnect_FailProbeEndsAProbeThatNeverFinished: a probe whose job spent its attempts fails as adapter_unavailable,
+// so the next start of the same settings makes a new probe instead of returning the one that never finishes.
+func TestConnect_FailProbeEndsAProbeThatNeverFinished(t *testing.T) {
+	t.Parallel()
+	env := newConnectEnv(t, adapterapi.Config{})
+	org := entity.ID(uuid.New())
+	ctx := t.Context()
+	id := env.connection(t, org, "", "")
+	s := entity.Subject{OrganizationID: org, UserID: entity.ID(uuid.New())}
+	stuck, err := env.uc.StartProbe(ctx, s, id)
+	require.NoError(t, err)
+	again, err := env.uc.StartProbe(ctx, s, id)
+	require.NoError(t, err)
+	require.Equal(t, stuck.ID, again.ID, "a start while the probe runs returns it")
+
+	require.NoError(t, env.uc.FailProbe(ctx, org, id, stuck.ID))
+	p, err := env.uc.GetProbe(ctx, s, id, stuck.ID)
+	require.NoError(t, err)
+	assert.Equal(t, entity.ProbeFailed, p.Status)
+	assert.Equal(t, entity.ProbeAdapterUnavailable, p.ReasonCode)
+	next, err := env.uc.StartProbe(ctx, s, id)
+	require.NoError(t, err)
+	assert.NotEqual(t, stuck.ID, next.ID, "the settings get a new probe")
+
+	require.NoError(t, env.uc.FailProbe(ctx, org, id, stuck.ID), "a finished probe stays as it is")
+	require.NoError(t, env.uc.FailProbe(ctx, org, id, entity.ID(uuid.New())), "a probe that is gone needs nothing")
+}

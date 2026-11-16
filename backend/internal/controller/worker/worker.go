@@ -223,9 +223,14 @@ type probeWorker struct {
 	runner usecase.ProbeRunner
 }
 
+// Work fails the probe when the last attempt failed, so the connection may start a new probe of the same settings.
 func (w *probeWorker) Work(ctx context.Context, job *river.Job[entity.ConnectProbeJob]) error {
 	a := job.Args
-	return snooze(w.runner.RunProbe(ctx, a.OrganizationID, a.ConnectionID, a.ProbeID))
+	err := snooze(w.runner.RunProbe(ctx, a.OrganizationID, a.ConnectionID, a.ProbeID))
+	if _, snoozed := errors.AsType[*river.JobSnoozeError](err); err == nil || snoozed || job.Attempt < job.MaxAttempts {
+		return err
+	}
+	return errors.Join(err, w.runner.FailProbe(context.WithoutCancel(ctx), a.OrganizationID, a.ConnectionID, a.ProbeID))
 }
 
 // snooze waits out a rate limit or a preparing source without spending an attempt (TZ 10.6).

@@ -82,6 +82,7 @@ type Connections interface {
 // ProbeRunner runs the job of a probe; *entity.RetryLaterError asks to run it again later.
 type ProbeRunner interface {
 	RunProbe(ctx context.Context, orgID, connectionID, probeID entity.ID) error
+	FailProbe(ctx context.Context, orgID, connectionID, probeID entity.ID) error
 }
 
 // PackageProcessor runs the job of a quarantined package.

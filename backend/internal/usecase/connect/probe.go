@@ -133,6 +133,24 @@ func (u *UseCase) RunProbe(ctx context.Context, orgID, connectionID, probeID ent
 	return u.finishProbe(ctx, orgID, p, entity.ProbeResult{}, reason)
 }
 
+// FailProbe ends a probe whose job spent its attempts on an error of the core, so a new start is not answered by a
+// probe that never finishes; a finished probe stays as it is.
+func (u *UseCase) FailProbe(ctx context.Context, orgID, connectionID, probeID entity.ID) error {
+	var p entity.Probe
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		p, err = u.d.Repo.Probe(ctx, orgID, connectionID, probeID)
+		return err
+	})
+	if errors.Is(err, entity.ErrNotFound) {
+		return nil
+	}
+	if err != nil || p.FinishedAt != nil {
+		return err
+	}
+	return u.finishProbe(ctx, orgID, p, entity.ProbeResult{}, entity.ProbeAdapterUnavailable)
+}
+
 func (u *UseCase) finishProbe(ctx context.Context, orgID entity.ID, p entity.Probe, res entity.ProbeResult, reason string) error {
 	return u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
 		c, err := u.d.Repo.LockConnection(ctx, orgID, p.ConnectionID)
