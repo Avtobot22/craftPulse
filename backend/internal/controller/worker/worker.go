@@ -56,6 +56,7 @@ const (
 )
 
 // Periodic are the periodic jobs; River runs them on the leader only, so several workers do not repeat them.
+// The schedule lives in memory and starts over with every leader, so each job also runs on start.
 func Periodic() []*river.PeriodicJob {
 	return []*river.PeriodicJob{
 		river.NewPeriodicJob(river.PeriodicInterval(_tickEvery), func() (river.JobArgs, *river.InsertOpts) {
@@ -63,7 +64,7 @@ func Periodic() []*river.PeriodicJob {
 		}, &river.PeriodicJobOpts{RunOnStart: true}),
 		river.NewPeriodicJob(river.PeriodicInterval(_gcEvery), func() (river.JobArgs, *river.InsertOpts) {
 			return entity.CalcGCTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
-		}, nil),
+		}, &river.PeriodicJobOpts{RunOnStart: true}),
 		river.NewPeriodicJob(river.PeriodicInterval(_extendEvery), func() (river.JobArgs, *river.InsertOpts) {
 			return entity.CalcExtendTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
 		}, &river.PeriodicJobOpts{RunOnStart: true}),
