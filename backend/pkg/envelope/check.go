@@ -359,24 +359,36 @@ func (c *countingReader) Read(p []byte) (int, error) {
 }
 
 // xmlGuard finds a document type or entity declaration in a file that starts as XML: a parser of a
-// report could expand its entities or fetch an external one.
+// report could expand its entities or fetch an external one. Zero bytes are dropped before both checks, so
+// XML in UTF-16 or UTF-32 of ASCII markup is checked as well.
 type xmlGuard struct {
 	r                   io.Reader
 	decided, xml, found bool
 	tail                []byte
 }
 
-var _xmlDeclarations = [][]byte{[]byte("<!doctype"), []byte("<!entity")}
+var (
+	_xmlDeclarations = [][]byte{[]byte("<!doctype"), []byte("<!entity")}
+	// _wideMarks are the byte order marks of UTF-16 and UTF-32 once their zero bytes are dropped.
+	_wideMarks = [][]byte{{0xfe, 0xff}, {0xff, 0xfe}}
+)
 
 func (g *xmlGuard) Read(p []byte) (int, error) {
 	n, err := g.r.Read(p)
-	chunk := p[:n]
+	if g.decided && (!g.xml || g.found) {
+		return n, err
+	}
+	chunk := bytes.ReplaceAll(p[:n], []byte{0}, nil)
 	if !g.decided {
-		if trimmed := bytes.TrimLeft(chunk, " \t\r\n\ufeff"); len(trimmed) > 0 {
+		start := chunk
+		for _, mark := range _wideMarks {
+			start = bytes.TrimPrefix(start, mark)
+		}
+		if trimmed := bytes.TrimLeft(start, " \t\r\n\ufeff"); len(trimmed) > 0 {
 			g.decided, g.xml = true, trimmed[0] == '<'
 		}
 	}
-	if g.xml && !g.found && n > 0 {
+	if g.xml && !g.found && len(chunk) > 0 {
 		window := bytes.ToLower(append(g.tail, chunk...))
 		for _, d := range _xmlDeclarations {
 			if bytes.Contains(window, d) {

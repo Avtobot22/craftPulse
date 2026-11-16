@@ -91,6 +91,9 @@ func TestClean_RefusesXMLWithADocumentType(t *testing.T) {
 	for name, content := range map[string]string{
 		"external entity": `<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><testsuites>&x;</testsuites>`,
 		"lower case":      "\n  <!doctype html><testsuites/>",
+		"utf-16 le":       utf16(`<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><r>&x;</r>`, false, true),
+		"utf-16 be":       utf16(`<!DOCTYPE r><r/>`, true, true),
+		"utf-16 no bom":   utf16(`<!ENTITY x "y">`, false, false),
 	} {
 		data := build(t, manifest(envelope.ManifestSchemaIdJunit, false), func(w *envelope.Writer) {
 			ref, err := w.AddFile("files/report.xml", "application/xml", []byte(content))
@@ -132,4 +135,23 @@ func gunzip(t *testing.T, data []byte) []byte {
 	out, err := io.ReadAll(gz)
 	require.NoError(t, err)
 	return out
+}
+
+// utf16 encodes ASCII text as UTF-16, little or big endian, with or without the byte order mark.
+func utf16(text string, bigEndian, bom bool) string {
+	var out []byte
+	if bom {
+		out = append(out, 0xff, 0xfe)
+		if bigEndian {
+			out = []byte{0xfe, 0xff}
+		}
+	}
+	for _, b := range []byte(text) {
+		if bigEndian {
+			out = append(out, 0, b)
+		} else {
+			out = append(out, b, 0)
+		}
+	}
+	return string(out)
 }
