@@ -111,6 +111,27 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "epics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "key",
+                "summary"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -124,7 +145,8 @@
           "types",
           "sizes",
           "teams",
-          "resolutions"
+          "resolutions",
+          "epics"
         ],
         "additionalProperties": false
       }
@@ -158,6 +180,34 @@
             "type": "string",
             "minLength": 1
           },
+          "epic": {
+            "type": "string",
+            "description": "Ключ эпика проекта, пустая строка без эпика."
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "blocks",
+                    "relates",
+                    "duplicates"
+                  ]
+                },
+                "task_id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "task_id"
+              ],
+              "additionalProperties": false
+            }
+          },
           "events": {
             "type": "array",
             "minItems": 1,
@@ -171,7 +221,8 @@
                 "kind": {
                   "enum": [
                     "created",
-                    "field_change"
+                    "field_change",
+                    "comment"
                   ]
                 },
                 "event_time": {
@@ -229,7 +280,8 @@
                     "type",
                     "size",
                     "team",
-                    "flagged"
+                    "flagged",
+                    "assignee"
                   ]
                 },
                 "from": {
@@ -257,13 +309,18 @@
                         "team": {
                           "type": "string",
                           "minLength": 1
+                        },
+                        "assignee": {
+                          "type": "string",
+                          "description": "ID человека модели, пустая строка без исполнителя."
                         }
                       },
                       "required": [
                         "status",
                         "type",
                         "size",
-                        "team"
+                        "team",
+                        "assignee"
                       ],
                       "additionalProperties": false
                     },
@@ -271,6 +328,10 @@
                       "type": "null"
                     }
                   ]
+                },
+                "body": {
+                  "type": "string",
+                  "description": "Текст комментария; у остальных событий пустая строка."
                 }
               },
               "required": [
@@ -282,7 +343,8 @@
                 "field",
                 "from",
                 "to",
-                "initial"
+                "initial",
+                "body"
               ],
               "additionalProperties": false
             }
@@ -295,6 +357,8 @@
           "project_id",
           "key",
           "summary",
+          "epic",
+          "links",
           "events"
         ],
         "additionalProperties": false

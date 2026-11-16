@@ -23,20 +23,31 @@ func ValidateTasks(file *TaskFile, model *Model) error {
 	for _, p := range file.Projects {
 		projects[p.ID] = p
 	}
+	people := map[string][]string{}
+	for _, person := range model.People {
+		if !person.Bot {
+			people[person.OrganizationID] = append(people[person.OrganizationID], person.ID)
+		}
+	}
 	tasks, events := map[string]int{}, map[string]int{}
-	seen := map[string]bool{}
+	seen := map[string]string{}
 	for _, task := range file.Tasks {
 		p, ok := projects[task.ProjectID]
 		if !ok || task.OrganizationID != p.OrganizationID || task.InstanceID != p.InstanceID {
 			return fmt.Errorf("task %s: unknown project", task.ID)
 		}
-		if seen[task.ID] {
+		if seen[task.ID] != "" {
 			return fmt.Errorf("task %s: repeated ID", task.ID)
 		}
-		seen[task.ID] = true
+		seen[task.ID] = task.OrganizationID
 		tasks[p.ID]++
 		events[p.ID] += len(task.Events)
-		if err := validateHistory(task, p, asOf); err != nil {
+		if err := validateHistory(task, p, people[p.OrganizationID], asOf); err != nil {
+			return fmt.Errorf("task %s: %w", task.ID, err)
+		}
+	}
+	for _, task := range file.Tasks {
+		if err := validateLinks(task, seen); err != nil {
 			return fmt.Errorf("task %s: %w", task.ID, err)
 		}
 	}
@@ -57,7 +68,7 @@ func ValidateTasks(file *TaskFile, model *Model) error {
 			return fmt.Errorf("variant %s is unknown or has no tasks", v.VariantID)
 		}
 		for _, id := range v.ObjectIDs {
-			if !seen[id] {
+			if seen[id] == "" {
 				return fmt.Errorf("variant %s refers to unknown task %s", v.VariantID, id)
 			}
 		}
@@ -68,9 +79,29 @@ func ValidateTasks(file *TaskFile, model *Model) error {
 	return nil
 }
 
-func validateHistory(task Task, p TaskProject, asOf time.Time) error {
+// validateLinks checks that every link points once to another known task of the same organization.
+func validateLinks(task Task, orgOf map[string]string) error {
+	seen := map[TaskLink]bool{}
+	for _, l := range task.Links {
+		switch {
+		case l.Kind != LinkBlocks && l.Kind != LinkRelates && l.Kind != LinkDuplicates:
+			return fmt.Errorf("link kind %q is unknown", l.Kind)
+		case l.TaskID == task.ID || orgOf[l.TaskID] != task.OrganizationID:
+			return fmt.Errorf("link to %s leaves the tasks of the organization", l.TaskID)
+		case seen[l]:
+			return fmt.Errorf("link %s %s is repeated", l.Kind, l.TaskID)
+		}
+		seen[l] = true
+	}
+	return nil
+}
+
+func validateHistory(task Task, p TaskProject, people []string, asOf time.Time) error {
 	if len(task.Events) == 0 || task.Events[0].Kind != EventCreated || task.Events[0].Initial == nil {
 		return fmt.Errorf("history must start with the created event")
+	}
+	if task.Epic != "" && !slices.ContainsFunc(p.Epics, func(e TaskEpic) bool { return e.Key == task.Epic }) {
+		return fmt.Errorf("epic %q is not in the project", task.Epic)
 	}
 	statuses := make([]string, len(p.Statuses))
 	for i, s := range p.Statuses {
@@ -83,9 +114,12 @@ func validateHistory(task Task, p TaskProject, asOf time.Time) error {
 		FieldTeam:       p.Teams,
 		FieldResolution: append([]string{""}, p.Resolutions...),
 		FieldFlagged:    {"", FlagImpediment},
+		FieldAssignee:   append([]string{""}, people...),
 	}
 	initial := task.Events[0].Initial
-	current := map[string]string{FieldStatus: initial.Status, FieldType: initial.Type, FieldSize: initial.Size, FieldTeam: initial.Team}
+	current := map[string]string{
+		FieldStatus: initial.Status, FieldType: initial.Type, FieldSize: initial.Size, FieldTeam: initial.Team, FieldAssignee: initial.Assignee,
+	}
 	for field, value := range current {
 		if !slices.Contains(allowed[field], value) {
 			return fmt.Errorf("initial %s %q is not in the project", field, value)
@@ -110,7 +144,16 @@ func validateHistory(task Task, p TaskProject, asOf time.Time) error {
 				return fmt.Errorf("event %s: observed time must be between event time and as_of", e.ID)
 			}
 		}
+		if (e.Kind == EventComment) != (e.Body != "") {
+			return fmt.Errorf("event %s: only a comment has a body, and it is not empty", e.ID)
+		}
 		if i == 0 {
+			continue
+		}
+		if e.Kind == EventComment {
+			if e.Field != "" || e.From != "" || e.To != "" || e.Initial != nil {
+				return fmt.Errorf("event %s: a comment changes no field", e.ID)
+			}
 			continue
 		}
 		if e.Kind != EventFieldChange || e.Initial != nil {

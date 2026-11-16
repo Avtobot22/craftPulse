@@ -14,22 +14,31 @@ type history struct {
 	current  map[string]string
 	reporter Person
 	author   Person
+	// unassigned creates the task without an assignee; otherwise the author is assigned from the start.
+	unassigned bool
 	// late is the delivery delay of the next events; zero means they are observed when they happen.
 	late time.Duration
 }
 
+// _epicShare is the share of tasks that belong to an epic of their project.
+const _epicShare = 0.7
+
 func (g *taskGen) newHistory(p TaskProject, key, summary string) *history {
 	people := g.people[p.OrganizationID]
-	return &history{
+	h := &history{
 		g: g,
 		task: Task{
 			ID: p.OrganizationID + "/" + p.InstanceID + "/" + key, OrganizationID: p.OrganizationID,
-			InstanceID: p.InstanceID, ProjectID: p.ID, Key: key, Summary: summary, Events: []TaskEvent{},
+			InstanceID: p.InstanceID, ProjectID: p.ID, Key: key, Summary: summary, Links: []TaskLink{}, Events: []TaskEvent{},
 		},
 		current:  map[string]string{},
 		reporter: people[g.rng.IntN(len(people))],
 		author:   people[g.rng.IntN(len(people))],
 	}
+	if len(p.Epics) > 0 && g.rng.Float64() < _epicShare {
+		h.task.Epic = p.Epics[g.rng.IntN(len(p.Epics))].Key
+	}
+	return h
 }
 
 // withOffset returns a person of the organization who works in the given UTC offset.
@@ -43,10 +52,26 @@ func (g *taskGen) withOffset(org, offset string) Person {
 }
 
 func (h *history) create(at time.Time, f TaskFields) {
+	if f.Assignee == "" && !h.unassigned {
+		f.Assignee = h.author.ID
+	}
 	initial := f
 	h.emit(at, h.reporter, EventCreated, "", "", "", &initial)
 	h.current[FieldStatus], h.current[FieldType], h.current[FieldSize], h.current[FieldTeam] = f.Status, f.Type, f.Size, f.Team
+	h.current[FieldAssignee] = f.Assignee
 	h.track(at, f.Status)
+}
+
+// assign hands the task to a person; the person also makes the next changes of the task.
+func (h *history) assign(at time.Time, to Person) {
+	h.set(at, FieldAssignee, to.ID)
+	h.author = to
+}
+
+// comment adds a comment of a person; it changes no field.
+func (h *history) comment(at time.Time, who Person, body string) {
+	h.emit(at, who, EventComment, "", "", "", nil)
+	h.task.Events[len(h.task.Events)-1].Body = body
 }
 
 func (h *history) set(at time.Time, field, value string) {
