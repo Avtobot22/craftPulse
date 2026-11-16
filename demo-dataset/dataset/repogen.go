@@ -105,7 +105,11 @@ func buildRepo(spec repoSpec, people map[string]Person, from, asOf time.Time) (b
 	if err != nil {
 		return builtRepo{}, err
 	}
-	for p, content := range renderDocs(spec.docs, spec.specs) {
+	docs, drafts, err := renderDocs(spec.key, spec.docs, spec.specs)
+	if err != nil {
+		return builtRepo{}, err
+	}
+	for p, content := range docs {
 		if _, exists := files[p]; exists {
 			return builtRepo{}, fmt.Errorf("document %s overrides a fixture file", p)
 		}
@@ -121,7 +125,7 @@ func buildRepo(spec repoSpec, people map[string]Person, from, asOf time.Time) (b
 		return builtRepo{}, fmt.Errorf("fixture has %d lines, limit is %d", repo.Lines, _maxLines)
 	}
 	objects := gitObjects{}
-	commits, err := buildHistory(spec, files, people, objects, from, asOf)
+	commits, err := buildHistory(spec, files, drafts, people, objects, from, asOf)
 	if err != nil {
 		return builtRepo{}, err
 	}
@@ -156,7 +160,9 @@ func buildRepo(spec repoSpec, people map[string]Person, from, asOf time.Time) (b
 	return builtRepo{repo: repo, objects: objects, head: files}, nil
 }
 
-func buildHistory(spec repoSpec, files map[string][]byte, people map[string]Person, objects gitObjects, from, asOf time.Time) ([]Commit, error) {
+// buildHistory writes the commits of the plan and the revisions in the order of time. A file enters with the commit of
+// its longest prefix, as its draft when it has one; a revision later brings the final version of its documents.
+func buildHistory(spec repoSpec, files, drafts map[string][]byte, people map[string]Person, objects gitObjects, from, asOf time.Time) ([]Commit, error) {
 	owner := make(map[string]int, len(files))
 	for p := range files {
 		best, length := -1, -1
@@ -172,11 +178,19 @@ func buildHistory(spec repoSpec, files map[string][]byte, people map[string]Pers
 		}
 		owner[p] = best
 	}
+	plans := make([]historyStep, 0, len(spec.commits)+len(spec.revisions))
+	for i, plan := range spec.commits {
+		plans = append(plans, historyStep{commitPlan: plan, owner: i})
+	}
+	for _, r := range spec.revisions {
+		plans = append(plans, historyStep{commitPlan: commitPlan{r.at, r.authorID, r.message, nil}, owner: -1, revises: r.paths})
+	}
+	slices.SortStableFunc(plans, func(a, b historyStep) int { return strings.Compare(a.at, b.at) })
 	tree := make(map[string][]byte, len(files))
-	commits := make([]Commit, 0, len(spec.commits))
+	commits := make([]Commit, 0, len(plans))
 	var parents []string
 	previous := from
-	for i, plan := range spec.commits {
+	for i, plan := range plans {
 		at, err := parseSecond(plan.at)
 		if err != nil {
 			return nil, fmt.Errorf("commit %d: %w", i+1, err)
@@ -197,10 +211,20 @@ func buildHistory(spec repoSpec, files map[string][]byte, people map[string]Pers
 		committed.at = at.Add(_commitDelay)
 		var changed []string
 		for p, content := range files {
-			if owner[p] == i {
+			if plan.owner >= 0 && owner[p] == plan.owner {
+				if draft, ok := drafts[p]; ok {
+					content = draft
+				}
 				tree[p] = content
 				changed = append(changed, p)
 			}
+		}
+		for _, p := range plan.revises {
+			if _, ok := drafts[p]; !ok || tree[p] == nil {
+				return nil, fmt.Errorf("revision %d: %s has no draft committed before", i+1, p)
+			}
+			tree[p] = files[p]
+			changed = append(changed, p)
 		}
 		if len(changed) == 0 {
 			return nil, fmt.Errorf("commit %d changes no files", i+1)
@@ -215,6 +239,11 @@ func buildHistory(spec repoSpec, files map[string][]byte, people map[string]Pers
 			Message: plan.message, Files: changed,
 		})
 		parents = []string{sha}
+	}
+	for p := range drafts {
+		if string(tree[p]) != string(files[p]) {
+			return nil, fmt.Errorf("document %s never gets the sections it leaves for later", p)
+		}
 	}
 	return commits, nil
 }
@@ -402,4 +431,11 @@ func countLines(files map[string][]byte) int {
 		total += len(lines(content))
 	}
 	return total
+}
+
+// historyStep is a commit of the plan or a revision of documents; owner is the index of the commit in the plan.
+type historyStep struct {
+	commitPlan
+	owner   int
+	revises []string
 }

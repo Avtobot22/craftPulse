@@ -442,3 +442,85 @@ func TestSync_WorkerCompletesJobsInTheTransactionOfTheirResult(t *testing.T) {
 		"SELECT count(*) FROM normalize.task_version WHERE superseded_seq IS NULL"), "every collected task has its current version")
 	assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM normalize.task_event WHERE observed_via NOT IN ('backfill', 'incremental')"))
 }
+
+// TestSync_OverlapDoesNotPileUp starts new rounds of the increment: each reads back from the cursor of the step
+// by the overlap, and the cursor it keeps is not moved back by it.
+func TestSync_OverlapDoesNotPileUp(t *testing.T) {
+	t.Parallel()
+	e := newSyncEnv(t, testadapter.Config{})
+	conn := e.connection(t, "10000")
+	e.drain(t, conn)
+	cursors := func() map[string]*entity.SourceCursor {
+		var p struct {
+			Cursors map[string]*entity.SourceCursor `json:"cursors"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(e.state(t, conn).Cursor), &p))
+		return p.Cursors
+	}
+	e.enqueue(t, entity.SyncPageJob{OrganizationID: e.org, ConnectionID: conn, DataKind: "tasks", CorrelationID: entity.ID(uuid.New())})
+	e.drain(t, conn)
+	before := cursors()
+	for range 3 {
+		e.enqueue(t, entity.SyncPageJob{OrganizationID: e.org, ConnectionID: conn, DataKind: "tasks", CorrelationID: entity.ID(uuid.New())})
+		e.drain(t, conn)
+		after := cursors()
+		for key, c := range after {
+			require.NotNil(t, c, key)
+			require.NotNil(t, before[key], key)
+			assert.Equal(t, before[key].ModifiedAt, c.ModifiedAt, "a round with nothing new keeps the cursor of %s", key)
+		}
+		before = after
+	}
+}
+
+// TestSync_HistoryRepeatsAfterRateLimit reads on a cut history while the source limits the rate: the job comes
+// back after the pause and reads the history to its end.
+func TestSync_HistoryRepeatsAfterRateLimit(t *testing.T) {
+	t.Parallel()
+	e := newSyncEnv(t, testadapter.Config{})
+	conn := e.connection(t, "10000")
+	limited := false
+	for q := e.next(t, conn); q != nil; q = e.next(t, conn) {
+		if wait := q.scheduledAt.Sub(e.clock.Now()); wait > 0 {
+			e.clock.Advance(wait)
+		}
+		if q.kind == entity.KindSyncHistory && !limited {
+			limited = true
+			require.NoError(t, e.adapter.src.SetConfig(testadapter.Config{Faults: []testadapter.Fault{
+				{Operation: testadapter.OpFetch, SchemaID: "task_events", Kind: testadapter.FaultRateLimited, RetryAfterSeconds: 30},
+			}}))
+			require.NoError(t, e.run(t, q, false))
+			require.NoError(t, e.adapter.src.SetConfig(testadapter.Config{}))
+			assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'sync.history' AND state <> 'completed'"),
+				"the limited read waits for its repeat")
+			continue
+		}
+		require.NoError(t, e.run(t, q, false))
+	}
+	require.True(t, limited, "the page cuts a history")
+	assert.Equal(t, 2, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'sync.history' AND state = 'completed' AND args->>'native_id' = '20003'"),
+		"the limited read and its repeat")
+}
+
+// TestSync_EveryStepOfANewRoundReadsBack: a new round reads every step back from its cursor by the overlap, not
+// only the first one, so objects changed while the last round read are not lost in any schema or scope.
+func TestSync_EveryStepOfANewRoundReadsBack(t *testing.T) {
+	t.Parallel()
+	e := newSyncEnv(t, testadapter.Config{})
+	conn := e.connection(t, "10000")
+	e.drain(t, conn)
+	before := len(e.adapter.fetched(t))
+	e.enqueue(t, entity.SyncPageJob{OrganizationID: e.org, ConnectionID: conn, DataKind: "tasks", CorrelationID: entity.ID(uuid.New())})
+	e.drain(t, conn)
+	first := map[string]bool{}
+	for _, in := range e.adapter.fetched(t)[before:] {
+		schema := string(in.SchemaId)
+		if first[schema] || len(in.ObjectKeys) > 0 {
+			continue
+		}
+		first[schema] = true
+		require.NotNil(t, in.Cursor, schema)
+		assert.Empty(t, in.Cursor.NativeId, "the first page of %s in the round reads back by time", schema)
+	}
+	assert.Len(t, first, 2, "tasks and task_events")
+}

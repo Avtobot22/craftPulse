@@ -25,6 +25,10 @@ type fakeTx struct{}
 
 func (fakeTx) InTx(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
 
+func (fakeTx) JoinOrgTx(ctx context.Context, _ entity.ID, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
 func (fakeTx) InOrgTx(ctx context.Context, _ entity.ID, fn func(context.Context) error) error {
 	return fn(ctx)
 }

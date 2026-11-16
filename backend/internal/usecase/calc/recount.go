@@ -204,7 +204,7 @@ func (u *UseCase) RequestRefresh(ctx context.Context, orgID, seriesID, corr enti
 // builds and succeeded or failed with it.
 func (u *UseCase) RefreshStatus(ctx context.Context, orgID entity.ID, r entity.SeriesRefresh) (entity.RefreshStatus, error) {
 	var out entity.RefreshStatus
-	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
 		rev, found, err := u.d.Repo.RevisionAfter(ctx, orgID, r.SeriesID, r.AfterRevisionNo)
 		if err != nil || !found {
 			out.Status = entity.OperationQueued
@@ -319,7 +319,7 @@ func later(a, b time.Time) time.Time {
 
 // revisions are the current revision of the series and the one with the highest number, nil when absent.
 func (u *UseCase) revisions(ctx context.Context, org entity.ID, s *entity.CalcSeries) (cur, last *entity.CalcRevision, err error) {
-	err = u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+	err = u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
 		cur, last = nil, nil
 		if id := s.CurrentRevisionID; id != nil {
 			rev, err := u.d.Repo.Revision(ctx, org, *id)

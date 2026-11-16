@@ -53,7 +53,7 @@ func (u *UseCase) Structure(ctx context.Context, s entity.Subject) (entity.Struc
 // during its chain.
 func (u *UseCase) StructureVersion(ctx context.Context, orgID entity.ID) (int64, error) {
 	var v int64
-	err := u.tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+	err := u.tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var err error
 		v, err = u.orgs.StructureVersion(ctx, orgID)
 		return err

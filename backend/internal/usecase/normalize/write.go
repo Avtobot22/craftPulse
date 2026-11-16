@@ -204,6 +204,7 @@ func (w *writer) events(ctx context.Context, candidates []*eventCandidate, area 
 		e := c.event
 		e.TaskID, e.AreaID, e.KnownSeq = key.TaskID, area, w.seq
 		e.BeforeAccountID, e.AfterAccountID, e.ActorAccountID = w.account(c.before), w.account(c.after), w.account(c.actor)
+		e.BeforeValue, e.AfterValue = accountValue(e.BeforeValue, e.BeforeAccountID), accountValue(e.AfterValue, e.AfterAccountID)
 		insert = append(insert, e)
 		w.changes.add(area, _factTaskEvent, &e.EventTime)
 	}
@@ -272,6 +273,16 @@ func (w *writer) admits(known []entity.Revision, r entity.Revision, recordNo int
 		}
 	}
 	return true
+}
+
+// accountValue keeps the account of a user field as its value instead of the text of the source, so a name or a
+// mail does not reach the facts and anonymization clears it in org alone (TZ 12.9).
+func accountValue(v *string, account *entity.ID) *string {
+	if account == nil {
+		return v
+	}
+	id := account.String()
+	return &id
 }
 
 func (w *writer) account(native string) *entity.ID {

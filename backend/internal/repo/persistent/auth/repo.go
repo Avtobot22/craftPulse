@@ -234,3 +234,23 @@ func (r *Repo) RevokeUserAPIKeys(ctx context.Context, orgID, userID entity.ID, a
 	}
 	return n, nil
 }
+
+// PurgeLoginAttempts deletes up to limit login attempts that expired by before; abandoned ones go once a day (TZ 12.9).
+func (r *Repo) PurgeLoginAttempts(ctx context.Context, before time.Time, limit int) (int64, error) {
+	n, err := New(postgres.Conn(ctx, r.pool)).PurgeLoginAttempts(ctx, PurgeLoginAttemptsParams{Before: before, BatchLimit: batchLimit(limit)})
+	if err != nil {
+		return 0, fmt.Errorf("auth: purge login attempts: %w", err)
+	}
+	return n, nil
+}
+
+// PurgeSessions deletes up to limit sessions that expired by before; an ended session expires within its lifetime.
+func (r *Repo) PurgeSessions(ctx context.Context, before time.Time, limit int) (int64, error) {
+	n, err := New(postgres.Conn(ctx, r.pool)).PurgeSessions(ctx, PurgeSessionsParams{Before: before, BatchLimit: batchLimit(limit)})
+	if err != nil {
+		return 0, fmt.Errorf("auth: purge sessions: %w", err)
+	}
+	return n, nil
+}
+
+func batchLimit(limit int) int32 { return int32(min(max(limit, 1), math.MaxInt32)) } //nolint:gosec // bounded by min

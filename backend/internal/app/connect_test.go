@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -99,6 +100,20 @@ type adapterServer struct {
 	hits    atomic.Int64
 	mu      sync.Mutex
 	auth    []string
+	// fetches are the bodies of the Fetch calls, in their order.
+	fetches [][]byte
+}
+
+// fetched are the inputs of the Fetch calls so far.
+func (s *adapterServer) fetched(t *testing.T) []adaptersdk.FetchInput {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]adaptersdk.FetchInput, len(s.fetches))
+	for i, raw := range s.fetches {
+		require.NoError(t, json.Unmarshal(raw, &out[i]))
+	}
+	return out
 }
 
 // calls counts the lines of the request journal of an adapter for its operation.
@@ -112,8 +127,16 @@ func serveTLSAdapter(t *testing.T, cfg *tls.Config, h http.Handler) *adapterServ
 	s.Server = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v1/") {
 			s.hits.Add(1)
+			var body []byte
+			if strings.HasSuffix(r.URL.Path, "/fetch") {
+				body, _ = io.ReadAll(r.Body)
+				r.Body = io.NopCloser(bytes.NewReader(body))
+			}
 			s.mu.Lock()
 			s.auth = append(s.auth, r.Header.Get("Authorization"))
+			if body != nil {
+				s.fetches = append(s.fetches, body)
+			}
 			s.mu.Unlock()
 		}
 		h.ServeHTTP(w, r)
@@ -674,4 +697,32 @@ func TestConnect_TablesAreIsolatedByOrganization(t *testing.T) {
 	require.Error(t, err, "A cannot write a row of B")
 	assert.Zero(t, count(t, ctx, env.app, "SELECT count(*) FROM connect.connection"), "no organization set, no rows")
 	assert.Equal(t, 2, count(t, ctx, env.owner, "SELECT count(*) FROM connect.connection"))
+}
+
+// TestConnect_FailProbeEndsAProbeThatNeverFinished: a probe whose job spent its attempts fails as adapter_unavailable,
+// so the next start of the same settings makes a new probe instead of returning the one that never finishes.
+func TestConnect_FailProbeEndsAProbeThatNeverFinished(t *testing.T) {
+	t.Parallel()
+	env := newConnectEnv(t, adapterapi.Config{})
+	org := entity.ID(uuid.New())
+	ctx := t.Context()
+	id := env.connection(t, org, "", "")
+	s := entity.Subject{OrganizationID: org, UserID: entity.ID(uuid.New())}
+	stuck, err := env.uc.StartProbe(ctx, s, id)
+	require.NoError(t, err)
+	again, err := env.uc.StartProbe(ctx, s, id)
+	require.NoError(t, err)
+	require.Equal(t, stuck.ID, again.ID, "a start while the probe runs returns it")
+
+	require.NoError(t, env.uc.FailProbe(ctx, org, id, stuck.ID))
+	p, err := env.uc.GetProbe(ctx, s, id, stuck.ID)
+	require.NoError(t, err)
+	assert.Equal(t, entity.ProbeFailed, p.Status)
+	assert.Equal(t, entity.ProbeAdapterUnavailable, p.ReasonCode)
+	next, err := env.uc.StartProbe(ctx, s, id)
+	require.NoError(t, err)
+	assert.NotEqual(t, stuck.ID, next.ID, "the settings get a new probe")
+
+	require.NoError(t, env.uc.FailProbe(ctx, org, id, stuck.ID), "a finished probe stays as it is")
+	require.NoError(t, env.uc.FailProbe(ctx, org, id, entity.ID(uuid.New())), "a probe that is gone needs nothing")
 }

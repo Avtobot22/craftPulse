@@ -86,3 +86,11 @@ UPDATE auth.upload_token SET revoked_at=$3 WHERE organization_id=$1 AND id=$2 AN
 SELECT id, organization_id, project_id, slot, created_at, revoked_at FROM auth.upload_token
 WHERE organization_id=$1 AND project_id=$2 AND (NOT sqlc.arg(has_cursor)::boolean OR (created_at,id) < (sqlc.arg(after_time)::timestamptz, sqlc.arg(after_id)::uuid))
 ORDER BY created_at DESC, id DESC LIMIT sqlc.arg(page_limit);
+
+-- name: PurgeLoginAttempts :execrows
+DELETE FROM auth.login_attempt WHERE cookie_hash IN (
+    SELECT a.cookie_hash FROM auth.login_attempt a WHERE a.expires_at <= sqlc.arg(before) LIMIT sqlc.arg(batch_limit));
+
+-- name: PurgeSessions :execrows
+DELETE FROM auth.session WHERE (organization_id, id) IN (
+    SELECT s.organization_id, s.id FROM auth.session s WHERE s.expires_at <= sqlc.arg(before) LIMIT sqlc.arg(batch_limit));

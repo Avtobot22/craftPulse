@@ -167,6 +167,15 @@ func LoadSite(environ map[string]string) (Site, error) {
 		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
 		return Site{}, errors.New("invalid site: SITE_URL must be an http(s) origin without path, query and credentials")
 	}
-	s.URL = u.Scheme + "://" + u.Host
+	s.URL = u.Scheme + "://" + origin(u)
 	return s, nil
+}
+
+// origin writes the host as a browser does in the Origin header: in lower case and without the default port.
+func origin(u *url.URL) string {
+	host := strings.ToLower(u.Host)
+	if p := u.Port(); (u.Scheme == "https" && p == "443") || (u.Scheme == "http" && p == "80") {
+		host = strings.TrimSuffix(host, ":"+p)
+	}
+	return strings.TrimSuffix(host, ":")
 }

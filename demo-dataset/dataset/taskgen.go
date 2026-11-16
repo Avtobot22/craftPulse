@@ -8,14 +8,11 @@ import (
 	"time"
 )
 
-const (
-	_maxLoopsPerTask = 9
-	_lateDelivery    = 5 * 24 * time.Hour
-)
+const _lateDelivery = 5 * 24 * time.Hour
 
 // GenerateTasks builds the task model of the demo set from the people, period and volumes of the model.
-// Tasks of the flow variants are fixed; background tasks spread over the period come from the seed, and
-// review loops inside their work fill the history up to the exact event volume of each project.
+// Tasks of the flow variants are fixed; background tasks spread over the working days of the period come from the
+// seed, and comments inside their work fill the history up to the exact event volume of each project.
 func GenerateTasks(model *Model) (*TaskFile, error) {
 	asOf, err := parseSecond(model.AsOf)
 	if err != nil {
@@ -64,6 +61,9 @@ type taskGen struct {
 	// started and completed hold the first start and the first accepted completion of each task.
 	started   map[string]time.Time
 	completed map[string]time.Time
+	// titleOrder and titleNext draw the summaries of background tasks without repeats inside a type.
+	titleOrder map[string][]int
+	titleNext  map[string]int
 }
 
 func (g *taskGen) mark(variant string, ids ...string) {
@@ -90,7 +90,7 @@ func (g *taskGen) project(p TaskProject, taskTarget, eventTarget int) ([]Task, e
 	for number := len(specials) + 1; len(specials)+len(backgrounds) < taskTarget; number++ {
 		backgrounds = append(backgrounds, g.background(p, fmt.Sprintf("%s-%d", p.Key, number)))
 	}
-	if err := fill(backgrounds, eventTarget-used); err != nil {
+	if err := g.fill(backgrounds, eventTarget-used); err != nil {
 		return nil, err
 	}
 	tasks := specials
@@ -107,17 +107,57 @@ func (g *taskGen) project(p TaskProject, taskTarget, eventTarget int) ([]Task, e
 	if p.ID == "import-project" {
 		g.mark("replay", tasks[len(specials)].ID, tasks[len(specials)+1].ID, tasks[len(specials)+2].ID)
 	}
+	g.link(tasks, backgrounds, len(specials))
 	return tasks, nil
 }
 
-// background is a generated task: created, maybe started and finished, with optional detours.
+// link relates the tasks of a project as a team does: a blocked background task has the task that blocks it, one
+// task in ten relates to another, and a task closed as a duplicate points to an earlier bug it repeats.
+func (g *taskGen) link(tasks []Task, bs []background, first int) {
+	other := func(self int) int {
+		j := g.rng.IntN(len(tasks) - 1)
+		if j >= self {
+			j++
+		}
+		return j
+	}
+	add := func(from, to int, kind string) {
+		tasks[from].Links = append(tasks[from].Links, TaskLink{Kind: kind, TaskID: tasks[to].ID})
+	}
+	for i := range bs {
+		self := first + i
+		if bs[i].blocked {
+			add(other(self), self, LinkBlocks)
+		}
+		if g.rng.IntN(10) == 0 {
+			add(self, other(self), LinkRelates)
+		}
+	}
+	for i := range tasks {
+		if !slices.ContainsFunc(tasks[i].Events, func(e TaskEvent) bool { return e.Field == FieldStatus && e.To == StatusDuplicate }) {
+			continue
+		}
+		for j := range tasks {
+			if j != i && tasks[j].Events[0].Initial.Type == tasks[i].Events[0].Initial.Type && tasks[j].Events[0].EventTime.UTC < tasks[i].Events[0].EventTime.UTC {
+				add(i, j, LinkDuplicates)
+				break
+			}
+		}
+	}
+}
+
+// background is a generated task: created, maybe started and finished, with optional detours. Comments of the people
+// who work on it fill the history up to the event volume of the project.
 type background struct {
-	key, typ, size, team string
-	created, start, end  time.Time
-	outcome              string
-	blocked, waiting     bool
-	preEstimate          bool
-	loops                int
+	key, typ, size, team, summary string
+	created, start, end           time.Time
+	outcome                       string
+	blocked, waiting              bool
+	preEstimate                   bool
+	// assignLate creates the task without an assignee and assigns it on start; handoff passes it on during work.
+	assignLate, handoff bool
+	loops               int
+	comments            int
 }
 
 const (
@@ -133,25 +173,25 @@ func (b *background) events() int {
 		return n
 	}
 	n++
-	if b.preEstimate {
-		n++
+	for _, one := range []bool{b.assignLate, b.handoff, b.preEstimate} {
+		if one {
+			n++
+		}
 	}
-	if b.blocked {
-		n += 2
+	for _, pair := range []bool{b.blocked, b.waiting, b.outcome == _outcomeDone || b.outcome == _outcomeCancelled} {
+		if pair {
+			n += 2
+		}
 	}
-	if b.waiting {
-		n += 2
-	}
-	if b.outcome == _outcomeDone || b.outcome == _outcomeCancelled {
-		n += 2
-	}
-	return n + 2*b.loops
+	return n + 2*b.loops + b.comments
 }
 
 func (b *background) canEstimate() bool {
 	return b.outcome != _outcomeBacklog && b.size != "" && b.start.Sub(b.created) >= 2*time.Hour
 }
 
+// background draws a task inside the working days of the period: it waits up to a week before work starts and is
+// worked on from one to thirteen working days. One task in four goes back from review once, one in twenty twice.
 func (g *taskGen) background(p TaskProject, key string) background {
 	r := g.rng
 	b := background{key: key, team: "Platform"}
@@ -160,14 +200,13 @@ func (g *taskGen) background(p TaskProject, key string) background {
 	if p.Key == "PB" && r.IntN(4) == 0 {
 		b.team = "Payments"
 	}
+	b.summary = g.title(b.typ)
 	earliest := g.from.AddDate(0, -1, 0)
 	span := g.asOf.Add(-15 * 24 * time.Hour).Sub(earliest)
-	b.created = workTime(earliest.Add(time.Duration(r.Int64N(int64(span)))), r)
-	b.start = workTime(b.created.Add(time.Duration(r.IntN(6*24))*time.Hour), r)
-	if !b.start.After(b.created) {
-		b.start = b.created.Add(3 * time.Hour)
-	}
-	b.end = workTime(b.start.Add(time.Duration(24+r.IntN(13*24))*time.Hour), r)
+	minute := func(n int) time.Duration { return time.Duration(n) * time.Minute }
+	b.created = workAdd(earliest.Add(time.Duration(r.Int64N(int64(span)))), minute(r.IntN(60))).Truncate(time.Minute)
+	b.start = workAdd(b.created, minute(30+r.IntN(5*7*60))).Truncate(time.Minute)
+	b.end = workAdd(b.start, minute(7*60+r.IntN(12*7*60))).Truncate(time.Minute)
 	switch roll := r.IntN(100); {
 	case roll < 70:
 		b.outcome = _outcomeDone
@@ -187,76 +226,97 @@ func (g *taskGen) background(p TaskProject, key string) background {
 	b.blocked = r.IntN(5) == 0
 	b.waiting = r.IntN(7) == 0
 	b.preEstimate = b.canEstimate() && r.IntN(10) == 0
+	b.assignLate = r.IntN(5) < 2
+	b.handoff = b.outcome != _outcomeBacklog && r.IntN(7) == 0
+	if b.outcome != _outcomeBacklog {
+		switch roll := r.IntN(20); {
+		case roll == 0:
+			b.loops = 2
+		case roll < 6:
+			b.loops = 1
+		}
+	}
 	return b
 }
 
-// fill reaches the event target exactly: one optional estimate fixes the parity, review loops add pairs.
-func fill(bs []background, need int) error {
+// _maxComments bounds the comments of one task.
+const _maxComments = 16
+
+// fill reaches the event volume exactly: the tasks in work take the missing events as comments, at random.
+func (g *taskGen) fill(bs []background, need int) error {
+	var work []int
 	for i := range bs {
 		need -= bs[i].events()
+		if bs[i].outcome != _outcomeBacklog {
+			work = append(work, i)
+		}
 	}
 	if need < 0 {
 		return fmt.Errorf("base history has %d events more than the volume", -need)
 	}
-	if need%2 == 1 {
-		fixed := false
-		for i := range bs {
-			if bs[i].canEstimate() {
-				if bs[i].preEstimate {
-					bs[i].preEstimate, need = false, need+1
-				} else {
-					bs[i].preEstimate, need = true, need-1
-				}
-				fixed = true
-				break
-			}
+	for ; need > 0; need-- {
+		room := slices.DeleteFunc(slices.Clone(work), func(i int) bool { return bs[i].comments >= _maxComments })
+		if len(room) == 0 {
+			return fmt.Errorf("background tasks cannot hold %d more comments", need)
 		}
-		if !fixed {
-			return fmt.Errorf("no task can take a single event to fix the volume parity")
-		}
-	}
-	for loops := need / 2; loops > 0; {
-		progressed := false
-		for i := range bs {
-			if loops == 0 {
-				break
-			}
-			if bs[i].outcome == _outcomeBacklog || bs[i].loops >= _maxLoopsPerTask {
-				continue
-			}
-			bs[i].loops++
-			loops--
-			progressed = true
-		}
-		if !progressed {
-			return fmt.Errorf("background tasks cannot hold %d more review loops", loops)
-		}
+		bs[room[g.rng.IntN(len(room))]].comments++
 	}
 	return nil
 }
 
+// step is one planned change of a task; the plan runs in the order of time, so comments fall between changes.
+type step struct {
+	at time.Time
+	do func()
+}
+
 func (g *taskGen) buildBackground(p TaskProject, b background) Task {
-	h := g.newHistory(p, b.key, "Background task "+b.key)
+	h := g.newHistory(p, b.key, b.summary)
+	h.unassigned = b.assignLate
 	h.create(b.created, TaskFields{Status: StatusBacklog, Type: b.typ, Size: b.size, Team: b.team})
 	if b.outcome == _outcomeBacklog {
 		return h.done()
 	}
 	if b.preEstimate {
-		h.set(b.created.Add(b.start.Sub(b.created)/2), FieldSize, nextSize(b.size))
+		h.set(workShare(b.created, b.start, 0.5), FieldSize, nextSize(b.size))
+	}
+	if b.assignLate {
+		h.assign(b.start, h.author)
 	}
 	h.move(b.start, StatusInProgress)
-	work := b.end.Sub(b.start)
-	point := func(share float64) time.Time {
-		return b.start.Add(time.Duration(float64(work) * share)).Truncate(time.Second)
+	point := func(share float64) time.Time { return workShare(b.start, b.end, share) }
+	var plan []step
+	for i := 1; i <= 2*b.loops; i++ {
+		at, status := workShare(b.start, point(0.4), float64(i)/float64(2*b.loops+1)), StatusInReview
+		if i%2 == 0 {
+			status = StatusInProgress
+		}
+		plan = append(plan, step{at, func() { h.move(at, status) }})
 	}
-	h.loops(b.start, point(0.4), b.loops)
 	if b.blocked {
-		h.move(point(0.45), StatusBlocked)
-		h.move(point(0.6), StatusInProgress)
+		plan = append(plan, step{point(0.45), func() { h.move(point(0.45), StatusBlocked) }},
+			step{point(0.6), func() { h.move(point(0.6), StatusInProgress) }})
+	}
+	if b.handoff {
+		plan = append(plan, step{point(0.65), func() { h.assign(point(0.65), g.colleague(p.OrganizationID, h.author)) }})
 	}
 	if b.waiting {
-		h.move(point(0.7), StatusWaiting)
-		h.move(point(0.85), StatusInProgress)
+		plan = append(plan, step{point(0.7), func() { h.move(point(0.7), StatusWaiting) }},
+			step{point(0.85), func() { h.move(point(0.85), StatusInProgress) }})
+	}
+	for range b.comments {
+		at := point(0.02 + 0.96*g.rng.Float64())
+		plan = append(plan, step{at, func() {
+			who := h.author
+			if g.rng.IntN(3) == 0 {
+				who = g.colleague(p.OrganizationID, h.author)
+			}
+			h.comment(at, who, pick(g.rng, _commentBodies))
+		}})
+	}
+	slices.SortStableFunc(plan, func(a, b step) int { return a.at.Compare(b.at) })
+	for _, s := range plan {
+		s.do()
 	}
 	switch b.outcome {
 	case _outcomeDone:
@@ -265,6 +325,16 @@ func (g *taskGen) buildBackground(p TaskProject, b background) Task {
 		h.finish(b.end, StatusCancelled, ResolutionWontDo)
 	}
 	return h.done()
+}
+
+// colleague is another person of the organization than the given one.
+func (g *taskGen) colleague(org string, not Person) Person {
+	people := g.people[org]
+	for {
+		if p := people[g.rng.IntN(len(people))]; p.ID != not.ID || len(people) == 1 {
+			return p
+		}
+	}
 }
 
 func (g *taskGen) projectA(p TaskProject) []Task {

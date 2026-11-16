@@ -189,9 +189,11 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
+	purges := newRetention(pool, connections, newView(pool, collection, calculator, rights, clock.System{}), clock.System{})
 	workers := river.NewWorkers()
 	kinds := workerctrl.Register(workers, workerctrl.Deps{
 		Probes: connections, Packages: packages, Collection: collection, Normalizer: normalizer, Calculator: calculator,
+		Retention: purges,
 	})
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Int("job_kinds", kinds).Msg("worker started")

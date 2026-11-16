@@ -485,6 +485,42 @@ func (q *Queries) PageUploadTokens(ctx context.Context, arg PageUploadTokensPara
 	return items, nil
 }
 
+const purgeLoginAttempts = `-- name: PurgeLoginAttempts :execrows
+DELETE FROM auth.login_attempt WHERE cookie_hash IN (
+    SELECT a.cookie_hash FROM auth.login_attempt a WHERE a.expires_at <= $1 LIMIT $2)
+`
+
+type PurgeLoginAttemptsParams struct {
+	Before     time.Time
+	BatchLimit int32
+}
+
+func (q *Queries) PurgeLoginAttempts(ctx context.Context, arg PurgeLoginAttemptsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeLoginAttempts, arg.Before, arg.BatchLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const purgeSessions = `-- name: PurgeSessions :execrows
+DELETE FROM auth.session WHERE (organization_id, id) IN (
+    SELECT s.organization_id, s.id FROM auth.session s WHERE s.expires_at <= $1 LIMIT $2)
+`
+
+type PurgeSessionsParams struct {
+	Before     time.Time
+	BatchLimit int32
+}
+
+func (q *Queries) PurgeSessions(ctx context.Context, arg PurgeSessionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeSessions, arg.Before, arg.BatchLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeUploadToken = `-- name: RevokeUploadToken :execrows
 UPDATE auth.upload_token SET revoked_at=$3 WHERE organization_id=$1 AND id=$2 AND revoked_at IS NULL
 `

@@ -110,7 +110,7 @@ func (u *UseCase) CreateMappingVersion(ctx context.Context, s entity.Subject, te
 // revision of calc (TZ 10.6, 12.6); false when the team had none.
 func (u *UseCase) MappingAt(ctx context.Context, orgID, teamID entity.ID, seq int64) (entity.MappingVersion, bool, error) {
 	var out entity.MappingVersion
-	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var err error
 		out, err = u.d.Repo.MappingVersionAt(ctx, orgID, teamID, seq)
 		return err
@@ -125,7 +125,7 @@ func (u *UseCase) MappingAt(ctx context.Context, orgID, teamID entity.ID, seq in
 // checks whether its input changed (TZ 10.6); 0 when the team has none.
 func (u *UseCase) LastSettingsSeq(ctx context.Context, orgID, teamID entity.ID) (int64, error) {
 	var seq int64
-	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var err error
 		seq, err = u.d.Repo.LastSettingsSeq(ctx, orgID, teamID)
 		return err

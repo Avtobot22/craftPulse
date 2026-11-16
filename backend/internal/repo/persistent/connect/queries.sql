@@ -163,3 +163,11 @@ WHERE s.organization_id = sqlc.arg(organization_id) AND s.status = 'active' AND 
     AND (sqlc.narg(after)::uuid IS NULL OR s.area_id > sqlc.narg(after)::uuid)
 ORDER BY s.area_id
 LIMIT sqlc.arg(row_limit);
+
+-- name: PurgeProbes :execrows
+DELETE FROM connect.probe AS d WHERE d.organization_id = sqlc.arg(organization_id) AND d.id IN (
+    SELECT p.id FROM connect.probe p
+    WHERE p.organization_id = sqlc.arg(organization_id) AND p.finished_at <= sqlc.arg(before)
+        AND NOT EXISTS (SELECT 1 FROM connect.connection c
+            WHERE c.organization_id = p.organization_id AND c.id = p.connection_id AND c.activated_probe_id = p.id)
+    LIMIT sqlc.arg(batch_limit));

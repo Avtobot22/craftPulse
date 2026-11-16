@@ -1,5 +1,7 @@
 package dataset
 
+import "fmt"
+
 // Task model of the demo set: projects, tasks and their history, independent of the source they are loaded into.
 
 // Workflow of every task project. Category is the API category of the tracker: an intake status may be
@@ -26,11 +28,17 @@ const (
 	FieldSize       = "size"
 	FieldTeam       = "team"
 	FieldFlagged    = "flagged"
+	FieldAssignee   = "assignee"
 
 	FlagImpediment = "Impediment"
 
 	EventCreated     = "created"
 	EventFieldChange = "field_change"
+	EventComment     = "comment"
+
+	LinkBlocks     = "blocks"
+	LinkRelates    = "relates"
+	LinkDuplicates = "duplicates"
 )
 
 // UnknownStatus has no mapping rule on purpose: it gives neither start nor completion (FR-017 A3).
@@ -58,6 +66,13 @@ type TaskProject struct {
 	Sizes          []string     `json:"sizes"`
 	Teams          []string     `json:"teams"`
 	Resolutions    []string     `json:"resolutions"`
+	Epics          []TaskEpic   `json:"epics"`
+}
+
+// TaskEpic is an epic of the project; tasks name it by key, and it is not one of the tasks of the volume.
+type TaskEpic struct {
+	Key     string `json:"key"`
+	Summary string `json:"summary"`
 }
 
 type TaskStatus struct {
@@ -66,25 +81,38 @@ type TaskStatus struct {
 }
 
 type Task struct {
-	ID             string      `json:"id"`
-	OrganizationID string      `json:"organization_id"`
-	InstanceID     string      `json:"instance_id"`
-	ProjectID      string      `json:"project_id"`
-	Key            string      `json:"key"`
-	Summary        string      `json:"summary"`
-	Events         []TaskEvent `json:"events"`
+	ID             string `json:"id"`
+	OrganizationID string `json:"organization_id"`
+	InstanceID     string `json:"instance_id"`
+	ProjectID      string `json:"project_id"`
+	Key            string `json:"key"`
+	Summary        string `json:"summary"`
+	// Epic is the key of an epic of the project, empty without one.
+	Epic   string      `json:"epic"`
+	Links  []TaskLink  `json:"links"`
+	Events []TaskEvent `json:"events"`
 }
 
-// TaskFields are the values a task is created with; an empty Size means the task has no size.
+// TaskLink is a relation from this task to another task of the same organization: this task blocks, relates to
+// or duplicates it.
+type TaskLink struct {
+	Kind   string `json:"kind"`
+	TaskID string `json:"task_id"`
+}
+
+// TaskFields are the values a task is created with; an empty Size means the task has no size and an empty Assignee
+// that nobody is assigned yet. Assignee is the ID of a person of the organization.
 type TaskFields struct {
-	Status string `json:"status"`
-	Type   string `json:"type"`
-	Size   string `json:"size"`
-	Team   string `json:"team"`
+	Status   string `json:"status"`
+	Type     string `json:"type"`
+	Size     string `json:"size"`
+	Team     string `json:"team"`
+	Assignee string `json:"assignee"`
 }
 
 // TaskEvent is one history entry. A created event carries Initial and no field; a field change carries
-// Field, From and To. ObservedTime is set only when the source delivers the event later than it happened.
+// Field, From and To; a comment carries Body. ObservedTime is set only when the source delivers the event later
+// than it happened.
 type TaskEvent struct {
 	ID           string      `json:"id"`
 	Kind         string      `json:"kind"`
@@ -95,6 +123,7 @@ type TaskEvent struct {
 	From         string      `json:"from"`
 	To           string      `json:"to"`
 	Initial      *TaskFields `json:"initial"`
+	Body         string      `json:"body"`
 }
 
 // Objects is the per-kind object file that the manifest command reads.
@@ -122,17 +151,24 @@ func workflow() []TaskStatus {
 }
 
 func taskProjects() []TaskProject {
-	project := func(id, org, instance, key, name string, restricted bool) TaskProject {
-		return TaskProject{
+	project := func(id, org, instance, key, name string, restricted bool, epics ...string) TaskProject {
+		p := TaskProject{
 			ID: id, OrganizationID: org, InstanceID: instance, Key: key, Name: name, Restricted: restricted,
 			Statuses: workflow(), Types: []string{"Story", "Bug", "Task"}, Sizes: []string{"S", "M", "L"},
 			Teams: []string{"Platform", "Payments"}, Resolutions: []string{ResolutionDone, ResolutionWontDo, ResolutionDuplicate},
+			Epics: []TaskEpic{},
 		}
+		for i, summary := range epics {
+			p.Epics = append(p.Epics, TaskEpic{Key: fmt.Sprintf("%s-E%d", key, i+1), Summary: summary})
+		}
+		return p
 	}
 	return []TaskProject{
-		project("jira-project-a", "org-1", "jira-cloud-1", "PA", "Demo project A", false),
-		project("jira-project-b", "org-1", "jira-cloud-1", "PB", "Demo project B", false),
-		project("import-project", "org-1", "universal-1", "IMP", "Demo import project", false),
+		project("jira-project-a", "org-1", "jira-cloud-1", "PA", "Demo project A", false,
+			"Order checkout", "Discounts and promotions", "Reporting", "Service reliability"),
+		project("jira-project-b", "org-1", "jira-cloud-1", "PB", "Demo project B", false,
+			"Invoicing", "Payment providers", "Billing API v2"),
+		project("import-project", "org-1", "universal-1", "IMP", "Demo import project", false, "Data migration", "Partner onboarding"),
 		project("private-project", "org-2", "jira-cloud-1", "SEC", "Other organization project", true),
 	}
 }

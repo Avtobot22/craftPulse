@@ -23,6 +23,7 @@ type Deps struct {
 	Collection usecase.Collector
 	Normalizer usecase.Normalizer
 	Calculator usecase.Calculator
+	Retention  usecase.Retention
 }
 
 // Register adds the handlers of the job kinds; the count matters: River refuses to fetch jobs without a
@@ -43,7 +44,8 @@ func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &recountWorker{calculator: d.Calculator})
 	river.AddWorker(w, &extendWorker{calculator: d.Calculator})
 	river.AddWorker(w, &extendTickWorker{calculator: d.Calculator})
-	return 15
+	river.AddWorker(w, &retentionWorker{retention: d.Retention})
+	return 16
 }
 
 const (
@@ -53,9 +55,12 @@ const (
 	_gcEvery = 24 * time.Hour
 	// _extendEvery plans the daily extension of the series every hour, so each starts at its minute of the night.
 	_extendEvery = time.Hour
+	// _retentionEvery deletes what is past its term once a day.
+	_retentionEvery = 24 * time.Hour
 )
 
 // Periodic are the periodic jobs; River runs them on the leader only, so several workers do not repeat them.
+// The schedule lives in memory and starts over with every leader, so each job also runs on start.
 func Periodic() []*river.PeriodicJob {
 	return []*river.PeriodicJob{
 		river.NewPeriodicJob(river.PeriodicInterval(_tickEvery), func() (river.JobArgs, *river.InsertOpts) {
@@ -63,11 +68,23 @@ func Periodic() []*river.PeriodicJob {
 		}, &river.PeriodicJobOpts{RunOnStart: true}),
 		river.NewPeriodicJob(river.PeriodicInterval(_gcEvery), func() (river.JobArgs, *river.InsertOpts) {
 			return entity.CalcGCTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
-		}, nil),
+		}, &river.PeriodicJobOpts{RunOnStart: true}),
 		river.NewPeriodicJob(river.PeriodicInterval(_extendEvery), func() (river.JobArgs, *river.InsertOpts) {
 			return entity.CalcExtendTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
 		}, &river.PeriodicJobOpts{RunOnStart: true}),
+		river.NewPeriodicJob(river.PeriodicInterval(_retentionEvery), func() (river.JobArgs, *river.InsertOpts) {
+			return entity.RetentionTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
+		}, &river.PeriodicJobOpts{RunOnStart: true}),
 	}
+}
+
+type retentionWorker struct {
+	river.WorkerDefaults[entity.RetentionTickJob]
+	retention usecase.Retention
+}
+
+func (w *retentionWorker) Work(ctx context.Context, _ *river.Job[entity.RetentionTickJob]) error {
+	return w.retention.Purge(ctx)
 }
 
 type recountWorker struct {
@@ -222,9 +239,14 @@ type probeWorker struct {
 	runner usecase.ProbeRunner
 }
 
+// Work fails the probe when the last attempt failed, so the connection may start a new probe of the same settings.
 func (w *probeWorker) Work(ctx context.Context, job *river.Job[entity.ConnectProbeJob]) error {
 	a := job.Args
-	return snooze(w.runner.RunProbe(ctx, a.OrganizationID, a.ConnectionID, a.ProbeID))
+	err := snooze(w.runner.RunProbe(ctx, a.OrganizationID, a.ConnectionID, a.ProbeID))
+	if _, snoozed := errors.AsType[*river.JobSnoozeError](err); err == nil || snoozed || job.Attempt < job.MaxAttempts {
+		return err
+	}
+	return errors.Join(err, w.runner.FailProbe(context.WithoutCancel(ctx), a.OrganizationID, a.ConnectionID, a.ProbeID))
 }
 
 // snooze waits out a rate limit or a preparing source without spending an attempt (TZ 10.6).

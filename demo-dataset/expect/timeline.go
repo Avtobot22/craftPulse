@@ -297,6 +297,7 @@ func (t *timeline) apply(st *state, e accepted, m *mapping) error {
 		case dataset.FieldFlagged:
 			st.flag = e.raw.To
 		}
+	case dataset.EventComment:
 	default:
 		return fmt.Errorf("event %s has unknown kind", e.raw.ID)
 	}

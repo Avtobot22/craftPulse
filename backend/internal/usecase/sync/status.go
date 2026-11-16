@@ -161,7 +161,7 @@ func (u *UseCase) busy(ctx context.Context, org, conn entity.ID, st entity.SyncS
 // a collection is done when the round it continued ended, and failed when the collection stopped.
 func (u *UseCase) RunStatus(ctx context.Context, orgID, connectionID entity.ID, req entity.SyncRunRequest, since time.Time) (entity.SyncRunStatus, error) {
 	var out entity.SyncRunStatus
-	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
 		if req.Kind == entity.SyncReconcile {
 			run, found, err := u.d.Repo.LastReconcile(ctx, orgID, connectionID, req.DataKind)
 			if err != nil || !found {

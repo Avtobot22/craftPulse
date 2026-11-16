@@ -261,9 +261,15 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 		}
 	}
 	last := job.PartNo >= len(chunks)
-	var areas []entity.ID
+	var (
+		areas      []entity.ID
+		collection []entity.AreaCollection
+	)
 	if last {
 		if areas, err = u.teamAreas(ctx, org, team); err != nil {
+			return err
+		}
+		if collection, err = u.collectionOf(ctx, org, areas); err != nil {
 			return err
 		}
 	}
@@ -309,7 +315,7 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 			return err
 		}
 		published = true
-		return u.again(ctx, job, &rev, team, areas, now)
+		return u.again(ctx, job, &rev, team, areas, collection, now)
 	})
 	if err != nil {
 		return err
@@ -328,10 +334,11 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 }
 
 // again queues the chain of the job once more when the facts of the areas or the settings of the team are newer
-// than the cutoff of the revision or the structure is not the one of the start; it runs after the job completed
-// itself, or the copy would match the job that is still active and be dropped (TZ 10.6).
+// than the cutoff of the revision, or the structure or the collection is not the one of the start: the recount a
+// reconciliation asks for during the chain is dropped as its copy. It runs after the job completed itself, or the
+// copy would match the job that is still active and be dropped (TZ 10.6).
 func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entity.CalcRevision, team entity.ID, areas []entity.ID,
-	now time.Time,
+	collection []entity.AreaCollection, now time.Time,
 ) error {
 	facts, err := u.d.Facts.AreaChangeSeq(ctx, job.OrganizationID, areas)
 	if err != nil {
@@ -345,7 +352,7 @@ func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entit
 	if err != nil {
 		return err
 	}
-	if max(facts, settings) <= rev.KnowledgeSeq && structure == job.Structure {
+	if max(facts, settings) <= rev.KnowledgeSeq && structure == job.Structure && (job.Sources == nil || sameCollection(*job.Sources, collection)) {
 		return nil
 	}
 	at := now.Add(_recountDelay)
@@ -451,6 +458,28 @@ func revisionHash(s *entity.CalcSeries, r *entity.CalcRevision, inputs []entity.
 		d.text(in.Version)
 	}
 	return d.sum()
+}
+
+// sameCollection tells whether two states of the collection give the parts the same input.
+func sameCollection(a, b []entity.AreaCollection) bool {
+	return slices.EqualFunc(a, b, func(x, y entity.AreaCollection) bool {
+		return x.AreaID == y.AreaID && x.ConnectionID == y.ConnectionID && x.Completeness == y.Completeness && x.Phase == y.Phase &&
+			sameTime(x.Watermark, y.Watermark) && sameTime(x.LastSuccessAt, y.LastSuccessAt) && sameRun(x.Reconcile, y.Reconcile)
+	})
+}
+
+func sameTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
+}
+
+func sameRun(a, b *entity.ReconcileRun) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.ID == b.ID && a.Outcome == b.Outcome && sameTime(a.FinishedAt, b.FinishedAt)
 }
 
 // teamCollection is the state of the collection of the areas of the projects of the team now.

@@ -16,6 +16,8 @@ type docSpec struct {
 	links    []string
 	// index links every other document of the repository.
 	index bool
+	// later are sections a later revision adds: the first commit of the document has the rest only.
+	later []string
 }
 
 type specOperation struct {
@@ -34,7 +36,9 @@ var (
 	_slugDrop       = regexp.MustCompile(`[^\p{L}\p{N} _-]`)
 )
 
-func renderDocs(docs []docSpec, specs []openAPISpec) map[string][]byte {
+// renderDocs renders the documents as they are at head and, for the documents with later sections, as they were in
+// their first commit.
+func renderDocs(key string, docs []docSpec, specs []openAPISpec) (files, drafts map[string][]byte, err error) {
 	all := make([]string, 0, len(docs)+len(specs))
 	for _, doc := range docs {
 		all = append(all, doc.path)
@@ -42,7 +46,7 @@ func renderDocs(docs []docSpec, specs []openAPISpec) map[string][]byte {
 	for _, spec := range specs {
 		all = append(all, spec.path)
 	}
-	files := make(map[string][]byte, len(all))
+	files, drafts = make(map[string][]byte, len(all)), map[string][]byte{}
 	for _, doc := range docs {
 		links := doc.links
 		if doc.index {
@@ -53,22 +57,52 @@ func renderDocs(docs []docSpec, specs []openAPISpec) map[string][]byte {
 				}
 			}
 		}
-		files[doc.path] = []byte(renderMarkdown(doc, links))
+		final, err := renderMarkdown(key, doc, links, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		files[doc.path] = []byte(final)
+		if len(doc.later) > 0 {
+			draft, err := renderMarkdown(key, doc, links, doc.later)
+			if err != nil {
+				return nil, nil, err
+			}
+			drafts[doc.path] = []byte(draft)
+		}
 	}
 	for _, spec := range specs {
 		files[spec.path] = []byte(renderOpenAPI(spec))
 	}
-	return files
+	return files, drafts, nil
 }
 
-func renderMarkdown(doc docSpec, links []string) string {
+// renderMarkdown writes the document with its texts from _docTexts, leaving out the sections in skip.
+func renderMarkdown(key string, doc docSpec, links, skip []string) (string, error) {
+	text := func(id string) (string, error) {
+		t, ok := _docTexts[key+" "+id]
+		if !ok {
+			return "", fmt.Errorf("document %s of %s has no text for %q", doc.path, key, id)
+		}
+		return t, nil
+	}
 	var b strings.Builder
 	if doc.owner != "" {
 		fmt.Fprintf(&b, "---\nowner: %s\n---\n\n", doc.owner)
 	}
-	fmt.Fprintf(&b, "# %s\n\n%s describes this part of the service for the team.\n", doc.title, doc.title)
+	intro, err := text(doc.path)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(&b, "# %s\n\n%s\n", doc.title, intro)
 	for _, section := range doc.sections {
-		fmt.Fprintf(&b, "\n## %s\n\nNotes on %s.\n", section, strings.ToLower(section))
+		if slices.Contains(skip, section) {
+			continue
+		}
+		body, err := text(doc.path + "#" + section)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&b, "\n## %s\n\n%s\n", section, body)
 	}
 	if len(links) > 0 {
 		b.WriteString("\n## See also\n\n")
@@ -77,7 +111,7 @@ func renderMarkdown(doc docSpec, links []string) string {
 			fmt.Fprintf(&b, "- [%s](%s)\n", path.Base(label), link)
 		}
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 // renderOpenAPI writes an OpenAPI 3.0 document; an invalid one omits the required response description.

@@ -149,7 +149,10 @@ func TestPreview_V14MatchesConfirmedVersion(t *testing.T) {
 	now := e.clock.Now().In(moscow)
 	monday := time.Date(now.Year(), now.Month(), now.Day()-(int(now.Weekday())+6)%7, 0, 0, 0, 0, moscow)
 	d0 := monday.Add(9 * time.Hour).UTC()
-	require.True(t, d0.Add(26*time.Hour).Before(e.clock.Now()), "the test clock is late enough in its week")
+	// Jobs are scheduled by the database time, so settle brings the test clock to the real week, early on Monday too.
+	if wait := d0.Add(27 * time.Hour).Sub(e.clock.Now()); wait > 0 {
+		e.clock.Advance(wait)
+	}
 	e.collectV14(t, d0)
 	before := e.rows(t)
 

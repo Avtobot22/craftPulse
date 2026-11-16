@@ -14,6 +14,7 @@ type repoSpec struct {
 	docs           []docSpec
 	specs          []openAPISpec
 	commits        []commitPlan
+	revisions      []revisionPlan
 	defects        []defectSpec
 	brokenLinks    []BrokenLink
 	steps          []stepSpec
@@ -26,6 +27,14 @@ type commitPlan struct {
 	authorID string
 	message  string
 	prefixes []string
+}
+
+// revisionPlan is a later commit that brings the sections a document left for later (docSpec.later).
+type revisionPlan struct {
+	at       string
+	authorID string
+	message  string
+	paths    []string
 }
 
 // defectSpec finds the defect line by the trimmed line prefix in the head tree.
@@ -56,16 +65,16 @@ func ordersRepo() repoSpec {
 		docRoots: []string{"docs"},
 		docs: []docSpec{
 			{path: "docs/README.md", title: "Orders service documentation", owner: lead, index: true},
-			{path: "docs/architecture.md", title: "Architecture", owner: lead, sections: []string{"Components", "Data flow"}, links: []string{"api/overview.md", "adr/0001-http-router.md"}},
+			{path: "docs/architecture.md", title: "Architecture", owner: lead, sections: []string{"Components", "Data flow"}, links: []string{"api/overview.md", "adr/0001-http-router.md"}, later: []string{"Data flow"}},
 			{path: "docs/getting-started.md", title: "Getting started", owner: dev5, sections: []string{"Prerequisites", "Run locally"}, links: []string{"configuration.md#environment", "../README.md"}},
-			{path: "docs/configuration.md", title: "Configuration", owner: lead, sections: []string{"Environment", "Defaults"}, links: []string{"adr/0003-config-from-env.md"}},
+			{path: "docs/configuration.md", title: "Configuration", owner: lead, sections: []string{"Environment", "Defaults"}, links: []string{"adr/0003-config-from-env.md"}, later: []string{"Defaults"}},
 			{path: "docs/glossary.md", title: "Glossary", sections: []string{"Kopeck", "Quote"}},
 			{path: "docs/changelog.md", title: "Changelog", sections: []string{"March 2026", "June 2026"}, links: []string{"api/quotes.md"}},
 			{path: "docs/api/overview.md", title: "API overview", owner: dev7, sections: []string{"Authentication", "Limits"}, links: []string{"quotes.md", "reports.md", "errors.md#rate-limits", "orders.openapi.yaml"}},
-			{path: "docs/api/errors.md", title: "Errors", owner: dev7, sections: []string{"Error format", "Rate limiting", "Validation"}, links: []string{"overview.md"}},
+			{path: "docs/api/errors.md", title: "Errors", owner: dev7, sections: []string{"Error format", "Rate limiting", "Validation"}, links: []string{"overview.md"}, later: []string{"Validation"}},
 			{path: "docs/api/quotes.md", title: "Quotes", owner: dev5, sections: []string{"Request", "Response"}, links: []string{"errors.md#error-format", "../glossary.md#quote"}},
 			{path: "docs/api/reports.md", title: "Reports", owner: dev6, sections: []string{"Titles"}, links: []string{"reports.openapi.yaml", "../adr/0004-report-titles.md"}},
-			{path: "docs/runbooks/deploy.md", title: "Deploy", owner: dev8, sections: []string{"Steps", "Rollback"}, links: []string{"../ops/rollback.md", "incident.md#escalation"}},
+			{path: "docs/runbooks/deploy.md", title: "Deploy", owner: dev8, sections: []string{"Steps", "Rollback"}, links: []string{"../ops/rollback.md", "incident.md#escalation"}, later: []string{"Rollback"}},
 			{path: "docs/runbooks/incident.md", title: "Incident response", owner: dev8, sections: []string{"Triage", "Escalation"}, links: []string{"on-call.md"}},
 			{path: "docs/runbooks/on-call.md", title: "On-call", owner: dev8, sections: []string{"Rotation"}, links: []string{"incident.md"}},
 			{path: "docs/runbooks/database.md", title: "Database maintenance", sections: []string{"Backups"}},
@@ -96,6 +105,12 @@ func ordersRepo() repoSpec {
 			{"2026-07-08T07:50:00Z", "org-1/person-09", "Write down team processes", []string{"docs/process/"}},
 			{"2026-09-16T10:25:00Z", "org-1/person-06", "Add glossary and changelog", []string{"docs/glossary.md", "docs/changelog.md"}},
 		},
+		revisions: []revisionPlan{
+			{"2026-05-06T08:20:00Z", "org-1/person-03", "Document configuration defaults", []string{"docs/configuration.md"}},
+			{"2026-07-15T11:10:00Z", "org-1/person-07", "Document validation errors", []string{"docs/api/errors.md"}},
+			{"2026-08-19T09:40:00Z", "org-1/person-08", "Describe rollback in the deploy runbook", []string{"docs/runbooks/deploy.md"}},
+			{"2026-10-14T12:05:00Z", "org-1/person-03", "Describe the data flow of a quote", []string{"docs/architecture.md"}},
+		},
 		defects: []defectSpec{
 			{id: "orders-test-rounding", kind: DefectTest, tool: "go test", rule: "demo.invalid/orders/internal/order.TestApplyDiscountRoundsHalfUp", file: "internal/order/discount_test.go", linePrefix: `t.Fatalf("ApplyDiscount(1050, 5)`},
 			{id: "orders-lint-errcheck", kind: DefectLint, tool: "golangci-lint", rule: "errcheck", file: "internal/httpapi/handler.go", linePrefix: "json.NewEncoder(w).Encode(quote{", fixedByStep: 7},
@@ -125,12 +140,12 @@ func billingRepo() repoSpec {
 			{path: "docs/faq.md", title: "FAQ", owner: p11, sections: []string{"Questions"}, links: []string{"pricing/rounding.md#half-up"}},
 			{path: "docs/pricing/tiers.md", title: "Tiers", owner: p11, sections: []string{"Tiers", "Examples"}, links: []string{"rounding.md"}},
 			{path: "docs/pricing/currencies.md", title: "Currencies", owner: p11, sections: []string{"Supported currencies"}},
-			{path: "docs/pricing/rounding.md", title: "Rounding", owner: p11, sections: []string{"Half-up", "Examples"}},
+			{path: "docs/pricing/rounding.md", title: "Rounding", owner: p11, sections: []string{"Half-up", "Examples"}, later: []string{"Examples"}},
 			{path: "docs/pricing/discounts.md", title: "Discounts", owner: p12, sections: []string{"Rules"}, links: []string{"tiers.md#examples"}},
 			{path: "docs/pricing/taxes.md", title: "Taxes", sections: []string{"VAT"}},
 			{path: "docs/api/invoices.md", title: "Invoices", owner: p12, sections: []string{"Create", "Read"}, links: []string{"billing.openapi.yaml", "../pricing/tiers.md#tiers"}},
 			{path: "docs/api/payments.md", title: "Payments", owner: p12, sections: []string{"Statuses"}},
-			{path: "docs/api/webhooks.md", title: "Webhooks", owner: p13, sections: []string{"Delivery", "Retries"}, links: []string{"webhooks.openapi.yaml"}},
+			{path: "docs/api/webhooks.md", title: "Webhooks", owner: p13, sections: []string{"Delivery", "Retries"}, links: []string{"webhooks.openapi.yaml"}, later: []string{"Retries"}},
 			{path: "docs/guides/onboarding.md", title: "Onboarding", owner: p13, sections: []string{"First day"}, links: []string{"local-setup.md"}},
 			{path: "docs/guides/local-setup.md", title: "Local setup", owner: p13, sections: []string{"Requirements"}, links: []string{"../../README.md"}},
 			{path: "docs/guides/testing.md", title: "Testing", owner: p14, sections: []string{"Unit tests"}},
@@ -156,6 +171,10 @@ func billingRepo() repoSpec {
 			{"2026-07-20T11:10:00Z", "org-1/person-10", "Record architecture decisions", []string{"docs/adr/"}},
 			{"2026-08-31T09:45:00Z", "org-1/person-14", "Describe release and support process", []string{"docs/process/"}},
 			{"2026-10-05T13:00:00Z", "org-1/person-11", "Add FAQ and changelog", []string{"docs/faq.md", "docs/changelog.md"}},
+		},
+		revisions: []revisionPlan{
+			{"2026-04-15T10:30:00Z", "org-1/person-11", "Add rounding examples", []string{"docs/pricing/rounding.md"}},
+			{"2026-09-09T08:50:00Z", "org-1/person-13", "Document webhook retries", []string{"docs/api/webhooks.md"}},
 		},
 	}
 }

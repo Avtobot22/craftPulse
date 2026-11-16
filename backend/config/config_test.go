@@ -132,6 +132,10 @@ func TestLoadSite(t *testing.T) {
 	}{
 		{give: "https://craftpulse.example", want: "https://craftpulse.example"},
 		{give: "https://craftpulse.example/", want: "https://craftpulse.example"},
+		{give: "https://CraftPulse.Example:443", want: "https://craftpulse.example"},
+		{give: "http://craftpulse.example:80/", want: "http://craftpulse.example"},
+		{give: "https://craftpulse.example:8443", want: "https://craftpulse.example:8443"},
+		{give: "http://[::1]:8080", want: "http://[::1]:8080"},
 		{give: "https://craftpulse.example/app", wantErr: true},
 		{give: "ftp://craftpulse.example", wantErr: true},
 		{give: "", wantErr: true},

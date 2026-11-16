@@ -173,3 +173,34 @@ func TestDatabaseSettings(t *testing.T) {
 	assert.Equal(t, []string{"UTF8", "b", "C.UTF-8", "UTC"}, []string{encoding, provider, locale, tz})
 	assert.Equal(t, 1, count(t, t.Context(), app, "SELECT count(*) FROM pg_extension WHERE extname = 'btree_gist'"))
 }
+
+// TestPostgres_JoinOrgTxJoinsOnlyItsOrganization: a read inside the transaction of its organization runs on the same
+// connection, a read of another organization gets a transaction of its own with its own row-level security.
+func TestPostgres_JoinOrgTxJoinsOnlyItsOrganization(t *testing.T) {
+	t.Parallel()
+	db := newMigratedDB(t)
+	pool := db.pool(t, "craftpulse_app", pg.MaxConns(2))
+	a, b := uuid.New(), uuid.New()
+	session := func(ctx context.Context) (org string, pid int) {
+		tx, ok := pg.TxFrom(ctx)
+		require.True(t, ok)
+		require.NoError(t, tx.QueryRow(ctx, "SELECT current_setting('craftpulse.org_id'), pg_backend_pid()").Scan(&org, &pid))
+		return org, pid
+	}
+	require.NoError(t, pg.InOrgTx(t.Context(), pool, a, func(ctx context.Context) error {
+		org, pid := session(ctx)
+		require.Equal(t, a.String(), org)
+		require.NoError(t, pg.JoinOrgTx(ctx, pool, a, func(ctx context.Context) error {
+			joined, joinedPID := session(ctx)
+			assert.Equal(t, a.String(), joined)
+			assert.Equal(t, pid, joinedPID, "the same organization joins the transaction")
+			return nil
+		}))
+		return pg.JoinOrgTx(ctx, pool, b, func(ctx context.Context) error {
+			other, otherPID := session(ctx)
+			assert.Equal(t, b.String(), other)
+			assert.NotEqual(t, pid, otherPID, "another organization gets its own transaction")
+			return nil
+		})
+	}))
+}

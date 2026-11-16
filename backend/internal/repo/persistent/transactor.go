@@ -25,3 +25,7 @@ func (t *Transactor) InTx(ctx context.Context, fn func(ctx context.Context) erro
 func (t *Transactor) InOrgTx(ctx context.Context, orgID entity.ID, fn func(ctx context.Context) error) error {
 	return postgres.InOrgTx(ctx, t.pool, uuid.UUID(orgID), fn)
 }
+
+func (t *Transactor) JoinOrgTx(ctx context.Context, orgID entity.ID, fn func(ctx context.Context) error) error {
+	return postgres.JoinOrgTx(ctx, t.pool, uuid.UUID(orgID), fn)
+}

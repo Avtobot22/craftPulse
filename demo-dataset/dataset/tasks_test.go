@@ -2,6 +2,8 @@ package dataset_test
 
 import (
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -247,6 +249,117 @@ func TestGenerateTasks_Rejects(t *testing.T) {
 	broken.Tasks = broken.Tasks[1:]
 	if err := dataset.ValidateTasks(&broken, m); err == nil {
 		t.Error("accepted a model below the volume")
+	}
+	broken = clone(t, *file)
+	broken.Tasks[0].Links = append(broken.Tasks[0].Links, dataset.TaskLink{Kind: dataset.LinkRelates, TaskID: broken.Tasks[0].ID})
+	if err := dataset.ValidateTasks(&broken, m); err == nil {
+		t.Error("accepted a link of a task to itself")
+	}
+	broken = clone(t, *file)
+	broken.Tasks[0].Events[0].Initial.Assignee = "org-2/person-01"
+	if err := dataset.ValidateTasks(&broken, m); err == nil {
+		t.Error("accepted an assignee of another organization")
+	}
+	broken = clone(t, *file)
+	for i, e := range broken.Tasks[len(broken.Tasks)-2].Events {
+		if e.Kind == dataset.EventComment {
+			broken.Tasks[len(broken.Tasks)-2].Events[i].Body = ""
+			break
+		}
+	}
+	if err := dataset.ValidateTasks(&broken, m); err == nil {
+		t.Error("accepted a comment without a body")
+	}
+}
+
+// lastVariant is the number of the last task of the flow variants in each project; later keys are background tasks.
+var lastVariant = map[string]int{"PA": 18, "PB": 6, "IMP": 7, "SEC": 1}
+
+func backgrounds(file *dataset.TaskFile) []dataset.Task {
+	var out []dataset.Task
+	for _, task := range file.Tasks {
+		project, number, _ := strings.Cut(task.Key, "-")
+		if n, err := strconv.Atoi(number); err == nil && n > lastVariant[project] {
+			out = append(out, task)
+		}
+	}
+	return out
+}
+
+func TestGenerateTasks_BackgroundWorksOnWorkingDays(t *testing.T) {
+	t.Parallel()
+	_, file := tasks(t, 21)
+	bs := backgrounds(file)
+	if len(bs) < 60 {
+		t.Fatalf("%d background tasks", len(bs))
+	}
+	for _, task := range bs {
+		for _, e := range task.Events {
+			moment := at(t, e)
+			if moment.Weekday() == time.Saturday || moment.Weekday() == time.Sunday || moment.Hour() < 7 || moment.Hour() >= 14 {
+				t.Fatalf("%s at %s is outside the working day of the team", e.ID, moment)
+			}
+		}
+	}
+}
+
+func TestGenerateTasks_ReviewReturnsAreRare(t *testing.T) {
+	t.Parallel()
+	for _, seed := range []uint64{21, 22, 23} {
+		_, file := tasks(t, seed)
+		bs := backgrounds(file)
+		none := 0
+		for _, task := range bs {
+			returns := 0
+			for _, e := range changes(task, dataset.FieldStatus) {
+				if e.From == dataset.StatusInReview && e.To == dataset.StatusInProgress {
+					returns++
+				}
+			}
+			if returns > 2 {
+				t.Fatalf("seed %d: %s goes back from review %d times", seed, task.Key, returns)
+			}
+			if returns == 0 {
+				none++
+			}
+		}
+		if none*10 < len(bs)*6 {
+			t.Fatalf("seed %d: only %d of %d background tasks never go back from review", seed, none, len(bs))
+		}
+	}
+}
+
+func TestGenerateTasks_AssigneesEpicsAndLinks(t *testing.T) {
+	t.Parallel()
+	_, file := tasks(t, 21)
+	epics, links := 0, map[string]int{}
+	for _, task := range file.Tasks {
+		assignee := task.Events[0].Initial.Assignee
+		for _, e := range task.Events {
+			if e.Field == dataset.FieldAssignee {
+				assignee = e.To
+			}
+			if e.Field == dataset.FieldStatus && e.To == dataset.StatusInProgress && assignee == "" {
+				t.Fatalf("%s starts work without an assignee", task.Key)
+			}
+		}
+		if task.Epic != "" {
+			epics++
+		}
+		for _, l := range task.Links {
+			links[l.Kind]++
+		}
+	}
+	if epics*2 < len(file.Tasks) {
+		t.Fatalf("only %d of %d tasks belong to an epic", epics, len(file.Tasks))
+	}
+	for _, kind := range []string{dataset.LinkBlocks, dataset.LinkRelates, dataset.LinkDuplicates} {
+		if links[kind] == 0 {
+			t.Fatalf("no link of kind %s: %v", kind, links)
+		}
+	}
+	if duplicate := byKey(t, file, "jira-cloud-1", "PA-5"); len(duplicate.Links) != 1 || duplicate.Links[0].Kind != dataset.LinkDuplicates {
+		t.Fatalf("PA-5 does not point to the task it repeats: %v", duplicate.Links)
 	}
 }
 

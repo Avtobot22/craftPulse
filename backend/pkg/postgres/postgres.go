@@ -73,8 +73,23 @@ func InOrgTx(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, fn func(c
 		if _, err := tx.Exec(ctx, "SELECT set_config('craftpulse.org_id', $1, true)", orgID.String()); err != nil {
 			return fmt.Errorf("postgres: set organization: %w", err)
 		}
-		return fn(ctx)
+		return fn(context.WithValue(ctx, orgKey{}, orgID))
 	})
+}
+
+type orgKey struct{}
+
+// JoinOrgTx runs fn in the transaction of ctx when it is one of the same organization, otherwise in a new one. It is
+// for reads a module serves both alone and inside the transaction of its caller: a nested InOrgTx would wait for a
+// second connection while holding the first, and a full pool of such requests blocks itself. A failure aborts the
+// transaction of the caller, which repeats it as a whole.
+func JoinOrgTx(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, fn func(ctx context.Context) error) error {
+	if _, ok := TxFrom(ctx); ok {
+		if org, ok := ctx.Value(orgKey{}).(uuid.UUID); ok && org == orgID {
+			return fn(ctx)
+		}
+	}
+	return InOrgTx(ctx, pool, orgID, fn)
 }
 
 // InTx serves tables outside row-level security (TZ 12.2), read before the organization is known.

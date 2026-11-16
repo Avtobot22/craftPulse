@@ -80,8 +80,14 @@ type Connections interface {
 }
 
 // ProbeRunner runs the job of a probe; *entity.RetryLaterError asks to run it again later.
+// Retention deletes the login attempts, sessions, operations and probes past their terms (TZ 12.9).
+type Retention interface {
+	Purge(ctx context.Context) error
+}
+
 type ProbeRunner interface {
 	RunProbe(ctx context.Context, orgID, connectionID, probeID entity.ID) error
+	FailProbe(ctx context.Context, orgID, connectionID, probeID entity.ID) error
 }
 
 // PackageProcessor runs the job of a quarantined package.
