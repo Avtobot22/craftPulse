@@ -183,8 +183,8 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 	if failure != nil {
 		return u.fail(ctx, job, st, page, failure, holder, complete)
 	}
+	// The overlap only widens this fetch; the end of the selection keeps the cursor of the step, so rounds do not pile it up.
 	p.NewRound = false
-	p.Cursors[cur.key()] = cursor
 	if st.Completeness != completeComplete {
 		st.Completeness = completePartial
 	}

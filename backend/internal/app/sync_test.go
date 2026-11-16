@@ -442,3 +442,33 @@ func TestSync_WorkerCompletesJobsInTheTransactionOfTheirResult(t *testing.T) {
 		"SELECT count(*) FROM normalize.task_version WHERE superseded_seq IS NULL"), "every collected task has its current version")
 	assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM normalize.task_event WHERE observed_via NOT IN ('backfill', 'incremental')"))
 }
+
+// TestSync_OverlapDoesNotPileUp starts new rounds of the increment: each reads back from the cursor of the step
+// by the overlap, and the cursor it keeps is not moved back by it.
+func TestSync_OverlapDoesNotPileUp(t *testing.T) {
+	t.Parallel()
+	e := newSyncEnv(t, testadapter.Config{})
+	conn := e.connection(t, "10000")
+	e.drain(t, conn)
+	cursors := func() map[string]*entity.SourceCursor {
+		var p struct {
+			Cursors map[string]*entity.SourceCursor `json:"cursors"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(e.state(t, conn).Cursor), &p))
+		return p.Cursors
+	}
+	e.enqueue(t, entity.SyncPageJob{OrganizationID: e.org, ConnectionID: conn, DataKind: "tasks", CorrelationID: entity.ID(uuid.New())})
+	e.drain(t, conn)
+	before := cursors()
+	for range 3 {
+		e.enqueue(t, entity.SyncPageJob{OrganizationID: e.org, ConnectionID: conn, DataKind: "tasks", CorrelationID: entity.ID(uuid.New())})
+		e.drain(t, conn)
+		after := cursors()
+		for key, c := range after {
+			require.NotNil(t, c, key)
+			require.NotNil(t, before[key], key)
+			assert.Equal(t, before[key].ModifiedAt, c.ModifiedAt, "a round with nothing new keeps the cursor of %s", key)
+		}
+		before = after
+	}
+}
