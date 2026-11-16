@@ -228,33 +228,45 @@ func (u *UseCase) Operation(ctx context.Context, s entity.Subject, id entity.ID)
 	if err != nil || op.Done() {
 		return op, err
 	}
-	err = u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
-		op, err = u.refresh(ctx, op)
-		return err
-	})
-	return op, err
-}
-
-// refresh takes the status of an active run from its module and records it.
-func (u *UseCase) refresh(ctx context.Context, op entity.Operation) (entity.Operation, error) {
-	if op.Kind == entity.OperationSeriesRefresh {
-		return u.refreshSeries(ctx, op)
+	// The module reads the status in its own transaction, so this one does not hold a connection while it waits
+	// for another: polls of a full pool would block each other until the idle transactions are cut.
+	next, changed, err := u.advance(ctx, op)
+	if err != nil || !changed {
+		return next, err
 	}
-	return u.refreshSync(ctx, op)
+	err = u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error { return u.d.Repo.UpdateOperation(ctx, next) })
+	return next, err
 }
 
-// refreshSeries takes the status of a refresh from calc: a succeeded one leads to its exact new revision.
-func (u *UseCase) refreshSeries(ctx context.Context, op entity.Operation) (entity.Operation, error) {
+// refresh takes the status of an active run from its module and records it in the caller's transaction.
+func (u *UseCase) refresh(ctx context.Context, op entity.Operation) (entity.Operation, error) {
+	next, changed, err := u.advance(ctx, op)
+	if err != nil || !changed {
+		return next, err
+	}
+	return next, u.d.Repo.UpdateOperation(ctx, next)
+}
+
+// advance takes the status of an active run from its module; changed tells whether the descriptor is to be recorded.
+func (u *UseCase) advance(ctx context.Context, op entity.Operation) (entity.Operation, bool, error) {
+	if op.Kind == entity.OperationSeriesRefresh {
+		return u.advanceSeries(ctx, op)
+	}
+	return u.advanceSync(ctx, op)
+}
+
+// advanceSeries takes the status of a refresh from calc: a succeeded one leads to its exact new revision.
+func (u *UseCase) advanceSeries(ctx context.Context, op entity.Operation) (entity.Operation, bool, error) {
 	var p refreshParameters
 	if err := json.Unmarshal(op.Parameters, &p); err != nil {
-		return entity.Operation{}, fmt.Errorf("view: decode parameters: %w", err)
+		return entity.Operation{}, false, fmt.Errorf("view: decode parameters: %w", err)
 	}
 	st, err := u.d.Series.RefreshStatus(ctx, op.OrganizationID, entity.SeriesRefresh{SeriesID: op.ResourceID, AfterRevisionNo: p.AfterRevisionNo})
 	if err != nil {
-		return entity.Operation{}, err
+		return entity.Operation{}, false, err
 	}
 	if st.Status == op.Status {
-		return op, nil
+		return op, false, nil
 	}
 	now := u.d.Clock.Now()
 	op.Status, op.UpdatedAt = st.Status, now
@@ -266,22 +278,22 @@ func (u *UseCase) refreshSeries(ctx context.Context, op entity.Operation) (entit
 		op.CompletedAt, op.ErrorCode, op.CorrelationID = &now, entity.OperationCalculationFailed, &corr
 	case entity.OperationQueued, entity.OperationRunning:
 	}
-	return op, u.d.Repo.UpdateOperation(ctx, op)
+	return op, true, nil
 }
 
-// refreshSync takes the status of an active run from sync and records it; a finished run gets its result or
-// the safe class of its failure with the correlation ID of its jobs.
-func (u *UseCase) refreshSync(ctx context.Context, op entity.Operation) (entity.Operation, error) {
+// advanceSync takes the status of an active run from sync; a finished run gets its result or the safe class of its
+// failure with the correlation ID of its jobs.
+func (u *UseCase) advanceSync(ctx context.Context, op entity.Operation) (entity.Operation, bool, error) {
 	var p syncParameters
 	if err := json.Unmarshal(op.Parameters, &p); err != nil {
-		return entity.Operation{}, fmt.Errorf("view: decode parameters: %w", err)
+		return entity.Operation{}, false, fmt.Errorf("view: decode parameters: %w", err)
 	}
 	st, err := u.d.Sync.RunStatus(ctx, op.OrganizationID, op.ResourceID, p.SyncRunRequest, op.CreatedAt)
 	if err != nil {
-		return entity.Operation{}, err
+		return entity.Operation{}, false, err
 	}
 	if st.Status == op.Status {
-		return op, nil
+		return op, false, nil
 	}
 	now := u.d.Clock.Now()
 	op.Status, op.UpdatedAt = st.Status, now
@@ -293,5 +305,5 @@ func (u *UseCase) refreshSync(ctx context.Context, op entity.Operation) (entity.
 		op.CompletedAt, op.ErrorCode, op.CorrelationID = &now, st.ErrorCode, &corr
 	case entity.OperationQueued, entity.OperationRunning:
 	}
-	return op, u.d.Repo.UpdateOperation(ctx, op)
+	return op, true, nil
 }

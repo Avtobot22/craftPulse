@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -8,10 +9,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	testadapter "github.com/Avtobot22/craftPulse/backend/internal/adapter/test"
+	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
 
 type syncStatusBody struct {
@@ -194,4 +198,34 @@ func TestConnections_SyncRunsAreBackgroundOperations(t *testing.T) {
 	lost := e.json(t, e.admin, http.MethodPost, "/api/v1/connections/"+id.String()+"/sync-runs", nil, map[string]string{"kind": "resume", "data_kind": "tasks"})
 	require.Equal(t, http.StatusConflict, lost.Code)
 	assert.Equal(t, "state_conflict", decode[problemBody](t, lost).Code)
+}
+
+// TestConnections_OperationPollHoldsOneConnection polls a finished run through a pool of one connection: the status
+// of the run is read outside the transaction of the descriptor, so a poll never waits for a second connection while
+// it holds one, and a full pool of polls does not block itself.
+func TestConnections_OperationPollHoldsOneConnection(t *testing.T) {
+	t.Parallel()
+	e := newConnectionsEnv(t, testadapter.Config{})
+	id := e.activeConnection(t)
+	rec := e.syncRun(t, e.admin, id, "resume")
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	_, op := e.operation(t, e.admin, rec.Header().Get("Location"))
+	e.settle(t)
+
+	cfg := e.app.Config()
+	cfg.MaxConns = 1
+	one, err := pgxpool.NewWithConfig(t.Context(), cfg)
+	require.NoError(t, err)
+	t.Cleanup(one.Close)
+	collection, err := newSync(one, nil, nil, nil, e.clock, prometheus.NewRegistry())
+	require.NoError(t, err)
+	views := newView(one, collection, nil, e.rights, e.clock)
+	s := entity.Subject{OrganizationID: e.orgID}
+	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT requested_by FROM view.operation WHERE id = $1", op.ID).Scan(&s.UserID))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	got, err := views.Operation(ctx, s, entity.ID(op.ID))
+	require.NoError(t, err)
+	assert.Equal(t, entity.OperationSucceeded, got.Status, "the poll records the end of the run")
 }
