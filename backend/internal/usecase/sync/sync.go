@@ -116,12 +116,13 @@ type step struct {
 
 func (s step) key() string { return s.scope.ID.String() + "/" + s.schema }
 
-// progress is the cursor of a data kind: the step being read, the cursor of every step and whether the
-// next run starts a new round.
+// progress is the cursor of a data kind: the step being read, the cursor of every step, whether the next run
+// starts a new round and whether it starts the current step, whose first page then reads back by the overlap.
 type progress struct {
 	Current  string                          `json:"current"`
 	Cursors  map[string]*entity.SourceCursor `json:"cursors"`
 	NewRound bool                            `json:"new_round,omitempty"`
+	Overlap  bool                            `json:"overlap,omitempty"`
 }
 
 // RunPage reads one page of a data kind. holder names the run that takes the lease of the connection.
@@ -160,7 +161,7 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 	}
 	cur := steps[i]
 	cursor := p.Cursors[cur.key()]
-	if p.NewRound && cursor != nil {
+	if (p.NewRound || p.Overlap) && cursor != nil {
 		back := entity.SourceCursor{ModifiedAt: cursor.ModifiedAt.Add(-_overlap)}
 		cursor = &back
 	}
@@ -184,7 +185,7 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 		return u.fail(ctx, job, st, page, failure, holder, complete)
 	}
 	// The overlap only widens this fetch; the end of the selection keeps the cursor of the step, so rounds do not pile it up.
-	p.NewRound = false
+	p.NewRound, p.Overlap = false, false
 	if st.Completeness != completeComplete {
 		st.Completeness = completePartial
 	}
@@ -200,7 +201,7 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 		p.Current = cur.key()
 		next = append(next, entity.SyncPageJob{OrganizationID: org, ConnectionID: conn, DataKind: job.DataKind, CorrelationID: job.CorrelationID})
 	case i+1 < len(steps):
-		p.Current = steps[i+1].key()
+		p.Current, p.Overlap = steps[i+1].key(), true
 		next = append(next, entity.SyncPageJob{OrganizationID: org, ConnectionID: conn, DataKind: job.DataKind, CorrelationID: job.CorrelationID})
 	default:
 		p.Current, p.NewRound, st.Phase, reconcile = steps[0].key(), true, entity.SyncIncremental, true

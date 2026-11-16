@@ -501,3 +501,26 @@ func TestSync_HistoryRepeatsAfterRateLimit(t *testing.T) {
 	assert.Equal(t, 2, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'sync.history' AND state = 'completed' AND args->>'native_id' = '20003'"),
 		"the limited read and its repeat")
 }
+
+// TestSync_EveryStepOfANewRoundReadsBack: a new round reads every step back from its cursor by the overlap, not
+// only the first one, so objects changed while the last round read are not lost in any schema or scope.
+func TestSync_EveryStepOfANewRoundReadsBack(t *testing.T) {
+	t.Parallel()
+	e := newSyncEnv(t, testadapter.Config{})
+	conn := e.connection(t, "10000")
+	e.drain(t, conn)
+	before := len(e.adapter.fetched(t))
+	e.enqueue(t, entity.SyncPageJob{OrganizationID: e.org, ConnectionID: conn, DataKind: "tasks", CorrelationID: entity.ID(uuid.New())})
+	e.drain(t, conn)
+	first := map[string]bool{}
+	for _, in := range e.adapter.fetched(t)[before:] {
+		schema := string(in.SchemaId)
+		if first[schema] || len(in.ObjectKeys) > 0 {
+			continue
+		}
+		first[schema] = true
+		require.NotNil(t, in.Cursor, schema)
+		assert.Empty(t, in.Cursor.NativeId, "the first page of %s in the round reads back by time", schema)
+	}
+	assert.Len(t, first, 2, "tasks and task_events")
+}

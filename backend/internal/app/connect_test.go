@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -99,6 +100,20 @@ type adapterServer struct {
 	hits    atomic.Int64
 	mu      sync.Mutex
 	auth    []string
+	// fetches are the bodies of the Fetch calls, in their order.
+	fetches [][]byte
+}
+
+// fetched are the inputs of the Fetch calls so far.
+func (s *adapterServer) fetched(t *testing.T) []adaptersdk.FetchInput {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]adaptersdk.FetchInput, len(s.fetches))
+	for i, raw := range s.fetches {
+		require.NoError(t, json.Unmarshal(raw, &out[i]))
+	}
+	return out
 }
 
 // calls counts the lines of the request journal of an adapter for its operation.
@@ -112,8 +127,16 @@ func serveTLSAdapter(t *testing.T, cfg *tls.Config, h http.Handler) *adapterServ
 	s.Server = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v1/") {
 			s.hits.Add(1)
+			var body []byte
+			if strings.HasSuffix(r.URL.Path, "/fetch") {
+				body, _ = io.ReadAll(r.Body)
+				r.Body = io.NopCloser(bytes.NewReader(body))
+			}
 			s.mu.Lock()
 			s.auth = append(s.auth, r.Header.Get("Authorization"))
+			if body != nil {
+				s.fetches = append(s.fetches, body)
+			}
 			s.mu.Unlock()
 		}
 		h.ServeHTTP(w, r)
