@@ -284,3 +284,27 @@ func lineOf(t *testing.T, path string, number int) string {
 	}
 	return all[number-1]
 }
+
+func TestRepoDocumentsChangeOverTime(t *testing.T) {
+	t.Parallel()
+	file := repos(t, 21).File
+	for id, want := range map[string]int{"org-1/gitlab-1/repo-1": 4, "org-1/github-1/repo-2": 2} {
+		touched := map[string]int{}
+		for _, commit := range repoByID(t, file, id).Commits {
+			for _, f := range commit.Files {
+				if strings.HasPrefix(f, "docs/") {
+					touched[f]++
+				}
+			}
+		}
+		revised := 0
+		for _, n := range touched {
+			if n > 1 {
+				revised++
+			}
+		}
+		if revised != want {
+			t.Fatalf("%s: %d documents changed after their first commit, want %d", id, revised, want)
+		}
+	}
+}
