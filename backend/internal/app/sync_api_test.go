@@ -200,9 +200,9 @@ func TestConnections_SyncRunsAreBackgroundOperations(t *testing.T) {
 	assert.Equal(t, "state_conflict", decode[problemBody](t, lost).Code)
 }
 
-// TestConnections_OperationPollHoldsOneConnection polls a finished run through a pool of one connection: the status
-// of the run is read outside the transaction of the descriptor, so a poll never waits for a second connection while
-// it holds one, and a full pool of polls does not block itself.
+// TestConnections_OperationPollHoldsOneConnection polls a finished run and requests a new one through a pool of one
+// connection: the reads of the modules run outside the transaction of the descriptor or join it, so a request never
+// waits for a second connection while it holds one, and a full pool of requests does not block itself.
 func TestConnections_OperationPollHoldsOneConnection(t *testing.T) {
 	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
@@ -228,4 +228,13 @@ func TestConnections_OperationPollHoldsOneConnection(t *testing.T) {
 	got, err := views.Operation(ctx, s, entity.ID(op.ID))
 	require.NoError(t, err)
 	assert.Equal(t, entity.OperationSucceeded, got.Status, "the poll records the end of the run")
+
+	conn, err := newConnect(one, e.keyring, nil, e.clock)
+	require.NoError(t, err)
+	collection, err = newSync(one, conn, nil, nil, e.clock, prometheus.NewRegistry())
+	require.NoError(t, err)
+	views = newView(one, collection, nil, e.rights, e.clock)
+	next, err := views.RequestSyncRun(ctx, s, entity.ID(id), entity.SyncRunRequest{Kind: entity.SyncReconcile, DataKind: "tasks"})
+	require.NoError(t, err, "the request reads the connection in the transaction of the descriptor")
+	assert.Equal(t, entity.OperationQueued, next.Status)
 }

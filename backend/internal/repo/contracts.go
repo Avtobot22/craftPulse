@@ -18,6 +18,8 @@ type JobQueue interface {
 type Transactor interface {
 	InTx(ctx context.Context, fn func(ctx context.Context) error) error
 	InOrgTx(ctx context.Context, orgID entity.ID, fn func(ctx context.Context) error) error
+	// JoinOrgTx runs fn in the caller's transaction of the organization, or in a new one outside it; only for reads.
+	JoinOrgTx(ctx context.Context, orgID entity.ID, fn func(ctx context.Context) error) error
 }
 
 type TenantRepo interface {

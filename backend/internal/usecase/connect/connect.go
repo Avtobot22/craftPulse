@@ -90,7 +90,7 @@ func (u *UseCase) EnsureInstance(ctx context.Context, orgID entity.ID, provider 
 // State is the connection with its instance, scopes and the capabilities its activation verified.
 func (u *UseCase) State(ctx context.Context, orgID, connectionID entity.ID) (entity.ConnectionState, error) {
 	var out entity.ConnectionState
-	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
 		c, err := u.d.Repo.Connection(ctx, orgID, connectionID)
 		if err != nil {
 			return err

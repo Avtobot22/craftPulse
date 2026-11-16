@@ -212,7 +212,7 @@ func (u *UseCase) AreaChangeSeq(ctx context.Context, orgID entity.ID, areaIDs []
 		return 0, nil
 	}
 	var seq int64
-	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var err error
 		seq, err = u.d.Repo.AreaChangeSeq(ctx, orgID, areaIDs)
 		return err
