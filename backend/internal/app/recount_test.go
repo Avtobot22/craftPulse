@@ -480,8 +480,39 @@ func TestRecount_PartsReadCollectionOfTheStart(t *testing.T) {
 	require.Greater(t, during.RevisionNo, first.RevisionNo)
 	assert.Equal(t, e.parts(t, first.ID), e.parts(t, during.ID), "every part reads the collection of the start")
 
-	after := e.build(t)
+	e.recount(t)
+	after := e.current(t)
+	require.Greater(t, after.RevisionNo, during.RevisionNo, "the chain queued itself again")
 	assert.NotEqual(t, e.parts(t, first.ID), e.parts(t, after.ID), "the next chain reads the changed collection")
+}
+
+// TestRecount_CollectionChangeDuringChainQueuesItAgain: a reconciliation that changes the collection while a chain
+// builds asks for a recount the queue drops as a copy of that chain, so the chain queues itself again.
+func TestRecount_CollectionChangeDuringChainQueuesItAgain(t *testing.T) {
+	t.Parallel()
+	e := newRecountEnv(t)
+	e.recount(t)
+	e.refresh(t, _seriesAsOf)
+	e.runJobs(t, 2)
+	building := e.building(t)
+	require.Len(t, building, 1)
+
+	_, err := e.owner.Exec(t.Context(), `UPDATE sync.state SET completeness = CASE completeness WHEN 'complete' THEN 'partial' ELSE 'complete' END
+		WHERE connection_id = $1`, e.conn)
+	require.NoError(t, err)
+	for {
+		j, ok := e.nextJob(t)
+		if !ok {
+			break
+		}
+		require.NoError(t, e.calc.RunSlice(t.Context(), j.args, completeJob(j.id)))
+	}
+	during, err := e.calc.Revision(t.Context(), e.orgID, e.series.ID, (*entity.ID)(&building[0]))
+	require.NoError(t, err)
+	assert.Equal(t, entity.RevisionPublished, during.Status)
+	assert.Equal(t, 1, count(t, t.Context(), e.owner, `SELECT count(*) FROM river_job WHERE kind = '`+entity.KindCalcSlice+
+		`' AND state = 'scheduled' AND (args->>'from')::timestamptz = '`+_seriesWindow.From.Format(time.RFC3339)+`'`),
+		"the chain that read the previous collection queues itself again")
 }
 
 // TestRecount_StructureChange: a new structure queues the recount of every series of the organization, and a chain
