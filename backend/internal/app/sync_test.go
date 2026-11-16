@@ -472,3 +472,32 @@ func TestSync_OverlapDoesNotPileUp(t *testing.T) {
 		before = after
 	}
 }
+
+// TestSync_HistoryRepeatsAfterRateLimit reads on a cut history while the source limits the rate: the job comes
+// back after the pause and reads the history to its end.
+func TestSync_HistoryRepeatsAfterRateLimit(t *testing.T) {
+	t.Parallel()
+	e := newSyncEnv(t, testadapter.Config{})
+	conn := e.connection(t, "10000")
+	limited := false
+	for q := e.next(t, conn); q != nil; q = e.next(t, conn) {
+		if wait := q.scheduledAt.Sub(e.clock.Now()); wait > 0 {
+			e.clock.Advance(wait)
+		}
+		if q.kind == entity.KindSyncHistory && !limited {
+			limited = true
+			require.NoError(t, e.adapter.src.SetConfig(testadapter.Config{Faults: []testadapter.Fault{
+				{Operation: testadapter.OpFetch, SchemaID: "task_events", Kind: testadapter.FaultRateLimited, RetryAfterSeconds: 30},
+			}}))
+			require.NoError(t, e.run(t, q, false))
+			require.NoError(t, e.adapter.src.SetConfig(testadapter.Config{}))
+			assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'sync.history' AND state <> 'completed'"),
+				"the limited read waits for its repeat")
+			continue
+		}
+		require.NoError(t, e.run(t, q, false))
+	}
+	require.True(t, limited, "the page cuts a history")
+	assert.Equal(t, 2, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'sync.history' AND state = 'completed' AND args->>'native_id' = '20003'"),
+		"the limited read and its repeat")
+}

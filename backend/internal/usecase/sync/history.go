@@ -64,11 +64,15 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 				return err
 			}
 		}
+		// The job ends first: a repeat after a pause has the same arguments, and an active equal job absorbs it.
+		if err := u.end(ctx, org, conn, holder, complete); err != nil {
+			return err
+		}
 		for _, j := range next {
 			if err := u.d.Queue.EnqueueAt(ctx, j, entity.QueueBulk, at); err != nil {
 				return err
 			}
 		}
-		return u.end(ctx, org, conn, holder, complete)
+		return nil
 	})
 }
