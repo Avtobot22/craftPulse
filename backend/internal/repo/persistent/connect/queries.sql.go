@@ -860,6 +860,29 @@ func (q *Queries) PauseConnection(ctx context.Context, arg PauseConnectionParams
 	return err
 }
 
+const purgeProbes = `-- name: PurgeProbes :execrows
+DELETE FROM connect.probe AS d WHERE d.organization_id = $1 AND d.id IN (
+    SELECT p.id FROM connect.probe p
+    WHERE p.organization_id = $1 AND p.finished_at <= $2
+        AND NOT EXISTS (SELECT 1 FROM connect.connection c
+            WHERE c.organization_id = p.organization_id AND c.id = p.connection_id AND c.activated_probe_id = p.id)
+    LIMIT $3)
+`
+
+type PurgeProbesParams struct {
+	OrganizationID uuid.UUID
+	Before         pgtype.Timestamptz
+	BatchLimit     int32
+}
+
+func (q *Queries) PurgeProbes(ctx context.Context, arg PurgeProbesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeProbes, arg.OrganizationID, arg.Before, arg.BatchLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const removeConnectionScopes = `-- name: RemoveConnectionScopes :exec
 UPDATE connect.connection_scope SET status = 'removed', removed_at = $1
 WHERE organization_id = $2 AND connection_id = $3 AND status = 'active'

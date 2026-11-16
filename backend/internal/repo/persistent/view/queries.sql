@@ -18,3 +18,8 @@ SELECT * FROM view.operation WHERE organization_id = $1 AND id = $2;
 UPDATE view.operation SET status = sqlc.arg(status), updated_at = sqlc.arg(updated_at), completed_at = sqlc.narg(completed_at),
     result_uri = sqlc.narg(result_uri), error_code = sqlc.narg(error_code), correlation_id = sqlc.narg(correlation_id)
 WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND status IN ('queued', 'running');
+
+-- name: PurgeOperations :execrows
+DELETE FROM view.operation AS d WHERE d.organization_id = sqlc.arg(organization_id) AND d.id IN (
+    SELECT o.id FROM view.operation o WHERE o.organization_id = sqlc.arg(organization_id) AND o.completed_at <= sqlc.arg(before)
+    LIMIT sqlc.arg(batch_limit));

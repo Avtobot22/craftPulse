@@ -15,3 +15,10 @@ type ActiveUnique interface {
 	Job
 	UniqueWhileActive()
 }
+
+const KindRetentionTick = "retention.tick"
+
+// RetentionTickJob deletes once a day what the retention table keeps for a while only (TZ 12.9).
+type RetentionTickJob struct{}
+
+func (RetentionTickJob) Kind() string { return KindRetentionTick }

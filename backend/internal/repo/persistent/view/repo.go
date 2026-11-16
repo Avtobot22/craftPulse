@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -91,4 +93,15 @@ func operation(row ViewOperation, err error) (entity.Operation, bool, error) {
 		op.CorrelationID = &id
 	}
 	return op, true, nil
+}
+
+// PurgeOperations deletes up to limit operations of the organization completed by before (TZ 12.9).
+func (r *Repo) PurgeOperations(ctx context.Context, orgID entity.ID, before time.Time, limit int) (int64, error) {
+	n, err := New(postgres.Conn(ctx, r.pool)).PurgeOperations(ctx, PurgeOperationsParams{
+		OrganizationID: uuid.UUID(orgID), Before: pgtype.Timestamptz{Time: before, Valid: true}, BatchLimit: int32(min(max(limit, 1), math.MaxInt32)), //nolint:gosec // bounded by min
+	})
+	if err != nil {
+		return 0, fmt.Errorf("view: purge operations: %w", err)
+	}
+	return n, nil
 }

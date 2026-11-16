@@ -340,3 +340,23 @@ func complete(checked []entity.Capability, at time.Time) []entity.Capability {
 	}
 	return out
 }
+
+// _purgeBatch bounds the rows one transaction of a purge deletes.
+const _purgeBatch = 1000
+
+// PurgeProbes deletes the probes finished more than a day ago that no connection activated: GetProbe already
+// hides them (TZ 12.9). Each portion commits on its own, so a purge cut by the job timeout keeps what it did.
+func (u *UseCase) PurgeProbes(ctx context.Context, orgID entity.ID) error {
+	before := u.d.Clock.Now().Add(-_probeKept)
+	for {
+		var n int64
+		err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+			var err error
+			n, err = u.d.Repo.PurgeProbes(ctx, orgID, before, _purgeBatch)
+			return err
+		})
+		if err != nil || n < _purgeBatch {
+			return err
+		}
+	}
+}

@@ -130,6 +130,26 @@ func (q *Queries) GetOperation(ctx context.Context, arg GetOperationParams) (Vie
 	return i, err
 }
 
+const purgeOperations = `-- name: PurgeOperations :execrows
+DELETE FROM view.operation AS d WHERE d.organization_id = $1 AND d.id IN (
+    SELECT o.id FROM view.operation o WHERE o.organization_id = $1 AND o.completed_at <= $2
+    LIMIT $3)
+`
+
+type PurgeOperationsParams struct {
+	OrganizationID uuid.UUID
+	Before         pgtype.Timestamptz
+	BatchLimit     int32
+}
+
+func (q *Queries) PurgeOperations(ctx context.Context, arg PurgeOperationsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeOperations, arg.OrganizationID, arg.Before, arg.BatchLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateOperation = `-- name: UpdateOperation :exec
 UPDATE view.operation SET status = $1, updated_at = $2, completed_at = $3,
     result_uri = $4, error_code = $5, correlation_id = $6

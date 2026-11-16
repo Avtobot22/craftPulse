@@ -6,6 +6,7 @@ import (
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo"
+	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
 )
 
@@ -84,4 +85,42 @@ func (c *Credentials) EndUserSessions(ctx context.Context, orgID, userID entity.
 
 func (c *Credentials) RevokeUserAPIKeys(ctx context.Context, orgID, userID entity.ID, at time.Time) (int64, error) {
 	return c.repo.RevokeUserAPIKeys(ctx, orgID, userID, at)
+}
+
+// _purgeBatch bounds the rows one transaction of a purge deletes.
+const _purgeBatch = 1000
+
+// Retention deletes the login attempts and sessions that expired (TZ 12.9). Both tables are outside row-level
+// security, so it needs only the repository, like Credentials.
+type Retention struct {
+	repo  repo.AuthRepo
+	tx    repo.Transactor
+	clock clock.Clock
+}
+
+func NewRetention(r repo.AuthRepo, tx repo.Transactor, c clock.Clock) *Retention {
+	return &Retention{repo: r, tx: tx, clock: c}
+}
+
+// PurgeExpired deletes in portions, each committed on its own: a login page any visitor opens adds an attempt, and an
+// abandoned one is never taken back by its callback.
+func (r *Retention) PurgeExpired(ctx context.Context) error {
+	now := r.clock.Now()
+	for _, purge := range []func(ctx context.Context, before time.Time, limit int) (int64, error){r.repo.PurgeLoginAttempts, r.repo.PurgeSessions} {
+		for {
+			var n int64
+			err := r.tx.InTx(ctx, func(ctx context.Context) error {
+				var err error
+				n, err = purge(ctx, now, _purgeBatch)
+				return err
+			})
+			if err != nil {
+				return err
+			}
+			if n < _purgeBatch {
+				break
+			}
+		}
+	}
+	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/pkg/postgres"
@@ -133,4 +134,15 @@ func probe(row ConnectProbe) (entity.Probe, error) {
 		})
 	}
 	return out, nil
+}
+
+// PurgeProbes deletes up to limit probes of the organization finished by before, except the activated ones (TZ 12.9).
+func (r *Repo) PurgeProbes(ctx context.Context, orgID entity.ID, before time.Time, limit int) (int64, error) {
+	n, err := New(postgres.Conn(ctx, r.pool)).PurgeProbes(ctx, PurgeProbesParams{
+		OrganizationID: uuid.UUID(orgID), Before: pgtype.Timestamptz{Time: before, Valid: true}, BatchLimit: int32(min(max(limit, 1), math.MaxInt32)), //nolint:gosec // bounded by min
+	})
+	if err != nil {
+		return 0, fmt.Errorf("connect: purge probes: %w", err)
+	}
+	return n, nil
 }

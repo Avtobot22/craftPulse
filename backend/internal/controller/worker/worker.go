@@ -23,6 +23,7 @@ type Deps struct {
 	Collection usecase.Collector
 	Normalizer usecase.Normalizer
 	Calculator usecase.Calculator
+	Retention  usecase.Retention
 }
 
 // Register adds the handlers of the job kinds; the count matters: River refuses to fetch jobs without a
@@ -43,7 +44,8 @@ func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &recountWorker{calculator: d.Calculator})
 	river.AddWorker(w, &extendWorker{calculator: d.Calculator})
 	river.AddWorker(w, &extendTickWorker{calculator: d.Calculator})
-	return 15
+	river.AddWorker(w, &retentionWorker{retention: d.Retention})
+	return 16
 }
 
 const (
@@ -53,6 +55,8 @@ const (
 	_gcEvery = 24 * time.Hour
 	// _extendEvery plans the daily extension of the series every hour, so each starts at its minute of the night.
 	_extendEvery = time.Hour
+	// _retentionEvery deletes what is past its term once a day.
+	_retentionEvery = 24 * time.Hour
 )
 
 // Periodic are the periodic jobs; River runs them on the leader only, so several workers do not repeat them.
@@ -68,7 +72,19 @@ func Periodic() []*river.PeriodicJob {
 		river.NewPeriodicJob(river.PeriodicInterval(_extendEvery), func() (river.JobArgs, *river.InsertOpts) {
 			return entity.CalcExtendTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
 		}, &river.PeriodicJobOpts{RunOnStart: true}),
+		river.NewPeriodicJob(river.PeriodicInterval(_retentionEvery), func() (river.JobArgs, *river.InsertOpts) {
+			return entity.RetentionTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
+		}, &river.PeriodicJobOpts{RunOnStart: true}),
 	}
+}
+
+type retentionWorker struct {
+	river.WorkerDefaults[entity.RetentionTickJob]
+	retention usecase.Retention
+}
+
+func (w *retentionWorker) Work(ctx context.Context, _ *river.Job[entity.RetentionTickJob]) error {
+	return w.retention.Purge(ctx)
 }
 
 type recountWorker struct {

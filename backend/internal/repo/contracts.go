@@ -101,6 +101,9 @@ type StructureRepo interface {
 // AuthRepo serves login routes, login attempts and sessions outside row-level security and provider
 // registrations under it.
 type AuthRepo interface {
+	// PurgeLoginAttempts and PurgeSessions delete up to limit rows expired by before and report how many went.
+	PurgeLoginAttempts(ctx context.Context, before time.Time, limit int) (int64, error)
+	PurgeSessions(ctx context.Context, before time.Time, limit int) (int64, error)
 	OrganizationBySlug(ctx context.Context, slug string) (entity.ID, bool, error)
 	CreateLoginRoute(ctx context.Context, slug string, orgID entity.ID) error
 	CreateProviderRegistration(ctx context.Context, reg entity.ProviderRegistration, at time.Time) error
@@ -160,6 +163,8 @@ type UploadTokenRepo interface {
 
 // ConnectRepo is the connect schema under row-level security: every call runs in an organization transaction.
 type ConnectRepo interface {
+	// PurgeProbes deletes up to limit probes finished by before, except the activated ones, and reports how many went.
+	PurgeProbes(ctx context.Context, orgID entity.ID, before time.Time, limit int) (int64, error)
 	EnsureInstance(ctx context.Context, orgID entity.ID, provider entity.Provider, key string) (entity.SourceInstance, error)
 	Instance(ctx context.Context, orgID, id entity.ID) (entity.SourceInstance, error)
 	SetInstanceBaseURL(ctx context.Context, orgID, id entity.ID, baseURL string) error
@@ -387,4 +392,6 @@ type ViewRepo interface {
 	Operation(ctx context.Context, orgID, id entity.ID) (entity.Operation, bool, error)
 	// UpdateOperation moves an active descriptor to its new status; a finished one does not change.
 	UpdateOperation(ctx context.Context, op entity.Operation) error
+	// PurgeOperations deletes up to limit operations completed by before and reports how many went.
+	PurgeOperations(ctx context.Context, orgID entity.ID, before time.Time, limit int) (int64, error)
 }

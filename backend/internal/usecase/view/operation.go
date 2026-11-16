@@ -307,3 +307,23 @@ func (u *UseCase) advanceSync(ctx context.Context, op entity.Operation) (entity.
 	}
 	return op, true, nil
 }
+
+// _purgeBatch bounds the rows one transaction of a purge deletes.
+const _purgeBatch = 1000
+
+// PurgeOperations deletes the operations completed more than a day ago: Operation already hides them, and an active
+// one is never deleted (TZ 12.9). Each portion commits on its own.
+func (u *UseCase) PurgeOperations(ctx context.Context, orgID entity.ID) error {
+	before := u.d.Clock.Now().Add(-_keepFor)
+	for {
+		var n int64
+		err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+			var err error
+			n, err = u.d.Repo.PurgeOperations(ctx, orgID, before, _purgeBatch)
+			return err
+		})
+		if err != nil || n < _purgeBatch {
+			return err
+		}
+	}
+}
