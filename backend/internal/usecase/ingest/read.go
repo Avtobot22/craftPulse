@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"slices"
@@ -205,10 +206,35 @@ func (u *UseCase) acceptNew(ctx context.Context, orgID entity.ID, c entity.Inges
 	if err := u.d.Repo.SetRecordOutcome(ctx, orgID, c.ReceiptID, fresh); err != nil {
 		return err
 	}
+	if err := u.moveAccepted(ctx, orgID, c.ExistingReceipt, c.ReceiptID); err != nil {
+		return err
+	}
 	job := entity.NormalizeBatchJob{
 		OrganizationID: orgID, ReceiptID: c.ReceiptID, ResolvedNo: c.RecordNo, CorrelationID: entity.ID(logger.CorrelationID(ctx)),
 	}
 	return u.d.Queue.Enqueue(ctx, job, entity.QueueBulk)
+}
+
+// moveAccepted keeps accepted_count of both receipts equal to their accepted records once a resolution moved one
+// from the former to the new; the receipts are locked in the order of their IDs, and a swap inside one receipt keeps it.
+func (u *UseCase) moveAccepted(ctx context.Context, orgID, former, fresh entity.ID) error {
+	if former == fresh {
+		return nil
+	}
+	delta := map[entity.ID]int{former: -1, fresh: 1}
+	ids := []entity.ID{former, fresh}
+	slices.SortFunc(ids, func(a, b entity.ID) int { return bytes.Compare(a[:], b[:]) })
+	for _, id := range ids {
+		rc, err := u.d.Repo.LockReceipt(ctx, orgID, id)
+		if err != nil {
+			return err
+		}
+		rc.AcceptedCount += delta[id]
+		if err := u.d.Repo.SaveReceipt(ctx, rc); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Accepted reads a receipt with its accepted records in the order of their numbers: the input of

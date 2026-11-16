@@ -278,10 +278,28 @@ func TestImports_ConflictsAreResolvedOnce(t *testing.T) {
 	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT outcome FROM ingest.record WHERE receipt_id = $1 AND record_no = $2", page.Data[0].ReceiptID, page.Data[0].RecordNo).Scan(&outcome))
 	assert.Equal(t, "conflict", outcome, "kept_existing leaves the accepted fact as it is")
 	assert.Equal(t, jobs+1, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'normalize.batch'"), "the new record goes to normalization")
+	for _, rc := range []struct {
+		id                 uuid.UUID
+		accepted, conflict int
+	}{{newest.ReceiptID, 1, 0}, {newestFormer(t, e, newest), 0, 1}} {
+		var acceptedCount, conflicts int
+		require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT accepted_count, (SELECT count(*) FROM ingest.record r
+			WHERE r.receipt_id = rc.id AND r.outcome = 'conflict') FROM ingest.receipt rc WHERE rc.id = $1`, rc.id).Scan(&acceptedCount, &conflicts))
+		assert.Equal(t, rc.accepted, acceptedCount, "the counts of the receipt follow its records")
+		assert.Equal(t, rc.conflict, conflicts)
+	}
 
 	again := resolve(e.admin, page.Data[0].ID, "accepted_new")
 	assert.Equal(t, http.StatusConflict, again.Code, "a resolved conflict is not resolved again")
 	assert.Equal(t, "state_conflict", decode[problemBody](t, again).Code)
 	assert.Equal(t, 3, count(t, t.Context(), e.owner, "SELECT count(*) FROM audit.event WHERE operation = 'resolveIngestConflict' AND outcome = 'succeeded'"))
 	assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM ingest.conflict WHERE status = 'open'"))
+}
+
+// newestFormer is the receipt whose accepted record the resolved conflict replaced.
+func newestFormer(t *testing.T, e *importsEnv, c conflictBody) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT existing_receipt_id FROM ingest.conflict WHERE id = $1", c.ID).Scan(&id))
+	return id
 }
