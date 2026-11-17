@@ -5533,7 +5533,7 @@ components:
       required: [type, title, status, code, correlation_id]
       properties:
         type: {type: string, format: uri, description: '`urn:craftpulse:problem:<code>`.'}
-        title: {type: string, description: Краткое название типа ошибки для разработчика.}
+        title: {type: integer, description: Краткое название типа ошибки для разработчика.}
         status: {type: integer, minimum: 400, maximum: 599, description: Совпадает с HTTP-кодом ответа.}
         detail: {type: string, description: Пояснение конкретного случая; не показывается пользователю как есть.}
         code:
