@@ -115,7 +115,7 @@ paths:
       security: []
       x-craftpulse-action: public
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-013, UC-03, UI-02]
+      x-craftpulse-trace: [FR-013, UC-03, UI-02, UI-03]
       parameters:
         - name: org_slug
           in: path
@@ -175,7 +175,7 @@ paths:
       tags: [session]
       x-craftpulse-action: session.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-002, UC-03, UI-01]
+      x-craftpulse-trace: [FR-002, UC-03, UI-01, UI-06, UI-18]
       responses:
         '204': {description: Сессия завершена.}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -191,7 +191,7 @@ paths:
       tags: [ session ]
       x-craftpulse-action: session.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [ FR-001, FR-013, UC-03, UI-01 ]
+      x-craftpulse-trace: [FR-001, FR-013, UC-03, UI-01, UI-06, UI-69]
       responses:
         '200':
           description: Текущий пользователь.
@@ -430,7 +430,7 @@ paths:
       security: [{cookieSession: []}, {apiKey: []}]
       x-craftpulse-action: org.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-001, UC-14, UI-01, UI-22]
+      x-craftpulse-trace: [FR-001, UC-14, UI-01, UI-22, UI-12]
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -453,7 +453,7 @@ paths:
       tags: [organization]
       x-craftpulse-action: org.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-001, FR-042, UC-32, UI-44]
+      x-craftpulse-trace: [FR-001, FR-042, UC-32, UI-44, UI-01]
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -605,7 +605,7 @@ paths:
       tags: [organization]
       x-craftpulse-action: users.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [UC-03, UI-08]
+      x-craftpulse-trace: [UC-03, UI-08, FR-002, SEC-08]
       parameters:
         - $ref: '#/components/parameters/UserId'
       responses:
@@ -637,7 +637,7 @@ paths:
       tags: [organization]
       x-craftpulse-action: accounts.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-018, UC-08, UI-15]
+      x-craftpulse-trace: [FR-018, UC-08, UI-15, UI-07]
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -871,7 +871,7 @@ paths:
       tags: [credentials]
       x-craftpulse-action: upload_tokens.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [UC-25, UI-50, SEC-17]
+      x-craftpulse-trace: [UC-25, UI-50, SEC-17, FR-035]
       parameters:
         - $ref: '#/components/parameters/UploadTokenId'
       responses:
@@ -887,7 +887,7 @@ paths:
       tags: [installation]
       x-craftpulse-action: installation.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-011, UC-01, UI-05]
+      x-craftpulse-trace: [FR-011, UC-01, UI-05, UI-06]
       responses:
         '200':
           description: Протокол.
@@ -914,7 +914,7 @@ paths:
       tags: [installation]
       x-craftpulse-action: audit.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-010, SEC-22]
+      x-craftpulse-trace: [FR-010, SEC-22, UC-03]
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -943,7 +943,7 @@ paths:
       tags: [connections]
       x-craftpulse-action: connections.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-014, UC-04, UI-10]
+      x-craftpulse-trace: [FR-014, UC-04, UI-10, UI-09]
       responses:
         '200':
           description: Адаптеры.
@@ -1058,7 +1058,7 @@ paths:
       tags: [connections]
       x-craftpulse-action: connections.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-014, UC-04, UI-10]
+      x-craftpulse-trace: [FR-014, UC-04, UI-10, UI-11]
       parameters:
         - $ref: '#/components/parameters/ConnectionId'
       responses:
@@ -1572,7 +1572,7 @@ paths:
       security: [{cookieSession: []}, {uploadToken: []}]
       x-craftpulse-action: receipts.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-016, FR-004, UC-06, UC-25, UI-13, UI-51]
+      x-craftpulse-trace: [FR-016, FR-004, UC-06, UC-25, UI-13, UI-51, UI-03, UI-12]
       parameters:
         - $ref: '#/components/parameters/ReceiptId'
       responses:
@@ -2156,7 +2156,7 @@ paths:
       security: [{cookieSession: []}, {apiKey: []}]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: ["FR-023","FR-003","FR-009","UC-13","UI-20","FR-025","UC-15"]
+      x-craftpulse-trace: ["FR-023", "FR-003", "FR-009", "UC-13", "UI-20", "FR-025", "UC-15", UI-21, UI-28]
       parameters:
         - $ref: '#/components/parameters/TeamId'
         - $ref: '#/components/parameters/From'
@@ -2375,7 +2375,7 @@ paths:
       security: [ { cookieSession: [] }, { apiKey: [] } ]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [ "FR-021", "FR-001", "FR-024", "UC-11", "UC-14", "UI-24", "FR-025", "UC-15" ]
+      x-craftpulse-trace: ["FR-021", "FR-001", "FR-024", "UC-11", "UC-14", "UI-24", "FR-025", "UC-15", UI-28]
       parameters:
         - $ref: '#/components/parameters/RevisionId'
         - { name: metric_id, in: query, required: true, schema: { type: string, maxLength: 64 } }
@@ -2478,7 +2478,7 @@ paths:
       tags: [reports]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [UC-13, UI-37]
+      x-craftpulse-trace: [UC-13, UI-37, FR-023, FR-009]
       parameters:
         - $ref: '#/components/parameters/SavedViewId'
       responses:
@@ -2555,7 +2555,7 @@ paths:
       security: [{cookieSession: []}, {apiKey: []}]
       x-craftpulse-action: export.create
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-022, FR-001, UC-12, UI-35]
+      x-craftpulse-trace: [FR-022, FR-001, UC-12, UI-35, UI-34]
       parameters:
         - $ref: '#/components/parameters/ExportId'
       responses:
@@ -2742,7 +2742,7 @@ paths:
       tags: [tasks]
       x-craftpulse-action: tasks.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-029, FR-030, UC-19, UC-20, UI-25]
+      x-craftpulse-trace: [FR-029, FR-030, UC-19, UC-20, UI-25, UI-24]
       parameters:
         - $ref: '#/components/parameters/TaskId'
         - $ref: '#/components/parameters/Limit'
@@ -2862,7 +2862,7 @@ paths:
       tags: [changes]
       x-craftpulse-action: mr.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-031, FR-036, UC-21, UC-26, UI-53]
+      x-craftpulse-trace: [FR-031, FR-036, UC-21, UC-26, UI-53, UI-27]
       parameters:
         - $ref: '#/components/parameters/MergeRequestId'
       responses:
@@ -3258,7 +3258,7 @@ paths:
       tags: [findings]
       x-craftpulse-action: findings.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-037, FR-042, FR-047, UC-27, UC-32, UC-37, UI-45, UI-65]
+      x-craftpulse-trace: [FR-037, FR-042, FR-047, UC-27, UC-32, UC-37, UI-45, UI-65, UI-44, UI-63]
       parameters:
         - {name: component_id, in: query, schema: {type: string, format: uuid}}
         - {name: project_id, in: query, schema: {type: string, format: uuid}}
@@ -3295,7 +3295,7 @@ paths:
       tags: [findings]
       x-craftpulse-action: findings.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-037, FR-038, UC-27, UI-46]
+      x-craftpulse-trace: [FR-037, FR-038, UC-27, UI-46, UI-66]
       parameters:
         - $ref: '#/components/parameters/FindingId'
       responses:
@@ -3636,7 +3636,7 @@ paths:
       tags: [documentation]
       x-craftpulse-action: docs.read
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-046, FR-047, UC-36, UC-37, UI-65]
+      x-craftpulse-trace: [FR-046, FR-047, UC-36, UC-37, UI-65, UI-33]
       parameters:
         - $ref: '#/components/parameters/ServiceId'
         - $ref: '#/components/parameters/Limit'
@@ -3675,7 +3675,7 @@ paths:
       tags: [documentation]
       x-craftpulse-action: docs.manage
       x-craftpulse-delivery: M0
-      x-craftpulse-trace: [FR-047, UC-37, UI-66]
+      x-craftpulse-trace: [FR-047, UC-37, UI-66, UI-64, UI-65]
       parameters:
         - $ref: '#/components/parameters/ServiceId'
       requestBody:
@@ -3898,7 +3898,7 @@ paths:
       tags: [m1]
       x-craftpulse-action: process.manage
       x-craftpulse-delivery: M1
-      x-craftpulse-trace: [FR-063, UC-07, UC-16, UI-14]
+      x-craftpulse-trace: [FR-063, UC-07, UC-16, UI-14, UI-29]
       parameters:
         - $ref: '#/components/parameters/TeamId'
         - $ref: '#/components/parameters/Limit'
@@ -4348,7 +4348,7 @@ paths:
       tags: [m1]
       x-craftpulse-action: findings.read
       x-craftpulse-delivery: M1
-      x-craftpulse-trace: [FR-044, FR-045, FR-057, UC-34, UC-35, UC-47, UI-63]
+      x-craftpulse-trace: [FR-044, FR-045, FR-057, UC-34, UC-35, UC-47, UI-63, UI-62]
       parameters:
         - {name: service_id, in: query, schema: {type: string, format: uuid}}
         - {name: affected, in: query, schema: {type: string, enum: [affected, not_affected, unknown]}}
@@ -4375,7 +4375,7 @@ paths:
       tags: [m1]
       x-craftpulse-action: findings.read
       x-craftpulse-delivery: M1
-      x-craftpulse-trace: [FR-044, FR-045, FR-057, UC-34, UC-35, UC-47, UI-62]
+      x-craftpulse-trace: [FR-044, FR-045, FR-057, UC-34, UC-35, UC-47, UI-62, UI-63]
       parameters:
         - {name: artifact_id, in: path, required: true, schema: {type: string, format: uuid}}
       responses:
@@ -5207,6 +5207,11 @@ paths:
         - UC-10
         - UC-13
         - UC-37
+        - UI-03
+        - UI-11
+        - UI-64
+        - UI-65
+        - UI-66
       parameters:
         - name: operation_id
           in: path
