@@ -221,3 +221,13 @@ func (u *UseCase) AreaChangeSeq(ctx context.Context, orgID entity.ID, areaIDs []
 }
 
 func errorf(format string, args ...any) error { return fmt.Errorf("normalize: "+format, args...) }
+
+func (u *UseCase) RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error) {
+	var out []entity.ID
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.RepositoryAreas(ctx, orgID, ids)
+		return err
+	})
+	return out, err
+}

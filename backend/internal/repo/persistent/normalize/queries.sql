@@ -170,3 +170,6 @@ WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(area_id
 SELECT area_id, entry_kind, native_id, name, attributes FROM normalize.dictionary_entry
 WHERE organization_id = sqlc.arg(organization_id) AND area_id = ANY (sqlc.arg(area_ids)::uuid[]) AND superseded_seq IS NULL
 ORDER BY area_id, entry_kind, native_id;
+
+-- name: RepositoryAreas :many
+SELECT area_id FROM normalize.area WHERE organization_id = $1 AND area_id = ANY(sqlc.arg(ids)::uuid[]) AND area_kind = 'repository';

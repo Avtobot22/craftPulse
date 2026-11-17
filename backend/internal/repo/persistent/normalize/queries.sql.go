@@ -667,6 +667,35 @@ func (q *Queries) PlaceObjects(ctx context.Context, arg PlaceObjectsParams) erro
 	return err
 }
 
+const repositoryAreas = `-- name: RepositoryAreas :many
+SELECT area_id FROM normalize.area WHERE organization_id = $1 AND area_id = ANY($2::uuid[]) AND area_kind = 'repository'
+`
+
+type RepositoryAreasParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) RepositoryAreas(ctx context.Context, arg RepositoryAreasParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, repositoryAreas, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var area_id uuid.UUID
+		if err := rows.Scan(&area_id); err != nil {
+			return nil, err
+		}
+		items = append(items, area_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const restrictedObjects = `-- name: RestrictedObjects :many
 SELECT id, current_area_id::uuid AS area_id, object_kind, native_ns, native_id FROM normalize.source_object
 WHERE organization_id = $1 AND current_area_id = ANY ($2::uuid[])

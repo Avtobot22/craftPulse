@@ -10,11 +10,14 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	auditrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit"
 	authrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/auth"
+	docsrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/docs"
 	installrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/install"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/access"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/auth"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/docs"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/install"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/org"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
@@ -23,15 +26,16 @@ import (
 
 // apiModules are the modules the api process builds before its handlers.
 type apiModules struct {
-	orgs        *org.UseCase
-	access      *access.UseCase
-	connections usecase.Connections
-	intake      usecase.Intake
-	sync        usecase.SyncStatus
-	operations  usecase.Operations
-	process     usecase.Process
-	previews    usecase.MappingPreviews
-	targets     usecase.Targets
+	orgs               *org.UseCase
+	access             *access.UseCase
+	connections        usecase.Connections
+	intake             usecase.Intake
+	sync               usecase.SyncStatus
+	operations         usecase.Operations
+	process            usecase.Process
+	previews           usecase.MappingPreviews
+	targets            usecase.Targets
+	documentationAreas docs.Areas
 }
 
 func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvider, c clock.Clock, siteURL string, reg prometheus.Registerer,
@@ -54,6 +58,10 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 	})
 	return v1.Deps{
 		Handler: handler.New(handler.Deps{
+			Documentation: docs.New(docs.Deps{
+				Repo: docsrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx,
+				Access: decisions, References: orgs, Areas: m.documentationAreas, Auditor: auditor, Clock: c, NewID: newID,
+			}),
 			UploadTokens: logins, Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
 			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg, Connections: m.connections, Intake: m.intake,
 			Sync: m.sync, Operations: m.operations, Accounts: orgs, Process: m.process, Previews: m.previews, Targets: m.targets,

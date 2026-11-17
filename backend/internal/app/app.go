@@ -115,7 +115,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	}
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection,
-		operations: newView(pool, collection, calculator, rights, clock.System{}), process: settings, previews: calculator, targets: calculator,
+		operations: newView(pool, collection, calculator, rights, clock.System{}), process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer,
 	}
 	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules))
 

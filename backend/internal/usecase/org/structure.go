@@ -490,3 +490,23 @@ func maxAreas(kind entity.AreaKind) int {
 	}
 	return entity.MaxProjects
 }
+
+func (u *UseCase) CheckDocumentationReferences(ctx context.Context, orgID, serviceID entity.ID, persons []entity.ID) error {
+	services, err := u.orgs.ExistingAreas(ctx, orgID, entity.AreaService, []entity.ID{serviceID})
+	if err != nil {
+		return err
+	}
+	if len(services) != 1 {
+		return entity.ErrNotFound
+	}
+	known, err := u.orgs.ExistingPersons(ctx, orgID, persons)
+	if err != nil {
+		return err
+	}
+	for _, id := range persons {
+		if !slices.Contains(known, id) {
+			return &entity.ValidationError{Fields: []entity.FieldError{{Field: "/data/owner_person_id", Code: entity.FieldUnknownReference}}}
+		}
+	}
+	return nil
+}

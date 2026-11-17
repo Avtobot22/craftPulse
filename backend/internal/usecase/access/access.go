@@ -32,6 +32,7 @@ const (
 	ruleReceipts
 	// ruleProcessOwner is the process owner of the team of the request; no other role stands in for it.
 	ruleProcessOwner
+	ruleServiceOwner
 )
 
 // _rules is table 5.3 for the actions served so far; an action missing here is granted to nobody.
@@ -51,6 +52,8 @@ var _rules = map[string]rule{
 	"receipts.read":        ruleReceipts,
 	"sync.read":            ruleAdministrator,
 	"process.manage":       ruleProcessOwner,
+	"docs.read":            ruleAreaRead,
+	"docs.manage":          ruleServiceOwner,
 }
 
 // Profiles is the org module; Profile runs in the caller's organization transaction.
@@ -203,6 +206,9 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 	if _rules[r.Action] == ruleProcessOwner && !ownsProcess(p, r.Area) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
+	if _rules[r.Action] == ruleServiceOwner && !ownsService(p, r.Area) {
+		return ReasonNoPermission, entity.ErrForbidden
+	}
 	if !granted(p, r.Action) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
@@ -213,6 +219,12 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 func ownsProcess(p entity.Profile, a entity.AreaRef) bool {
 	return a.Kind == entity.AreaTeam && slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool {
 		return r.Role == entity.RoleProcessOwner && r.TeamID == a.ID
+	})
+}
+
+func ownsService(p entity.Profile, a entity.AreaRef) bool {
+	return a.Kind == entity.AreaService && slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool {
+		return r.Role == entity.RoleServiceOwner && r.ServiceID == a.ID
 	})
 }
 
@@ -228,6 +240,8 @@ func granted(p entity.Profile, action string) bool {
 		return p.Whole || len(p.Areas.Teams)+len(p.Areas.Projects)+len(p.Areas.Services) > 0
 	case ruleAdministrator:
 		return slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleAdministrator })
+	case ruleServiceOwner:
+		return slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleServiceOwner })
 	case ruleProcessOwner:
 		return slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleProcessOwner })
 	}
