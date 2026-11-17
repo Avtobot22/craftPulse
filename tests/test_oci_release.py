@@ -161,6 +161,30 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, "disagree"):
             release.validate_original(original, SHA, images, {image["name"]: DIGEST for image in images}, metadata)
 
+    @patch.object(release, "publish_images")
+    @patch.object(release, "scan")
+    @patch.object(release, "smoke_adapter")
+    @patch.object(release, "build")
+    @patch.object(release, "run")
+    @patch.object(release, "Registry")
+    def test_adapter_runtime_failure_blocks_scanning_and_publication(self, registry_type, run, build, smoke, scan, publish):
+        registry_type.return_value.resolve.return_value = None
+        smoke.side_effect = subprocess.CalledProcessError(255, ["ssh", "-G"])
+
+        def execute(args, **kwargs):
+            if args[:2] == ["git", "rev-parse"]:
+                return SHA
+            if args[:3] == ["docker", "image", "inspect"]:
+                return json.dumps({"org.opencontainers.image.revision": SHA})
+
+        run.side_effect = execute
+        with patch.dict("os.environ", {"GITHUB_REPOSITORY": release.REPOSITORY, "GITHUB_ACTOR": "actor", "RELEASE_TOKEN": "secret"}):
+            with self.assertRaises(subprocess.CalledProcessError):
+                release.release(SHA, self.root / "output", self.root / "tools", self.root)
+        smoke.assert_called_once_with(f"ghcr.io/avtobot22/craftpulse-adapter-git:{SHA}")
+        scan.assert_not_called()
+        publish.assert_not_called()
+
     @patch.object(release.urllib.request, "urlopen")
     def test_registry_only_404_means_absent(self, urlopen):
         token_response = io.BytesIO(b'{"token":"opaque"}')

@@ -39,6 +39,11 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # No images are pushed until every image passed Trivy; unknown scanner results fail closed.
         run: python3 scripts/oci_release.py release --sha "$RELEASE_SHA"
+      - name: Verify published server version against release manifest
+        run: >-
+          python3 scripts/check_release_server.py
+          --manifest build/release/release-manifest.json
+          --output build/release/server-version.json
       - name: Preserve scan reports, SBOMs and release manifest
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

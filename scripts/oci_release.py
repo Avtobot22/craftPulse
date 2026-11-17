@@ -136,6 +136,14 @@ def build(image, sha, ref, root=ROOT):
     run(args + [str(root / image["context"])], cwd=root)
 
 
+def smoke_adapter(ref):
+    run(["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", "--entrypoint", "/bin/sh", ref, "-ec",
+         'test "$(id -u)" = 65532; test "$(id -g)" = 65532; test "$(id -un)" = nonroot; '
+         'test "$GIT_CACHE_DIR" = /var/cache/craftpulse-git; '
+         'mkdir -p "$GIT_CACHE_DIR/clones" "$GIT_CACHE_DIR/work"; '
+         'ssh -G -F /dev/null git@example.invalid >/dev/null'])
+
+
 def validate_original(manifest, sha, images, resolved, expected_metadata):
     if manifest.get("schema_version") != 1 or manifest.get("commit_sha") != sha:
         raise ReleaseError("stored release belongs to another commit or schema")
@@ -244,6 +252,8 @@ def release(sha, output, tools, root=ROOT):
         labels = json.loads(run(["docker", "image", "inspect", "--format", "{{json .Config.Labels}}", reference], capture=True))
         if labels.get("org.opencontainers.image.revision") != sha:
             raise ReleaseError(f"image revision does not match release: {name}")
+        if image.get("adapter"):
+            smoke_adapter(reference)
         references[name] = reference
     licenses = scan(images, references, output, tools)
     publish_images(images, sha, references, resolved, registry)
@@ -280,7 +290,9 @@ def main():
         elif args.command == "build-adapters":
             for image in plan():
                 if image.get("adapter"):
-                    build(image, args.sha, f"{image['name']}:check")
+                    reference = f"{image['name']}:check"
+                    build(image, args.sha, reference)
+                    smoke_adapter(reference)
         elif args.command == "install-tools":
             install_tools(args.tools.resolve())
         else:

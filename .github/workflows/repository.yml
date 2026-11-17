@@ -40,6 +40,7 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              - 'scripts/check_release_server.py'
               - 'deploy/postgres/**'
               - 'docs/technical-specification/openapi.yaml'
               - 'docs/technical-specification/adapter.yaml'
@@ -56,6 +57,7 @@ jobs:
               - '.github/workflows/go-check.yml'
             release:
               - 'backend/**'
+              - 'scripts/check_release_server.py'
               - 'frontend/Dockerfile'
               - 'frontend/package-lock.json'
               - 'scripts/oci_release.py'
