@@ -52,7 +52,7 @@ def serve(output, url_file, port=8789):
                 "description": "Comment identity for craftPulse MVP test pull requests (#89)",
                 "public": False, "redirect_url": origin + "/callback",
                 "hook_attributes": {"url": "https://craftpulse.defects.team/github/webhooks", "active": False},
-                "default_permissions": {"pull_requests": "write"}, "default_events": []}
+                "default_permissions": {"pull_requests": "write", "contents": "read"}, "default_events": []}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -109,7 +109,7 @@ def serve(output, url_file, port=8789):
                 # Unexpected permissions/owner still prevent installation and must be reconciled.
                 save_config(output, config)
                 if (config["owner"]["id"] != ORGANIZATION_ID or not config.get("pem")
-                        or config["permissions"] != {"metadata": "read", "pull_requests": "write"}):
+                        or config["permissions"] != {"metadata": "read", "pull_requests": "write", "contents": "read"}):
                     raise ValueError("Unexpected app owner/permissions")
                 public = {k: config[k] for k in ("id", "slug", "html_url", "owner", "permissions", "client_id")}
                 output.with_name("app-public.json").write_text(json.dumps(public, indent=2), encoding="utf-8")

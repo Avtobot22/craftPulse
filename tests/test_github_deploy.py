@@ -278,7 +278,7 @@ class GitHubAppAuthTests(unittest.TestCase):
         issuer, bot = Mock(), Mock()
         issuer.request.side_effect = [
             {"id": 123, "slug": "fixture-bot", "owner": {"id": manage.ORGANIZATION_ID},
-             "permissions": {"metadata": "read", "pull_requests": "write"}},
+             "permissions": {"metadata": "read", "pull_requests": "write", "contents": "read"}},
             {"id": 456, "account": {"id": manage.ORGANIZATION_ID}, "repository_selection": "selected",
              "suspended_at": None},
             {"token": "installation-token", "permissions": {"metadata": "read", "pull_requests": "write"}}]
