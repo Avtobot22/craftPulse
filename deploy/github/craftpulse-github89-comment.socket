@@ -1,0 +1,13 @@
+[Unit]
+Description=craftPulse fixture PR comment capability
+
+[Socket]
+ListenStream=/run/craftpulse-github89-comment.sock
+Accept=yes
+SocketMode=0600
+SocketUser=root
+SocketGroup=root
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target
