@@ -329,5 +329,44 @@ class GitHubAppRegistrationTests(unittest.TestCase):
                 self.assertEqual(0o600, path.stat().st_mode & 0o777)
 
 
+class GitHubTransportTests(unittest.TestCase):
+    def test_transient_get_is_retried_without_writes(self):
+        from urllib.error import URLError
+        api = manage.API("fixture-token")
+        api.opener = MagicMock()
+        response = api.opener.open.return_value.__enter__.return_value
+        response.headers = {}
+        response.read.return_value = b'{}'
+        context = api.opener.open.return_value
+        api.opener.open.side_effect = [URLError(TimeoutError()), context]
+        with patch.object(manage.time, "sleep"):
+            self.assertEqual({}, api.request("GET", "meta"))
+        self.assertEqual(2, api.opener.open.call_count)
+        self.assertEqual(0, api.writes)
+
+    def test_uncertain_write_is_never_retried(self):
+        from urllib.error import URLError
+        api = manage.API("fixture-token")
+        api.opener = MagicMock()
+        api.opener.open.side_effect = URLError(TimeoutError())
+        with patch.object(manage.time, "sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "inspect remote state"):
+                api.request("POST", "repos/craftpulse-mvp/cp89-org-a/pulls", {})
+        self.assertEqual(1, api.opener.open.call_count)
+        sleep.assert_not_called()
+
+    def test_certificate_validation_failure_is_not_retried(self):
+        import ssl
+        from urllib.error import URLError
+        api = manage.API("fixture-token")
+        api.opener = MagicMock()
+        api.opener.open.side_effect = URLError(ssl.SSLCertVerificationError("fixture"))
+        with patch.object(manage.time, "sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "certificate verification"):
+                api.request("GET", "meta")
+        self.assertEqual(1, api.opener.open.call_count)
+        sleep.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

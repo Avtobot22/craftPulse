@@ -8,7 +8,9 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from urllib.error import HTTPError
+import ssl
+import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -48,14 +50,25 @@ class API:
         if body is not None:
             headers["Content-Type"] = "application/json"
         request = Request("https://api.github.com/" + path, data=body, headers=headers, method=method)
-        try:
-            with self.opener.open(request, timeout=45) as response:
-                selected = response.headers.get("X-GitHub-Api-Version-Selected")
-                if selected and selected != API_VERSION:
-                    raise RuntimeError("GitHub selected an unexpected API version")
-                raw = response.read()
-        except HTTPError as error:
-            raise APIError(method, path, error.code) from None
+        attempts = 3 if method == "GET" else 1
+        for attempt in range(attempts):
+            try:
+                with self.opener.open(request, timeout=20) as response:
+                    selected = response.headers.get("X-GitHub-Api-Version-Selected")
+                    if selected and selected != API_VERSION:
+                        raise RuntimeError("GitHub selected an unexpected API version")
+                    raw = response.read()
+                break
+            except HTTPError as error:
+                raise APIError(method, path, error.code) from None
+            except (URLError, TimeoutError) as error:
+                reason = error.reason if isinstance(error, URLError) else error
+                if isinstance(reason, ssl.SSLCertVerificationError):
+                    raise RuntimeError("GitHub TLS certificate verification failed") from None
+                if attempt + 1 == attempts:
+                    suffix = "; inspect remote state before repeating a write" if method != "GET" else ""
+                    raise RuntimeError("GitHub transport failed" + suffix) from None
+                time.sleep(0.5 * (attempt + 1))
         if method != "GET":
             self.writes += 1
         return json.loads(raw) if raw else None
