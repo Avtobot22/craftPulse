@@ -183,3 +183,10 @@ type Calculator interface {
 	RunGC(ctx context.Context, job entity.CalcGCJob, complete func(context.Context) error) error
 	TickGC(ctx context.Context) error
 }
+
+// Documentation manages the complete set of Git documentation roots of a service.
+type Documentation interface {
+	ListRoots(ctx context.Context, s entity.Subject, scope entity.Scope, serviceID entity.ID) (entity.DocumentationRootSet, error)
+	ReplaceRoots(ctx context.Context, s entity.Subject, serviceID entity.ID, base int64, key entity.ID, roots []entity.DocumentationRoot) (entity.DocumentationRootSet, error)
+	RootsAt(ctx context.Context, orgID entity.ID, scope entity.Scope, serviceID, areaID entity.ID, seq int64) ([]entity.DocumentationRoot, error)
+}

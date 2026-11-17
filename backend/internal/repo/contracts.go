@@ -271,6 +271,7 @@ type SyncRepo interface {
 
 // NormalizeRepo is the normalize schema under row-level security: canonical facts in versions of knowledge.
 type NormalizeRepo interface {
+	RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error)
 	// EnsureObjects creates the identities that are new with the knowledge number seq and returns all by key.
 	EnsureObjects(ctx context.Context, orgID entity.ID, keys []entity.SourceKey, quality entity.IdentityQuality, seq int64) (map[entity.SourceKey]entity.SourceObject, error)
 	EnsureAreas(ctx context.Context, orgID entity.ID, areas map[entity.ID]entity.ObjectKind) error

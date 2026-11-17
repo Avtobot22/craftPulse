@@ -228,3 +228,19 @@ func knowledge(known int64, seq pgtype.Int8, at pgtype.Timestamptz) entity.Knowl
 	}
 	return k
 }
+
+func (r *Repo) RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error) {
+	in := make([]uuid.UUID, len(ids))
+	for i, id := range ids {
+		in[i] = uuid.UUID(id)
+	}
+	rows, err := r.q(ctx).RepositoryAreas(ctx, RepositoryAreasParams{OrganizationID: uuid.UUID(orgID), Ids: in})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: repository areas: %w", err)
+	}
+	out := make([]entity.ID, len(rows))
+	for i, id := range rows {
+		out[i] = entity.ID(id)
+	}
+	return out, nil
+}
