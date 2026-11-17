@@ -51,6 +51,26 @@ CREATE INDEX root_confirmation_idx ON docs.root (organization_id, confirmation_i
 CREATE INDEX root_set_author_idx ON docs.root_set (organization_id, confirmed_by);
 CREATE INDEX root_author_idx ON docs.root (organization_id, confirmed_by);
 
+-- Every successful key is bound to its result, including a confirmation without changes.
+CREATE TABLE docs.root_confirmation (
+    organization_id uuid NOT NULL,
+    confirmation_id uuid NOT NULL,
+    service_id uuid NOT NULL,
+    version_no bigint NOT NULL,
+    actor_user_id uuid NOT NULL,
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (organization_id, confirmation_id),
+    FOREIGN KEY (organization_id, service_id, version_no) REFERENCES docs.root_set (organization_id, service_id, version_no),
+    FOREIGN KEY (organization_id, actor_user_id) REFERENCES org.app_user (organization_id, id)
+);
+CREATE INDEX root_confirmation_set_idx ON docs.root_confirmation (organization_id, service_id, version_no);
+CREATE INDEX root_confirmation_actor_idx ON docs.root_confirmation (organization_id, actor_user_id);
+ALTER TABLE docs.root_confirmation ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON docs.root_confirmation TO craftpulse_app
+    USING (organization_id = NULLIF(current_setting('craftpulse.org_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('craftpulse.org_id', true), '')::uuid);
+CREATE POLICY backup_read ON docs.root_confirmation FOR SELECT TO craftpulse_backup USING (true);
+
 ALTER TABLE docs.root_set ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON docs.root_set TO craftpulse_app
     USING (organization_id = NULLIF(current_setting('craftpulse.org_id', true), '')::uuid)

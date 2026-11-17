@@ -272,6 +272,40 @@ func TestDocumentationRoots_ConcurrentConfirmation(t *testing.T) {
 	}
 }
 
+func TestDocumentationRoots_NoopKeyKeepsItsResult(t *testing.T) {
+	t.Parallel()
+	e := newDocsEnv(t)
+	first := e.putRoots(t, e.member, `"0"`, uuid.New(), e.root("docs"))
+	require.Equal(t, 200, first.Code, first.Body.String())
+	noopKey := uuid.New()
+	rec := e.putRoots(t, e.member, `"1"`, noopKey, e.root("docs"))
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	require.Equal(t, 200, e.putRoots(t, e.member, `"1"`, uuid.New(), e.root("guide")).Code)
+	before := e.rootCounts(t)
+	rec = e.putRoots(t, e.member, `"2"`, noopKey, e.root("guide"))
+	assert.Equal(t, 422, rec.Code, rec.Body.String())
+	rec = e.putRoots(t, e.member, `"1"`, noopKey, e.root("docs"))
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	assert.Equal(t, first.Body.String(), rec.Body.String())
+	assert.Equal(t, `"1"`, rec.Header().Get("ETag"))
+	assert.Equal(t, before, e.rootCounts(t))
+}
+
+func TestDocumentationRoots_ErrorIndexMatchesSubmittedOrder(t *testing.T) {
+	t.Parallel()
+	e := newDocsEnv(t)
+	rec := e.putRoots(t, e.member, `"0"`, uuid.New(), e.root("docs"))
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	// The inaccessible area sorts before the allowed one, but occupies row 1 in the request.
+	denied := e.root("private")
+	denied["area_id"] = "00000000-0000-0000-0000-000000000001"
+	rec = e.putRoots(t, e.member, `"1"`, uuid.New(), e.root("docs"), denied)
+	require.Equal(t, 422, rec.Code, rec.Body.String())
+	problem := decode[problemBody](t, rec)
+	require.NotEmpty(t, problem.Errors)
+	assert.Equal(t, "/data/1/area_id", problem.Errors[0].Field)
+}
+
 var errDocsAudit = errors.New("audit unavailable")
 
 type failedDocsAudit struct{}

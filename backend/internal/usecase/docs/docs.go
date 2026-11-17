@@ -112,9 +112,9 @@ func (u *UseCase) ReplaceRoots(ctx context.Context, s entity.Subject, serviceID 
 		if err := u.d.Repo.LockRootWrites(ctx, s.OrganizationID); err != nil {
 			return err
 		}
-		saved, err := u.d.Repo.RootSetByConfirmation(ctx, s.OrganizationID, key)
+		saved, actor, err := u.d.Repo.RootSetByConfirmation(ctx, s.OrganizationID, key)
 		if err == nil {
-			if saved.ServiceID != serviceID || saved.ConfirmedBy != s.UserID || !bytes.Equal(saved.ContentHash, digest) {
+			if saved.ServiceID != serviceID || actor != s.UserID || !bytes.Equal(saved.ContentHash, digest) {
 				return entity.ErrIdempotencyKeyReused
 			}
 			saved.Roots, err = u.d.Repo.RootsAt(ctx, s.OrganizationID, serviceID, saved.KnownSeq)
@@ -133,7 +133,7 @@ func (u *UseCase) ReplaceRoots(ctx context.Context, s entity.Subject, serviceID 
 		}
 		if bytes.Equal(current.ContentHash, digest) {
 			out = current
-			return nil
+			return u.d.Repo.RememberRootConfirmation(ctx, s.OrganizationID, key, s.UserID, out, u.d.Clock.Now())
 		}
 		if err := u.d.References.CheckDocumentationReferences(ctx, s.OrganizationID, serviceID, persons); err != nil {
 			return err
@@ -152,6 +152,12 @@ func (u *UseCase) ReplaceRoots(ctx context.Context, s entity.Subject, serviceID 
 		if err != nil {
 			return err
 		}
+		slices.SortFunc(roots, func(a, b entity.DocumentationRoot) int {
+			if n := slices.Compare(a.AreaID[:], b.AreaID[:]); n != 0 {
+				return n
+			}
+			return strings.Compare(a.PathPrefix, b.PathPrefix)
+		})
 		out = entity.DocumentationRootSet{
 			ServiceID: serviceID, Version: current.Version + 1, KnownSeq: seq, ContentHash: digest,
 			Confirmation: entity.Confirmation{ConfirmedBy: s.UserID, ConfirmedAt: u.d.Clock.Now(), ConfirmationID: key}, Roots: roots,
@@ -169,6 +175,9 @@ func (u *UseCase) ReplaceRoots(ctx context.Context, s entity.Subject, serviceID 
 			return err
 		}
 		if err := u.d.Repo.InsertRootSet(ctx, s.OrganizationID, out); err != nil {
+			return err
+		}
+		if err := u.d.Repo.RememberRootConfirmation(ctx, s.OrganizationID, key, s.UserID, out, out.ConfirmedAt); err != nil {
 			return err
 		}
 		return u.d.Auditor.Record(ctx, entity.AuditEvent{
@@ -225,12 +234,6 @@ func validate(in []entity.DocumentationRoot) ([]entity.DocumentationRoot, []byte
 			}
 		}
 	}
-	slices.SortFunc(roots, func(a, b entity.DocumentationRoot) int {
-		if n := slices.Compare(a.AreaID[:], b.AreaID[:]); n != 0 {
-			return n
-		}
-		return strings.Compare(a.PathPrefix, b.PathPrefix)
-	})
 	// Hash only the input: generated IDs and knowledge metadata are not part of a confirmation.
 	type input struct {
 		AreaID   entity.ID  `json:"area_id"`
@@ -244,6 +247,12 @@ func validate(in []entity.DocumentationRoot) ([]entity.DocumentationRoot, []byte
 		r := &roots[i]
 		form[i] = input{r.AreaID, r.PathPrefix, r.ProfileID, r.OwnerPersonID, r.Audience}
 	}
+	slices.SortFunc(form, func(a, b input) int {
+		if n := slices.Compare(a.AreaID[:], b.AreaID[:]); n != 0 {
+			return n
+		}
+		return strings.Compare(a.Path, b.Path)
+	})
 	encoded, err := json.Marshal(form)
 	if err != nil {
 		return nil, nil, fmt.Errorf("docs: encode roots: %w", err)

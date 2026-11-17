@@ -38,12 +38,23 @@ func (r *Repo) LatestRootSet(ctx context.Context, orgID, serviceID entity.ID) (e
 	return rootSet(row), nil
 }
 
-func (r *Repo) RootSetByConfirmation(ctx context.Context, orgID, key entity.ID) (entity.DocumentationRootSet, error) {
+func (r *Repo) RootSetByConfirmation(ctx context.Context, orgID, key entity.ID) (entity.DocumentationRootSet, entity.ID, error) {
 	row, err := r.q(ctx).RootSetByConfirmation(ctx, RootSetByConfirmationParams{OrganizationID: uuid.UUID(orgID), ConfirmationID: uuid.UUID(key)})
 	if err != nil {
-		return entity.DocumentationRootSet{}, readError(err)
+		return entity.DocumentationRootSet{}, entity.ID{}, readError(err)
 	}
-	return rootSet(row), nil
+	return rootSet(row.DocsRootSet), entity.ID(row.ActorUserID), nil
+}
+
+func (r *Repo) RememberRootConfirmation(ctx context.Context, orgID, key, actor entity.ID, set entity.DocumentationRootSet, at time.Time) error {
+	err := r.q(ctx).RememberRootConfirmation(ctx, RememberRootConfirmationParams{
+		OrganizationID: uuid.UUID(orgID), ConfirmationID: uuid.UUID(key),
+		ServiceID: uuid.UUID(set.ServiceID), VersionNo: set.Version, ActorUserID: uuid.UUID(actor), CreatedAt: at,
+	})
+	if err != nil {
+		return fmt.Errorf("docs: remember root confirmation: %w", err)
+	}
+	return nil
 }
 
 func rootSet(row DocsRootSet) entity.DocumentationRootSet {

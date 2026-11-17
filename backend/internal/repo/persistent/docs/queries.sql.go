@@ -116,8 +116,36 @@ func (q *Queries) LockRootWrites(ctx context.Context, organizationID uuid.UUID) 
 	return err
 }
 
+const rememberRootConfirmation = `-- name: RememberRootConfirmation :exec
+INSERT INTO docs.root_confirmation (organization_id, confirmation_id, service_id, version_no, actor_user_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type RememberRootConfirmationParams struct {
+	OrganizationID uuid.UUID
+	ConfirmationID uuid.UUID
+	ServiceID      uuid.UUID
+	VersionNo      int64
+	ActorUserID    uuid.UUID
+	CreatedAt      time.Time
+}
+
+func (q *Queries) RememberRootConfirmation(ctx context.Context, arg RememberRootConfirmationParams) error {
+	_, err := q.db.Exec(ctx, rememberRootConfirmation,
+		arg.OrganizationID,
+		arg.ConfirmationID,
+		arg.ServiceID,
+		arg.VersionNo,
+		arg.ActorUserID,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const rootSetByConfirmation = `-- name: RootSetByConfirmation :one
-SELECT organization_id, service_id, version_no, known_seq, content_hash, confirmed_by, confirmed_at, confirmation_id FROM docs.root_set WHERE organization_id = $1 AND confirmation_id = $2
+SELECT s.organization_id, s.service_id, s.version_no, s.known_seq, s.content_hash, s.confirmed_by, s.confirmed_at, s.confirmation_id, c.actor_user_id FROM docs.root_set s
+JOIN docs.root_confirmation c USING (organization_id, service_id, version_no)
+WHERE c.organization_id = $1 AND c.confirmation_id = $2
 `
 
 type RootSetByConfirmationParams struct {
@@ -125,18 +153,24 @@ type RootSetByConfirmationParams struct {
 	ConfirmationID uuid.UUID
 }
 
-func (q *Queries) RootSetByConfirmation(ctx context.Context, arg RootSetByConfirmationParams) (DocsRootSet, error) {
+type RootSetByConfirmationRow struct {
+	DocsRootSet DocsRootSet
+	ActorUserID uuid.UUID
+}
+
+func (q *Queries) RootSetByConfirmation(ctx context.Context, arg RootSetByConfirmationParams) (RootSetByConfirmationRow, error) {
 	row := q.db.QueryRow(ctx, rootSetByConfirmation, arg.OrganizationID, arg.ConfirmationID)
-	var i DocsRootSet
+	var i RootSetByConfirmationRow
 	err := row.Scan(
-		&i.OrganizationID,
-		&i.ServiceID,
-		&i.VersionNo,
-		&i.KnownSeq,
-		&i.ContentHash,
-		&i.ConfirmedBy,
-		&i.ConfirmedAt,
-		&i.ConfirmationID,
+		&i.DocsRootSet.OrganizationID,
+		&i.DocsRootSet.ServiceID,
+		&i.DocsRootSet.VersionNo,
+		&i.DocsRootSet.KnownSeq,
+		&i.DocsRootSet.ContentHash,
+		&i.DocsRootSet.ConfirmedBy,
+		&i.DocsRootSet.ConfirmedAt,
+		&i.DocsRootSet.ConfirmationID,
+		&i.ActorUserID,
 	)
 	return i, err
 }

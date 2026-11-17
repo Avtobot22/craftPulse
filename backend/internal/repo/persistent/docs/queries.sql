@@ -5,7 +5,9 @@ SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(organization_id)::uuid::t
 SELECT * FROM docs.root_set WHERE organization_id = $1 AND service_id = $2 ORDER BY version_no DESC LIMIT 1;
 
 -- name: RootSetByConfirmation :one
-SELECT * FROM docs.root_set WHERE organization_id = $1 AND confirmation_id = $2;
+SELECT sqlc.embed(s), c.actor_user_id FROM docs.root_set s
+JOIN docs.root_confirmation c USING (organization_id, service_id, version_no)
+WHERE c.organization_id = $1 AND c.confirmation_id = $2;
 
 -- name: RootsAt :many
 SELECT * FROM docs.root WHERE organization_id = $1 AND service_id = $2
@@ -24,3 +26,7 @@ WHERE organization_id = $1 AND service_id = $2 AND superseded_seq IS NULL;
 INSERT INTO docs.root (organization_id, id, service_id, area_id, path_prefix, profile_id, owner_person_id, audience,
     known_seq, confirmed_by, confirmed_at, confirmation_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
+
+-- name: RememberRootConfirmation :exec
+INSERT INTO docs.root_confirmation (organization_id, confirmation_id, service_id, version_no, actor_user_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6);
