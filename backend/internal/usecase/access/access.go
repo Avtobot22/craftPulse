@@ -37,6 +37,7 @@ const (
 
 // _rules is table 5.3 for the actions served so far; an action missing here is granted to nobody.
 var _rules = map[string]rule{
+	"profile.manage":       ruleSession,
 	"session.read":         ruleSession,
 	"session.manage":       ruleSession,
 	"org.read":             ruleAreaRead,
@@ -88,14 +89,17 @@ type Metrics interface {
 }
 
 type Deps struct {
-	Tx        repo.Transactor
-	Profiles  Profiles
-	Structure Structure
-	Accounts  Accounts
-	Sources   Sources
-	Auditor   Auditor
-	Metrics   Metrics
-	Clock     clock.Clock
+	LinkAuditor LinkAuditor
+	Links       LinkSources
+	LinkRepo    repo.SourceLinkRepo
+	Tx          repo.Transactor
+	Profiles    Profiles
+	Structure   Structure
+	Accounts    Accounts
+	Sources     Sources
+	Auditor     Auditor
+	Metrics     Metrics
+	Clock       clock.Clock
 	// CacheSize bounds the decisions kept in memory; _cacheSize when zero.
 	CacheSize int
 	// CheckTimeout is the budget of one CheckAccess on the path of a read; _checkTimeout when zero.
@@ -103,15 +107,18 @@ type Deps struct {
 }
 
 type UseCase struct {
-	tx        repo.Transactor
-	profiles  Profiles
-	structure Structure
-	accounts  Accounts
-	sources   Sources
-	auditor   Auditor
-	metrics   Metrics
-	clock     clock.Clock
-	checks    *checks
+	linkAuditor LinkAuditor
+	links       LinkSources
+	linkRepo    repo.SourceLinkRepo
+	tx          repo.Transactor
+	profiles    Profiles
+	structure   Structure
+	accounts    Accounts
+	sources     Sources
+	auditor     Auditor
+	metrics     Metrics
+	clock       clock.Clock
+	checks      *checks
 }
 
 func New(d Deps) *UseCase {
@@ -124,11 +131,13 @@ func New(d Deps) *UseCase {
 	if d.Metrics == nil {
 		d.Metrics = noMetrics{}
 	}
-	return &UseCase{
-		tx: d.Tx, profiles: d.Profiles, structure: d.Structure, accounts: d.Accounts, sources: d.Sources,
+	u := &UseCase{
+		linkAuditor: d.LinkAuditor, links: d.Links, linkRepo: d.LinkRepo, tx: d.Tx, profiles: d.Profiles, structure: d.Structure, accounts: d.Accounts, sources: d.Sources,
 		auditor: d.Auditor, metrics: d.Metrics, clock: d.Clock,
 		checks: newChecks(d.Sources, d.Metrics, d.Clock, d.CacheSize, d.CheckTimeout),
 	}
+	u.checks.expired = u.expireLink
+	return u
 }
 
 // Authorize returns entity.ErrNotFound when the area is not visible to the subject and entity.ErrForbidden

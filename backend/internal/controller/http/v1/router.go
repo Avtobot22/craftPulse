@@ -49,6 +49,7 @@ func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
 	// The contract serves login from the site root; the generated routes also answer under api.
 	login := openapi.ServerInterfaceWrapper{Handler: strict, ErrorHandler: handler.ParameterError}
 	site := root.Group("", guard...)
+	site.GET("/source-links/callback", login.CompleteSourceLink)
 	site.GET("/o/:org_slug/login", login.StartLogin)
 	site.GET("/o/:org_slug/callback", login.CompleteLogin)
 }

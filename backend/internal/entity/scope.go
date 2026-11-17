@@ -98,6 +98,7 @@ type RestrictedObject struct {
 // AreaSource is a scope of a connection that collected a source area; an area without one came only from
 // an import.
 type AreaSource struct {
+	UserToken        bool
 	AreaID           ID
 	ConnectionID     ID
 	InstanceID       ID

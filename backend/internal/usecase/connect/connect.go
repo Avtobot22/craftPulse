@@ -308,3 +308,13 @@ func logFailure(ctx context.Context, c entity.Connection, op entity.AdapterOp, e
 	}
 	ev.Err(err).Msg("adapter call failed")
 }
+
+func (u *UseCase) AuthorizeURL(ctx context.Context, orgID, connectionID entity.ID, in entity.SourceAuthorization) (string, error) {
+	var out string
+	err := u.call(ctx, orgID, connectionID, entity.OpAuthorizeURL, func(ctx context.Context, t entity.AdapterTarget) error {
+		var err error
+		out, err = u.d.Adapters.AuthorizeURL(ctx, t, in)
+		return err
+	})
+	return out, err
+}

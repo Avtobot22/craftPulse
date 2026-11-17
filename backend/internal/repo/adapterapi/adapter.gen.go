@@ -685,6 +685,7 @@ type CapabilityState string
 
 // CheckAccessInput defines model for CheckAccessInput.
 type CheckAccessInput struct {
+	// AccountNativeId Идентификатор подтверждённой учётной записи источника. В режиме user_token допускается пустая строка: адаптер находит токен по user_id.
 	AccountNativeId string             `json:"account_native_id"`
 	Items           []AccessItem       `json:"items"`
 	UserId          openapi_types.UUID `json:"user_id"`

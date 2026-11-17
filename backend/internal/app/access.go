@@ -8,6 +8,7 @@ import (
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
+	accessrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/access"
 	auditrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit"
 	authrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/auth"
 	orgrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/org"
@@ -24,7 +25,10 @@ import (
 // sources is connect: it knows the areas of connections and calls CheckAccess. A process builds them once,
 // so its cache of decisions is one; nil metrics count nothing. The recount of calc after a new structure goes through
 // the queue of jobs.
-func newOrgAccess(pool *pgxpool.Pool, c clock.Clock, sources access.Sources, metrics access.Metrics) (
+func newOrgAccess(pool *pgxpool.Pool, c clock.Clock, sources interface {
+	access.Sources
+	access.LinkSources
+}, metrics access.Metrics) (
 	orgs *org.UseCase, rights *access.UseCase, err error,
 ) {
 	jobs, err := riverInsertClient(pool)
@@ -38,7 +42,7 @@ func newOrgAccess(pool *pgxpool.Pool, c clock.Clock, sources access.Sources, met
 		Credentials: auth.NewCredentials(authrepo.NewRepo(pool)), Sources: sources, Queue: queue.New(jobs), Clock: c, NewID: newID,
 	})
 	rights = access.New(access.Deps{
-		Tx: tx, Profiles: orgs, Structure: orgs, Accounts: orgs, Sources: sources, Auditor: auditor, Metrics: metrics, Clock: c,
+		Links: sources, LinkRepo: accessrepo.NewRepo(pool), LinkAuditor: auditor, Tx: tx, Profiles: orgs, Structure: orgs, Accounts: orgs, Sources: sources, Auditor: auditor, Metrics: metrics, Clock: c,
 	})
 	return orgs, rights, nil
 }

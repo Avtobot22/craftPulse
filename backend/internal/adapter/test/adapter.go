@@ -2,9 +2,11 @@ package testadapter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -215,6 +217,9 @@ func (a *Adapter) Probe(ctx context.Context, call adaptersdk.Call, in adaptersdk
 		scopes = append(scopes, check)
 	}
 	edition, version, mode := EditionCloud, a.data.Version, adaptersdk.ProbeResultAccessModeServiceAccount
+	if cfg.Access.Mode == "user_token" {
+		mode = adaptersdk.ProbeResultAccessModeUserToken
+	}
 	res := adaptersdk.ProbeResult{
 		ContractVersions: []string{adaptersdk.CurrentContractVersion},
 		Provider:         adaptersdk.ProbeResultProviderJiraCloud,
@@ -464,16 +469,35 @@ func (a *Adapter) CheckAccess(ctx context.Context, call adaptersdk.Call, in adap
 	}
 	now := a.now().UTC().Truncate(time.Second)
 	user := in.UserId.String()
+	mode := adaptersdk.CheckAccessResultModeServiceAccount
+	reason := ""
+	if cfg.Access.Mode == "user_token" {
+		mode = adaptersdk.CheckAccessResultModeUserToken
+		_, err := call.UserToken(ctx, in.UserId)
+		switch {
+		case errors.Is(err, adaptersdk.ErrNoCredential):
+			reason = "not_linked"
+		case err != nil:
+			return adaptersdk.CheckAccessResult{}, err
+		case cfg.Access.Expired:
+			reason = "expired"
+		}
+	}
 	decisions := make([]adaptersdk.AccessDecision, 0, len(in.Items))
 	for _, item := range in.Items {
-		decisions = append(decisions, decide(cfg.Access, user, item, now))
+		d := decide(cfg.Access, user, item, now)
+		if reason != "" {
+			d.Decision = adaptersdk.AccessDecisionDecisionUnknown
+			d.ReasonCode = &reason
+		}
+		decisions = append(decisions, d)
 	}
 	if violates(fault) && len(decisions) > 0 {
 		decisions = decisions[:len(decisions)-1]
 	}
 	maxAge := _accessMaxAge
 	return adaptersdk.CheckAccessResult{
-		Mode: adaptersdk.CheckAccessResultModeServiceAccount, CheckedAt: now, MaxAgeSeconds: &maxAge, Decisions: decisions,
+		Mode: mode, CheckedAt: now, MaxAgeSeconds: &maxAge, Decisions: decisions,
 	}, nil
 }
 
@@ -497,3 +521,24 @@ func decide(access Access, user string, item adaptersdk.AccessItem, now time.Tim
 }
 
 var _ adaptersdk.Source = (*Adapter)(nil)
+
+func (a *Adapter) AuthorizeURL(_ context.Context, _ adaptersdk.Call, in adaptersdk.AuthorizeUrlInput) (adaptersdk.AuthorizeUrlResult, error) {
+	a.mu.Lock()
+	mode := a.cfg.Access.Mode
+	a.mu.Unlock()
+	if mode != "user_token" {
+		return adaptersdk.AuthorizeUrlResult{}, adaptersdk.NewError(adaptersdk.AdapterErrorCodeNotSupported, "user authorization is not enabled")
+	}
+	q := url.Values{"client_id": {"test-source-client"}, "scope": {"READ"}, "response_type": {"code"}, "state": {in.State}, "redirect_uri": {in.RedirectUri}}
+	return adaptersdk.AuthorizeUrlResult{Url: "https://source.test/authorize?" + q.Encode()}, nil
+}
+
+func (a *Adapter) ExchangeCode(_ context.Context, _ adaptersdk.Call, code, redirectURI string) (adaptersdk.UserToken, error) {
+	a.mu.Lock()
+	mode := a.cfg.Access.Mode
+	a.mu.Unlock()
+	if mode != "user_token" || code == "" || code == "rejected" || redirectURI == "" {
+		return adaptersdk.UserToken{}, adaptersdk.NewError(adaptersdk.AdapterErrorCodeAuth, "code exchange was refused")
+	}
+	return adaptersdk.UserToken{Access: "test-user-token:" + code}, nil
+}

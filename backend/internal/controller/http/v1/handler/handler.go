@@ -18,6 +18,7 @@ import (
 
 // Domain handlers are embedded here; the fallback is one level deeper, so their methods win.
 type Handler struct {
+	sourceLinks
 	documentation
 	uploads
 	accounts
@@ -36,6 +37,8 @@ type fallback struct {
 }
 
 type Deps struct {
+	SourceLinks   usecase.SourceLinks
+	SiteURL       string
 	Documentation usecase.Documentation
 	UploadTokens  usecase.UploadTokens
 	Logins        usecase.Logins
@@ -57,6 +60,7 @@ type Deps struct {
 
 func New(d Deps) *Handler {
 	return &Handler{
+		sourceLinks:    sourceLinks{uc: d.SourceLinks, callbackURL: d.SiteURL + "/source-links/callback"},
 		documentation:  documentation{uc: d.Documentation},
 		uploads:        uploads{tokens: d.UploadTokens},
 		connections:    connections{uc: d.Connections, sync: d.Sync, operations: d.Operations},
