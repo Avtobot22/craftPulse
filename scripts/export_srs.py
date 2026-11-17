@@ -203,7 +203,9 @@ def main():
             sys.exit("Для PDF нужен LibreOffice; используйте --no-pdf")
         with tempfile.TemporaryDirectory() as profile:
             subprocess.run([soffice, f"-env:UserInstallation=file://{profile}", "--headless",
-                            "--convert-to", "pdf", "--outdir", str(args.out), str(docx)],
+                            # Без тегированной структуры PDF в пять раз меньше; текст, ссылки и закладки те же.
+                            "--convert-to", 'pdf:writer_pdf_Export:{"UseTaggedPDF":{"type":"boolean","value":"false"}}',
+                            "--outdir", str(args.out), str(docx)],
                            check=True, capture_output=True)
         outputs.append(args.out / f"{stem}.pdf")
     for path in outputs:
