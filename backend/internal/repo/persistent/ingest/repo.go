@@ -407,3 +407,16 @@ func record(row *IngestRecord) entity.IngestRecord {
 	}
 	return rec
 }
+
+func (r *Repo) FirstCIReceiptOfHash(ctx context.Context, orgID, projectID, exclude entity.ID, hash []byte) (entity.ID, bool, error) {
+	id, err := New(postgres.Conn(ctx, r.pool)).FirstCIReceiptOfHash(ctx, FirstCIReceiptOfHashParams{
+		OrganizationID: uuid.UUID(orgID), ProjectID: uuid.NullUUID{UUID: uuid.UUID(projectID), Valid: true}, ID: uuid.UUID(exclude), PackageHash: hash,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.ID{}, false, nil
+	}
+	if err != nil {
+		return entity.ID{}, false, fmt.Errorf("ingest: find CI package: %w", err)
+	}
+	return entity.ID(id), true, nil
+}

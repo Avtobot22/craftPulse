@@ -104,9 +104,10 @@ func newIngestEnv(t *testing.T) *ingestEnv {
 	require.NoError(t, err)
 	e.connect, err = newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	_, e.rights, err = newOrgAccess(e.app, e.clock, e.connect, nil)
+	orgs, rights, err := newOrgAccess(e.app, e.clock, e.connect, nil)
 	require.NoError(t, err)
-	e.uc, err = newIngest(e.app, e.store, e.connect, e.rights, e.clock, e.reg)
+	e.rights = rights
+	e.uc, err = newIngest(e.app, e.store, e.connect, e.rights, orgs, e.clock, e.reg)
 	require.NoError(t, err)
 	return e
 }

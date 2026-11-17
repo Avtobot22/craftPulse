@@ -30,13 +30,18 @@ func newObjectStore(cfg config.ObjectStore) *objstore.Store {
 
 type ingestMetrics struct {
 	rejected *prometheus.CounterVec
+	ci       *prometheus.CounterVec
 }
 
 func (m ingestMetrics) PackageRejected(channel entity.ReceiptChannel, reason string) {
 	m.rejected.WithLabelValues(string(channel), reason).Inc()
 }
 
-func newIngest(pool *pgxpool.Pool, store repo.ObjectStore, connect ingest.Connect, rights ingest.Authorizer, c clock.Clock,
+func (m ingestMetrics) CIPackage(outcome, reason string) {
+	m.ci.WithLabelValues(outcome, reason).Inc()
+}
+
+func newIngest(pool *pgxpool.Pool, store repo.ObjectStore, connect ingest.Connect, rights ingest.Authorizer, projects ingest.Projects, c clock.Clock,
 	reg prometheus.Registerer,
 ) (*ingest.UseCase, error) {
 	rejected := prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -46,13 +51,17 @@ func newIngest(pool *pgxpool.Pool, store repo.ObjectStore, connect ingest.Connec
 	if err := reg.Register(rejected); err != nil {
 		return nil, fmt.Errorf("app: register ingest metric: %w", err)
 	}
+	ci := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "craftpulse_ingest_ci_packages_total", Help: "CI packages by outcome and reason."}, []string{"outcome", "reason"})
+	if err := reg.Register(ci); err != nil {
+		return nil, fmt.Errorf("app: register CI ingest metric: %w", err)
+	}
 	jobs, err := riverInsertClient(pool)
 	if err != nil {
 		return nil, err
 	}
 	return ingest.New(ingest.Deps{
 		Repo: ingestrepo.NewRepo(pool), Objects: store, Queue: queue.New(jobs), Tx: persistent.NewTransactor(pool),
-		Connect: connect, Access: rights, Metrics: ingestMetrics{rejected: rejected}, Clock: c, NewID: newID,
+		Connect: connect, Access: rights, Projects: projects, Metrics: ingestMetrics{rejected: rejected, ci: ci}, Clock: c, NewID: newID,
 		Auditor: audit.New(auditrepo.NewRepo(pool), persistent.NewTransactor(pool), c),
 	}), nil
 }

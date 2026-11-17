@@ -155,3 +155,26 @@ func TestLoadSite(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_CIIngress(t *testing.T) {
+	t.Parallel()
+	env := validEnv(t)
+	env["RUNNER_NETWORK"] = "10.20.0.0/16,2001:db8:20::/48"
+	env["TRUSTED_PROXIES"] = "192.0.2.2,2001:db8::2/128"
+	cfg, err := config.Load(env)
+	require.NoError(t, err)
+	require.Len(t, cfg.RunnerNetwork, 2)
+	assert.Equal(t, "10.20.0.0/16", cfg.RunnerNetwork[0].String())
+	assert.Equal(t, []string{"192.0.2.2", "2001:db8::2/128"}, cfg.TrustedProxies)
+	for _, name := range []string{"RUNNER_NETWORK", "TRUSTED_PROXIES"} {
+		bad := validEnv(t)
+		bad[name] = "invalid"
+		_, err := config.Load(bad)
+		require.Error(t, err)
+		want := name
+		if name == "RUNNER_NETWORK" {
+			want = "RunnerNetwork"
+		}
+		assert.Contains(t, err.Error(), want)
+	}
+}

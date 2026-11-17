@@ -148,7 +148,9 @@ func (e *processEnv) collect(t *testing.T, m *envelope.Manifest, recs ...*envelo
 	require.NoError(t, err)
 	conn, err := newConnect(e.app, e.keyring, caller, e.clock)
 	require.NoError(t, err)
-	intake, err := newIngest(e.app, sharedStore(t), conn, e.connectionsEnv.rights, e.clock, prometheus.NewRegistry())
+	orgs, _, err := newOrgAccess(e.app, e.clock, conn, nil)
+	require.NoError(t, err)
+	intake, err := newIngest(e.app, sharedStore(t), conn, e.connectionsEnv.rights, orgs, e.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
 	var scope uuid.UUID
 	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT id FROM connect.connection_scope WHERE connection_id = $1", e.conn).Scan(&scope))
