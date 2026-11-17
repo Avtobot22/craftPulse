@@ -1,6 +1,6 @@
 import type { ApiProblem } from '@/shared/api'
 
-const describeProblem = (problem: ApiProblem): string => problem.title
+const describeProblem = (problem: ApiProblem): string => problem.status
 
 export function HomePage({ problem }: { problem?: ApiProblem }) {
   return (
