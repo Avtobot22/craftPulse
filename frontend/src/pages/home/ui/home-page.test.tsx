@@ -18,6 +18,6 @@ describe('HomePage', () => {
     expect(
       screen.getByRole('heading', { name: 'craftPulse', level: 1 }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent('Нет данных')
+    expect(screen.getByRole('alert')).toHaveTextContent('intentional failure')
   })
 })
