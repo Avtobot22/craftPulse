@@ -1,0 +1,315 @@
+package main
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+type run struct {
+	ID                string `json:"id"`
+	Provider          string `json:"provider"`
+	ExecutionManifest bool   `json:"execution_manifest"`
+	Jobs              []job  `json:"jobs"`
+}
+type job struct {
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Stage             string            `json:"stage"`
+	Axes              map[string]string `json:"axes"`
+	ConfigurationHash string            `json:"configuration_hash"`
+	Attempts          []attempt         `json:"attempts"`
+}
+type attempt struct {
+	ID      string   `json:"id"`
+	Number  int      `json:"number"`
+	Outcome string   `json:"outcome"`
+	Reports []report `json:"reports"`
+}
+type report struct {
+	Path            string `json:"path"`
+	Format          string `json:"format"`
+	SHA             string `json:"sha"`
+	TestCaseID      string `json:"test_case_id"`
+	CoveredLines    int    `json:"covered_lines"`
+	TotalLines      int    `json:"total_lines"`
+	CoveredBranches int    `json:"covered_branches"`
+	TotalBranches   int    `json:"total_branches"`
+}
+type manifest struct {
+	SchemaVersion string      `json:"schema_version"`
+	DatasetRunID  string      `json:"dataset_run_id"`
+	Job           string      `json:"job"`
+	BuildNumber   int         `json:"build_number"`
+	BuildURL      string      `json:"build_url"`
+	SHA           string      `json:"sha"`
+	Steps         []execution `json:"steps"`
+}
+type execution struct {
+	DatasetAttemptID  string            `json:"dataset_attempt_id"`
+	Stage             string            `json:"stage"`
+	Name              string            `json:"name"`
+	Axes              map[string]string `json:"axes"`
+	ConfigurationHash string            `json:"configuration_hash"`
+	Attempt           int               `json:"attempt"`
+	Outcome           string            `json:"outcome"`
+	StartedAt         string            `json:"started_at"`
+	FinishedAt        string            `json:"finished_at"`
+	AgentLabel        string            `json:"agent_label"`
+	Reports           []reportRef       `json:"reports"`
+}
+type reportRef struct {
+	Path      string `json:"path"`
+	Format    string `json:"format"`
+	SHA256    string `json:"sha256"`
+	SourceSHA string `json:"source_sha"`
+}
+
+func main() {
+	name := flag.String("job", "test", "logical job name")
+	number := flag.Int("attempt", 0, "local verification attempt; native CI derives its own attempt")
+	flag.Parse()
+	code, err := execute(*name, *number)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "demo CI fixture:", err)
+		os.Exit(2)
+	}
+	os.Exit(code)
+}
+
+func execute(name string, n int) (int, error) {
+	raw, err := os.ReadFile(".demo-ci/run.json")
+	if err != nil {
+		return 0, err
+	}
+	var r run
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return 0, err
+	}
+	mode := os.Getenv("DEMO_MODE")
+	if mode == "" {
+		mode = "fast"
+	}
+	var selected *job
+	for i := range r.Jobs {
+		j := &r.Jobs[i]
+		if j.Name == name && (j.Axes["mode"] == "" || j.Axes["mode"] == mode) {
+			selected = j
+			break
+		}
+	}
+	if selected == nil {
+		return 0, fmt.Errorf("unknown job configuration")
+	}
+	if n == 0 {
+		n, err = nativeAttempt(r.Provider, selected)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if n < 1 || n > len(selected.Attempts) {
+		return 0, fmt.Errorf("attempt is outside the fixture plan")
+	}
+	a := selected.Attempts[n-1]
+	if a.Number != n {
+		return 0, fmt.Errorf("invalid attempt plan")
+	}
+	start := time.Now().UTC().Format(time.RFC3339Nano)
+	if a.Outcome == "timeout" || a.Outcome == "canceled" {
+		time.Sleep(10 * time.Minute)
+		return 0, fmt.Errorf("source must stop the waiting attempt")
+	}
+	if a.Outcome != "success" && a.Outcome != "failure" {
+		return 0, fmt.Errorf("non-executing outcome cannot start a process")
+	}
+	refs := []reportRef{}
+	sha := os.Getenv("CI_COMMIT_SHA")
+	if sha == "" {
+		sha = os.Getenv("GITHUB_SHA")
+	}
+	if sha == "" {
+		sha = os.Getenv("GIT_COMMIT")
+	}
+	if len(sha) != 40 {
+		return 0, fmt.Errorf("native commit SHA is required")
+	}
+	for _, rep := range a.Reports {
+		if rep.SHA == "" {
+			rep.SHA = sha
+		}
+		data, err := render(rep, a.Outcome)
+		if err != nil {
+			return 0, err
+		}
+		if err := os.MkdirAll(filepath.Dir(rep.Path), 0700); err != nil {
+			return 0, err
+		}
+		if err := os.WriteFile(rep.Path, []byte(data), 0600); err != nil {
+			return 0, err
+		}
+		meta, err := json.Marshal(map[string]string{"dataset_attempt_id": a.ID, "source_sha": rep.SHA, "configuration_hash": selected.ConfigurationHash, "test_case_id": rep.TestCaseID})
+		if err != nil {
+			return 0, err
+		}
+		if err := os.WriteFile(rep.Path+".meta.json", append(meta, '\n'), 0600); err != nil {
+			return 0, err
+		}
+		sum := sha256.Sum256([]byte(data))
+		refs = append(refs, reportRef{rep.Path, rep.Format, hex.EncodeToString(sum[:]), rep.SHA})
+	}
+	if r.ExecutionManifest {
+		if err := record(r, *selected, a, start, sha, refs); err != nil {
+			return 0, err
+		}
+	}
+	fmt.Printf("dataset=%s job=%s config=%s attempt=%d outcome=%s\n", r.ID, name, selected.ConfigurationHash, n, a.Outcome)
+	if a.Outcome == "failure" {
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func render(r report, outcome string) (string, error) {
+	switch r.Format {
+	case "junit":
+		failure := ""
+		failures := 0
+		if outcome == "failure" {
+			failure = "<failure message=\"deterministic fixture failure\"/>"
+			failures = 1
+		}
+		return fmt.Sprintf("<?xml version=\"1.0\"?><testsuites><testsuite name=\"demo/unit\" tests=\"1\" failures=\"%d\" errors=\"0\" skipped=\"0\"><properties><property name=\"source_sha\" value=\"%s\"/></properties><testcase classname=\"demo/unit\" name=\"TestRound\" time=\"0.01\">%s</testcase></testsuite></testsuites>\n", failures, r.SHA, failure), nil
+	case "cobertura":
+		branchRate := "0"
+		branches := ""
+		if r.TotalBranches > 0 {
+			branchRate = "0.5"
+			branches = " branch=\"true\" condition-coverage=\"50% (1/2)\""
+		}
+		return fmt.Sprintf("<?xml version=\"1.0\"?><coverage line-rate=\"0.75\" branch-rate=\"%s\" lines-covered=\"3\" lines-valid=\"4\" branches-covered=\"%d\" branches-valid=\"%d\" version=\"demo-1\" timestamp=\"%d\"><sources><source>.</source></sources><packages><package name=\"demo\" line-rate=\"0.75\" branch-rate=\"%s\"><classes><class name=\"demo\" filename=\"demo-target.go\" line-rate=\"0.75\" branch-rate=\"%s\"><methods/><lines><line number=\"2\" hits=\"1\"/><line number=\"3\" hits=\"1\"%s/><line number=\"4\" hits=\"1\"/><line number=\"5\" hits=\"0\"/></lines></class></classes></package></packages></coverage>\n", branchRate, r.CoveredBranches, r.TotalBranches, time.Now().Unix(), branchRate, branchRate, branches), nil
+	}
+	return "", fmt.Errorf("unknown report format")
+}
+
+func nativeAttempt(provider string, j *job) (int, error) {
+	if provider == "github" {
+		return positive(os.Getenv("GITHUB_RUN_ATTEMPT"))
+	}
+	if provider == "jenkins" {
+		return positive(os.Getenv("DEMO_ATTEMPT"))
+	}
+	if len(j.Attempts) == 1 {
+		return 1, nil
+	}
+	token := os.Getenv("DEMO_GITLAB_READ_TOKEN")
+	base, err := url.Parse(os.Getenv("CI_API_V4_URL"))
+	if err != nil || base.Scheme != "https" || base.Host == "" || base.User != nil || token == "" {
+		return 0, fmt.Errorf("GitLab HTTPS API and external read token are required for retries")
+	}
+	current, err := positive(os.Getenv("CI_JOB_ID"))
+	if err != nil {
+		return 0, err
+	}
+	project, err := positive(os.Getenv("CI_PROJECT_ID"))
+	if err != nil {
+		return 0, err
+	}
+	pipeline, err := positive(os.Getenv("CI_PIPELINE_ID"))
+	if err != nil {
+		return 0, err
+	}
+	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	count := 0
+	for page := 1; page <= 100; page++ {
+		endpoint := fmt.Sprintf("%s/projects/%d/pipelines/%d/jobs?include_retried=true&per_page=100&page=%d", strings.TrimSuffix(base.String(), "/"), project, pipeline, page)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, endpoint, nil)
+		if err != nil {
+			return 0, fmt.Errorf("invalid GitLab endpoint")
+		}
+		req.Header.Set("PRIVATE-TOKEN", token)
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, fmt.Errorf("GitLab attempt lookup failed")
+		}
+		var jobs []struct {
+			ID   int    `json:"id"`
+			Name string `json:"name"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&jobs)
+		closeErr := resp.Body.Close()
+		if resp.StatusCode != 200 || decodeErr != nil || closeErr != nil {
+			return 0, fmt.Errorf("GitLab attempt lookup refused")
+		}
+		for _, native := range jobs {
+			if native.Name == os.Getenv("CI_JOB_NAME") && native.ID <= current {
+				count++
+			}
+		}
+		if len(jobs) < 100 {
+			if count < 1 {
+				return 0, fmt.Errorf("current job is missing in GitLab history")
+			}
+			return count, nil
+		}
+	}
+	return 0, fmt.Errorf("GitLab attempt history exceeds page limit")
+}
+
+func positive(raw string) (int, error) {
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("positive native identifier is required")
+	}
+	return n, nil
+}
+
+func record(r run, j job, a attempt, start, sha string, reports []reportRef) error {
+	number, err := positive(os.Getenv("BUILD_NUMBER"))
+	if err != nil {
+		return err
+	}
+	address, err := url.Parse(os.Getenv("BUILD_URL"))
+	if err != nil || address.Scheme != "https" || address.Host == "" || address.User != nil {
+		return fmt.Errorf("HTTPS Jenkins build URL is required")
+	}
+	m := manifest{SchemaVersion: "1", DatasetRunID: r.ID, Job: os.Getenv("JOB_NAME"), BuildNumber: number, BuildURL: address.String(), SHA: sha, Steps: []execution{}}
+	if m.Job == "" || os.Getenv("NODE_NAME") == "" {
+		return fmt.Errorf("Jenkins job and agent label are required")
+	}
+	if raw, err := os.ReadFile("execution-manifest.json"); err == nil {
+		var previous manifest
+		if err := json.Unmarshal(raw, &previous); err != nil {
+			return err
+		}
+		if previous.DatasetRunID != r.ID || previous.BuildNumber != number || previous.SHA != sha {
+			return fmt.Errorf("execution manifest belongs to another build")
+		}
+		m.Steps = previous.Steps
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	for _, step := range m.Steps {
+		if step.DatasetAttemptID == a.ID {
+			return fmt.Errorf("attempt has already been recorded")
+		}
+	}
+	m.Steps = append(m.Steps, execution{a.ID, j.Stage, j.Name, j.Axes, j.ConfigurationHash, a.Number, a.Outcome, start, time.Now().UTC().Format(time.RFC3339Nano), os.Getenv("NODE_NAME"), reports})
+	raw, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile("execution-manifest.json.tmp", append(raw, '\n'), 0600); err != nil {
+		return err
+	}
+	return os.Rename("execution-manifest.json.tmp", "execution-manifest.json")
+}

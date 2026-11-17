@@ -223,3 +223,45 @@ func TestExpectCLI(t *testing.T) {
 		t.Fatalf("two runs on the same model: %q %q", hashes[0], hashes[1])
 	}
 }
+
+func TestGenerateChangesCLI(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	paths := func(prefix string) []string {
+		return []string{filepath.Join(dir, prefix+"-model.json"), filepath.Join(dir, prefix+"-changes.json"), filepath.Join(dir, prefix+"-plan.json"), filepath.Join(dir, prefix+"-objects.json"), filepath.Join(dir, prefix+"-repos.json")}
+	}
+	var output bytes.Buffer
+	for _, prefix := range []string{"first", "second"} {
+		p := paths(prefix)
+		if err := run([]string{"generate", "--out", p[0], "--changes", p[1], "--load-plan", p[2], "--change-objects", p[3], "--repos", p[4]}, &output); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, left := range paths("first") {
+		a, err := os.ReadFile(left)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(paths("second")[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(a, b) {
+			t.Fatalf("output %d is not deterministic", i)
+		}
+	}
+	var changes dataset.ChangeFile
+	if err := dataset.ReadJSON(paths("first")[1], &changes); err != nil {
+		t.Fatal(err)
+	}
+	var plan dataset.LoadPlan
+	if err := dataset.ReadJSON(paths("first")[2], &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(changes.MergeRequests) != 11 || len(changes.Runs) != 27 || len(plan.Actions) < 100 {
+		t.Fatal("incomplete MR/CI outputs")
+	}
+	if !strings.Contains(output.String(), "load plan SHA-256:") {
+		t.Fatal(output.String())
+	}
+}

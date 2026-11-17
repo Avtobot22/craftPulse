@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "craftPulse MR and CI load plan v1",
+  "$ref": "#/$defs/LoadPlan",
+  "$defs": {
+    "LoadPlan": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "string"
+        },
+        "model_hash": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoadAction"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "model_hash",
+        "actions"
+      ],
+      "additionalProperties": false
+    },
+    "LoadAction": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "organization_id": {
+          "type": "string"
+        },
+        "instance_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "object_id": {
+          "type": "string"
+        },
+        "actor_id": {
+          "type": "string"
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "expected": {
+          "type": "string"
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "organization_id",
+        "instance_id",
+        "kind",
+        "object_id",
+        "actor_id",
+        "depends_on",
+        "parameters",
+        "expected",
+        "bindings"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -33,6 +33,8 @@ type RepoSet struct {
 	File    *RepoFile
 	objects map[string]gitObjects
 	patches map[string][]byte
+	heads   map[string]map[string][]byte
+	refs    map[string]map[string]string
 }
 
 type builtRepo struct {
@@ -58,6 +60,7 @@ func GenerateRepos(model *Model) (*RepoSet, error) {
 		File:    &RepoFile{SchemaVersion: "1", Seed: model.Seed, Period: model.Period, AsOf: model.AsOf, Repositories: []Repository{}, Patches: []Patch{}},
 		objects: make(map[string]gitObjects),
 		patches: make(map[string][]byte),
+		heads:   make(map[string]map[string][]byte), refs: make(map[string]map[string]string),
 	}
 	for _, spec := range repoSpecs() {
 		built, err := buildRepo(spec, people, from, asOf)
@@ -74,6 +77,8 @@ func GenerateRepos(model *Model) (*RepoSet, error) {
 		}
 		set.File.Repositories = append(set.File.Repositories, built.repo)
 		set.objects[built.repo.BarePath] = built.objects
+		set.heads[built.repo.ID] = built.head
+		set.refs[built.repo.ID] = make(map[string]string)
 	}
 	if err := ValidateRepos(set.File, model); err != nil {
 		return nil, err
@@ -86,6 +91,17 @@ func (s *RepoSet) Write(dir string) error {
 	for _, repo := range s.File.Repositories {
 		if err := s.objects[repo.BarePath].writeBare(filepath.Join(dir, filepath.FromSlash(repo.BarePath)), repo.DefaultBranch, repo.Head); err != nil {
 			return err
+		}
+	}
+	for _, repo := range s.File.Repositories {
+		for branch, sha := range s.refs[repo.ID] {
+			target := filepath.Join(dir, filepath.FromSlash(repo.BarePath), "refs", "heads", filepath.FromSlash(branch))
+			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+				return fmt.Errorf("create branch directory: %w", err)
+			}
+			if err := os.WriteFile(target, []byte(sha+"\n"), 0o600); err != nil {
+				return fmt.Errorf("write branch: %w", err)
+			}
 		}
 	}
 	for _, patch := range s.File.Patches {

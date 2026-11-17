@@ -36,6 +36,9 @@ func run(args []string, output io.Writer) error {
 		flags.StringVar(&out.settings, "settings", "", "output demo settings; empty skips it")
 		flags.StringVar(&out.repos, "repos", "", "output repository model; empty skips it")
 		flags.StringVar(&out.repoObjects, "repo-objects", "", "output object file of repositories and Git documents; empty skips it")
+		flags.StringVar(&out.changes, "changes", "", "output MR/CI model; empty skips it")
+		flags.StringVar(&out.changeObjects, "change-objects", "", "output MR/CI object file for manifest")
+		flags.StringVar(&out.loadPlan, "load-plan", "", "output ordered MR/CI loading plan")
 		flags.StringVar(&out.repoDir, "repo-dir", "", "directory for bare repositories and patches; empty skips it")
 		if err := flags.Parse(args[1:]); err != nil {
 			return fmt.Errorf("invalid generate arguments")
@@ -134,6 +137,7 @@ func run(args []string, output io.Writer) error {
 
 type outputs struct {
 	model, tasks, taskObjects, settings, repos, repoObjects, repoDir string
+	changes, changeObjects, loadPlan                                 string
 }
 
 // generate builds every part before writing any file, so a failed check leaves no partial output.
@@ -154,12 +158,31 @@ func generate(output io.Writer, seed uint64, asOf string, out outputs) error {
 	if err != nil {
 		return err
 	}
+	var changes *dataset.ChangeSet
+	if out.changes != "" || out.changeObjects != "" || out.loadPlan != "" {
+		changes, err = dataset.GenerateChanges(model, tasks, repos)
+		if err != nil {
+			return err
+		}
+	}
 	parts := []struct {
 		name, path string
 		value      any
 	}{
 		{"model", out.model, model}, {"tasks", out.tasks, tasks}, {"task objects", out.taskObjects, tasks.Objects()},
 		{"settings", out.settings, settings}, {"repositories", out.repos, repos.File}, {"repository objects", out.repoObjects, repos.File.Objects()},
+	}
+	if changes != nil {
+		parts = append(parts, struct {
+			name, path string
+			value      any
+		}{"MR/CI", out.changes, changes.File}, struct {
+			name, path string
+			value      any
+		}{"MR/CI objects", out.changeObjects, changes.Objects()}, struct {
+			name, path string
+			value      any
+		}{"load plan", out.loadPlan, changes.Plan})
 	}
 	for _, part := range parts {
 		if part.path == "" {
