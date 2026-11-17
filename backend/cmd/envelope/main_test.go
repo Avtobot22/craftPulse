@@ -59,6 +59,12 @@ func writePackage(t *testing.T, schemaID string, broken bool) string {
 			require.NoError(t, json.Unmarshal(rec.Payload, &payload))
 			scan.Tools[0].Producer = payload.Producer
 			scan.Tools[0].ProducerVersion = payload.ProducerVersion
+			scan.Tools[0].ProfileId = payload.ProfileId
+			scan.Tools[0].ConfigHash = payload.ConfigHash
+			scan.Tools[0].ExitClass = envelope.ScanToolRunExitClass(*payload.ExitClass)
+			scan.Tools[0].Completeness = envelope.ScanToolRunCompleteness(*payload.Completeness)
+			scan.Tools[0].StartedAt = *payload.StartedAt
+			scan.Tools[0].FinishedAt = *payload.FinishedAt
 			require.NoError(t, w.AddScanManifest(&scan))
 		case envelope.RecordRecordClassObject, envelope.RecordRecordClassSnapshot:
 		}

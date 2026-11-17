@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -212,7 +213,7 @@ func (c *checker) checkCIManifests() *Rejection {
 		}
 		p := ref.payload
 		t, r := source.tool, source.report
-		if text(p, "report_kind") != string(r.ReportKind) || text(p, "report_format") != string(r.ReportFormat) || text(p, "producer") != t.Producer || text(p, "producer_version") != t.ProducerVersion || text(p, "sha") != valueOf(t.Sha) || text(p, "artifact_digest") != valueOf(t.ArtifactDigest) {
+		if !reportProvenanceMatches(p, t, r) {
 			return &Rejection{ReasonInvalidScanManifest, "report_file.payload: provenance differs from scan manifest"}
 		}
 	}
@@ -232,6 +233,16 @@ func (c *checker) checkCIManifests() *Rejection {
 				if !ok {
 					return &Rejection{ReasonInvalidExecutionManifest, "steps.reports: absent from scan manifest"}
 				}
+				ci := source.tool.Ci
+				step := &m.Steps[i]
+				identity := JenkinsAttemptKey(m.Job, m.BuildNumber, step.Stage, step.Name, step.ConfigurationHash, step.Attempt)
+				format := string(r.Format)
+				if r.Format == JenkinsExecutionManifestV1StepsReportsFormatJunit {
+					format = string(ScanReportReportFormatJunitXml)
+				}
+				if ci == nil || ci.Provider != ScanCiCoordinatesProviderJenkins || valueOf(ci.JobNativeId) != m.Job || ci.RunNativeId != strconv.Itoa(m.BuildNumber) || valueOf(ci.AttemptNativeId) != identity || ci.AttemptNo == nil || *ci.AttemptNo != step.Attempt || string(source.report.ReportFormat) != format {
+					return &Rejection{ReasonInvalidExecutionManifest, "steps.reports: attempt or format differs from scan manifest"}
+				}
 				if source.tool.Sha != nil && *source.tool.Sha != r.SourceSha {
 					return &Rejection{ReasonInvalidExecutionManifest, "steps.reports.source_sha: differs from scan manifest"}
 				}
@@ -239,6 +250,43 @@ func (c *checker) checkCIManifests() *Rejection {
 		}
 	}
 	return nil
+}
+
+// Optional legacy record fields may be absent, but a supplied value must agree with the scan.
+func reportProvenanceMatches(p map[string]any, t *ScanToolRun, r *ScanReport) bool {
+	for field, expected := range map[string]string{
+		"report_kind": string(r.ReportKind), "report_format": string(r.ReportFormat),
+		"producer": t.Producer, "producer_version": t.ProducerVersion,
+		"sha": valueOf(t.Sha), "artifact_digest": valueOf(t.ArtifactDigest),
+	} {
+		if text(p, field) != expected {
+			return false
+		}
+	}
+	run, attempt := "", ""
+	if t.Ci != nil {
+		run, attempt = t.Ci.RunNativeId, valueOf(t.Ci.AttemptNativeId)
+	}
+	for field, expected := range map[string]string{
+		"profile_id": valueOf(t.ProfileId), "rules_hash": valueOf(t.RulesHash),
+		"config_hash": valueOf(t.ConfigHash), "db_version": valueOf(t.DbVersion),
+		"exit_class": string(t.ExitClass), "completeness": string(t.Completeness),
+		"run_native_id": run, "attempt_native_id": attempt,
+	} {
+		if p[field] != nil && text(p, field) != expected {
+			return false
+		}
+	}
+	for field, expected := range map[string]time.Time{"started_at": t.StartedAt, "finished_at": t.FinishedAt} {
+		if p[field] == nil {
+			continue
+		}
+		actual, err := time.Parse(time.RFC3339Nano, text(p, field))
+		if err != nil || !actual.Equal(expected) {
+			return false
+		}
+	}
+	return true
 }
 
 func (w *Writer) AddScanManifest(m *ScanManifestV1) error {

@@ -60,7 +60,29 @@ func addFixtureScan(t *testing.T, data []byte) []byte {
 			tool.ReportKind = envelope.ScanToolRunReportKind(payload.ReportKind)
 			tool.Mode = envelope.ScanToolRunModeImport
 			tool.Ci = nil
-			tool.ProfileId = nil
+			if payload.RunNativeId != nil || payload.AttemptNativeId != nil {
+				tool.Ci = toolScan.Tools[0].Ci
+				if payload.RunNativeId != nil {
+					tool.Ci.RunNativeId = *payload.RunNativeId
+				}
+				tool.Ci.AttemptNativeId = payload.AttemptNativeId
+			}
+			tool.ProfileId = payload.ProfileId
+			tool.RulesHash = payload.RulesHash
+			tool.ConfigHash = payload.ConfigHash
+			tool.DbVersion = payload.DbVersion
+			if payload.StartedAt != nil {
+				tool.StartedAt = *payload.StartedAt
+			}
+			if payload.FinishedAt != nil {
+				tool.FinishedAt = *payload.FinishedAt
+			}
+			if payload.ExitClass != nil {
+				tool.ExitClass = envelope.ScanToolRunExitClass(*payload.ExitClass)
+			}
+			if payload.Completeness != nil {
+				tool.Completeness = envelope.ScanToolRunCompleteness(*payload.Completeness)
+			}
 			tool.ProfileImageDigest = nil
 			tool.Component = nil
 			tool.Reports[0].File = *rec.File
@@ -356,4 +378,92 @@ func TestCIManifest_IdentityAndProvenance(t *testing.T) {
 	res := check(data)
 	require.NotNil(t, res.Envelope)
 	assert.Equal(t, envelope.ReasonInvalidScanManifest, res.Envelope.Code)
+}
+
+// The same physical report must not carry contradictory provenance in two package entries.
+func TestCIManifest_RejectsContradictoryReportProvenance(t *testing.T) {
+	t.Parallel()
+	for _, field := range []string{"run_native_id", "attempt_native_id", "profile_id", "config_hash", "rules_hash", "db_version", "started_at", "finished_at", "exit_class", "completeness"} {
+		t.Run(field, func(t *testing.T) {
+			data := ciArchive(t, "timeout", func(f map[string][]byte) {
+				mutateJSON(t, f, envelope.RecordsName, func(v map[string]any) {
+					p := v["payload"].(map[string]any)
+					switch field {
+					case "config_hash", "rules_hash":
+						p[field] = strings.Repeat("a", 64)
+					case "started_at":
+						p[field] = "2026-11-17T09:59:00Z"
+					case "finished_at":
+						p[field] = "2026-11-17T10:00:11Z"
+					case "exit_class":
+						p[field] = "success"
+					case "completeness":
+						p[field] = "complete"
+					default:
+						p[field] = "other"
+					}
+				})
+			})
+			res := check(data)
+			require.NotNil(t, res.Envelope)
+			assert.Equal(t, envelope.ReasonInvalidScanManifest, res.Envelope.Code)
+			assert.Empty(t, res.Records)
+			_, cleaned := clean(t, data)
+			assert.Empty(t, cleaned)
+		})
+	}
+}
+
+func TestCIManifest_RejectsExecutionReportFromAnotherAttempt(t *testing.T) {
+	t.Parallel()
+	for _, field := range []string{"job", "build_number", "attempt", "matrix", "format"} {
+		t.Run(field, func(t *testing.T) {
+			data := ciArchive(t, "jenkins-retry", func(f map[string][]byte) {
+				mutateJSON(t, f, envelope.ExecutionManifestName, func(v map[string]any) {
+					step := v["steps"].([]any)[0].(map[string]any)
+					switch field {
+					case "job":
+						v["job"] = "other"
+					case "build_number":
+						v["build_number"] = 8
+					case "attempt":
+						step["attempt"] = 3
+					case "matrix":
+						step["axes"] = map[string]any{"mode": "other"}
+						step["configuration_hash"] = "df1ef347d18e01e778a91e0a17c26a0c83402e95125fcece95c2b7a827d8b993"
+					case "format":
+						step["reports"].([]any)[0].(map[string]any)["format"] = "cobertura"
+					}
+				})
+			})
+			res := check(data)
+			require.NotNil(t, res.Envelope)
+			assert.Equal(t, envelope.ReasonInvalidExecutionManifest, res.Envelope.Code)
+			assert.Empty(t, res.Records)
+			_, cleaned := clean(t, data)
+			assert.Empty(t, cleaned)
+		})
+	}
+}
+
+func TestCIManifest_OptionalReportProvenanceAndEquivalentTimes(t *testing.T) {
+	t.Parallel()
+	for _, omit := range []bool{false, true} {
+		data := ciArchive(t, "gitlab-builtin", func(f map[string][]byte) {
+			mutateJSON(t, f, envelope.RecordsName, func(v map[string]any) {
+				p := v["payload"].(map[string]any)
+				if omit {
+					for _, field := range []string{"run_native_id", "attempt_native_id", "profile_id", "config_hash", "rules_hash", "db_version", "started_at", "finished_at", "exit_class", "completeness"} {
+						delete(p, field)
+					}
+				} else {
+					p["started_at"] = "2026-11-17T13:00:00+03:00"
+					p["finished_at"] = "2026-11-17T13:00:10+03:00"
+				}
+			})
+		})
+		res := check(data)
+		require.Nil(t, res.Envelope)
+		require.Zero(t, res.Rejected())
+	}
 }
