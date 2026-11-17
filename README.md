@@ -61,6 +61,28 @@ Workflow `Repository` запускается на каждом PR и push в `ma
 
 Изменение `repository.yml` или `go-check.yml`, как и ручной запуск, включает обе Go-проверки. Итоговый job `ci` требует успешные `detect` и `repository-check`, а пропуск Go-проверки принимает только для незатронутого модуля. Устаревшие прогоны отменяются только на PR; каждый push в `main` проверяется отдельно.
 
+## Манифесты пакетов CI
+
+Схемы `ScanManifestV1` и `JenkinsExecutionManifestV1` находятся в [envelope.yaml](docs/technical-specification/envelope.yaml). После первого `manifest.json` архив с отчётами содержит `scan-manifest.json`, `records.jsonl` и файлы под `files/`; порядок этих последующих записей произвольный. Для Jenkins `execution-manifest.json` необязателен: без него внутренние повторы остаются неизвестными.
+
+Готовые примеры: [GitLab builtin](backend/pkg/envelope/testdata/ci/gitlab-builtin/manifest.json), [внешний SARIF](backend/pkg/envelope/testdata/ci/external-sarif/manifest.json), [таймаут с частичным результатом](backend/pkg/envelope/testdata/ci/timeout/manifest.json), [Jenkins fail→pass и matrix](backend/pkg/envelope/testdata/ci/jenkins-retry/execution-manifest.json). Из корня репозитория:
+
+```sh
+tar -czf /tmp/ci-example.tar.gz \
+  -C backend/pkg/envelope/testdata/ci/jenkins-retry \
+  manifest.json scan-manifest.json execution-manifest.json records.jsonl files
+cd backend
+go run ./cmd/envelope check /tmp/ci-example.tar.gz
+```
+
+Команда возвращает `0`, если пакет принят, `1` при отклонении всего пакета и `2`, если отклонены отдельные записи. Отчёт без scan manifest даёт `missing_scan_manifest`, неизвестная версия любого CI-манифеста - `unsupported_manifest_version`; нарушение схемы или provenance - `invalid_scan_manifest` либо `invalid_execution_manifest`. При отклонении `Clean` ничего не пишет. Очистка сохраняет оба манифеста и файлы, на которые они ссылаются; `ReadCleaned` передаёт их нормализатору.
+
+Scan manifest описывает каждый запуск инструмента: producer и версию, профиль и image digest, режим, вид отчёта, компонент и путь, язык, rules/config/scope hashes, базу и время её публикации, parser version, SHA/digest, координаты CI, времена, exit class, полноту, counts, пропущенные цели с кодом причины, диапазон истории и список файлов с форматом и версией. `null` означает неизвестность или неприменимость. `failed`, `timeout`, `unknown`, пропуски и усечение истории исключают `complete`. Значения секретов, фрагменты находок и свободные evidence-объекты в схеме отсутствуют.
+
+Формат Jenkins совпадает с набором показа. Ключ попытки `JenkinsAttemptKey` - SHA-256 JSON-массива `[job, build_number, stage, name, configuration_hash, attempt]`; организация и instance задаются внешней identity. `dataset_attempt_id`, агент и времена в ключ не входят. Fingerprint конфигурации - SHA-256 JSON объекта строковых axes, с ключами в лексикографическом порядке и стандартным JSON-экранированием Go. Файл отчёта сохраняет класс `file`: namespace - идентичность попытки (без неё SHA/digest), native ID - `report_kind:path`, content hash включает hash файла.
+
+Поддержана версия `1`. Новые поля внутри неё добавляются необязательными, существующие поля и их смысл сохраняются; несовместимое изменение требует новой версии. Пакеты задач и остальных фактов сохраняют прежний формат. Производителей пакетов с отчётами нужно обновить вместе с валидатором: теперь они обязаны передавать scan manifest. Очистка не добавляет происхождение от имени производителя.
+
 ## Документация и работа команды
 
 - [Документация продукта](docs/README.md)

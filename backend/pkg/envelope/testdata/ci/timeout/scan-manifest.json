@@ -1,0 +1,68 @@
+{
+  "schema_version": "1",
+  "tools": [
+    {
+      "id": "sast-timeout-1",
+      "producer": "opengrep",
+      "producer_version": "1",
+      "profile_image_digest": "sha256:d67cec53391197377c3d45f7022231686c23a52e366720745b245f5bcbcf3a20",
+      "profile_id": "go-light",
+      "mode": "builtin",
+      "report_kind": "sast",
+      "component": {
+        "id": "0193a5b0-7777-7000-8000-000000000001",
+        "path_prefix": ""
+      },
+      "language": "go",
+      "rules_hash": null,
+      "config_hash": "2fd1e4e09a6187bf7049ac2b68ed9408e9c30cf9070320084b445d7c028237ac",
+      "db_version": null,
+      "db_published_at": null,
+      "parser_version": null,
+      "scope_hash": "496e4645f3e0581a9ff505b8286bff3fa5a8eba7c2b416364bfd4c93501f7bb2",
+      "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+      "artifact_digest": null,
+      "ci": {
+        "provider": "gitlab",
+        "project_native_id": "42",
+        "run_native_id": "5001",
+        "job_native_id": "7002",
+        "attempt_native_id": "7002",
+        "attempt_no": 1,
+        "ref_name": "demo/PA-1-change",
+        "mr_native_id": "9001"
+      },
+      "started_at": "2026-11-17T10:00:00Z",
+      "finished_at": "2026-11-17T10:00:10Z",
+      "exit_class": "timeout",
+      "completeness": "partial",
+      "scanned_count": 0,
+      "skipped_count": 1,
+      "skipped_targets": [
+        {
+          "path": "internal/service",
+          "reason": "timeout"
+        }
+      ],
+      "history": {
+        "from_sha": "0123456789012345678901234567890123456789",
+        "to_sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+        "truncated": true
+      },
+      "reports": [
+        {
+          "file": {
+            "path": "files/reports/sast.sarif",
+            "sha256": "4226d00894a67d7859ade2b59da70dfbc7169038ccfde5b58edfbec755421410",
+            "size_bytes": 116,
+            "media_type": "application/sarif+json"
+          },
+          "report_kind": "sast",
+          "report_format": "sarif",
+          "format_version": "2.1.0",
+          "parser_version": null
+        }
+      ]
+    }
+  ]
+}

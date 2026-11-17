@@ -1,7 +1,10 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,6 +50,16 @@ func writePackage(t *testing.T, schemaID string, broken bool) string {
 			ref, err := w.AddFile("files/report.xml", "application/xml", []byte("<testsuites/>"))
 			require.NoError(t, err)
 			rec.File = &ref
+			raw, err := os.ReadFile("../../pkg/envelope/testdata/ci/gitlab-builtin/scan-manifest.json")
+			require.NoError(t, err)
+			var scan envelope.ScanManifestV1
+			require.NoError(t, json.Unmarshal(raw, &scan))
+			scan.Tools[0].Reports[0].File = ref
+			var payload envelope.ReportFileV1
+			require.NoError(t, json.Unmarshal(rec.Payload, &payload))
+			scan.Tools[0].Producer = payload.Producer
+			scan.Tools[0].ProducerVersion = payload.ProducerVersion
+			require.NoError(t, w.AddScanManifest(&scan))
 		case envelope.RecordRecordClassObject, envelope.RecordRecordClassSnapshot:
 		}
 		require.NoError(t, w.AddRecord(rec))
@@ -90,4 +103,80 @@ func TestRun_ReportsRecordAndPackageRejections(t *testing.T) {
 
 	_, err = run([]string{"verify"}, &out)
 	require.ErrorIs(t, err, errUsage)
+}
+
+func TestRun_CIManifestExamplesAndRejections(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ name, fixture, missing, version, reason string }{
+		{name: "builtin", fixture: "gitlab-builtin"},
+		{name: "external", fixture: "external-sarif"},
+		{name: "timeout", fixture: "timeout"},
+		{name: "jenkins", fixture: "jenkins-retry"},
+		{name: "missing scan", fixture: "gitlab-builtin", missing: envelope.ScanManifestName, reason: envelope.ReasonMissingScanManifest},
+		{name: "unknown scan", fixture: "gitlab-builtin", version: envelope.ScanManifestName, reason: envelope.ReasonUnsupportedManifestVersion},
+		{name: "unknown execution", fixture: "jenkins-retry", version: envelope.ExecutionManifestName, reason: envelope.ReasonUnsupportedManifestVersion},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			root := filepath.Join("..", "..", "pkg", "envelope", "testdata", "ci", tt.fixture)
+			var data bytes.Buffer
+			gz := gzip.NewWriter(&data)
+			tw := tar.NewWriter(gz)
+			add := func(name string, content []byte) {
+				require.NoError(t, tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: int64(len(content)), Typeflag: tar.TypeReg}))
+				_, err := tw.Write(content)
+				require.NoError(t, err)
+			}
+			manifest, err := os.ReadFile(filepath.Join(root, envelope.ManifestName))
+			require.NoError(t, err)
+			add(envelope.ManifestName, manifest)
+			require.NoError(t, filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if d.IsDir() {
+					return nil
+				}
+				name, err := filepath.Rel(root, path)
+				if err != nil {
+					return err
+				}
+				name = filepath.ToSlash(name)
+				if name == envelope.ManifestName || name == tt.missing {
+					return nil
+				}
+				content, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				if name == tt.version {
+					var value map[string]any
+					if err := json.Unmarshal(content, &value); err != nil {
+						return err
+					}
+					value["schema_version"] = "99"
+					content, err = json.Marshal(value)
+					if err != nil {
+						return err
+					}
+				}
+				add(name, content)
+				return nil
+			}))
+			require.NoError(t, tw.Close())
+			require.NoError(t, gz.Close())
+			path := filepath.Join(t.TempDir(), "package.tar.gz")
+			require.NoError(t, os.WriteFile(path, data.Bytes(), 0o600))
+			var out bytes.Buffer
+			code, err := run([]string{"check", path}, &out)
+			require.NoError(t, err)
+			if tt.reason == "" {
+				assert.Equal(t, 0, code, out.String())
+				assert.Contains(t, out.String(), "scan manifest: 1")
+			} else {
+				assert.Equal(t, _exitRejected, code, out.String())
+				assert.Contains(t, out.String(), tt.reason)
+			}
+		})
+	}
 }

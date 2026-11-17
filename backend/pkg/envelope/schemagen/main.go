@@ -32,6 +32,8 @@ type schemaOut struct {
 	Closed     bool          `json:"closed,omitempty"`
 	Additional *schemaOut    `json:"additional,omitempty"`
 	Items      *schemaOut    `json:"items,omitempty"`
+	If         *schemaOut    `json:"if,omitempty"`
+	Then       *schemaOut    `json:"then,omitempty"`
 }
 
 type propertyOut struct {
@@ -53,11 +55,13 @@ type recordOut struct {
 }
 
 type fileOut struct {
-	Packages   map[string]packageOut `json:"packages"`
-	Manifest   *schemaOut            `json:"manifest"`
-	Record     *schemaOut            `json:"record"`
-	TaskCSVRow *schemaOut            `json:"task_csv_row"`
-	Records    []recordOut           `json:"records"`
+	Packages          map[string]packageOut `json:"packages"`
+	Manifest          *schemaOut            `json:"manifest"`
+	Record            *schemaOut            `json:"record"`
+	TaskCSVRow        *schemaOut            `json:"task_csv_row"`
+	Records           []recordOut           `json:"records"`
+	ScanManifest      *schemaOut            `json:"scan_manifest"`
+	ExecutionManifest *schemaOut            `json:"execution_manifest"`
 }
 
 type recordTag struct {
@@ -98,7 +102,7 @@ func run(in, out string) error {
 	if err := child(root, "x-craftpulse-schemas").Decode(&result.Packages); err != nil {
 		return fmt.Errorf("x-craftpulse-schemas: %w", err)
 	}
-	for name, target := range map[string]**schemaOut{"Manifest": &result.Manifest, "Record": &result.Record, "TaskCsvRow": &result.TaskCSVRow} {
+	for name, target := range map[string]**schemaOut{"Manifest": &result.Manifest, "Record": &result.Record, "TaskCsvRow": &result.TaskCSVRow, "ScanManifestV1": &result.ScanManifest, "JenkinsExecutionManifestV1": &result.ExecutionManifest} {
 		if *target, err = c.ref(name); err != nil {
 			return err
 		}
@@ -151,6 +155,15 @@ func (c converter) convert(node *yaml.Node) (*schemaOut, error) {
 		return c.nullable(oneOf)
 	}
 	out := &schemaOut{}
+	for key, target := range map[string]**schemaOut{"if": &out.If, "then": &out.Then} {
+		if condition := child(node, key); condition != nil {
+			var err error
+			*target, err = c.convert(condition)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	if t := child(node, "type"); t != nil {
 		if t.Kind == yaml.SequenceNode {
 			for _, item := range t.Content {
