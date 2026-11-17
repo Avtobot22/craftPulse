@@ -1,0 +1,1 @@
+{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"external-sast","version":"1.0.0","rules":[]}},"results":[]}]}

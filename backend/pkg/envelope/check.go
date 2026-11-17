@@ -98,9 +98,11 @@ type RecordResult struct {
 
 // Result of Check. Envelope is set when the whole package is rejected; Records are then not reported.
 type Result struct {
-	Manifest *Manifest
-	Envelope *Rejection
-	Records  []RecordResult
+	Manifest          *Manifest
+	ScanManifest      *ScanManifestV1
+	ExecutionManifest *JenkinsExecutionManifestV1
+	Envelope          *Rejection
+	Records           []RecordResult
 	// ContentHash is set by Clean: the SHA-256 of the cleaned package with created_at of the manifest
 	// left out, so a page read again or a file sent again gives the same one.
 	ContentHash []byte
@@ -124,17 +126,20 @@ type fileEntry struct {
 
 type checker struct {
 	// lines keeps the record of every accepted number when the package is cleaned.
-	lines      map[int][]byte
-	limits     Limits
-	manifest   map[string]any
-	rule       packageRule
-	result     Result
-	files      map[string]fileEntry
-	entries    map[string]bool
-	unpacked   int64
-	fileCount  int
-	fileRefs   []pendingFile
-	hasRecords bool
+	lines          map[int][]byte
+	limits         Limits
+	manifest       map[string]any
+	rule           packageRule
+	result         Result
+	files          map[string]fileEntry
+	entries        map[string]bool
+	unpacked       int64
+	fileCount      int
+	fileRefs       []pendingFile
+	hasRecords     bool
+	scanRaw        []byte
+	executionRaw   []byte
+	reportDeclared bool
 }
 
 // pendingFile is a file reference checked after the whole archive is read; verify compares hash and size.
@@ -143,6 +148,7 @@ type pendingFile struct {
 	path, sha256 string
 	size         int64
 	verify       bool
+	payload      map[string]any
 }
 
 // Check reads a package as a stream and validates the manifest, every entry and every record.
@@ -156,6 +162,9 @@ func Check(r io.Reader, limits Limits) *Result {
 		return &Result{Manifest: c.result.Manifest, Envelope: rejection}
 	}
 	c.checkFiles()
+	if rejection := c.checkCIManifests(); rejection != nil {
+		return &Result{Manifest: c.result.Manifest, Envelope: rejection}
+	}
 	return &c.result
 }
 
@@ -261,6 +270,8 @@ func (c *checker) readEntry(tr *tar.Reader, header *tar.Header) *Rejection {
 	case name == TasksCSVName && !c.hasRecords && c.snapshot() && c.manifest["schema_id"] == "tasks":
 		c.hasRecords = true
 		return c.readTasksCSV(tr)
+	case name == ScanManifestName || name == ExecutionManifestName:
+		return c.readCIManifest(tr, header)
 	case strings.HasPrefix(name, FilesDir):
 		h := sha256.New()
 		guard := &xmlGuard{r: tr}

@@ -1,0 +1,10 @@
+{
+  "name": "@craftpulse/api-types-generator",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

@@ -32,6 +32,9 @@ func (c *checker) checkRecord(no int, line []byte) {
 func (c *checker) addRecord(result RecordResult, record map[string]any, line []byte) {
 	result.Class, _ = record["record_class"].(string)
 	result.Kind, _ = record["record_kind"].(string)
+	if result.Kind == "report_file" {
+		c.reportDeclared = true
+	}
 	result.PayloadSchema, _ = record["payload_schema"].(string)
 	result.NativeNS, _ = record["native_ns"].(string)
 	result.NativeID, _ = record["native_id"].(string)
@@ -54,10 +57,11 @@ func (c *checker) addRecord(result RecordResult, record map[string]any, line []b
 		c.lines[result.No] = bytes.Clone(line)
 	}
 	index := len(c.result.Records) - 1
+	recordPayload, _ := record["payload"].(map[string]any)
 	if file, ok := record["file"].(map[string]any); ok {
 		size, _ := file["size_bytes"].(json.Number)
 		n, _ := size.Int64()
-		c.fileRefs = append(c.fileRefs, pendingFile{result: index, path: text(file, "path"), sha256: text(file, "sha256"), size: n, verify: true})
+		c.fileRefs = append(c.fileRefs, pendingFile{result: index, path: text(file, "path"), sha256: text(file, "sha256"), size: n, verify: true, payload: recordPayload})
 	}
 	if payload, ok := record["payload"].(map[string]any); ok {
 		if content, ok := payload["content_path"].(string); ok {

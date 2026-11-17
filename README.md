@@ -4,7 +4,7 @@
 
 ## Состояние проекта
 
-В репозитории находятся продуктовые документы и каркас backend на Go с процессами `api` и `worker`, PostgreSQL 18 и S3-совместимым хранилищем. Frontend пока не реализован. Контракт API хранится в `docs/technical-specification/openapi.yaml`.
+В репозитории находятся продуктовые документы и каркас backend на Go с процессами `api` и `worker`, PostgreSQL 18 и S3-совместимым хранилищем. Frontend содержит начальную SPA на React и TypeScript без продуктовых экранов. Контракт API хранится в `docs/technical-specification/openapi.yaml`.
 
 ## Проверка репозитория
 
@@ -60,6 +60,81 @@ docker build -t craftpulse-server:local -f Dockerfile .
 Workflow `Repository` запускается на каждом PR и push в `main`. `repository-check` выполняется всегда, `backend` - при изменениях `backend/`, `deploy/postgres/` или `openapi.yaml`, а `demo-dataset` - при изменениях `demo-dataset/`. Обе Go-проверки используют общий workflow `go-check.yml`: линтер, форматирование, vet, тесты с детектором гонок, проверку уязвимостей и сборку. Backend дополнительно проверяет генерацию и собирает Docker-образ без публикации.
 
 Изменение `repository.yml` или `go-check.yml`, как и ручной запуск, включает обе Go-проверки. Итоговый job `ci` требует успешные `detect` и `repository-check`, а пропуск Go-проверки принимает только для незатронутого модуля. Устаревшие прогоны отменяются только на PR; каждый push в `main` проверяется отдельно.
+
+## Frontend
+
+Нужны Node.js 24.18.0+ и npm 11.16.0. В CI и Docker используется Node.js 26.3.0.
+Из корня репозитория:
+
+```sh
+cd frontend
+npm ci --no-audit --no-fund
+npm run generate:api
+npm run check
+npm run dev
+```
+
+Vite выводит адрес приложения, по умолчанию `http://localhost:5173`. Запросы `/api/v1`
+проксируются на `http://localhost:8080`; другой адрес задаётся через `API_PROXY_TARGET`.
+Для просмотра статической сборки выполни `npm run preview` после `npm run build`.
+
+`npm run check` сверяет типы с OpenAPI, проверяет форматирование, ESLint, границы FSD,
+тест Vitest и строгие типы TypeScript, затем собирает `dist/`. Отдельные команды:
+`npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
+ESLint использует type-aware правила typescript-eslint 8.72; Steiger запрещает импорт
+из вышележащего слоя, между срезами одного слоя и в обход публичного API среза.
+В `src/` созданы только `app`, `pages/home` и `shared/api`.
+
+Типы из `docs/technical-specification/openapi.yaml` хранятся в
+`frontend/src/shared/api/generated/schema.d.ts`. После изменения контракта запусти
+`npm run generate:api` и включи результат в тот же коммит. Начальный компонент
+использует `Problem.title` как строку: несовместимое изменение поля ломает TypeScript.
+У генератора `openapi-typescript 7.13.0` отдельный локальный npm-пакет
+`tools/api-types-generator` с поддерживаемым им TypeScript 5.9.3. Приложение и
+сгенерированные типы проверяются TypeScript 6.0; общий `package-lock.json` закрепляет
+обе версии без отключения проверки peer-зависимостей.
+
+Job `frontend` в workflow `Repository` запускается при изменении `frontend/`,
+`openapi.yaml`, самого `repository.yml` и при ручном запуске. Он сверяет генерацию
+через `git diff --exit-code`, выполняет проверки и собирает статический артефакт
+и Docker-образ без публикации. Итоговый `ci` отклоняет ошибку или отмену frontend,
+а пропуск допускает только при незатронутом frontend вне ручного запуска.
+PR только с изменением backend пропускает frontend. Dependabot проверяет npm-пакеты
+`frontend/` раз в неделю.
+
+Сборка и запуск образа из корня репозитория:
+
+```sh
+docker build -t craftpulse-frontend:local frontend
+docker run --rm -p 127.0.0.1:8081:80 craftpulse-frontend:local
+```
+
+Открой `http://localhost:8081`. Финальный слой использует nginx стабильной ветки
+1.30.6 и получает только `dist/`, без исходников и `node_modules`. Конфигурация nginx
+стенда подключается при развёртывании; в образе остаётся стандартная конфигурация
+для раздачи статики, без TLS и маршрутизации API стенда.
+
+## Манифесты пакетов CI
+
+Схемы `ScanManifestV1` и `JenkinsExecutionManifestV1` находятся в [envelope.yaml](docs/technical-specification/envelope.yaml). После первого `manifest.json` архив с отчётами содержит `scan-manifest.json`, `records.jsonl` и файлы под `files/`; порядок этих последующих записей произвольный. Для Jenkins `execution-manifest.json` необязателен: без него внутренние повторы остаются неизвестными.
+
+Готовые примеры: [GitLab builtin](backend/pkg/envelope/testdata/ci/gitlab-builtin/manifest.json), [внешний SARIF](backend/pkg/envelope/testdata/ci/external-sarif/manifest.json), [таймаут с частичным результатом](backend/pkg/envelope/testdata/ci/timeout/manifest.json), [Jenkins fail→pass и matrix](backend/pkg/envelope/testdata/ci/jenkins-retry/execution-manifest.json). Из корня репозитория:
+
+```sh
+tar -czf /tmp/ci-example.tar.gz \
+  -C backend/pkg/envelope/testdata/ci/jenkins-retry \
+  manifest.json scan-manifest.json execution-manifest.json records.jsonl files
+cd backend
+go run ./cmd/envelope check /tmp/ci-example.tar.gz
+```
+
+Команда возвращает `0`, если пакет принят, `1` при отклонении всего пакета и `2`, если отклонены отдельные записи. Отчёт без scan manifest даёт `missing_scan_manifest`, неизвестная версия любого CI-манифеста - `unsupported_manifest_version`; нарушение схемы или provenance - `invalid_scan_manifest` либо `invalid_execution_manifest`. При отклонении `Clean` ничего не пишет. Очистка сохраняет оба манифеста и файлы, на которые они ссылаются; `ReadCleaned` передаёт их нормализатору.
+
+Scan manifest описывает каждый запуск инструмента: producer и версию, профиль и image digest, режим, вид отчёта, компонент и путь, язык, rules/config/scope hashes, базу и время её публикации, parser version, SHA/digest, координаты CI, времена, exit class, полноту, counts, пропущенные цели с кодом причины, диапазон истории и список файлов с форматом и версией. `null` означает неизвестность или неприменимость. `failed`, `timeout`, `unknown`, пропуски и усечение истории исключают `complete`. Значения секретов, фрагменты находок и свободные evidence-объекты в схеме отсутствуют.
+
+Формат Jenkins совпадает с набором показа. Ключ попытки `JenkinsAttemptKey` - SHA-256 JSON-массива `[job, build_number, stage, name, configuration_hash, attempt]`; организация и instance задаются внешней identity. `dataset_attempt_id`, агент и времена в ключ не входят. Fingerprint конфигурации - SHA-256 JSON объекта строковых axes, с ключами в лексикографическом порядке и стандартным JSON-экранированием Go. Файл отчёта сохраняет класс `file`: namespace - идентичность попытки (без неё SHA/digest), native ID - `report_kind:path`, content hash включает hash файла.
+
+Поддержана версия `1`. Новые поля внутри неё добавляются необязательными, существующие поля и их смысл сохраняются; несовместимое изменение требует новой версии. Пакеты задач и остальных фактов сохраняют прежний формат. Производителей пакетов с отчётами нужно обновить вместе с валидатором: теперь они обязаны передавать scan manifest. Очистка не добавляет происхождение от имени производителя. Дублируемые поля provenance в `report_file` должны совпадать со scan manifest, если переданы; времена сравниваются как моменты времени. Ссылки execution manifest дополнительно сверяются с форматом отчёта и координатами Jenkins: job, build, ключом попытки и её номером.
 
 ## Документация и работа команды
 

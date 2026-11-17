@@ -227,7 +227,7 @@ func packageReason(code string) string {
 		return entity.PackageLimitExceeded
 	case envelope.ReasonUnsafePath:
 		return entity.PackagePathUnsafe
-	case envelope.ReasonUnsupportedSchema, envelope.ReasonUnsupportedSchemaVersion:
+	case envelope.ReasonUnsupportedSchema, envelope.ReasonUnsupportedSchemaVersion, envelope.ReasonUnsupportedManifestVersion:
 		return entity.PackageSchemaUnsupported
 	}
 	return entity.PackageEnvelopeInvalid

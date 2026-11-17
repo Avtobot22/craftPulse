@@ -19,3 +19,11 @@ updates:
     commit-message:
       prefix: chore(deps)
     labels: ["type:task", "area:backend"]
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore(deps)
+    labels: ["type:task", "area:frontend"]

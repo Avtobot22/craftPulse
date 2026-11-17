@@ -1,0 +1,47 @@
+{
+  "schema_version": "1",
+  "tools": [
+    {
+      "id": "external-sast-1",
+      "producer": "external-sast",
+      "producer_version": "1.0.0",
+      "profile_image_digest": null,
+      "profile_id": null,
+      "mode": "import",
+      "report_kind": "sast",
+      "component": null,
+      "language": null,
+      "rules_hash": null,
+      "config_hash": null,
+      "db_version": null,
+      "db_published_at": null,
+      "parser_version": null,
+      "scope_hash": "496e4645f3e0581a9ff505b8286bff3fa5a8eba7c2b416364bfd4c93501f7bb2",
+      "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+      "artifact_digest": null,
+      "ci": null,
+      "started_at": "2026-11-17T10:00:00Z",
+      "finished_at": "2026-11-17T10:00:10Z",
+      "exit_class": "success",
+      "completeness": "complete",
+      "scanned_count": 1,
+      "skipped_count": 0,
+      "skipped_targets": [],
+      "history": null,
+      "reports": [
+        {
+          "file": {
+            "path": "files/reports/sast.sarif",
+            "sha256": "4226d00894a67d7859ade2b59da70dfbc7169038ccfde5b58edfbec755421410",
+            "size_bytes": 116,
+            "media_type": "application/sarif+json"
+          },
+          "report_kind": "sast",
+          "report_format": "sarif",
+          "format_version": "2.1.0",
+          "parser_version": null
+        }
+      ]
+    }
+  ]
+}

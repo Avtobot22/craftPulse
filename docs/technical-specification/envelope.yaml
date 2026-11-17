@@ -9,6 +9,10 @@ info:
     `records.jsonl`: одна запись `Record` в строке JSON. Для снимка задач универсального
     импорта вместо него допускается `records.csv` (схема `TaskCsvRow`). Файлы отчётов и
     содержимое документов лежат под `files/` и упоминаются из записей полем `file`.
+    Пакет с отчётами содержит `scan-manifest.json` по `ScanManifestV1`. Для Jenkins
+    `execution-manifest.json` по `JenkinsExecutionManifestV1` необязателен: без файла история
+    внутренних повторов неизвестна. Оба файла могут идти после manifest.json в любом порядке
+    относительно records.jsonl и files/. Ошибка схемы или версии отклоняет пакет целиком.
 
     Правила пакета:
 
@@ -550,3 +554,602 @@ components:
         commit_sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
         default_branch: {type: boolean}
       example: {ref_kind: branch, name: main, commit_sha: 7c1e4b0a9d3f2e8b6a5c4d3e2f1a0b9c8d7e6f5a, default_branch: true}
+
+    ScanManifestV1:
+      x-craftpulse-manifest:
+        file: scan-manifest.json
+        version: "1"
+      example:
+        schema_version: "1"
+        tools:
+          - id: go-test-1
+            producer: go test
+            producer_version: go1.27.4
+            profile_image_digest: sha256:d67cec53391197377c3d45f7022231686c23a52e366720745b245f5bcbcf3a20
+            profile_id: go-light
+            mode: builtin
+            report_kind: junit
+            component:
+              id: 0193a5b0-7777-7000-8000-000000000001
+              path_prefix: ""
+            language: go
+            rules_hash: null
+            config_hash: 2fd1e4e09a6187bf7049ac2b68ed9408e9c30cf9070320084b445d7c028237ac
+            db_version: null
+            db_published_at: null
+            parser_version: null
+            scope_hash: 496e4645f3e0581a9ff505b8286bff3fa5a8eba7c2b416364bfd4c93501f7bb2
+            sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac
+            artifact_digest: null
+            ci:
+              provider: gitlab
+              project_native_id: "42"
+              run_native_id: "5001"
+              job_native_id: "7002"
+              attempt_native_id: "7002"
+              attempt_no: 1
+              ref_name: demo/PA-1-change
+              mr_native_id: "9001"
+            started_at: 2026-11-17T10:00:00Z
+            finished_at: 2026-11-17T10:00:10Z
+            exit_class: success
+            completeness: complete
+            scanned_count: 1
+            skipped_count: 0
+            skipped_targets: []
+            history: null
+            reports:
+              - file:
+                  path: files/reports/junit.xml
+                  sha256: fe368986bc8a28284e9e279274e00def2cc3d3119b4e49a1546d4b616fd4958c
+                  size_bytes: 139
+                  media_type: application/xml
+                report_kind: junit
+                report_format: junit_xml
+                format_version: "1"
+                parser_version: null
+      type: object
+      required:
+        - schema_version
+        - tools
+      additionalProperties: false
+      properties:
+        schema_version:
+          type: string
+          enum: ['1']
+          maxLength: 16
+        tools:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items:
+            $ref: "#/components/schemas/ScanToolRun"
+      description: Версия 1 файла scan-manifest.json. Один элемент tools описывает один запуск инструмента; значения
+        секретов и выдержки evidence не передаются.
+
+    ScanToolRun:
+      type: object
+      required:
+        - id
+        - producer
+        - producer_version
+        - profile_image_digest
+        - profile_id
+        - mode
+        - report_kind
+        - component
+        - language
+        - rules_hash
+        - config_hash
+        - db_version
+        - db_published_at
+        - parser_version
+        - scope_hash
+        - sha
+        - artifact_digest
+        - ci
+        - started_at
+        - finished_at
+        - exit_class
+        - completeness
+        - scanned_count
+        - skipped_count
+        - skipped_targets
+        - history
+        - reports
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 255
+        producer:
+          type: string
+          minLength: 1
+          maxLength: 128
+        producer_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        profile_image_digest:
+          type:
+            - string
+            - "null"
+          pattern: ^sha256:[0-9a-f]{64}$
+        profile_id:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 128
+        mode:
+          type: string
+          enum:
+            - builtin
+            - import
+        report_kind:
+          type: string
+          enum:
+            - code
+            - sast
+            - sca
+            - secrets
+            - iac
+            - image
+            - junit
+            - coverage
+            - docs
+            - openapi
+            - sonar
+        component:
+          oneOf:
+            - $ref: "#/components/schemas/ScanComponent"
+            - type: "null"
+        language:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 32
+        rules_hash:
+          type:
+            - string
+            - "null"
+          pattern: ^[0-9a-f]{64}$
+        config_hash:
+          type:
+            - string
+            - "null"
+          pattern: ^[0-9a-f]{64}$
+        db_version:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 128
+        db_published_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        parser_version:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 64
+        scope_hash:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        sha:
+          type:
+            - string
+            - "null"
+          pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+        artifact_digest:
+          type:
+            - string
+            - "null"
+          pattern: ^sha256:[0-9a-f]{64}$
+        ci:
+          oneOf:
+            - $ref: "#/components/schemas/ScanCiCoordinates"
+            - type: "null"
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        exit_class:
+          type: string
+          enum:
+            - success
+            - findings
+            - partial
+            - failed
+            - timeout
+            - unknown
+        completeness:
+          type: string
+          enum:
+            - complete
+            - partial
+            - unknown
+        scanned_count:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+        skipped_count:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+        skipped_targets:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: "#/components/schemas/ScanSkippedTarget"
+        history:
+          oneOf:
+            - $ref: "#/components/schemas/ScanHistory"
+            - type: "null"
+        reports:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ScanReport"
+      if:
+        required:
+          - exit_class
+        properties:
+          exit_class:
+            enum:
+              - failed
+              - timeout
+              - unknown
+      then:
+        properties:
+          completeness:
+            enum:
+              - partial
+              - unknown
+      description: Происхождение DR-009. null обозначает неизвестное или неприменимое поле; builtin требует
+        profile_id и digest образа. Задан sha или artifact_digest. При failed/timeout/unknown полнота не
+        бывает complete.
+
+    ScanComponent:
+      type: object
+      required:
+        - id
+        - path_prefix
+      additionalProperties: false
+      properties:
+        id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        path_prefix:
+          type: string
+          maxLength: 1024
+
+    ScanCiCoordinates:
+      type: object
+      required:
+        - provider
+        - project_native_id
+        - run_native_id
+        - job_native_id
+        - attempt_native_id
+        - attempt_no
+        - ref_name
+        - mr_native_id
+      additionalProperties: false
+      properties:
+        provider:
+          type: string
+          enum:
+            - gitlab
+            - github
+            - jenkins
+        project_native_id:
+          type: string
+          minLength: 1
+          maxLength: 512
+        run_native_id:
+          type: string
+          minLength: 1
+          maxLength: 255
+        job_native_id:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 512
+        attempt_native_id:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 255
+        attempt_no:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        ref_name:
+          type: string
+          minLength: 0
+          maxLength: 1024
+        mr_native_id:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 255
+
+    ScanSkippedTarget:
+      type: object
+      required:
+        - path
+        - reason
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+          minLength: 0
+          maxLength: 4096
+        reason:
+          type: string
+          enum:
+            - timeout
+            - unsupported
+            - excluded
+            - unavailable
+            - limit
+            - history_truncated
+            - not_applicable
+
+    ScanHistory:
+      type: object
+      required:
+        - from_sha
+        - to_sha
+        - truncated
+      additionalProperties: false
+      properties:
+        from_sha: &a1
+          type: string
+          pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+        to_sha: *a1
+        truncated:
+          type: boolean
+
+    ScanReport:
+      type: object
+      required:
+        - file
+        - report_kind
+        - report_format
+        - format_version
+        - parser_version
+      additionalProperties: false
+      properties:
+        file:
+          $ref: "#/components/schemas/FileRef"
+        report_kind:
+          type: string
+          enum:
+            - code
+            - sast
+            - sca
+            - secrets
+            - iac
+            - image
+            - junit
+            - coverage
+            - docs
+            - openapi
+            - sonar
+        report_format:
+          type: string
+          enum:
+            - envelope
+            - sarif
+            - gitlab_security
+            - gitlab_code_quality
+            - junit_xml
+            - lcov
+            - cobertura
+            - jacoco
+            - golangci_json
+            - gitleaks_json
+            - spectral_json
+            - docs_json
+        format_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        parser_version:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 64
+
+    JenkinsExecutionManifestV1:
+      x-craftpulse-manifest:
+        file: execution-manifest.json
+        version: "1"
+      example:
+        schema_version: "1"
+        dataset_run_id: org-1/jenkins-1/job-series/run-03
+        job: demo
+        build_number: 7
+        build_url: https://jenkins.demo.invalid/job/demo/7/
+        sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac
+        steps:
+          - dataset_attempt_id: org-1/jenkins-1/job-series/run-03/test-fast/a1
+            stage: test
+            name: test
+            axes:
+              mode: fast
+            configuration_hash: 819cceaa52adb92b320363b3cad8e884d97a27d14150bbf2d6167880717b9a89
+            attempt: 1
+            outcome: failure
+            started_at: 2026-11-17T10:00:00Z
+            finished_at: 2026-11-17T10:00:10Z
+            agent_label: demo-go
+            reports:
+              - path: reports/fast-a1/junit.xml
+                format: junit
+                sha256: 78e53bd0e567ac7d988755c1a5af2d37253f68e8542a68f52e7a0e8dbf2de01f
+                source_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac
+          - dataset_attempt_id: org-1/jenkins-1/job-series/run-03/test-fast/a2
+            stage: test
+            name: test
+            axes:
+              mode: fast
+            configuration_hash: 819cceaa52adb92b320363b3cad8e884d97a27d14150bbf2d6167880717b9a89
+            attempt: 2
+            outcome: success
+            started_at: 2026-11-17T10:00:00Z
+            finished_at: 2026-11-17T10:00:10Z
+            agent_label: demo-go
+            reports:
+              - path: reports/fast-a2/junit.xml
+                format: junit
+                sha256: fe368986bc8a28284e9e279274e00def2cc3d3119b4e49a1546d4b616fd4958c
+                source_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac
+          - dataset_attempt_id: org-1/jenkins-1/job-series/run-03/test-full/a1
+            stage: test
+            name: test
+            axes:
+              mode: full
+            configuration_hash: 1d5d296f9033e53b70a20357e71a05c9ac061c1a2467d18dfebbc4d98bee40b6
+            attempt: 1
+            outcome: success
+            started_at: 2026-11-17T10:00:00Z
+            finished_at: 2026-11-17T10:00:10Z
+            agent_label: demo-go
+            reports:
+              - path: reports/full-a1/junit.xml
+                format: junit
+                sha256: fe368986bc8a28284e9e279274e00def2cc3d3119b4e49a1546d4b616fd4958c
+                source_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac
+      type: object
+      properties:
+        schema_version:
+          type: string
+          enum: ['1']
+          maxLength: 16
+        dataset_run_id:
+          type: string
+          minLength: 1
+        job:
+          type: string
+          minLength: 1
+        build_number:
+          type: integer
+          minimum: 1
+        build_url:
+          type: string
+          format: uri
+          pattern: ^https://
+        sha:
+          type: string
+          pattern: ^[a-f0-9]{40}$
+        steps:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            properties:
+              dataset_attempt_id:
+                type: string
+                minLength: 1
+              stage:
+                type: string
+                minLength: 1
+              name:
+                type: string
+                minLength: 1
+              axes:
+                type: object
+                additionalProperties:
+                  type: string
+                  minLength: 1
+              configuration_hash:
+                type: string
+                pattern: ^[a-f0-9]{64}$
+              attempt:
+                type: integer
+                minimum: 1
+              outcome:
+                enum:
+                  - success
+                  - failure
+                  - timeout
+                  - canceled
+                type: string
+              started_at:
+                type: string
+                format: date-time
+              finished_at:
+                type: string
+                format: date-time
+              agent_label:
+                type: string
+                minLength: 1
+              reports:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                      minLength: 1
+                    format:
+                      enum:
+                        - junit
+                        - cobertura
+                      type: string
+                    sha256:
+                      type: string
+                      pattern: ^[a-f0-9]{64}$
+                    source_sha:
+                      type: string
+                      pattern: ^[a-f0-9]{40}$
+                  required:
+                    - path
+                    - format
+                    - sha256
+                    - source_sha
+                  additionalProperties: false
+            additionalProperties: false
+            required:
+              - dataset_attempt_id
+              - stage
+              - name
+              - axes
+              - configuration_hash
+              - attempt
+              - outcome
+              - started_at
+              - finished_at
+              - agent_label
+              - reports
+      required:
+        - schema_version
+        - dataset_run_id
+        - job
+        - build_number
+        - build_url
+        - sha
+        - steps
+      additionalProperties: false
+      description: "Версия 1 execution-manifest.json совпадает с набором показа. Отсутствие файла означает
+        неизвестную историю внутренних попыток. Идентичность шага: job, build_number, stage, name,
+        configuration_hash и attempt; dataset ID не входит в ключ."

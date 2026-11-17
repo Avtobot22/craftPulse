@@ -33,6 +33,8 @@ type schema struct {
 	Closed     bool       `json:"closed"`
 	Additional *schema    `json:"additional"`
 	Items      *schema    `json:"items"`
+	If         *schema    `json:"if"`
+	Then       *schema    `json:"then"`
 
 	re *regexp.Regexp
 }
@@ -56,11 +58,13 @@ type recordRule struct {
 }
 
 type rules struct {
-	Packages   map[string]packageRule `json:"packages"`
-	Manifest   *schema                `json:"manifest"`
-	Record     *schema                `json:"record"`
-	TaskCSVRow *schema                `json:"task_csv_row"`
-	Records    []recordRule           `json:"records"`
+	Packages          map[string]packageRule `json:"packages"`
+	Manifest          *schema                `json:"manifest"`
+	Record            *schema                `json:"record"`
+	TaskCSVRow        *schema                `json:"task_csv_row"`
+	Records           []recordRule           `json:"records"`
+	ScanManifest      *schema                `json:"scan_manifest"`
+	ExecutionManifest *schema                `json:"execution_manifest"`
 }
 
 // mustRules panics only if the generated schemas.gen.json is broken, which the package tests catch.
@@ -69,7 +73,7 @@ func mustRules() *rules {
 	if err := json.Unmarshal(_schemasJSON, &r); err != nil {
 		panic(fmt.Sprintf("envelope: invalid schemas.gen.json: %v", err))
 	}
-	for _, s := range append([]*schema{r.Manifest, r.Record, r.TaskCSVRow}, schemaList(r.Records)...) {
+	for _, s := range append([]*schema{r.Manifest, r.Record, r.TaskCSVRow, r.ScanManifest, r.ExecutionManifest}, schemaList(r.Records)...) {
 		if err := s.compile(); err != nil {
 			panic(fmt.Sprintf("envelope: %v", err))
 		}
@@ -112,7 +116,12 @@ func (s *schema) compile() error {
 	if err := s.Additional.compile(); err != nil {
 		return err
 	}
-	return s.Items.compile()
+	for _, branch := range []*schema{s.Items, s.If, s.Then} {
+		if err := branch.compile(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *schema) property(name string) *schema {
@@ -146,6 +155,11 @@ func (s *schema) validate(value any, path string) *violation {
 	}
 	if value == nil {
 		return nil
+	}
+	if s.If != nil && s.If.validate(value, path) == nil {
+		if bad := s.Then.validate(value, path); bad != nil {
+			return bad
+		}
 	}
 	if len(s.Enum) > 0 && !slices.ContainsFunc(s.Enum, func(e any) bool { return e == value }) {
 		return &violation{path, "value is not in the enumeration"}
