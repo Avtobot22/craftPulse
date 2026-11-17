@@ -27,6 +27,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       dataset: ${{ steps.filter.outputs.dataset }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      release: ${{ steps.filter.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,6 +54,15 @@ jobs:
               - 'demo-dataset/**'
               - '.github/workflows/repository.yml'
               - '.github/workflows/go-check.yml'
+            release:
+              - 'backend/**'
+              - 'frontend/Dockerfile'
+              - 'frontend/package-lock.json'
+              - 'scripts/oci_release.py'
+              - 'tests/test_oci_release.py'
+              - '.github/release-tools.json'
+              - '.github/workflows/oci-release.yml'
+              - '.github/workflows/repository.yml'
 
   repository-check:
     name: repository-check
@@ -142,9 +152,26 @@ jobs:
       - name: Build frontend image without publishing
         run: docker build --tag craftpulse-frontend:ci .
 
+  release-check:
+    name: release-check
+    needs: detect
+    if: github.event_name == 'workflow_dispatch' || needs.detect.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate release discovery and metadata
+        run: python3 scripts/oci_release.py check
+      - name: Build discovered adapter images without registry credentials
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: python3 scripts/oci_release.py build-adapters --sha "$COMMIT_SHA"
+
   ci:
     name: ci
-    needs: [detect, repository-check, backend, dataset, frontend]
+    needs: [detect, repository-check, backend, dataset, frontend, release-check]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -159,6 +186,8 @@ jobs:
           DATASET_CHANGED: ${{ needs.detect.outputs.dataset }}
           FRONTEND: ${{ needs.frontend.result }}
           FRONTEND_CHANGED: ${{ needs.detect.outputs.frontend }}
+          RELEASE: ${{ needs.release-check.result }}
+          RELEASE_CHANGED: ${{ needs.detect.outputs.release }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           [ "$DETECT" = success ] || { echo "detect: $DETECT"; exit 1; }
@@ -183,4 +212,11 @@ jobs:
               [ "$FRONTEND_CHANGED" = false ] && [ "$EVENT_NAME" != workflow_dispatch ] || exit 1
               ;;
             *) echo "frontend: $FRONTEND"; exit 1 ;;
+          esac
+          case "$RELEASE" in
+            success) ;;
+            skipped)
+              [ "$RELEASE_CHANGED" = false ] && [ "$EVENT_NAME" != workflow_dispatch ] || exit 1
+              ;;
+            *) echo "release-check: $RELEASE"; exit 1 ;;
           esac
