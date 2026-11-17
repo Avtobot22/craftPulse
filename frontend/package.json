@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run typecheck && vite build",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && npm run typecheck:api",
     "lint": "npm run lint:eslint && npm run lint:fsd",
     "lint:eslint": "eslint .",
     "lint:fsd": "steiger src --fail-on-warnings",
@@ -22,11 +22,15 @@
     "generate:api": "node tools/api-types-generator/generate.mjs",
     "check:generated": "node tools/api-types-generator/generate.mjs --check",
     "check": "npm run check:generated && npm run format:check && npm run lint && npm test && npm run build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck:api": "tsc --strict --noEmit --skipLibCheck false --ignoreConfig src/shared/api/generated/schema.d.ts"
   },
   "dependencies": {
+    "@gravity-ui/uikit": "^8.1.0",
+    "@tanstack/react-query": "^5.108.0",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -7,6 +7,10 @@ export default defineConfig({
   resolve: { alias: { '@': resolve(import.meta.dirname, 'src') } },
   server: {
     proxy: {
+      '/o/': {
+        target: process.env.API_PROXY_TARGET ?? 'http://localhost:8080',
+        changeOrigin: true,
+      },
       '/api/v1': {
         target: process.env.API_PROXY_TARGET ?? 'http://localhost:8080',
         changeOrigin: true,
@@ -15,6 +19,7 @@ export default defineConfig({
     },
   },
   test: {
+    server: { deps: { inline: ['@gravity-ui/uikit'] } },
     environment: 'jsdom',
     setupFiles: ['./src/app/test/setup-tests.ts'],
     clearMocks: true,

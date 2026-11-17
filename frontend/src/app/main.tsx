@@ -1,13 +1,22 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { HomePage } from '@/pages/home'
+import { createBrowserRouter } from 'react-router'
+import { RouterProvider } from 'react-router/dom'
+import '@gravity-ui/uikit/styles/fonts.css'
+import '@gravity-ui/uikit/styles/styles.css'
 import './styles/global.css'
+import { AppProviders } from './initialization/app-providers'
+import { createAppRuntime } from './initialization/runtime'
+import { createAppRoutes } from './router/routes'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Root element is missing')
-
+const runtime = createAppRuntime()
+const router = createBrowserRouter(createAppRoutes(runtime))
 createRoot(root).render(
   <StrictMode>
-    <HomePage />
+    <AppProviders runtime={runtime}>
+      <RouterProvider router={router} />
+    </AppProviders>
   </StrictMode>,
 )
