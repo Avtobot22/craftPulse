@@ -6,9 +6,11 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,6 +46,7 @@ func (e *accessEnv) sourceLinks(t *testing.T, b *browser) sourceLinksBody {
 	t.Helper()
 	rec := e.do(t, b, http.MethodGet, "/api/v1/me/source-links", nil)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	validateSourceResponse(t, rec, "SourceLinkList")
 	return decode[sourceLinksBody](t, rec)
 }
 
@@ -52,6 +55,7 @@ func (e *accessEnv) startSource(t *testing.T, b *browser, returnTo string) strin
 	rec := e.do(t, b, http.MethodPost, "/api/v1/me/source-links/"+e.conn.String()+"/authorization?return_to="+url.QueryEscape(returnTo),
 		http.Header{"Origin": {_site}})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	validateSourceResponse(t, rec, "AuthorizationRedirect")
 	var result struct {
 		AuthorizationURL string `json:"authorization_url"`
 	}
@@ -184,4 +188,19 @@ func TestSourceLinks_RevocationInvalidatesPendingState(t *testing.T) {
 	var visible int
 	require.NoError(t, e.app.QueryRow(t.Context(), "SELECT count(*) FROM access.source_link").Scan(&visible))
 	assert.Zero(t, visible)
+}
+
+var _sourceSpec = sync.OnceValues(func() (*openapi3.T, error) {
+	loader := openapi3.NewLoader()
+	loader.IsExternalRefsAllowed = true
+	return loader.LoadFromFile("../../../docs/technical-specification/openapi.yaml")
+})
+
+func validateSourceResponse(t *testing.T, rec *httptest.ResponseRecorder, name string) {
+	t.Helper()
+	spec, err := _sourceSpec()
+	require.NoError(t, err)
+	var body any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.NoError(t, spec.Components.Schemas[name].Value.VisitJSON(body))
 }
