@@ -14,8 +14,10 @@ var errNoManifest = errors.New("envelope: cleaned package has no manifest")
 
 // Package is a cleaned package read back for normalization: the manifest and the record of every number.
 type Package struct {
-	Manifest *Manifest
-	lines    [][]byte
+	Manifest          *Manifest
+	ScanManifest      *ScanManifestV1
+	ExecutionManifest *JenkinsExecutionManifestV1
+	lines             [][]byte
 }
 
 // ReadCleaned reads a package written by Clean. A record keeps its line number there, so the number of
@@ -36,7 +38,7 @@ func ReadCleaned(r io.Reader, limits Limits) (*Package, error) {
 		if err != nil {
 			return nil, fmt.Errorf("envelope: read cleaned package: %w", err)
 		}
-		if header.Name != ManifestName && header.Name != RecordsName {
+		if header.Name != ManifestName && header.Name != RecordsName && header.Name != ScanManifestName && header.Name != ExecutionManifestName {
 			continue
 		}
 		if header.Size > budget {
@@ -51,6 +53,20 @@ func ReadCleaned(r io.Reader, limits Limits) (*Package, error) {
 			p.Manifest = &Manifest{}
 			if err := json.Unmarshal(data, p.Manifest); err != nil {
 				return nil, fmt.Errorf("envelope: decode manifest: %w", err)
+			}
+			continue
+		}
+		if header.Name == ScanManifestName {
+			p.ScanManifest = &ScanManifestV1{}
+			if err := json.Unmarshal(data, p.ScanManifest); err != nil {
+				return nil, fmt.Errorf("envelope: decode scan manifest: %w", err)
+			}
+			continue
+		}
+		if header.Name == ExecutionManifestName {
+			p.ExecutionManifest = &JenkinsExecutionManifestV1{}
+			if err := json.Unmarshal(data, p.ExecutionManifest); err != nil {
+				return nil, fmt.Errorf("envelope: decode execution manifest: %w", err)
 			}
 			continue
 		}
