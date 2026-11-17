@@ -26,6 +26,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       dataset: ${{ steps.filter.outputs.dataset }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,6 +45,10 @@ jobs:
               - 'docs/technical-specification/envelope.yaml'
               - '.github/workflows/repository.yml'
               - '.github/workflows/go-check.yml'
+            frontend:
+              - 'frontend/**'
+              - 'docs/technical-specification/openapi.yaml'
+              - '.github/workflows/repository.yml'
             dataset:
               - 'demo-dataset/**'
               - '.github/workflows/repository.yml'
@@ -99,9 +104,47 @@ jobs:
     with:
       module: demo-dataset
 
+  frontend:
+    name: frontend
+    needs: detect
+    if: github.event_name == 'workflow_dispatch' || needs.detect.outputs.frontend == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26.3.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify generated API types
+        run: |
+          npm run generate:api
+          git diff --exit-code -- src/shared/api/generated/
+          test -z "$(git ls-files --others --exclude-standard -- src/shared/api/generated/)"
+      - name: Check formatting
+        run: npm run format:check
+      - name: Check strict TypeScript
+        run: npm run typecheck
+      - name: Lint TypeScript and FSD boundaries
+        run: npm run lint
+      - name: Test frontend
+        run: npm test
+      - name: Build static frontend
+        run: npm run build
+      - name: Build frontend image without publishing
+        run: docker build --tag craftpulse-frontend:ci .
+
   ci:
     name: ci
-    needs: [detect, repository-check, backend, dataset]
+    needs: [detect, repository-check, backend, dataset, frontend]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -114,6 +157,8 @@ jobs:
           BACKEND_CHANGED: ${{ needs.detect.outputs.backend }}
           DATASET: ${{ needs.dataset.result }}
           DATASET_CHANGED: ${{ needs.detect.outputs.dataset }}
+          FRONTEND: ${{ needs.frontend.result }}
+          FRONTEND_CHANGED: ${{ needs.detect.outputs.frontend }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           [ "$DETECT" = success ] || { echo "detect: $DETECT"; exit 1; }
@@ -131,4 +176,11 @@ jobs:
               [ "$DATASET_CHANGED" = false ] && [ "$EVENT_NAME" != workflow_dispatch ] || exit 1
               ;;
             *) echo "demo-dataset: $DATASET"; exit 1 ;;
+          esac
+          case "$FRONTEND" in
+            success) ;;
+            skipped)
+              [ "$FRONTEND_CHANGED" = false ] && [ "$EVENT_NAME" != workflow_dispatch ] || exit 1
+              ;;
+            *) echo "frontend: $FRONTEND"; exit 1 ;;
           esac
