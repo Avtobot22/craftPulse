@@ -11,3 +11,5 @@ export function HomePage({ problem }: { problem?: ApiProblem }) {
     </main>
   )
 }
+
+console.log(({} as any).value)
