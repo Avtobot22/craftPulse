@@ -2967,7 +2967,7 @@ export interface components {
              */
             type: string;
             /** @description Краткое название типа ошибки для разработчика. */
-            title: string;
+            title: number;
             /** @description Совпадает с HTTP-кодом ответа. */
             status: number;
             /** @description Пояснение конкретного случая; не показывается пользователю как есть. */
