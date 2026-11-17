@@ -6,7 +6,7 @@
     "module": "ESNext",
     "types": ["vite/client"],
     "allowArbitraryExtensions": true,
-    "skipLibCheck": false,
+    "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
@@ -27,5 +27,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }

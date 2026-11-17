@@ -1,13 +1,19 @@
-import type { ApiProblem } from '@/shared/api'
+import { Text } from '@gravity-ui/uikit'
+import { Link, useOutlet } from 'react-router'
+import { routePaths } from '@/shared/config'
 
-const describeProblem = (problem: ApiProblem): string => problem.title
-
-export function HomePage({ problem }: { problem?: ApiProblem }) {
+export function HomePage() {
+  const outlet = useOutlet()
   return (
     <main>
-      <h1>craftPulse</h1>
-      <p>Платформа аналитики разработки</p>
-      {problem && <p role="alert">{describeProblem(problem)}</p>}
+      <header className="app-header">
+        <Link to={routePaths.home}>craftPulse</Link>
+      </header>
+      {outlet ?? (
+        <Text as="h1" variant="header-1">
+          craftPulse
+        </Text>
+      )}
     </main>
   )
 }
