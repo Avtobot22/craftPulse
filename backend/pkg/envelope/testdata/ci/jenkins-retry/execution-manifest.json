@@ -1,0 +1,76 @@
+{
+  "schema_version": "1",
+  "dataset_run_id": "org-1/jenkins-1/job-series/run-03",
+  "job": "demo",
+  "build_number": 7,
+  "build_url": "https://jenkins.demo.invalid/job/demo/7/",
+  "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+  "steps": [
+    {
+      "dataset_attempt_id": "org-1/jenkins-1/job-series/run-03/test-fast/a1",
+      "stage": "test",
+      "name": "test",
+      "axes": {
+        "mode": "fast"
+      },
+      "configuration_hash": "819cceaa52adb92b320363b3cad8e884d97a27d14150bbf2d6167880717b9a89",
+      "attempt": 1,
+      "outcome": "failure",
+      "started_at": "2026-11-17T10:00:00Z",
+      "finished_at": "2026-11-17T10:00:10Z",
+      "agent_label": "demo-go",
+      "reports": [
+        {
+          "path": "reports/fast-a1/junit.xml",
+          "format": "junit",
+          "sha256": "78e53bd0e567ac7d988755c1a5af2d37253f68e8542a68f52e7a0e8dbf2de01f",
+          "source_sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"
+        }
+      ]
+    },
+    {
+      "dataset_attempt_id": "org-1/jenkins-1/job-series/run-03/test-fast/a2",
+      "stage": "test",
+      "name": "test",
+      "axes": {
+        "mode": "fast"
+      },
+      "configuration_hash": "819cceaa52adb92b320363b3cad8e884d97a27d14150bbf2d6167880717b9a89",
+      "attempt": 2,
+      "outcome": "success",
+      "started_at": "2026-11-17T10:00:00Z",
+      "finished_at": "2026-11-17T10:00:10Z",
+      "agent_label": "demo-go",
+      "reports": [
+        {
+          "path": "reports/fast-a2/junit.xml",
+          "format": "junit",
+          "sha256": "fe368986bc8a28284e9e279274e00def2cc3d3119b4e49a1546d4b616fd4958c",
+          "source_sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"
+        }
+      ]
+    },
+    {
+      "dataset_attempt_id": "org-1/jenkins-1/job-series/run-03/test-full/a1",
+      "stage": "test",
+      "name": "test",
+      "axes": {
+        "mode": "full"
+      },
+      "configuration_hash": "1d5d296f9033e53b70a20357e71a05c9ac061c1a2467d18dfebbc4d98bee40b6",
+      "attempt": 1,
+      "outcome": "success",
+      "started_at": "2026-11-17T10:00:00Z",
+      "finished_at": "2026-11-17T10:00:10Z",
+      "agent_label": "demo-go",
+      "reports": [
+        {
+          "path": "reports/full-a1/junit.xml",
+          "format": "junit",
+          "sha256": "fe368986bc8a28284e9e279274e00def2cc3d3119b4e49a1546d4b616fd4958c",
+          "source_sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"
+        }
+      ]
+    }
+  ]
+}

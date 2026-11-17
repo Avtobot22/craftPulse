@@ -65,3 +65,24 @@ for (const id of imports) assert(packageSchemas[id], `ImportUpload.schema_id ${i
 const csvColumns = Object.keys(schemas.TaskCsvRow.properties).filter(column => column !== 'native_id');
 for (const column of csvColumns) assert(schemas.TaskV1.properties[column], `TaskCsvRow.${column} is not a TaskV1 field`);
 console.log(`Adapter contract: ${ids.size} operations, ${identityRows.size} identity rows, ${byKind.size} record schemas.`);
+
+// The CI step accepts the demo's Jenkins artifact without renaming fields or changing identity.
+const demoExecution = JSON.parse(readFileSync(new URL('demo-dataset/schemas/jenkins-execution.schema.json', root), 'utf8'));
+function schemaShape(input) {
+  if (Array.isArray(input)) return input.map(schemaShape);
+  if (!input || typeof input !== 'object') return input;
+  const result = {};
+  const enumeration = input.enum ?? ('const' in input ? [input.const] : null);
+  for (const [key, value] of Object.entries(input)) {
+    if (key.startsWith('x-') || ['$schema', 'title', 'description', 'example', 'examples', 'const', 'enum'].includes(key)) continue;
+    if (enumeration && ['maxLength', 'minLength'].includes(key)) continue;
+    result[key] = key === 'required' ? [...value].sort() : schemaShape(value);
+  }
+  if (enumeration) {
+    result.enum = enumeration;
+    if (!result.type && enumeration.every(value => typeof value === 'string')) result.type = 'string';
+  }
+  return result;
+}
+assert.deepEqual(schemaShape(schemas.JenkinsExecutionManifestV1), schemaShape(demoExecution), 'Jenkins execution manifest differs from the demo format');
+console.log('CI manifests: Jenkins v1 matches the demo schema.');

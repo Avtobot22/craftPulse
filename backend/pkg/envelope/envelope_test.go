@@ -62,7 +62,7 @@ func build(t *testing.T, m *envelope.Manifest, add func(w *envelope.Writer)) []b
 	require.NoError(t, err)
 	add(w)
 	require.NoError(t, w.Close())
-	return buf.Bytes()
+	return addFixtureScan(t, buf.Bytes())
 }
 
 func schemaOf(t *testing.T, kind string) envelope.RecordSchema {

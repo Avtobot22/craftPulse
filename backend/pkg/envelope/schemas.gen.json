@@ -2955,5 +2955,986 @@
         "subtask": false
       }
     }
-  ]
+  ],
+  "scan_manifest": {
+    "types": [
+      "object"
+    ],
+    "properties": [
+      {
+        "name": "schema_version",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "enum": [
+            "1"
+          ],
+          "max_length": 16
+        }
+      },
+      {
+        "name": "tools",
+        "schema": {
+          "types": [
+            "array"
+          ],
+          "min_items": 1,
+          "max_items": 256,
+          "items": {
+            "types": [
+              "object"
+            ],
+            "properties": [
+              {
+                "name": "id",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "min_length": 1,
+                  "max_length": 255
+                }
+              },
+              {
+                "name": "producer",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "min_length": 1,
+                  "max_length": 128
+                }
+              },
+              {
+                "name": "producer_version",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "min_length": 1,
+                  "max_length": 64
+                }
+              },
+              {
+                "name": "profile_image_digest",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              {
+                "name": "profile_id",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "min_length": 1,
+                  "max_length": 128
+                }
+              },
+              {
+                "name": "mode",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "enum": [
+                    "builtin",
+                    "import"
+                  ]
+                }
+              },
+              {
+                "name": "report_kind",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "enum": [
+                    "code",
+                    "sast",
+                    "sca",
+                    "secrets",
+                    "iac",
+                    "image",
+                    "junit",
+                    "coverage",
+                    "docs",
+                    "openapi",
+                    "sonar"
+                  ]
+                }
+              },
+              {
+                "name": "component",
+                "schema": {
+                  "types": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": [
+                    {
+                      "name": "id",
+                      "schema": {
+                        "types": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      }
+                    },
+                    {
+                      "name": "path_prefix",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "max_length": 1024
+                      }
+                    }
+                  ],
+                  "required": [
+                    "id",
+                    "path_prefix"
+                  ],
+                  "closed": true
+                }
+              },
+              {
+                "name": "language",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "min_length": 1,
+                  "max_length": 32
+                }
+              },
+              {
+                "name": "rules_hash",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              {
+                "name": "config_hash",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              {
+                "name": "db_version",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "min_length": 1,
+                  "max_length": 128
+                }
+              },
+              {
+                "name": "db_published_at",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              {
+                "name": "parser_version",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "min_length": 1,
+                  "max_length": 64
+                }
+              },
+              {
+                "name": "scope_hash",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              {
+                "name": "sha",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+                }
+              },
+              {
+                "name": "artifact_digest",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              {
+                "name": "ci",
+                "schema": {
+                  "types": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": [
+                    {
+                      "name": "provider",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "enum": [
+                          "gitlab",
+                          "github",
+                          "jenkins"
+                        ]
+                      }
+                    },
+                    {
+                      "name": "project_native_id",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "min_length": 1,
+                        "max_length": 512
+                      }
+                    },
+                    {
+                      "name": "run_native_id",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "min_length": 1,
+                        "max_length": 255
+                      }
+                    },
+                    {
+                      "name": "job_native_id",
+                      "schema": {
+                        "types": [
+                          "string",
+                          "null"
+                        ],
+                        "min_length": 1,
+                        "max_length": 512
+                      }
+                    },
+                    {
+                      "name": "attempt_native_id",
+                      "schema": {
+                        "types": [
+                          "string",
+                          "null"
+                        ],
+                        "min_length": 1,
+                        "max_length": 255
+                      }
+                    },
+                    {
+                      "name": "attempt_no",
+                      "schema": {
+                        "types": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 1
+                      }
+                    },
+                    {
+                      "name": "ref_name",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "min_length": 0,
+                        "max_length": 1024
+                      }
+                    },
+                    {
+                      "name": "mr_native_id",
+                      "schema": {
+                        "types": [
+                          "string",
+                          "null"
+                        ],
+                        "min_length": 1,
+                        "max_length": 255
+                      }
+                    }
+                  ],
+                  "required": [
+                    "provider",
+                    "project_native_id",
+                    "run_native_id",
+                    "job_native_id",
+                    "attempt_native_id",
+                    "attempt_no",
+                    "ref_name",
+                    "mr_native_id"
+                  ],
+                  "closed": true
+                }
+              },
+              {
+                "name": "started_at",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              {
+                "name": "finished_at",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              {
+                "name": "exit_class",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "enum": [
+                    "success",
+                    "findings",
+                    "partial",
+                    "failed",
+                    "timeout",
+                    "unknown"
+                  ]
+                }
+              },
+              {
+                "name": "completeness",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "enum": [
+                    "complete",
+                    "partial",
+                    "unknown"
+                  ]
+                }
+              },
+              {
+                "name": "scanned_count",
+                "schema": {
+                  "types": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                }
+              },
+              {
+                "name": "skipped_count",
+                "schema": {
+                  "types": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                }
+              },
+              {
+                "name": "skipped_targets",
+                "schema": {
+                  "types": [
+                    "array"
+                  ],
+                  "max_items": 10000,
+                  "items": {
+                    "types": [
+                      "object"
+                    ],
+                    "properties": [
+                      {
+                        "name": "path",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "min_length": 0,
+                          "max_length": 4096
+                        }
+                      },
+                      {
+                        "name": "reason",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "enum": [
+                            "timeout",
+                            "unsupported",
+                            "excluded",
+                            "unavailable",
+                            "limit",
+                            "history_truncated",
+                            "not_applicable"
+                          ]
+                        }
+                      }
+                    ],
+                    "required": [
+                      "path",
+                      "reason"
+                    ],
+                    "closed": true
+                  }
+                }
+              },
+              {
+                "name": "history",
+                "schema": {
+                  "types": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": [
+                    {
+                      "name": "from_sha",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+                      }
+                    },
+                    {
+                      "name": "to_sha",
+                      "schema": {}
+                    },
+                    {
+                      "name": "truncated",
+                      "schema": {
+                        "types": [
+                          "boolean"
+                        ]
+                      }
+                    }
+                  ],
+                  "required": [
+                    "from_sha",
+                    "to_sha",
+                    "truncated"
+                  ],
+                  "closed": true
+                }
+              },
+              {
+                "name": "reports",
+                "schema": {
+                  "types": [
+                    "array"
+                  ],
+                  "max_items": 1000,
+                  "items": {
+                    "types": [
+                      "object"
+                    ],
+                    "properties": [
+                      {
+                        "name": "file",
+                        "schema": {
+                          "types": [
+                            "object"
+                          ],
+                          "properties": [
+                            {
+                              "name": "path",
+                              "schema": {
+                                "types": [
+                                  "string"
+                                ],
+                                "pattern": "^files/[A-Za-z0-9._/-]+$",
+                                "max_length": 1024
+                              }
+                            },
+                            {
+                              "name": "sha256",
+                              "schema": {
+                                "types": [
+                                  "string"
+                                ],
+                                "pattern": "^[0-9a-f]{64}$"
+                              }
+                            },
+                            {
+                              "name": "size_bytes",
+                              "schema": {
+                                "types": [
+                                  "integer"
+                                ],
+                                "minimum": 0
+                              }
+                            },
+                            {
+                              "name": "media_type",
+                              "schema": {
+                                "types": [
+                                  "string"
+                                ],
+                                "max_length": 128
+                              }
+                            }
+                          ],
+                          "required": [
+                            "path",
+                            "sha256",
+                            "size_bytes",
+                            "media_type"
+                          ],
+                          "closed": true
+                        }
+                      },
+                      {
+                        "name": "report_kind",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "enum": [
+                            "code",
+                            "sast",
+                            "sca",
+                            "secrets",
+                            "iac",
+                            "image",
+                            "junit",
+                            "coverage",
+                            "docs",
+                            "openapi",
+                            "sonar"
+                          ]
+                        }
+                      },
+                      {
+                        "name": "report_format",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "enum": [
+                            "envelope",
+                            "sarif",
+                            "gitlab_security",
+                            "gitlab_code_quality",
+                            "junit_xml",
+                            "lcov",
+                            "cobertura",
+                            "jacoco",
+                            "golangci_json",
+                            "gitleaks_json",
+                            "spectral_json",
+                            "docs_json"
+                          ]
+                        }
+                      },
+                      {
+                        "name": "format_version",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "min_length": 1,
+                          "max_length": 64
+                        }
+                      },
+                      {
+                        "name": "parser_version",
+                        "schema": {
+                          "types": [
+                            "string",
+                            "null"
+                          ],
+                          "min_length": 1,
+                          "max_length": 64
+                        }
+                      }
+                    ],
+                    "required": [
+                      "file",
+                      "report_kind",
+                      "report_format",
+                      "format_version",
+                      "parser_version"
+                    ],
+                    "closed": true
+                  }
+                }
+              }
+            ],
+            "required": [
+              "id",
+              "producer",
+              "producer_version",
+              "profile_image_digest",
+              "profile_id",
+              "mode",
+              "report_kind",
+              "component",
+              "language",
+              "rules_hash",
+              "config_hash",
+              "db_version",
+              "db_published_at",
+              "parser_version",
+              "scope_hash",
+              "sha",
+              "artifact_digest",
+              "ci",
+              "started_at",
+              "finished_at",
+              "exit_class",
+              "completeness",
+              "scanned_count",
+              "skipped_count",
+              "skipped_targets",
+              "history",
+              "reports"
+            ],
+            "closed": true,
+            "if": {
+              "properties": [
+                {
+                  "name": "exit_class",
+                  "schema": {
+                    "enum": [
+                      "failed",
+                      "timeout",
+                      "unknown"
+                    ]
+                  }
+                }
+              ],
+              "required": [
+                "exit_class"
+              ]
+            },
+            "then": {
+              "properties": [
+                {
+                  "name": "completeness",
+                  "schema": {
+                    "enum": [
+                      "partial",
+                      "unknown"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "required": [
+      "schema_version",
+      "tools"
+    ],
+    "closed": true
+  },
+  "execution_manifest": {
+    "types": [
+      "object"
+    ],
+    "properties": [
+      {
+        "name": "schema_version",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "enum": [
+            "1"
+          ],
+          "max_length": 16
+        }
+      },
+      {
+        "name": "dataset_run_id",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "min_length": 1
+        }
+      },
+      {
+        "name": "job",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "min_length": 1
+        }
+      },
+      {
+        "name": "build_number",
+        "schema": {
+          "types": [
+            "integer"
+          ],
+          "minimum": 1
+        }
+      },
+      {
+        "name": "build_url",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "pattern": "^https://",
+          "format": "uri"
+        }
+      },
+      {
+        "name": "sha",
+        "schema": {
+          "types": [
+            "string"
+          ],
+          "pattern": "^[a-f0-9]{40}$"
+        }
+      },
+      {
+        "name": "steps",
+        "schema": {
+          "types": [
+            "array"
+          ],
+          "min_items": 1,
+          "items": {
+            "types": [
+              "object"
+            ],
+            "properties": [
+              {
+                "name": "dataset_attempt_id",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "min_length": 1
+                }
+              },
+              {
+                "name": "stage",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "min_length": 1
+                }
+              },
+              {
+                "name": "name",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "min_length": 1
+                }
+              },
+              {
+                "name": "axes",
+                "schema": {
+                  "types": [
+                    "object"
+                  ],
+                  "additional": {
+                    "types": [
+                      "string"
+                    ],
+                    "min_length": 1
+                  }
+                }
+              },
+              {
+                "name": "configuration_hash",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              {
+                "name": "attempt",
+                "schema": {
+                  "types": [
+                    "integer"
+                  ],
+                  "minimum": 1
+                }
+              },
+              {
+                "name": "outcome",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "enum": [
+                    "success",
+                    "failure",
+                    "timeout",
+                    "canceled"
+                  ]
+                }
+              },
+              {
+                "name": "started_at",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              {
+                "name": "finished_at",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              {
+                "name": "agent_label",
+                "schema": {
+                  "types": [
+                    "string"
+                  ],
+                  "min_length": 1
+                }
+              },
+              {
+                "name": "reports",
+                "schema": {
+                  "types": [
+                    "array"
+                  ],
+                  "items": {
+                    "types": [
+                      "object"
+                    ],
+                    "properties": [
+                      {
+                        "name": "path",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "min_length": 1
+                        }
+                      },
+                      {
+                        "name": "format",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "enum": [
+                            "junit",
+                            "cobertura"
+                          ]
+                        }
+                      },
+                      {
+                        "name": "sha256",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      {
+                        "name": "source_sha",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "pattern": "^[a-f0-9]{40}$"
+                        }
+                      }
+                    ],
+                    "required": [
+                      "path",
+                      "format",
+                      "sha256",
+                      "source_sha"
+                    ],
+                    "closed": true
+                  }
+                }
+              }
+            ],
+            "required": [
+              "dataset_attempt_id",
+              "stage",
+              "name",
+              "axes",
+              "configuration_hash",
+              "attempt",
+              "outcome",
+              "started_at",
+              "finished_at",
+              "agent_label",
+              "reports"
+            ],
+            "closed": true
+          }
+        }
+      }
+    ],
+    "required": [
+      "schema_version",
+      "dataset_run_id",
+      "job",
+      "build_number",
+      "build_url",
+      "sha",
+      "steps"
+    ],
+    "closed": true
+  }
 }
