@@ -82,7 +82,7 @@ def serve(output, url_file, port=8789):
                 action = f"https://github.com/organizations/{ORGANIZATION}/settings/apps/new?state={state}"
                 self.send_page(200, '<!doctype html><html lang="ru"><meta charset="utf-8">'
                                '<title>Регистрация бота craftPulse</title><h1>craftpulse-mvp-bot</h1>'
-                               '<p>Владелец: craftpulse-mvp. Права: Pull requests - write. Webhook выключен.</p>'
+                               '<p>Владелец: craftpulse-mvp. Права: Pull requests - write, Contents - read. Webhook выключен.</p>'
                                '<form method="post" action="' + escape(action, quote=True) + '">'
                                '<input type="hidden" name="manifest" value="' + escape(json.dumps(manifest), quote=True) + '">'
                                '<button type="submit">Создать GitHub App</button></form></html>')
