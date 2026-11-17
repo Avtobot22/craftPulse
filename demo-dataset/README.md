@@ -1,6 +1,6 @@
 # Набор данных показа
 
-Отдельный Go-модуль задаёт общую модель набора, людей, каталог вариантов, объёмы по источникам и форматы результатов. Он использует только стандартную библиотеку и не импортирует backend. Ожидания будущих расчётов строятся здесь независимо от API и кода craftPulse. Генератор создаёт людей, план объёмов, модель задач, настройки показа и fixture-репозитории. Модели MR и CI и загрузчики добавляются отдельными файлами следующих задач.
+Отдельный Go-модуль задаёт общую модель набора, людей, каталог вариантов, объёмы по источникам и форматы результатов. Он использует только стандартную библиотеку и не импортирует backend. Ожидания будущих расчётов строятся здесь независимо от API и кода craftPulse. Генератор создаёт людей, план объёмов, модели задач, MR/PR и CI, настройки показа, fixture-репозитории и план загрузки. Загрузчики источников выполняются отдельными задачами.
 
 Нужен Go версии из `go.mod`. Команды выполняются из `demo-dataset/`:
 
@@ -17,7 +17,7 @@ Seed по умолчанию равен 21. Два одинаковых запу
 
 `model.json` содержит 20 участников команды первой организации, аккаунт второй организации и двух ботов. Для людей перечислены роли, ограничения repo/wiki и ожидаемое сопоставление логинов Jira Cloud, Confluence Cloud, GitLab и GitHub.com. `volumes` фиксирует 100 задач и 1000 событий (40/400 и 40/400 Jira Cloud, 20/200 импорт), 6 GitLab MR и 4 GitHub PR, 12 и 8 CI runs, по 25 Git-документов, 10 wiki-страниц, отдельную серию Jenkins. Закрытые объекты второй организации выделены отдельно. Размер страницы равен 10.
 
-`variants` содержит 22 варианта: все строки раздела 6 среза MVP, историю по нескольким периодам, типам, размерам и версиям сроков, полное и неполное окно наблюдения переоткрытий, поздние события и повтор доставки. В записи есть источник, способ представления, ожидаемое поведение и ссылки V-xx из ТЗ. Каталог меняется централизованно в `dataset/catalog.go`; файлы моделей отдельных видов данных связывают свои ID с вариантами через `ObjectFile`.
+`variants` содержит 34 варианта: все строки раздела 6 среза MVP, историю по нескольким периодам, типам, размерам и версиям сроков, полное и неполное окно наблюдения переоткрытий, поздние события и повтор доставки. В записи есть источник, способ представления, ожидаемое поведение и ссылки V-xx из ТЗ. Каталог меняется централизованно в `dataset/catalog.go`; файлы моделей отдельных видов данных связывают свои ID с вариантами через `ObjectFile`.
 
 ## Модель задач и настройки показа
 
@@ -68,6 +68,41 @@ go run ./cmd/dataset generate --seed 21 --out /tmp/model.json \
 Строки записаны в модели. Патч шага 5 добавляет стоимость доставки с тестами в `internal/order`, патч шага 7 исправляет `errcheck` и anchor. Оба применяются к head через `git apply` независимо и друг за другом, `result_tree` - дерево после применения к head. Генератор проверяет на изменённом дереве, что исчезли ровно указанные в `fixes` дефекты и ссылки, а остальные остались на своих строках.
 
 Исходники fixture лежат в `dataset/fixtures/<repo>/base` и `step-<N>` с суффиксом `.txt`: Go-инструменты, линтер и `govulncheck` модуля их не видят. Документы генерируются кодом из `dataset/repospec.go`, их тексты описывают код fixture и лежат в `dataset/doctexts.go`. Часть документов дописывается позже отдельными коммитами: в GitLab-репозитории это значения по умолчанию в `configuration.md`, ошибки валидации в `api/errors.md`, откат в `runbooks/deploy.md` и поток данных в `architecture.md`, в GitHub-репозитории - примеры округления и повторы webhook. Состав файлов головы, ссылки, якоря и дефекты от этого не меняются. Тесты собирают репозитории, сверяют `git log` и `git fsck` с моделью, применяют патчи и запускают тесты fixture: падает только `TestApplyDiscountRoundsHalfUp`. Тесты с `git` пропускаются, если его нет; запуск тестов fixture пропускается в `-short`. `--repo-objects` пишет репозитории и Git-документы для команды `manifest`.
+
+## MR/PR, CI и план загрузки
+
+```sh
+go run ./cmd/dataset generate --seed 21 --out /tmp/model.json \
+  --tasks /tmp/tasks.json --repos /tmp/repos.json --repo-dir /tmp/demo-ci-repos \
+  --changes /tmp/changes.json --change-objects /tmp/changes-objects.json \
+  --load-plan /tmp/load-plan.json
+```
+
+Флаги `--changes`, `--change-objects` и `--load-plan` включают общий срез MR/CI. При этом `--repos` и `--repo-dir` содержат дополнительные коммиты и ветки, на которые ссылается `changes.json`. Все файлы одного среза нужно генерировать одной командой. Повторная генерация в новый каталог с тем же seed даёт те же SHA репозиториев, JSON и хэш плана. Изменённый seed меняет имена авторов и Git SHA, ID объектов сохраняются.
+
+`changes.json` по [changes.schema.json](schemas/changes.schema.json) содержит:
+
+- 6 MR GitLab и 4 PR GitHub первой организации, один MR второй организации. Авторы, назначенные reviewers, бот, авторские комментарии, человеческое ревью и merge имеют отдельные ID и порядок действий. Первый MR каждого источника проходит draft → ready → bot → комментарий автора → внешнее human review → merge. Есть оставшийся draft, ready без reviewer и назначенный reviewer без ответа.
+- Явную связь с конкретной задачей текущей модели `jira-cloud-1`; ключ только в ветке даёт candidate. `PA-7` у `jira-cloud-1` и `universal-1` остаётся двумя кандидатами. URL задачи строит загрузчик по binding конкретного instance, текст ключа не выбирает источник.
+- 12 GitLab pipelines, 8 Actions runs, 6 сборок Jenkins и один pipeline второй организации. У каждого job есть stage, axes, fingerprint конфигурации и список попыток с ожидаемым outcome. `allow_failure` сохраняет failed job при успешном pipeline; skipped job после required failure не имеет выдуманной попытки. Manual job выполняется отдельным действием play; cancel следует после подтверждённого начала job. Timeout задаётся нативным лимитом в одну минуту, ожидающий процесс сам не выдаёт timeout за success.
+- GitLab retry и Actions rerun с fail → pass. GitLab runner читает все страницы jobs с `include_retried=true` и считает попытки одного имени до текущего job ID. Для этого ему нужен внешний masked CI variable `DEMO_GITLAB_READ_TOKEN` с чтением Jobs API; значение не входит в модель или репозитории. Actions использует `GITHUB_RUN_ATTEMPT`. Jenkins передаёт номер попытки из счётчика внутри `retry`, а не из номера сборки.
+- Matrix с одинаковым logical name `test` и конфигурациями `mode=fast/full`. Обе конфигурации выполняют один case `demo/unit/TestRound`; имя case сохраняется, executions различаются fingerprint. JUnit и Cobertura создаёт fixture-команда `.demo-ci`; это контролируемые данные показа. Покрытие строк - 3/4, в matrix branch coverage - 1/2. Есть run без JUnit, run без coverage, head без отчёта и отчёты другого SHA.
+
+Git-ветки MR и CI находятся поверх истории fixture-репозиториев. В них лежат `.gitlab-ci.yml`, `.github/workflows/demo.yml` или `Jenkinsfile`, Go-команда `.demo-ci/main.go` и план конкретного run `.demo-ci/run.json`. Pipeline не запускается на push: загрузчик явно вызывает API/dispatch нужного ref. GitHub получает bootstrap workflow на `main`, поскольку `workflow_dispatch` требует workflow на default branch. При генерации MR/CI head GitHub-репозитория в `repos.json` включает этот коммит. Вторая организация сохраняет собственные ID и автора; её данные не входят в объём первой.
+
+`load-plan.json` по [load-plan.schema.json](schemas/load-plan.schema.json) - список действий с ID, зависимостями, actor, параметрами, ожидаемым исходом и `bindings`. Порядок: push базовых репозиториев и веток → создание MR и события ревью → запуски, play/retry/rerun/cancel → сбор результатов → merge. Загрузчик сначала ждёт `depends_on`, подставляет native IDs предыдущих bindings, выполняет действие и сохраняет фактические event/observed times и SHA в source manifest. В модели нет придуманного времени ревью или CI. `collect_ci` обязан проверить финальный outcome и SHA, прочитать все attempts и записать source IDs каждого report; повтор загрузки сопоставляет устойчивые dataset IDs, а не создаёт копии. Файл `--change-objects` связывает варианты каталога с этими объектами для команды `manifest`.
+
+В `run.json` SHA самого run и отчётов текущей ревизии пустые: commit не может включать собственный SHA в своё содержимое. При выполнении команда берёт SHA из нативного `CI_COMMIT_SHA`, `GITHUB_SHA` или `GIT_COMMIT`. Только fixture чужого SHA содержит явно заданный предыдущий SHA. Рядом с каждым XML пишется `.meta.json` с dataset attempt ID, фактическим source SHA и fingerprint; загрузчик сохраняет эти файлы и их hashes вместе с отчётом.
+
+### Execution manifest Jenkins
+
+Формат версии 1: [jenkins-execution.schema.json](schemas/jenkins-execution.schema.json). Сборки с manifest архивируют `execution-manifest.json` даже при failed step. Он содержит `dataset_run_id`, native `job`, `build_number`, HTTPS `build_url`, SHA и `steps`: stage, имя шага, axes, fingerprint, номер попытки внутри retry, outcome, фактические `started_at`/`finished_at`, метку `NODE_NAME` и ссылки на отчёты с format, source SHA и SHA-256. Внутренний fail → pass даёт две записи одного шага. В двух сборках серии manifest отсутствует; по итоговому статусу нельзя восстанавливать длительности внутренних попыток.
+
+Jenkinsfile рассчитан на агент `demo-go` с Go 1.27.4, Git и HTTPS `BUILD_URL`, SCM на соответствующий ref плана. Он очищает workspace, делает checkout, выполняет конфигурации и архивирует отчёты в `finally`; токены источников не передаются fixture-команде. Нативные start/end times и адреса сборок задаёт Jenkins.
+
+`go test -race ./...` собирает ту же fixture-команду из сгенерированного Git-коммита, выполняет каждую описанную попытку, проверяет exit code, XML, source SHA, matrix fingerprints и Jenkins manifest. Для timeout/canceled тест останавливает ожидающий процесс; native timeout и cancel API на стенде проверят загрузчики. Реальные данные в источники эта задача не записывает.
+
+Синтаксис сверён 2026-11-17 с первоисточниками: [GitLab Jobs API](https://docs.gitlab.com/api/jobs/), [GitLab CI YAML](https://docs.gitlab.com/ci/yaml/), [Actions workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax), [Actions variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables), [Jenkins retry и шаги](https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/).
 
 ## Сборка manifest
 
