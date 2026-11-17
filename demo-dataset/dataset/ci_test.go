@@ -189,6 +189,9 @@ func TestChangeValidationRejectsBrokenReferences(t *testing.T) {
 	}{
 		{"outside organization actor", func(s *dataset.ChangeSet) { s.File.MergeRequests[0].AuthorID = "org-2/person-01" }},
 		{"invented SHA", func(s *dataset.ChangeSet) { s.File.Runs[0].SHA = strings.Repeat("1", 40) }},
+		{"report outside known revisions", func(s *dataset.ChangeSet) {
+			s.File.Runs[0].Jobs[0].Attempts[0].Reports[0].SHA = strings.Repeat("a", 40)
+		}},
 		{"duplicate configuration", func(s *dataset.ChangeSet) { run := &s.File.Runs[0]; run.Jobs = append(run.Jobs, run.Jobs[0]) }},
 		{"attempt gap", func(s *dataset.ChangeSet) { s.File.Runs[0].Jobs[0].Attempts[0].Number = 2 }},
 		{"missing source binding", func(s *dataset.ChangeSet) { s.Plan.Actions[len(s.Plan.Actions)-1].Bindings = []string{} }},
@@ -330,5 +333,40 @@ func TestCICommandsMatchEveryPlannedAttempt(t *testing.T) {
 				t.Fatal("unexpected execution manifest")
 			}
 		})
+	}
+}
+
+func TestOtherSHAReportRefersToExistingSourceFile(t *testing.T) {
+	t.Parallel()
+	_, repos, set := ciChanges(t, 21)
+	dir := t.TempDir()
+	if err := repos.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	saw := false
+	for _, run := range set.File.Runs {
+		repo := repoByID(t, repos.File, run.RepositoryID)
+		for _, job := range run.Jobs {
+			for _, a := range job.Attempts {
+				for _, report := range a.Reports {
+					if report.Format != "cobertura" || report.SHA == run.SHA {
+						continue
+					}
+					saw = true
+					source := gitRun(t, ".", "--git-dir", filepath.Join(dir, repo.BarePath), "show", report.SHA+":demo-target.go")
+					if len(strings.Split(strings.TrimSpace(source), "\n")) < 5 {
+						t.Fatal("coverage references nonexistent source lines")
+					}
+					// The previous report is for the direct parent; the head changed since it was produced.
+					parent := gitRun(t, ".", "--git-dir", filepath.Join(dir, repo.BarePath), "rev-parse", run.SHA+"^")
+					if strings.TrimSpace(parent) != report.SHA {
+						t.Fatal("old report is not for the previous known revision")
+					}
+				}
+			}
+		}
+	}
+	if !saw {
+		t.Fatal("other-SHA fixture missing")
 	}
 }

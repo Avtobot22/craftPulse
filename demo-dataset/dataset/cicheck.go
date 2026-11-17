@@ -23,8 +23,13 @@ func ValidateChanges(set *ChangeSet, model *Model, tasks *TaskFile, repos *RepoF
 		people[p.ID] = p
 	}
 	repository := map[string]Repository{}
+	revisions := map[string]map[string]bool{}
 	for _, r := range repos.Repositories {
 		repository[r.ID] = r
+		revisions[r.ID] = map[string]bool{}
+		for _, c := range r.Commits {
+			revisions[r.ID][c.SHA] = true
+		}
 	}
 	taskByID := map[string]Task{}
 	for _, t := range tasks.Tasks {
@@ -56,6 +61,7 @@ func ValidateChanges(set *ChangeSet, model *Model, tasks *TaskFile, repos *RepoF
 			return fmt.Errorf("branch definition lacks hash")
 		}
 		branches[b.RepositoryID+":"+b.Name] = b
+		revisions[b.RepositoryID][b.Commit.SHA] = true
 	}
 	mrCounts, runCounts := map[string]int{}, map[string]int{}
 	for _, mr := range f.MergeRequests {
@@ -138,7 +144,7 @@ func ValidateChanges(set *ChangeSet, model *Model, tasks *TaskFile, repos *RepoF
 					if err := add(r.ID, run.OrganizationID); err != nil {
 						return err
 					}
-					if !validGitSHA(r.SHA) || paths[r.Path] || !strings.HasPrefix(r.Path, "reports/") || strings.Contains(r.Path, "..") {
+					if !validGitSHA(r.SHA) || !revisions[run.RepositoryID][r.SHA] || paths[r.Path] || !strings.HasPrefix(r.Path, "reports/") || strings.Contains(r.Path, "..") {
 						return fmt.Errorf("invalid report reference")
 					}
 					paths[r.Path] = true

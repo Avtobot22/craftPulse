@@ -218,15 +218,6 @@ func makeRun(repo Repository, provider string, n int, s ciScenario) CIRun {
 }
 
 func finishRun(model *Model, repos *RepoSet, people map[string]Person, repo Repository, run *CIRun, s ciScenario, file *ChangeFile) error {
-	if s.name == "report-other-sha" {
-		for i := range run.Jobs {
-			for j := range run.Jobs[i].Attempts {
-				for k := range run.Jobs[i].Attempts[j].Reports {
-					run.Jobs[i].Attempts[j].Reports[k].SHA = repo.Head
-				}
-			}
-		}
-	}
 	raw, err := json.MarshalIndent(run, "", "  ")
 	if err != nil {
 		return err
@@ -240,6 +231,26 @@ func finishRun(model *Model, repos *RepoSet, people map[string]Person, repo Repo
 	author := repo.OrganizationID + "/person-03"
 	if repo.OrganizationID == "org-2" {
 		author = "org-2/person-01"
+	}
+	if s.name == "report-other-sha" {
+		baseline, err := repos.addCIBranch(repo, run.Branch, author, people, files, definition)
+		if err != nil {
+			return err
+		}
+		file.Branches = append(file.Branches, baseline)
+		for i := range run.Jobs {
+			for j := range run.Jobs[i].Attempts {
+				for k := range run.Jobs[i].Attempts[j].Reports {
+					run.Jobs[i].Attempts[j].Reports[k].SHA = baseline.Commit.SHA
+				}
+			}
+		}
+		raw, err = json.MarshalIndent(run, "", "  ")
+		if err != nil {
+			return err
+		}
+		files[".demo-ci/run.json"] = append(raw, '\n')
+		files["demo-target.go"] = []byte(strings.ReplaceAll(string(files["demo-target.go"]), "return b", "return b + 1"))
 	}
 	branch, err := repos.addCIBranch(repo, run.Branch, author, people, files, definition)
 	if err != nil {
