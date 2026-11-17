@@ -33,6 +33,8 @@ const (
 	// ruleProcessOwner is the process owner of the team of the request; no other role stands in for it.
 	ruleProcessOwner
 	ruleServiceOwner
+	// ruleProjectManager is a project manager of the project; the scope holds only the projects of that role.
+	ruleProjectManager
 )
 
 // _rules is table 5.3 for the actions served so far; an action missing here is granted to nobody.
@@ -54,6 +56,7 @@ var _rules = map[string]rule{
 	"process.manage":       ruleProcessOwner,
 	"docs.read":            ruleAreaRead,
 	"docs.manage":          ruleServiceOwner,
+	"links.decide":         ruleProjectManager,
 }
 
 // Profiles is the org module; Profile runs in the caller's organization transaction.
@@ -149,6 +152,9 @@ func (u *UseCase) Authorize(ctx context.Context, s entity.Subject, r entity.Acce
 		return entity.Scope{}, err
 	}
 	reason, denial := decide(p, r)
+	if denial == nil && _rules[r.Action] == ruleProjectManager {
+		return managedScope(p), nil
+	}
 	if denial == nil {
 		return scope(p), nil
 	}
@@ -206,6 +212,9 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 	if _rules[r.Action] == ruleProcessOwner && !ownsProcess(p, r.Area) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
+	if _rules[r.Action] == ruleProjectManager && !r.Area.ID.IsZero() && !managesProject(p, r.Area) {
+		return ReasonNoPermission, entity.ErrForbidden
+	}
 	if _rules[r.Action] == ruleServiceOwner && !ownsService(p, r.Area) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
@@ -228,6 +237,30 @@ func ownsService(p entity.Profile, a entity.AreaRef) bool {
 	})
 }
 
+// managesProject tells whether the subject is a project manager of the project of the request or of every project.
+func managesProject(p entity.Profile, a entity.AreaRef) bool {
+	return a.Kind == entity.AreaProject && slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool {
+		return r.Role == entity.RoleProjectManager && (r.ProjectID == a.ID || r.ProjectID.IsZero() && r.TeamID.IsZero() && r.ServiceID.IsZero())
+	})
+}
+
+// managedScope narrows the scope to the projects of the project manager role, so source checks see only their areas.
+func managedScope(p entity.Profile) entity.Scope {
+	var projects []entity.ID
+	for _, r := range p.Roles {
+		if r.Role != entity.RoleProjectManager {
+			continue
+		}
+		if r.ProjectID.IsZero() && r.TeamID.IsZero() && r.ServiceID.IsZero() {
+			return scope(p)
+		}
+		if !r.ProjectID.IsZero() {
+			projects = append(projects, r.ProjectID)
+		}
+	}
+	return entity.GrantScope(entity.ScopeGrant{Projects: projects})
+}
+
 func granted(p entity.Profile, action string) bool {
 	switch _rules[action] {
 	case ruleProjectLead:
@@ -244,6 +277,8 @@ func granted(p entity.Profile, action string) bool {
 		return slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleServiceOwner })
 	case ruleProcessOwner:
 		return slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleProcessOwner })
+	case ruleProjectManager:
+		return slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleProjectManager })
 	}
 	return false
 }

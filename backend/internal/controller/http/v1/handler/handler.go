@@ -19,6 +19,7 @@ import (
 // Domain handlers are embedded here; the fallback is one level deeper, so their methods win.
 type Handler struct {
 	documentation
+	links
 	uploads
 	accounts
 	connections
@@ -37,6 +38,7 @@ type fallback struct {
 
 type Deps struct {
 	Documentation usecase.Documentation
+	Links         usecase.Links
 	UploadTokens  usecase.UploadTokens
 	Logins        usecase.Logins
 	Access        usecase.Access
@@ -58,6 +60,7 @@ type Deps struct {
 func New(d Deps) *Handler {
 	return &Handler{
 		documentation:  documentation{uc: d.Documentation},
+		links:          links{uc: d.Links},
 		uploads:        uploads{tokens: d.UploadTokens},
 		connections:    connections{uc: d.Connections, sync: d.Sync, operations: d.Operations},
 		accounts:       accounts{uc: d.Accounts, connections: d.Connections},

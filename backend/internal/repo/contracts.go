@@ -297,6 +297,8 @@ type NormalizeRepo interface {
 	InsertTaskEvents(ctx context.Context, orgID entity.ID, events []entity.TaskEvent) error
 	TaskEventsAt(ctx context.Context, orgID, areaID entity.ID, seq int64, allowed []entity.ID) ([]entity.TaskEvent, error)
 	RestrictedObjects(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.RestrictedObject, error)
+	// LinkEnds reads the objects at the ends of links with their current area; a deleted object is left out.
+	LinkEnds(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.LinkEnd, error)
 
 	CurrentDictionaryEntries(ctx context.Context, orgID entity.ID, keys []entity.DictionaryKey) ([]entity.DictionaryEntry, error)
 	DictionaryRevisions(ctx context.Context, orgID entity.ID, keys []entity.DictionaryKey) (map[entity.DictionaryKey][]entity.Revision, error)

@@ -127,3 +127,12 @@ sql:
         out: internal/repo/persistent/docs
         sql_package: pgx/v5
         omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
+    queries: internal/repo/persistent/link/queries.sql
+    gen:
+      go:
+        package: link
+        out: internal/repo/persistent/link
+        sql_package: pgx/v5
+        omit_unused_structs: true

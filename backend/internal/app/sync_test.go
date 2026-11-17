@@ -77,7 +77,7 @@ func newSyncEnv(t *testing.T, scenario testadapter.Config) *syncEnv {
 	intake, err := newIngest(e.app, sharedStore(t), e.connect, rights, e.clock, reg)
 	require.NoError(t, err)
 	e.intake = intake
-	e.norm, err = newNormalize(e.app, sharedStore(t), intake, orgs, e.clock)
+	e.norm, err = newNormalize(e.app, sharedStore(t), intake, orgs, nil, e.clock)
 	require.NoError(t, err)
 	jobs, err := riverInsertClient(e.app)
 	require.NoError(t, err)

@@ -36,10 +36,13 @@ type Deps struct {
 	Tenants  repo.TenantRepo
 	Ingest   Ingest
 	Accounts Accounts
-	Objects  repo.ObjectStore
-	Queue    repo.JobQueue
-	Tx       repo.Transactor
-	Clock    clock.Clock
+	// Links and Rights serve decideLink; the worker leaves them nil.
+	Links   Links
+	Rights  Rights
+	Objects repo.ObjectStore
+	Queue   repo.JobQueue
+	Tx      repo.Transactor
+	Clock   clock.Clock
 	// PartSize is _partSize when zero.
 	PartSize int
 	// Limits are envelope.DefaultLimits when zero.
