@@ -94,6 +94,11 @@ func RequestError(c *gin.Context, err error) {
 
 func Error(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, entity.ErrObjectStoreUnavailable):
+		_ = c.Error(err)
+		c.Header("Retry-After", "3")
+		response.Write(c, response.ServiceUnavailable)
+		return
 	case errors.Is(err, openapi.ErrNotImplemented):
 		response.Write(c, response.NotImplemented)
 		return
@@ -118,11 +123,6 @@ func Error(c *gin.Context, err error) {
 		return
 	case errors.Is(err, errMalformedPage), errors.Is(err, errMalformedForm):
 		response.Write(c, response.MalformedRequest)
-		return
-	case errors.Is(err, entity.ErrObjectStoreUnavailable):
-		_ = c.Error(err)
-		c.Header("Retry-After", "3")
-		response.Write(c, response.ServiceUnavailable)
 		return
 	case errors.Is(err, errPayloadTooLarge):
 		response.Write(c, response.PayloadTooLarge)

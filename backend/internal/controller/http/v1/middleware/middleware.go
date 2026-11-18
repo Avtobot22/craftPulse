@@ -89,7 +89,7 @@ func LimitBody(limit int64) gin.HandlerFunc {
 		}
 		budget := limit
 		// The CI intake reads one extra byte to classify a streamed oversized package.
-		if c.GetString(_actionKey) == "ingest.upload" {
+		if c.GetString(_operationKey) == "uploadPackage" {
 			budget++
 		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, budget)

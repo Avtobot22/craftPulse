@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +27,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -34,8 +37,15 @@ import (
 
 	httpctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/http"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/objstore"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/oidc"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
+	auditrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit"
+	ingestrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/ingest"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/ingest"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
@@ -49,7 +59,7 @@ type ciEnv struct {
 
 func newCIEnv(t *testing.T) *ciEnv { return newCIEnvWithStore(t, nil) }
 
-func newCIEnvWithStore(t *testing.T, store *objstore.Store) *ciEnv {
+func newCIEnvWithStore(t *testing.T, store repo.ObjectStore) *ciEnv {
 	t.Helper()
 	e := &ciEnv{ingestEnv: newIngestEnv(t)}
 	var loadErr error
@@ -58,7 +68,7 @@ func newCIEnvWithStore(t *testing.T, store *objstore.Store) *ciEnv {
 	orgs, _, err := newOrgAccess(e.app, e.clock, e.connect, nil)
 	require.NoError(t, err)
 	if store != nil {
-		e.store, e.reg = store, prometheus.NewRegistry()
+		e.reg = prometheus.NewRegistry()
 		e.uc, err = newIngest(e.app, store, e.connect, e.rights, orgs, e.clock, e.reg)
 		require.NoError(t, err)
 	}
@@ -448,4 +458,78 @@ func TestCIUpload_ConcurrentRepeat(t *testing.T) {
 	require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(first.ReceiptID)))
 	assert.Equal(t, 1, e.accepted(t))
 	assert.Empty(t, e.keys(t, "quarantine/"))
+}
+
+type ciReadFailure struct {
+	repo.ObjectStore
+	missing bool
+}
+
+func (s ciReadFailure) Get(context.Context, string) (io.ReadCloser, error) {
+	if s.missing {
+		return nil, entity.ErrNotFound
+	}
+	return io.NopCloser(ciBrokenStream{}), nil
+}
+
+type ciBrokenStream struct{}
+
+func (ciBrokenStream) Read([]byte) (int, error) { return 0, errors.New("storage connection reset") }
+
+func TestCIUpload_StorageReadFailureIsUnavailable(t *testing.T) {
+	t.Parallel()
+	for _, missing := range []bool{false, true} {
+		t.Run(strconv.FormatBool(missing), func(t *testing.T) {
+			e := newCIEnvWithStore(t, ciReadFailure{ObjectStore: sharedStore(t), missing: missing})
+			out := e.uploadCI(t, e.token.Value, ciPackage(t, nil))
+			require.Equal(t, http.StatusServiceUnavailable, out.Code, out.Body.String())
+			assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM ingest.receipt"))
+			assert.Empty(t, e.keys(t, "quarantine/"))
+		})
+	}
+}
+
+type ciRetryQueue struct {
+	repo.JobQueue
+	normalizations int
+}
+
+func (q *ciRetryQueue) Enqueue(ctx context.Context, job entity.Job, name string) error {
+	if job.Kind() == entity.KindNormalizeBatch {
+		q.normalizations++
+		if q.normalizations == 1 {
+			return &pgconn.PgError{Code: "40001", Message: "retry transaction"}
+		}
+	}
+	return q.JobQueue.Enqueue(ctx, job, name)
+}
+
+func TestCIUpload_WorkerTransactionRetry(t *testing.T) {
+	t.Parallel()
+	e := newCIEnv(t)
+	orgs, _, err := newOrgAccess(e.app, e.clock, e.connect, nil)
+	require.NoError(t, err)
+	jobs, err := riverInsertClient(e.app)
+	require.NoError(t, err)
+	q := &ciRetryQueue{JobQueue: queue.New(jobs)}
+	metrics := ingestMetrics{
+		rejected: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "rejected_test"}, []string{"channel", "reason"}),
+		ci:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "craftpulse_ingest_ci_packages_total"}, []string{"outcome", "reason"}),
+	}
+	tx := persistent.NewTransactor(e.app)
+	uc := ingest.New(ingest.Deps{
+		Repo: ingestrepo.NewRepo(e.app), Objects: e.store, Queue: q, Tx: tx, Connect: e.connect, Access: e.rights, Projects: orgs,
+		Auditor: audit.New(auditrepo.NewRepo(e.app), tx, e.clock), Metrics: metrics, Clock: e.clock, NewID: newID,
+	})
+	subject := entity.Subject{OrganizationID: e.orgID, ProjectID: e.project, UploadTokenID: entity.ID(e.token.ID)}
+	rc, err := uc.SubmitCI(t.Context(), subject, bytes.NewReader(ciPackage(t, nil)))
+	require.NoError(t, err)
+	require.NoError(t, uc.ProcessPackage(t.Context(), e.orgID, rc.ID))
+	assert.Equal(t, 2, q.normalizations)
+	assert.Equal(t, 1, e.receipt(t, rc.ID).AcceptedCount)
+	assert.Equal(t, 1, e.accepted(t))
+	assert.Equal(t, 1, e.jobs(t, entity.KindNormalizeBatch))
+	reg := prometheus.NewRegistry()
+	require.NoError(t, reg.Register(metrics.ci))
+	assert.Equal(t, 1.0, ciMetric(t, reg, "accepted", ""))
 }

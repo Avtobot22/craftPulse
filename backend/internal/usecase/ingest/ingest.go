@@ -134,8 +134,12 @@ func (u *UseCase) submit(ctx context.Context, s entity.Subject, rc entity.Receip
 	if err != nil {
 		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, err)
 	}
-	res, err := envelope.Clean(body, u.d.Limits, io.Discard)
+	verified := &countingReader{r: body}
+	res, err := envelope.Clean(verified, u.d.Limits, io.Discard)
 	_ = body.Close()
+	if verified.err != nil {
+		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, verified.err)
+	}
 	if err != nil {
 		return entity.Receipt{}, err
 	}
@@ -201,7 +205,7 @@ func (u *UseCase) saveSubmitted(ctx context.Context, s entity.Subject, rc entity
 // refuse deletes the quarantine object and records the refused package with its reason.
 func (u *UseCase) refuse(ctx context.Context, s entity.Subject, rc entity.Receipt, m *envelope.Manifest, reason string) (entity.Receipt, error) {
 	if err := u.d.Objects.Delete(ctx, rc.QuarantineKey); err != nil {
-		return entity.Receipt{}, err
+		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, err)
 	}
 	rc.Status, rc.ReasonCode, rc.QuarantineKey = entity.ReceiptRejected, reason, ""
 	if err := describe(&rc, m); err != nil {
@@ -244,13 +248,14 @@ func (u *UseCase) ProcessPackage(ctx context.Context, orgID, receiptID entity.ID
 		return err
 	}
 	processed := false
+	var recorded entity.Receipt
 	err = u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
 		processed = false
 		locked, err := u.d.Repo.LockReceipt(ctx, orgID, receiptID)
 		if err != nil || locked.Status != entity.ReceiptQuarantined {
 			return err
 		}
-		p.Receipt, err = u.record(ctx, p)
+		recorded, err = u.record(ctx, p)
 		processed = err == nil
 		return err
 	})
@@ -258,19 +263,23 @@ func (u *UseCase) ProcessPackage(ctx context.Context, orgID, receiptID entity.ID
 		return err
 	}
 	if processed && rc.Channel == entity.ChannelCI {
-		u.d.Metrics.CIPackage(string(p.Receipt.Status), ciReason(p))
+		u.d.Metrics.CIPackage(string(recorded.Status), ciReason(p))
 	}
 	return u.d.Objects.Delete(ctx, key)
 }
 
 type countingReader struct {
-	r io.Reader
-	n int64
+	r   io.Reader
+	n   int64
+	err error
 }
 
 func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
 	c.n += int64(n)
+	if err != nil && !errors.Is(err, io.EOF) {
+		c.err = err
+	}
 	return n, err
 }
 

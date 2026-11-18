@@ -12,7 +12,7 @@ import (
 
 func CIIngress(networks []netip.Prefix) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.GetString(_actionKey) != "ingest.upload" {
+		if c.GetString(_operationKey) != "uploadPackage" {
 			c.Next()
 			return
 		}
