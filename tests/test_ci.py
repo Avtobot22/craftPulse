@@ -28,7 +28,8 @@ class AggregateCITest(unittest.TestCase):
     def run_gate(self, **overrides):
         env = dict(os.environ, DETECT="success", REPOSITORY="success", BACKEND="success",
                    BACKEND_CHANGED="true", DATASET="success", DATASET_CHANGED="true",
-                   FRONTEND="success", FRONTEND_CHANGED="true", EVENT_NAME="pull_request")
+                   FRONTEND="success", FRONTEND_CHANGED="true", RELEASE="success",
+                   RELEASE_CHANGED="true", EVENT_NAME="pull_request")
         env.update(overrides)
         return subprocess.run([BASH, "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", self.command],
                               env=env, cwd=ROOT, capture_output=True, text=True).returncode
@@ -39,7 +40,8 @@ class AggregateCITest(unittest.TestCase):
     def test_docs_only_pr_can_skip_backend(self):
         self.assertEqual(0, self.run_gate(BACKEND="skipped", BACKEND_CHANGED="false",
                                           DATASET="skipped", DATASET_CHANGED="false",
-                                          FRONTEND="skipped", FRONTEND_CHANGED="false"))
+                                          FRONTEND="skipped", FRONTEND_CHANGED="false",
+                                          RELEASE="skipped", RELEASE_CHANGED="false"))
 
     def test_dataset_only_pr_can_skip_backend(self):
         self.assertEqual(0, self.run_gate(BACKEND="skipped", BACKEND_CHANGED="false"))
@@ -48,7 +50,7 @@ class AggregateCITest(unittest.TestCase):
         self.assertEqual(0, self.run_gate(DATASET="skipped", DATASET_CHANGED="false"))
 
     def test_required_checks_cannot_be_skipped_failed_or_cancelled(self):
-        for job in ["DETECT", "REPOSITORY", "BACKEND", "DATASET", "FRONTEND"]:
+        for job in ["DETECT", "REPOSITORY", "BACKEND", "DATASET", "FRONTEND", "RELEASE"]:
             for result in ["failure", "cancelled", "skipped", ""]:
                 with self.subTest(job=job, result=result):
                     self.assertNotEqual(0, self.run_gate(**{job: result}))
@@ -83,6 +85,16 @@ class AggregateCITest(unittest.TestCase):
     def test_manual_run_cannot_skip_frontend(self):
         self.assertNotEqual(0, self.run_gate(FRONTEND="skipped", FRONTEND_CHANGED="false",
                                            EVENT_NAME="workflow_dispatch"))
+
+    def test_unknown_detection_output_cannot_skip_release(self):
+        self.assertNotEqual(0, self.run_gate(RELEASE="skipped", RELEASE_CHANGED=""))
+
+    def test_manual_run_cannot_skip_release(self):
+        self.assertNotEqual(0, self.run_gate(RELEASE="skipped", RELEASE_CHANGED="false",
+                                           EVENT_NAME="workflow_dispatch"))
+
+    def test_changed_release_cannot_be_skipped(self):
+        self.assertNotEqual(0, self.run_gate(RELEASE="skipped", RELEASE_CHANGED="true"))
 
 
 if __name__ == "__main__":

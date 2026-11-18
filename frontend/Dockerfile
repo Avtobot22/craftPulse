@@ -9,7 +9,9 @@ COPY . ./
 RUN npm run build
 
 FROM nginx:1.30.6-alpine@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a
+ARG COMMIT_SHA=unknown
 LABEL org.opencontainers.image.title="craftpulse-frontend" \
+      org.opencontainers.image.revision="${COMMIT_SHA}" \
       org.opencontainers.image.source="https://github.com/Avtobot22/craftPulse"
 COPY --from=build /src/dist/ /usr/share/nginx/html/
 EXPOSE 80

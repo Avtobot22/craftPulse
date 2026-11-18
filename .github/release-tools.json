@@ -1,0 +1,17 @@
+{
+  "trivy": {
+    "version": "0.76.2",
+    "url": "https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz",
+    "sha256": "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf"
+  },
+  "syft": {
+    "version": "1.57.2",
+    "url": "https://github.com/anchore/syft/releases/download/v1.57.2/syft_1.57.2_linux_amd64.tar.gz",
+    "sha256": "ad92bd3ec1b94a3df01d4d0aec199afa9c42b72e86da436ff5f837914d32706b"
+  },
+  "oras": {
+    "version": "1.4.0",
+    "url": "https://github.com/oras-project/oras/releases/download/v1.4.0/oras_1.4.0_linux_amd64.tar.gz",
+    "sha256": "d8e1dce2fd8ce996f1d901845b688eb0cf505a6082897606f053825bb47935d1"
+  }
+}

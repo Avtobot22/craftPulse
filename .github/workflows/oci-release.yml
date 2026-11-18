@@ -1,0 +1,57 @@
+name: OCI release
+
+on:
+  workflow_run:
+    workflows: [Repository]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oci-release-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'Avtobot22/craftPulse' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Install checksum-pinned release tools
+        run: python3 scripts/oci_release.py install-tools
+      - name: Build, scan HIGH and CRITICAL vulnerabilities, publish by digest
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # No images are pushed until every image passed Trivy; unknown scanner results fail closed.
+        run: python3 scripts/oci_release.py release --sha "$RELEASE_SHA"
+      - name: Verify published server version against release manifest
+        run: >-
+          python3 scripts/check_release_server.py
+          --manifest build/release/release-manifest.json
+          --output build/release/server-version.json
+      - name: Preserve scan reports, SBOMs and release manifest
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: oci-release-${{ github.event.workflow_run.head_sha }}-${{ github.run_attempt }}
+          path: build/release/
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Remove registry login
+        if: always()
+        run: docker logout ghcr.io
