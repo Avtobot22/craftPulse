@@ -74,7 +74,7 @@ func newSyncEnv(t *testing.T, scenario testadapter.Config) *syncEnv {
 	require.NoError(t, err)
 	orgs, rights, err := newOrgAccess(e.app, e.clock, e.connect, nil)
 	require.NoError(t, err)
-	intake, err := newIngest(e.app, sharedStore(t), e.connect, rights, e.clock, reg)
+	intake, err := newIngest(e.app, sharedStore(t), e.connect, rights, orgs, e.clock, reg)
 	require.NoError(t, err)
 	e.intake = intake
 	e.norm, err = newNormalize(e.app, sharedStore(t), intake, orgs, e.clock)

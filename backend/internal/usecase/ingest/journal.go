@@ -60,8 +60,17 @@ func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, r io.Reader) (
 	}
 	p.Receipt.SourceInstanceID, p.Receipt.PackageHash, p.Receipt.ObjectKey = &instance, res.ContentHash, packageKey(rc.OrganizationID, rc.ID)
 	p.Records = records(res, instance, allowed)
+	if rc.Channel == entity.ChannelCI {
+		pkg, err := envelope.ReadCleaned(bytes.NewReader(cleaned.Bytes()), u.d.Limits)
+		if err != nil {
+			return nil, err
+		}
+		if err := restrictCI(p.Records, pkg); err != nil {
+			return nil, err
+		}
+	}
 	err = u.d.Tx.InOrgTx(ctx, rc.OrganizationID, func(ctx context.Context) error {
-		_, p.Duplicate, err = u.d.Repo.FirstReceiptOfHash(ctx, rc.OrganizationID, p.Receipt.PackageHash)
+		_, p.Duplicate, err = u.firstReceiptOfHash(ctx, rc, p.Receipt.PackageHash)
 		return err
 	})
 	if err != nil || p.Duplicate {
@@ -112,6 +121,7 @@ func (u *UseCase) channel(ctx context.Context, rc entity.Receipt, m *envelope.Ma
 		}
 		return inst.ID, err == nil, err
 	case entity.ChannelCI:
+		return u.ciScope(ctx, rc, m)
 	}
 	return entity.ID{}, false, errorf("channel %s has no intake yet", rc.Channel)
 }
@@ -170,7 +180,7 @@ func (u *UseCase) record(ctx context.Context, p *entity.PreparedPackage) (entity
 	if err := u.d.Repo.LockPackageHash(ctx, org, rc.PackageHash); err != nil {
 		return entity.Receipt{}, err
 	}
-	first, dup, err := u.d.Repo.FirstReceiptOfHash(ctx, org, rc.PackageHash)
+	first, dup, err := u.firstReceiptOfHash(ctx, rc, rc.PackageHash)
 	if err != nil {
 		return entity.Receipt{}, err
 	}

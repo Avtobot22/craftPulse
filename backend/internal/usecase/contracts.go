@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -97,6 +98,7 @@ type PackageProcessor interface {
 
 // Intake is the ingest module for people: the universal import, receipts and conflicts (UC-06, UI-12, UI-13).
 type Intake interface {
+	SubmitCI(context.Context, entity.Subject, io.Reader) (entity.Receipt, error)
 	Import(ctx context.Context, s entity.Subject, f entity.ImportFile) (entity.Receipt, error)
 	Receipt(ctx context.Context, s entity.Subject, id entity.ID) (entity.Receipt, error)
 	ListReceipts(ctx context.Context, s entity.Subject, f entity.ReceiptFilter) (entity.ReceiptPage, error)

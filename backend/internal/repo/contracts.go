@@ -222,6 +222,7 @@ type IngestRepo interface {
 	Receipt(ctx context.Context, orgID, id entity.ID) (entity.Receipt, error)
 	LockReceipt(ctx context.Context, orgID, id entity.ID) (entity.Receipt, error)
 	FirstReceiptOfHash(ctx context.Context, orgID entity.ID, hash []byte) (entity.ID, bool, error)
+	FirstCIReceiptOfHash(ctx context.Context, orgID, projectID, exclude entity.ID, hash []byte) (entity.ID, bool, error)
 	LockPackageHash(ctx context.Context, orgID entity.ID, hash []byte) error
 	AcceptRecords(ctx context.Context, orgID, receiptID entity.ID, recs []entity.IngestRecord) ([]bool, error)
 	AcceptedRecords(ctx context.Context, orgID entity.ID, recs []entity.IngestRecord) ([]entity.IngestRecord, error)

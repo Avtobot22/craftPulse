@@ -63,7 +63,7 @@ func newImportsEnv(t *testing.T) *importsEnv {
 	orgs, rights, err := newOrgAccess(e.app, e.clock, conn, nil)
 	require.NoError(t, err)
 	reg := prometheus.NewRegistry()
-	uc, err := newIngest(e.app, sharedStore(t), conn, rights, e.clock, reg)
+	uc, err := newIngest(e.app, sharedStore(t), conn, rights, orgs, e.clock, reg)
 	require.NoError(t, err)
 	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}},
 		newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, apiModules{orgs: orgs, access: rights, connections: conn, intake: uc}))
