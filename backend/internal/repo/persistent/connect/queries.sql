@@ -146,7 +146,7 @@ WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND stat
 
 -- name: AreaSources :many
 SELECT s.area_id::uuid AS area_id, s.connection_id, s.instance_id, s.scope_kind, s.native_scope_id, s.status AS scope_status,
-    c.status AS connection_status, c.paused_until
+    c.status AS connection_status, c.paused_until, c.access_mode
 FROM connect.connection_scope s
 JOIN connect.connection c ON c.organization_id = s.organization_id AND c.id = s.connection_id
 WHERE s.organization_id = sqlc.arg(organization_id) AND s.area_id = ANY (sqlc.arg(area_ids)::uuid[])
@@ -171,3 +171,13 @@ DELETE FROM connect.probe AS d WHERE d.organization_id = sqlc.arg(organization_i
         AND NOT EXISTS (SELECT 1 FROM connect.connection c
             WHERE c.organization_id = p.organization_id AND c.id = p.connection_id AND c.activated_probe_id = p.id)
     LIMIT sqlc.arg(batch_limit));
+
+-- name: SourceConnections :many
+SELECT c.id, c.name, c.status, c.access_mode, i.provider,
+    COALESCE(array_agg(s.area_id) FILTER (WHERE s.area_id IS NOT NULL), '{}'::uuid[])::uuid[] AS area_ids
+FROM connect.connection c
+JOIN connect.source_instance i ON i.organization_id = c.organization_id AND i.id = c.instance_id
+LEFT JOIN connect.connection_scope s ON s.organization_id = c.organization_id AND s.connection_id = c.id AND s.status = 'active'
+WHERE c.organization_id = $1 AND c.status <> 'deleted'
+GROUP BY c.id, c.organization_id, i.provider
+ORDER BY c.id;

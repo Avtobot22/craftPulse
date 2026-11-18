@@ -15,7 +15,7 @@ import (
 
 const areaSources = `-- name: AreaSources :many
 SELECT s.area_id::uuid AS area_id, s.connection_id, s.instance_id, s.scope_kind, s.native_scope_id, s.status AS scope_status,
-    c.status AS connection_status, c.paused_until
+    c.status AS connection_status, c.paused_until, c.access_mode
 FROM connect.connection_scope s
 JOIN connect.connection c ON c.organization_id = s.organization_id AND c.id = s.connection_id
 WHERE s.organization_id = $1 AND s.area_id = ANY ($2::uuid[])
@@ -36,6 +36,7 @@ type AreaSourcesRow struct {
 	ScopeStatus      string
 	ConnectionStatus string
 	PausedUntil      pgtype.Timestamptz
+	AccessMode       string
 }
 
 func (q *Queries) AreaSources(ctx context.Context, arg AreaSourcesParams) ([]AreaSourcesRow, error) {
@@ -56,6 +57,7 @@ func (q *Queries) AreaSources(ctx context.Context, arg AreaSourcesParams) ([]Are
 			&i.ScopeStatus,
 			&i.ConnectionStatus,
 			&i.PausedUntil,
+			&i.AccessMode,
 		); err != nil {
 			return nil, err
 		}
@@ -1097,6 +1099,53 @@ type SetScopeHistoryParams struct {
 func (q *Queries) SetScopeHistory(ctx context.Context, arg SetScopeHistoryParams) error {
 	_, err := q.db.Exec(ctx, setScopeHistory, arg.HistoryFrom, arg.OrganizationID, arg.ID)
 	return err
+}
+
+const sourceConnections = `-- name: SourceConnections :many
+SELECT c.id, c.name, c.status, c.access_mode, i.provider,
+    COALESCE(array_agg(s.area_id) FILTER (WHERE s.area_id IS NOT NULL), '{}'::uuid[])::uuid[] AS area_ids
+FROM connect.connection c
+JOIN connect.source_instance i ON i.organization_id = c.organization_id AND i.id = c.instance_id
+LEFT JOIN connect.connection_scope s ON s.organization_id = c.organization_id AND s.connection_id = c.id AND s.status = 'active'
+WHERE c.organization_id = $1 AND c.status <> 'deleted'
+GROUP BY c.id, c.organization_id, i.provider
+ORDER BY c.id
+`
+
+type SourceConnectionsRow struct {
+	ID         uuid.UUID
+	Name       string
+	Status     string
+	AccessMode string
+	Provider   string
+	AreaIds    []uuid.UUID
+}
+
+func (q *Queries) SourceConnections(ctx context.Context, organizationID uuid.UUID) ([]SourceConnectionsRow, error) {
+	rows, err := q.db.Query(ctx, sourceConnections, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SourceConnectionsRow
+	for rows.Next() {
+		var i SourceConnectionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Status,
+			&i.AccessMode,
+			&i.Provider,
+			&i.AreaIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const startProbeRun = `-- name: StartProbeRun :execrows

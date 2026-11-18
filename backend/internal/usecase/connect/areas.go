@@ -38,3 +38,13 @@ func (u *UseCase) ListAreas(ctx context.Context, s entity.Subject, f entity.Sour
 	})
 	return page, err
 }
+
+func (u *UseCase) SourceConnections(ctx context.Context, orgID entity.ID) ([]entity.SourceConnection, error) {
+	var out []entity.SourceConnection
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.SourceConnections(ctx, orgID)
+		return err
+	})
+	return out, err
+}

@@ -101,6 +101,8 @@ type Fault struct {
 
 // Access answers CheckAccess: the first rule that matches decides, otherwise Default (unknown).
 type Access struct {
+	Mode    string       `json:"mode"`
+	Expired bool         `json:"expired"`
 	Default string       `json:"default"`
 	DelayMS int          `json:"delay_ms"`
 	Rules   []AccessRule `json:"rules"`
@@ -124,6 +126,9 @@ func (f Fault) matches(op, schema string, page, attempt int) bool {
 
 func (c Config) validate() error {
 	var errs []error
+	if c.Access.Mode != "" && c.Access.Mode != "service_account" && c.Access.Mode != "user_token" {
+		errs = append(errs, errors.New("unknown access mode"))
+	}
 	if c.Edition != "" && c.Edition != EditionCloud && c.Edition != EditionUnsupported {
 		errs = append(errs, fmt.Errorf("edition %q is not cloud or unsupported", c.Edition))
 	}

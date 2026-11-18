@@ -192,3 +192,10 @@ type Documentation interface {
 	ReplaceRoots(ctx context.Context, s entity.Subject, serviceID entity.ID, base int64, key entity.ID, roots []entity.DocumentationRoot) (entity.DocumentationRootSet, error)
 	RootsAt(ctx context.Context, orgID entity.ID, scope entity.Scope, serviceID, areaID entity.ID, seq int64) ([]entity.DocumentationRoot, error)
 }
+
+type SourceLinks interface {
+	ListSourceLinks(context.Context, entity.Subject) ([]entity.SourceLink, error)
+	StartSourceLink(context.Context, entity.Subject, entity.ID, string, string) (string, error)
+	CompleteSourceLink(context.Context, entity.Subject, entity.SourceLinkCallback) string
+	DeleteSourceLink(context.Context, entity.Subject, entity.ID) error
+}

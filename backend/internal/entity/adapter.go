@@ -8,6 +8,7 @@ import (
 type AdapterOp string
 
 const (
+	OpAuthorizeURL      AdapterOp = "authorize_url"
 	OpPutCredentials    AdapterOp = "put_credentials"
 	OpDeleteCredentials AdapterOp = "delete_credentials" //nolint:gosec // an operation name, not a credential
 	OpProbe             AdapterOp = "probe"

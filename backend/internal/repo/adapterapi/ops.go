@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/google/uuid"
@@ -264,4 +265,31 @@ func optUUID(id *entity.ID) *uuid.UUID {
 	}
 	u := uuid.UUID(*id)
 	return &u
+}
+
+func (c *Caller) AuthorizeURL(ctx context.Context, t entity.AdapterTarget, in entity.SourceAuthorization) (string, error) {
+	cl, err := c.prepare(ctx, t, entity.OpAuthorizeURL)
+	if err != nil {
+		return "", err
+	}
+	resp, cancel, err := c.send(ctx, cl, http.StatusOK, func(ctx context.Context) (*http.Response, error) {
+		return cl.gen.AuthorizeUrl(ctx, cl.conn, &AuthorizeUrlParams{
+			XCraftpulseOrganization:    cl.org,
+			XCraftpulseContractVersion: cl.ver, XCorrelationId: cl.corrID,
+		},
+			AuthorizeUrlInput{UserId: uuid.UUID(in.UserID), State: in.State, RedirectUri: in.RedirectURI}, cl.authorize)
+	})
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close(); cancel() }()
+	var res AuthorizeUrlResult
+	if err := decodeJSON(resp, &res); err != nil {
+		return "", c.record(t, cl.op, err)
+	}
+	parsed, err := url.Parse(res.Url)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return "", c.record(t, cl.op, violation("authorization address is not an HTTPS URL"))
+	}
+	return res.Url, c.record(t, cl.op, nil)
 }

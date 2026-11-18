@@ -9,8 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"path"
-	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -23,7 +21,6 @@ const (
 	_operationLogin  = "session.login"
 	_operationLogout = "session.logout"
 	_tokenBytes      = 32
-	_maxReturnPath   = 2048
 )
 
 var _tokenLength = base64.RawURLEncoding.EncodedLen(_tokenBytes)
@@ -287,22 +284,7 @@ func invalidResponse(cause string) *entity.LoginError {
 }
 
 // ReturnPath keeps a relative path of the site; anything else sends the user to the start page (UI-02).
-func ReturnPath(raw string) string {
-	const home = "/"
-	if raw == "" || len(raw) > _maxReturnPath || raw[0] != '/' || strings.HasPrefix(raw, "//") || hasUnsafe(raw) {
-		return home
-	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || hasUnsafe(u.Path) ||
-		strings.HasPrefix(u.Path, "//") || strings.HasPrefix(path.Clean(u.Path), "//") {
-		return home
-	}
-	return raw
-}
-
-func hasUnsafe(s string) bool {
-	return strings.ContainsFunc(s, func(r rune) bool { return r <= ' ' || r == '\\' || r == 0x7f })
-}
+func ReturnPath(raw string) string { return entity.ReturnPath(raw) }
 
 func newToken() string {
 	b := make([]byte, _tokenBytes)
