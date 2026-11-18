@@ -14,7 +14,8 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
       -o /out/adapter "./cmd/${ADAPTER}"
 
 FROM alpine:3.23.3@sha256:59855d3dceb3ae53991193bd03301e082b2a7faa56a514b03527ae0ec2ce3a95 AS adapter-runtime
-RUN apk add --no-cache ca-certificates git openssh-client && \
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates git openssh-client && \
     addgroup -S -g 65532 nonroot && \
     adduser -S -D -u 65532 -G nonroot nonroot && \
     mkdir -p /var/cache/craftpulse-git && chown 65532:65532 /var/cache/craftpulse-git
