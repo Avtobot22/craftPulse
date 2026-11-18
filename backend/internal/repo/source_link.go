@@ -12,6 +12,7 @@ type SourceLinkRepo interface {
 	ReserveSourceLink(context.Context, entity.ID, entity.ID, entity.ID) (int64, error)
 	CreateSourceLinkAttempt(context.Context, entity.ID, entity.SourceLinkAttempt) error
 	TakeSourceLinkAttempt(context.Context, entity.ID, entity.ID, entity.ID, []byte) (entity.SourceLinkAttempt, bool, error)
+	PrepareSourceLinkExchange(context.Context, entity.ID, entity.ID, entity.ID, int64) (bool, error)
 	ConfirmSourceLink(context.Context, entity.ID, entity.ID, entity.ID, int64, time.Time) (bool, error)
 	RevokeSourceLink(context.Context, entity.ID, entity.ID, entity.ID) (bool, error)
 	ExpireSourceLink(context.Context, entity.ID, entity.ID, entity.ID, int64) error

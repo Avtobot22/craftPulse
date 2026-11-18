@@ -86,6 +86,12 @@ func (r *Repo) ConfirmSourceLink(ctx context.Context, org, user, conn entity.ID,
 
 func (r *Repo) RevokeSourceLink(ctx context.Context, org, user, conn entity.ID) (bool, error) {
 	q := New(postgres.Conn(ctx, r.pool))
+	// Every revocation fences callbacks, including a repeat while the link is already revoked.
+	if _, err := q.ReserveSourceLink(ctx, ReserveSourceLinkParams{
+		OrganizationID: uuid.UUID(org), UserID: uuid.UUID(user), ConnectionID: uuid.UUID(conn),
+	}); err != nil {
+		return false, fmt.Errorf("access: fence source link: %w", err)
+	}
 	n, err := q.RevokeSourceLink(ctx, RevokeSourceLinkParams{
 		OrganizationID: uuid.UUID(org), UserID: uuid.UUID(user), ConnectionID: uuid.UUID(conn),
 	})
@@ -109,4 +115,14 @@ func (r *Repo) ExpireSourceLink(ctx context.Context, org, user, conn entity.ID, 
 		return fmt.Errorf("access: expire source link: %w", err)
 	}
 	return nil
+}
+
+func (r *Repo) PrepareSourceLinkExchange(ctx context.Context, org, user, conn entity.ID, version int64) (bool, error) {
+	n, err := New(postgres.Conn(ctx, r.pool)).PrepareSourceLinkExchange(ctx, PrepareSourceLinkExchangeParams{
+		OrganizationID: uuid.UUID(org), UserID: uuid.UUID(user), ConnectionID: uuid.UUID(conn), RowVersion: version,
+	})
+	if err != nil {
+		return false, fmt.Errorf("access: prepare source link exchange: %w", err)
+	}
+	return n > 0, nil
 }

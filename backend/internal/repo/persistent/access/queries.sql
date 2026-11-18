@@ -36,3 +36,7 @@ DELETE FROM access.source_link_attempt WHERE organization_id = $1 AND user_id = 
 -- name: ExpireSourceLink :exec
 UPDATE access.source_link SET state = 'expired', row_version = row_version + 1
 WHERE organization_id = $1 AND user_id = $2 AND connection_id = $3 AND row_version = $4 AND state = 'linked';
+
+-- name: PrepareSourceLinkExchange :execrows
+UPDATE access.source_link SET state = 'not_linked'
+WHERE organization_id = $1 AND user_id = $2 AND connection_id = $3 AND row_version = $4;

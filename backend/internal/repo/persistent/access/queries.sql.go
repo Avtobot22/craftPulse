@@ -112,6 +112,31 @@ func (q *Queries) ExpireSourceLink(ctx context.Context, arg ExpireSourceLinkPara
 	return err
 }
 
+const prepareSourceLinkExchange = `-- name: PrepareSourceLinkExchange :execrows
+UPDATE access.source_link SET state = 'not_linked'
+WHERE organization_id = $1 AND user_id = $2 AND connection_id = $3 AND row_version = $4
+`
+
+type PrepareSourceLinkExchangeParams struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+	ConnectionID   uuid.UUID
+	RowVersion     int64
+}
+
+func (q *Queries) PrepareSourceLinkExchange(ctx context.Context, arg PrepareSourceLinkExchangeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, prepareSourceLinkExchange,
+		arg.OrganizationID,
+		arg.UserID,
+		arg.ConnectionID,
+		arg.RowVersion,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const reserveSourceLink = `-- name: ReserveSourceLink :one
 INSERT INTO access.source_link (organization_id, user_id, connection_id, state, row_version)
 VALUES ($1, $2, $3, 'not_linked', 1)

@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	testadapter "github.com/Avtobot22/craftPulse/backend/internal/adapter/test"
+	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
+	accessrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/access"
 )
 
 const _sourceCode = "source-code-235-MARKER"
@@ -203,4 +208,53 @@ func validateSourceResponse(t *testing.T, rec *httptest.ResponseRecorder, name s
 	var body any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.NoError(t, spec.Components.Schemas[name].Value.VisitJSON(body))
+}
+
+func TestSourceLinks_RepeatedRevocationFencesConsumedCallback(t *testing.T) {
+	t.Parallel()
+	e := newSourceLinkEnv(t)
+	path := "/api/v1/me/source-links/" + e.conn.String() + "/authorization"
+	require.Equal(t, http.StatusNoContent, e.do(t, e.member, http.MethodDelete, path, http.Header{"Origin": {_site}}).Code)
+	state := e.startSource(t, e.member, "/projects")
+	var session uuid.UUID
+	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT id FROM auth.session WHERE user_id = $1 AND ended_at IS NULL", e.memberID).Scan(&session))
+	r, tx := accessrepo.NewRepo(e.app), persistent.NewTransactor(e.app)
+	hash := sha256.Sum256([]byte(state))
+	var a entity.SourceLinkAttempt
+	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
+		var found bool
+		var err error
+		a, found, err = r.TakeSourceLinkAttempt(ctx, e.orgID, entity.ID(e.memberID), entity.ID(session), hash[:])
+		require.True(t, found)
+		return err
+	}))
+	require.Equal(t, http.StatusNoContent, e.do(t, e.member, http.MethodDelete, path, http.Header{"Origin": {_site}}).Code)
+	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
+		prepared, err := r.PrepareSourceLinkExchange(ctx, e.orgID, entity.ID(e.memberID), entity.ID(e.conn), a.Version)
+		assert.False(t, prepared, "an already consumed callback cannot pass a repeated revocation")
+		return err
+	}))
+	assert.Equal(t, "revoked", e.sourceLinks(t, e.member).Data[0].State)
+	assert.Len(t, e.audit(t, "source_link.revoke"), 1)
+}
+
+func TestSourceLinks_FailedRenewalAuditClosesPreviousGrant(t *testing.T) {
+	t.Parallel()
+	e := newSourceLinkEnv(t)
+	state := e.startSource(t, e.member, "/projects")
+	require.Contains(t, e.completeSource(t, e.member, state, "").Header().Get("Location"), "source_link_result=linked")
+	require.True(t, e.sees(t, e.member))
+	state = e.startSource(t, e.member, "/projects")
+	_, err := e.owner.Exec(t.Context(), `
+CREATE FUNCTION audit.reject_source_link() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF NEW.operation = 'source_link.link' THEN RAISE EXCEPTION 'injected audit failure'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER reject_source_link BEFORE INSERT ON audit.event FOR EACH ROW EXECUTE FUNCTION audit.reject_source_link();`)
+	require.NoError(t, err)
+	assert.Contains(t, e.completeSource(t, e.member, state, "").Header().Get("Location"), "link_failed")
+	assert.False(t, e.sees(t, e.member), "an unaudited replacement token must not use the previous grant or its cached decision")
+	assert.Equal(t, "not_linked", e.sourceLinks(t, e.member).Data[0].State)
+	assert.Len(t, e.audit(t, "source_link.link"), 1)
 }

@@ -101,10 +101,17 @@ func (u *UseCase) CompleteSourceLink(ctx context.Context, s entity.Subject, cb e
 	if err := u.sourceForLink(ctx, s, a.ConnectionID, true); err != nil {
 		return failed
 	}
-	links, err := u.savedLinks(ctx, s)
-	if err != nil || !slices.ContainsFunc(links, func(l entity.SourceLink) bool { return l.ConnectionID == a.ConnectionID && l.Version == a.Version }) {
+	prepared := false
+	err = u.tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
+		var err error
+		prepared, err = u.linkRepo.PrepareSourceLinkExchange(ctx, s.OrganizationID, s.UserID, a.ConnectionID, a.Version)
+		return err
+	})
+	if err != nil || !prepared {
 		return failed
 	}
+	// A replaced adapter token cannot open the old grant if confirmation or its audit fails.
+	u.checks.invalidate(s.OrganizationID, s.UserID, a.ConnectionID)
 	err = u.links.PutCredentials(ctx, s.OrganizationID, a.ConnectionID, entity.CredentialsInput{
 		Purpose: "user_token", UserID: &s.UserID, OAuthCode: cb.Code, RedirectURI: a.RedirectURI,
 	})
@@ -184,7 +191,13 @@ func (u *UseCase) sourceForLink(ctx context.Context, s entity.Subject, conn enti
 		if c.ID != conn {
 			continue
 		}
-		if c.AccessMode != entity.AccessUserToken || (active && c.Status != entity.ConnectionActive) {
+		if c.AccessMode != entity.AccessUserToken {
+			if !active {
+				return entity.ErrNotFound
+			}
+			return entity.ErrStateConflict
+		}
+		if active && c.Status != entity.ConnectionActive {
 			return entity.ErrStateConflict
 		}
 		return nil
