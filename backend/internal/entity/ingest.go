@@ -1,6 +1,11 @@
 package entity
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var ErrObjectStoreUnavailable = errors.New("ingest: object store unavailable")
 
 type ReceiptChannel string
 
@@ -40,6 +45,7 @@ const (
 // Reasons of a rejected record the channel adds to those of the envelope.
 const (
 	RecordOutsideScope    = "outside_scope"
+	RecordOutsideChannel  = "outside_channel"
 	RecordMissingSourceID = "missing_source_id"
 )
 

@@ -92,7 +92,7 @@ func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEn
 	require.NoError(t, err)
 	orgs, rights, err := newOrgAccess(e.app, e.clock, uc, metrics)
 	require.NoError(t, err)
-	intake, err := newIngest(e.app, sharedStore(t), uc, rights, e.clock, reg)
+	intake, err := newIngest(e.app, sharedStore(t), uc, rights, orgs, e.clock, reg)
 	require.NoError(t, err)
 	normalizer, err := newNormalize(e.app, sharedStore(t), intake, orgs, e.clock)
 	require.NoError(t, err)
