@@ -9,6 +9,7 @@ COPY . ./
 RUN npm run build
 
 FROM nginx:1.30.6-alpine@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a
+RUN apk upgrade --no-cache
 ARG COMMIT_SHA=unknown
 LABEL org.opencontainers.image.title="craftpulse-frontend" \
       org.opencontainers.image.revision="${COMMIT_SHA}" \
