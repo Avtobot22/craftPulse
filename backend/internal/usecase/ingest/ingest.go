@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo"
@@ -27,25 +28,31 @@ type Authorizer interface {
 	Authorize(ctx context.Context, s entity.Subject, r entity.AccessRequest) (entity.Scope, error)
 }
 
+type Projects interface {
+	ProjectRepositories(context.Context, entity.ID, entity.ID) ([]entity.AreaSource, error)
+}
+
 type Auditor interface {
 	Record(ctx context.Context, e entity.AuditEvent) error
 }
 
 type Metrics interface {
 	PackageRejected(channel entity.ReceiptChannel, reason string)
+	CIPackage(outcome, reason string)
 }
 
 type Deps struct {
-	Repo    repo.IngestRepo
-	Objects repo.ObjectStore
-	Queue   repo.JobQueue
-	Tx      repo.Transactor
-	Connect Connect
-	Access  Authorizer
-	Auditor Auditor
-	Metrics Metrics
-	Clock   clock.Clock
-	NewID   func() (entity.ID, error)
+	Projects Projects
+	Repo     repo.IngestRepo
+	Objects  repo.ObjectStore
+	Queue    repo.JobQueue
+	Tx       repo.Transactor
+	Connect  Connect
+	Access   Authorizer
+	Auditor  Auditor
+	Metrics  Metrics
+	Clock    clock.Clock
+	NewID    func() (entity.ID, error)
 	// Limits are envelope.DefaultLimits when zero.
 	Limits envelope.Limits
 }
@@ -82,19 +89,57 @@ func (u *UseCase) SubmitImport(ctx context.Context, s entity.Subject, projectID 
 		ID: id, OrganizationID: s.OrganizationID, Channel: entity.ChannelImport, ProjectID: &project, RequestedBy: &user,
 		ReceivedAt: u.d.Clock.Now(), QuarantineKey: quarantineKey(s.OrganizationID, id),
 	}
+	return u.submit(ctx, s, rc, pkg)
+}
+
+func (u *UseCase) SubmitCI(ctx context.Context, s entity.Subject, pkg io.Reader) (entity.Receipt, error) {
+	if s.UploadTokenID.IsZero() || s.ProjectID.IsZero() {
+		return entity.Receipt{}, entity.ErrAuthRequired
+	}
+	id, err := u.d.NewID()
+	if err != nil {
+		return entity.Receipt{}, err
+	}
+	project, token := s.ProjectID, s.UploadTokenID
+	rc := entity.Receipt{
+		ID: id, OrganizationID: s.OrganizationID, Channel: entity.ChannelCI, ProjectID: &project,
+		UploadTokenID: &token, ReceivedAt: u.d.Clock.Now(), QuarantineKey: quarantineKey(s.OrganizationID, id),
+	}
+	out, err := u.submit(ctx, s, rc, pkg)
+	if err == nil && out.Status != entity.ReceiptQuarantined {
+		u.d.Metrics.CIPackage(string(out.Status), out.ReasonCode)
+	}
+	if errors.Is(err, entity.ErrObjectStoreUnavailable) {
+		u.d.Metrics.CIPackage("failed", "object_store_unavailable")
+	}
+	return out, err
+}
+
+func (u *UseCase) submit(ctx context.Context, s entity.Subject, rc entity.Receipt, pkg io.Reader) (out entity.Receipt, err error) {
+	defer func() {
+		if err != nil {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			err = errors.Join(err, u.d.Objects.Delete(cleanup, rc.QuarantineKey))
+		}
+	}()
 	counted := &countingReader{r: io.LimitReader(pkg, u.d.Limits.MaxPackageBytes+1)}
 	if err := u.d.Objects.Put(ctx, rc.QuarantineKey, counted); err != nil {
-		return entity.Receipt{}, err
+		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, err)
 	}
 	if counted.n > u.d.Limits.MaxPackageBytes {
 		return u.refuse(ctx, s, rc, nil, entity.PackageLimitExceeded)
 	}
 	body, err := u.d.Objects.Get(ctx, rc.QuarantineKey)
 	if err != nil {
-		return entity.Receipt{}, err
+		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, err)
 	}
-	res, err := envelope.Clean(body, u.d.Limits, io.Discard)
+	verified := &countingReader{r: body}
+	res, err := envelope.Clean(verified, u.d.Limits, io.Discard)
 	_ = body.Close()
+	if verified.err != nil {
+		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, verified.err)
+	}
 	if err != nil {
 		return entity.Receipt{}, err
 	}
@@ -106,7 +151,13 @@ func (u *UseCase) SubmitImport(ctx context.Context, s entity.Subject, projectID 
 		return entity.Receipt{}, err
 	}
 	err = u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
-		first, dup, err := u.d.Repo.FirstReceiptOfHash(ctx, s.OrganizationID, res.ContentHash)
+		if rc.Channel == entity.ChannelCI {
+			rc.PackageHash = res.ContentHash
+			if err := u.d.Repo.LockPackageHash(ctx, rc.OrganizationID, res.ContentHash); err != nil {
+				return err
+			}
+		}
+		first, dup, err := u.firstReceiptOfHash(ctx, rc, res.ContentHash)
 		if err != nil {
 			return err
 		}
@@ -117,14 +168,18 @@ func (u *UseCase) SubmitImport(ctx context.Context, s entity.Subject, projectID 
 		if err := u.saveSubmitted(ctx, s, rc); err != nil {
 			return err
 		}
-		job := entity.IngestPackageJob{OrganizationID: s.OrganizationID, ReceiptID: id, CorrelationID: entity.ID(logger.CorrelationID(ctx))}
-		return u.d.Queue.Enqueue(ctx, job, entity.QueueBulk)
+		job := entity.IngestPackageJob{OrganizationID: s.OrganizationID, ReceiptID: rc.ID, CorrelationID: entity.ID(logger.CorrelationID(ctx))}
+		lane := entity.QueueBulk
+		if rc.Channel == entity.ChannelCI {
+			lane = entity.QueueInteractive
+		}
+		return u.d.Queue.Enqueue(ctx, job, lane)
 	})
 	if err != nil {
 		return entity.Receipt{}, err
 	}
 	if rc.Status == entity.ReceiptDuplicate {
-		return rc, u.d.Objects.Delete(ctx, quarantineKey(s.OrganizationID, id))
+		return rc, u.d.Objects.Delete(ctx, quarantineKey(s.OrganizationID, rc.ID))
 	}
 	return rc, nil
 }
@@ -136,9 +191,13 @@ func (u *UseCase) saveSubmitted(ctx context.Context, s entity.Subject, rc entity
 	if err := u.d.Repo.SaveReceipt(ctx, rc); err != nil {
 		return err
 	}
+	actor, actorID, operation := entity.ActorUser, s.UserID, "createImport"
+	if rc.Channel == entity.ChannelCI {
+		actor, actorID, operation = entity.ActorUploadToken, s.UploadTokenID, "uploadPackage"
+	}
 	return u.d.Auditor.Record(ctx, entity.AuditEvent{
-		OrganizationID: s.OrganizationID, OccurredAt: u.d.Clock.Now(), ActorKind: entity.ActorUser, ActorID: s.UserID,
-		Operation: "createImport", ObjectKind: "receipt", ObjectID: rc.ID, AreaID: *rc.ProjectID, Outcome: entity.AuditSucceeded,
+		OrganizationID: s.OrganizationID, OccurredAt: u.d.Clock.Now(), ActorKind: actor, ActorID: actorID,
+		Operation: operation, ObjectKind: "receipt", ObjectID: rc.ID, AreaID: *rc.ProjectID, Outcome: entity.AuditSucceeded,
 		ReasonCode: rc.ReasonCode, CorrelationID: entity.ID(logger.CorrelationID(ctx)),
 	})
 }
@@ -146,7 +205,7 @@ func (u *UseCase) saveSubmitted(ctx context.Context, s entity.Subject, rc entity
 // refuse deletes the quarantine object and records the refused package with its reason.
 func (u *UseCase) refuse(ctx context.Context, s entity.Subject, rc entity.Receipt, m *envelope.Manifest, reason string) (entity.Receipt, error) {
 	if err := u.d.Objects.Delete(ctx, rc.QuarantineKey); err != nil {
-		return entity.Receipt{}, err
+		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, err)
 	}
 	rc.Status, rc.ReasonCode, rc.QuarantineKey = entity.ReceiptRejected, reason, ""
 	if err := describe(&rc, m); err != nil {
@@ -188,28 +247,39 @@ func (u *UseCase) ProcessPackage(ctx context.Context, orgID, receiptID entity.ID
 	if err != nil {
 		return err
 	}
+	processed := false
+	var recorded entity.Receipt
 	err = u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		processed = false
 		locked, err := u.d.Repo.LockReceipt(ctx, orgID, receiptID)
 		if err != nil || locked.Status != entity.ReceiptQuarantined {
 			return err
 		}
-		_, err = u.record(ctx, p)
+		recorded, err = u.record(ctx, p)
+		processed = err == nil
 		return err
 	})
 	if err != nil {
 		return err
 	}
+	if processed && rc.Channel == entity.ChannelCI {
+		u.d.Metrics.CIPackage(string(recorded.Status), ciReason(p))
+	}
 	return u.d.Objects.Delete(ctx, key)
 }
 
 type countingReader struct {
-	r io.Reader
-	n int64
+	r   io.Reader
+	n   int64
+	err error
 }
 
 func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
 	c.n += int64(n)
+	if err != nil && !errors.Is(err, io.EOF) {
+		c.err = err
+	}
 	return n, err
 }
 
@@ -227,7 +297,7 @@ func packageReason(code string) string {
 		return entity.PackageLimitExceeded
 	case envelope.ReasonUnsafePath:
 		return entity.PackagePathUnsafe
-	case envelope.ReasonUnsupportedSchema, envelope.ReasonUnsupportedSchemaVersion:
+	case envelope.ReasonUnsupportedSchema, envelope.ReasonUnsupportedSchemaVersion, envelope.ReasonUnsupportedManifestVersion:
 		return entity.PackageSchemaUnsupported
 	}
 	return entity.PackageEnvelopeInvalid

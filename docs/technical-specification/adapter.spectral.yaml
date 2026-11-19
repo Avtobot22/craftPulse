@@ -51,7 +51,7 @@ rules:
   adapter-record-declared:
     description: Схема записи объявляет вид, версию и допустимые классы.
     severity: error
-    given: "$.components.schemas[?(@property.match(/V[0-9]+$/))]"
+    given: "$.components.schemas[?(@property.match(/V[0-9]+$/) && !@['x-craftpulse-manifest'])]"
     then:
       field: x-craftpulse-record
       function: schema
@@ -73,4 +73,26 @@ rules:
     given: "$.paths[*][get,put,post,delete,patch].responses[?(@property.match(/^[45]/))]"
     then:
       field: $ref
+      function: truthy
+
+  adapter-manifest-declared:
+    description: Дополнительный манифест объявляет имя файла и версию схемы.
+    severity: error
+    given: "$.components.schemas[?(@['x-craftpulse-manifest'])]"
+    then:
+      field: x-craftpulse-manifest
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          required: [file, version]
+          properties:
+            file: {enum: [scan-manifest.json, execution-manifest.json]}
+            version: {type: string, pattern: "^[0-9]+$"}
+  adapter-manifest-example:
+    description: Версионированный манифест имеет проверяемый пример.
+    severity: error
+    given: "$.components.schemas[?(@['x-craftpulse-manifest'])]"
+    then:
+      field: example
       function: truthy

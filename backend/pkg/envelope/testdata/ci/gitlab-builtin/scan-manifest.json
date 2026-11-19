@@ -1,0 +1,59 @@
+{
+  "schema_version": "1",
+  "tools": [
+    {
+      "id": "go-test-1",
+      "producer": "go test",
+      "producer_version": "go1.27.4",
+      "profile_image_digest": "sha256:d67cec53391197377c3d45f7022231686c23a52e366720745b245f5bcbcf3a20",
+      "profile_id": "go-light",
+      "mode": "builtin",
+      "report_kind": "junit",
+      "component": {
+        "id": "0193a5b0-7777-7000-8000-000000000001",
+        "path_prefix": ""
+      },
+      "language": "go",
+      "rules_hash": null,
+      "config_hash": "2fd1e4e09a6187bf7049ac2b68ed9408e9c30cf9070320084b445d7c028237ac",
+      "db_version": null,
+      "db_published_at": null,
+      "parser_version": null,
+      "scope_hash": "496e4645f3e0581a9ff505b8286bff3fa5a8eba7c2b416364bfd4c93501f7bb2",
+      "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+      "artifact_digest": null,
+      "ci": {
+        "provider": "gitlab",
+        "project_native_id": "42",
+        "run_native_id": "5001",
+        "job_native_id": "7002",
+        "attempt_native_id": "7002",
+        "attempt_no": 1,
+        "ref_name": "demo/PA-1-change",
+        "mr_native_id": "9001"
+      },
+      "started_at": "2026-11-17T10:00:00Z",
+      "finished_at": "2026-11-17T10:00:10Z",
+      "exit_class": "success",
+      "completeness": "complete",
+      "scanned_count": 1,
+      "skipped_count": 0,
+      "skipped_targets": [],
+      "history": null,
+      "reports": [
+        {
+          "file": {
+            "path": "files/reports/junit.xml",
+            "sha256": "fe368986bc8a28284e9e279274e00def2cc3d3119b4e49a1546d4b616fd4958c",
+            "size_bytes": 139,
+            "media_type": "application/xml"
+          },
+          "report_kind": "junit",
+          "report_format": "junit_xml",
+          "format_version": "1",
+          "parser_version": null
+        }
+      ]
+    }
+  ]
+}

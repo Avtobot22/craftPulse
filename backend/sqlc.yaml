@@ -129,6 +129,15 @@ sql:
         omit_unused_structs: true
   - engine: postgresql
     schema: migrations/core
+    queries: internal/repo/persistent/access/queries.sql
+    gen:
+      go:
+        package: access
+        out: internal/repo/persistent/access
+        sql_package: pgx/v5
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations/core
     queries: internal/repo/persistent/link/queries.sql
     gen:
       go:

@@ -102,12 +102,28 @@ func (u *UseCase) areaGates(ctx context.Context, s entity.Subject, areas []entit
 	if err != nil {
 		return nil, err
 	}
+	var links []entity.SourceLink
+	if slices.ContainsFunc(sources, func(src entity.AreaSource) bool { return src.UserToken }) {
+		links, err = u.savedLinks(ctx, s)
+		if err != nil {
+			return nil, err
+		}
+	}
 	accounts := map[entity.ID]*entity.UserAccount{}
 	var pending []target
 	for _, a := range areas {
 		src, g, ok := pick(sources, a)
 		if !ok {
 			gates[a] = g
+			continue
+		}
+		if src.UserToken {
+			i := slices.IndexFunc(links, func(l entity.SourceLink) bool { return l.ConnectionID == src.ConnectionID && l.State == "linked" })
+			if i < 0 {
+				gates[a] = gate{closure: denied}
+				continue
+			}
+			pending = append(pending, target{id: a, source: src, linkVersion: links[i].Version})
 			continue
 		}
 		acc, cached := accounts[src.InstanceID]
@@ -182,7 +198,7 @@ func (u *UseCase) objectGates(ctx context.Context, s entity.Subject, objects []e
 			// The area came from an import: the source has no rights of its objects to check.
 			continue
 		}
-		pending = append(pending, target{id: o.ID, source: t.source, account: t.account, object: o})
+		pending = append(pending, target{id: o.ID, source: t.source, account: t.account, linkVersion: t.linkVersion, object: o})
 	}
 	for i, d := range u.run(ctx, s.OrganizationID, s.UserID, pending) {
 		out[pending[i].id] = verdictGate(d, pending[i].source.ConnectionID)

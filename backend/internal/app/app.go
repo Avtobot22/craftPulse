@@ -92,7 +92,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 		return err
 	}
 	store := newObjectStore(cfg.ObjectStore)
-	intake, err := newIngest(pool, store, connections, rights, clock.System{}, reg)
+	intake, err := newIngest(pool, store, connections, rights, orgs, clock.System{}, reg)
 	if err != nil {
 		return err
 	}
@@ -117,7 +117,9 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection,
 		operations: newView(pool, collection, calculator, rights, clock.System{}), process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
 	}
-	router := httpctrl.NewRouter(log, reg, probes, newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules))
+	api := newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules)
+	api.RunnerNetwork, api.TrustedProxies = cfg.RunnerNetwork, cfg.TrustedProxies
+	router := httpctrl.NewRouter(log, reg, probes, api)
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Msg("api started")
 	return serve(ctx, log, probes.Ready, map[string]http.Handler{
@@ -168,7 +170,7 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 		return err
 	}
 	store := newObjectStore(cfg.ObjectStore)
-	packages, err := newIngest(pool, store, connections, rights, clock.System{}, reg)
+	packages, err := newIngest(pool, store, connections, rights, orgs, clock.System{}, reg)
 	if err != nil {
 		return err
 	}

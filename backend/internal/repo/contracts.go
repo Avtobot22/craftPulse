@@ -163,6 +163,7 @@ type UploadTokenRepo interface {
 
 // ConnectRepo is the connect schema under row-level security: every call runs in an organization transaction.
 type ConnectRepo interface {
+	SourceConnections(context.Context, entity.ID) ([]entity.SourceConnection, error)
 	// PurgeProbes deletes up to limit probes finished by before, except the activated ones, and reports how many went.
 	PurgeProbes(ctx context.Context, orgID entity.ID, before time.Time, limit int) (int64, error)
 	EnsureInstance(ctx context.Context, orgID entity.ID, provider entity.Provider, key string) (entity.SourceInstance, error)
@@ -205,6 +206,7 @@ type AddressChecker interface {
 
 // AdapterClient is the transport of adapter.yaml for connect; every error is *entity.AdapterError.
 type AdapterClient interface {
+	AuthorizeURL(context.Context, entity.AdapterTarget, entity.SourceAuthorization) (string, error)
 	PutCredentials(ctx context.Context, t entity.AdapterTarget, in entity.CredentialsInput) error
 	DeleteCredentials(ctx context.Context, t entity.AdapterTarget, f entity.CredentialsFilter) error
 	Probe(ctx context.Context, t entity.AdapterTarget, in entity.ProbeInput) (entity.ProbeResult, error)
@@ -220,6 +222,7 @@ type IngestRepo interface {
 	Receipt(ctx context.Context, orgID, id entity.ID) (entity.Receipt, error)
 	LockReceipt(ctx context.Context, orgID, id entity.ID) (entity.Receipt, error)
 	FirstReceiptOfHash(ctx context.Context, orgID entity.ID, hash []byte) (entity.ID, bool, error)
+	FirstCIReceiptOfHash(ctx context.Context, orgID, projectID, exclude entity.ID, hash []byte) (entity.ID, bool, error)
 	LockPackageHash(ctx context.Context, orgID entity.ID, hash []byte) error
 	AcceptRecords(ctx context.Context, orgID, receiptID entity.ID, recs []entity.IngestRecord) ([]bool, error)
 	AcceptedRecords(ctx context.Context, orgID entity.ID, recs []entity.IngestRecord) ([]entity.IngestRecord, error)

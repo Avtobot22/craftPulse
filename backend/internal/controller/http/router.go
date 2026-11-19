@@ -17,7 +17,10 @@ func NewRouter(log zerolog.Logger, reg prometheus.Registerer, probes health.Prob
 	r.ContextWithFallback = true
 	r.RedirectTrailingSlash = false
 	r.RedirectFixedPath = false
-	_ = r.SetTrustedProxies(nil)
+	if err := r.SetTrustedProxies(api.TrustedProxies); err != nil {
+		log.Error().Err(err).Msg("invalid trusted proxies; forwarding headers disabled")
+		_ = r.SetTrustedProxies(nil)
+	}
 
 	state := gin.WrapH(health.Handler(probes))
 	r.GET("/livez", state)

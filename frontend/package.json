@@ -1,0 +1,60 @@
+{
+  "name": "@craftpulse/frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24.18.0"
+  },
+  "packageManager": "npm@11.16.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "typecheck": "tsc -b && npm run typecheck:api",
+    "lint": "npm run lint:eslint && npm run lint:fsd",
+    "lint:eslint": "eslint .",
+    "lint:fsd": "steiger src --fail-on-warnings",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate:api": "node tools/api-types-generator/generate.mjs",
+    "check:generated": "node tools/api-types-generator/generate.mjs --check",
+    "check": "npm run check:generated && npm run format:check && npm run lint && npm test && npm run build",
+    "preview": "vite preview",
+    "typecheck:api": "tsc --strict --noEmit --skipLibCheck false --ignoreConfig src/shared/api/generated/schema.d.ts"
+  },
+  "dependencies": {
+    "@gravity-ui/uikit": "^8.1.0",
+    "@tanstack/react-query": "^5.108.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@feature-sliced/steiger-plugin": "0.8.2",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^17.0.0",
+    "jsdom": "^29.0.0",
+    "prettier": "^3.0.0",
+    "steiger": "0.10.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "~8.72.0",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  },
+  "workspaces": [
+    "tools/api-types-generator"
+  ]
+}

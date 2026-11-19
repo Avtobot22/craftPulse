@@ -21,7 +21,7 @@ func (r *Repo) AreaSources(ctx context.Context, orgID entity.ID, areaIDs []entit
 	for i := range rows {
 		row := &rows[i]
 		out[i] = entity.AreaSource{
-			AreaID: entity.ID(row.AreaID), ConnectionID: entity.ID(row.ConnectionID), InstanceID: entity.ID(row.InstanceID),
+			UserToken: row.AccessMode == string(entity.AccessUserToken), AreaID: entity.ID(row.AreaID), ConnectionID: entity.ID(row.ConnectionID), InstanceID: entity.ID(row.InstanceID),
 			Kind: entity.ScopeKind(row.ScopeKind), NativeScopeID: row.NativeScopeID, Active: row.ScopeStatus == "active",
 			ConnectionStatus: entity.ConnectionStatus(row.ConnectionStatus), PausedUntil: timePtr(row.PausedUntil),
 		}
@@ -50,6 +50,25 @@ func (r *Repo) PageSourceAreas(ctx context.Context, orgID entity.ID, f entity.So
 			ID: entity.ID(row.AreaID), Kind: entity.ScopeKind(row.ScopeKind), DisplayName: row.DisplayName,
 			ConnectionID: entity.ID(row.ConnectionID),
 		}
+	}
+	return out, nil
+}
+
+func (r *Repo) SourceConnections(ctx context.Context, orgID entity.ID) ([]entity.SourceConnection, error) {
+	rows, err := New(postgres.Conn(ctx, r.pool)).SourceConnections(ctx, uuid.UUID(orgID))
+	if err != nil {
+		return nil, fmt.Errorf("connect: source connections: %w", err)
+	}
+	out := make([]entity.SourceConnection, 0, len(rows))
+	for _, row := range rows {
+		item := entity.SourceConnection{
+			ID: entity.ID(row.ID), Provider: entity.Provider(row.Provider), Name: row.Name,
+			Status: entity.ConnectionStatus(row.Status), AccessMode: entity.AccessMode(row.AccessMode),
+		}
+		for _, id := range row.AreaIds {
+			item.Areas = append(item.Areas, entity.ID(id))
+		}
+		out = append(out, item)
 	}
 	return out, nil
 }

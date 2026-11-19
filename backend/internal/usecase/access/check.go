@@ -2,6 +2,8 @@ package access
 
 import (
 	"context"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
@@ -23,11 +25,12 @@ const (
 )
 
 type checkKey struct {
-	org, user, item entity.ID
+	version                     int64
+	org, user, connection, item entity.ID
 }
 
 func (k checkKey) String() string {
-	return k.org.String() + "/" + k.user.String() + "/" + k.item.String()
+	return k.org.String() + "/" + k.user.String() + "/" + k.connection.String() + "/" + k.item.String() + "/" + strconv.FormatInt(k.version, 10)
 }
 
 type verdict struct {
@@ -38,10 +41,11 @@ type verdict struct {
 // target is an area or an object with its own restriction, checked in the connection of its area with the
 // account of the user in that instance.
 type target struct {
-	id      entity.ID
-	source  entity.AreaSource
-	account entity.UserAccount
-	object  *entity.RestrictedObject
+	id          entity.ID
+	source      entity.AreaSource
+	linkVersion int64
+	account     entity.UserAccount
+	object      *entity.RestrictedObject
 }
 
 func (t target) item() entity.SourceAccessItem {
@@ -56,12 +60,15 @@ func (t target) item() entity.SourceAccessItem {
 // one pair wait for one check. The library TTL is the hard bound in real time; the clock of the module
 // decides the age, so the bound holds in tests with a manual clock as well.
 type checks struct {
-	sources Sources
-	metrics Metrics
-	clock   clock.Clock
-	timeout time.Duration
-	cache   *expirable.LRU[checkKey, verdict]
-	flight  singleflight.Group
+	mu         sync.Mutex
+	generation uint64
+	sources    Sources
+	expired    func(context.Context, checkKey, target)
+	metrics    Metrics
+	clock      clock.Clock
+	timeout    time.Duration
+	cache      *expirable.LRU[checkKey, verdict]
+	flight     singleflight.Group
 }
 
 func newChecks(s Sources, m Metrics, c clock.Clock, size int, timeout time.Duration) *checks {
@@ -71,7 +78,7 @@ func newChecks(s Sources, m Metrics, c clock.Clock, size int, timeout time.Durat
 // decide returns allowed, denied or unknown; a failed or late check is unknown and is not kept, so the next
 // read checks again.
 func (c *checks) decide(ctx context.Context, org, user entity.ID, t target) string {
-	key := checkKey{org: org, user: user, item: t.id}
+	key := checkKey{org: org, user: user, connection: t.source.ConnectionID, item: t.id, version: t.linkVersion}
 	if v, ok := c.cache.Get(key); ok && c.clock.Now().Before(v.expires) {
 		c.metrics.CacheLookup(true)
 		return v.decision
@@ -90,6 +97,9 @@ func (c *checks) decide(ctx context.Context, org, user entity.ID, t target) stri
 // check runs without the cancellation of the caller: the readers that wait for it in flight need its answer
 // even when the first reader went away.
 func (c *checks) check(ctx context.Context, key checkKey, t target) string {
+	c.mu.Lock()
+	generation := c.generation
+	c.mu.Unlock()
 	start := c.clock.Now()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.timeout)
 	defer cancel()
@@ -101,13 +111,24 @@ func (c *checks) check(ctx context.Context, key checkKey, t target) string {
 		return entity.SourceUnknown
 	}
 	decision := res.Decisions[0].Decision
+	if t.source.UserToken && res.Mode != entity.AccessUserToken {
+		return entity.SourceUnknown
+	}
+	if t.source.UserToken && (res.Decisions[0].ReasonCode == "expired" || res.Decisions[0].ReasonCode == "token_expired") {
+		if c.expired != nil {
+			c.expired(ctx, key, t)
+		}
+		return entity.SourceUnknown
+	}
 	ttl := _maxAge
 	if res.MaxAgeSeconds != nil {
 		ttl = min(ttl, time.Duration(*res.MaxAgeSeconds)*time.Second)
 	}
-	if ttl > 0 {
+	c.mu.Lock()
+	if ttl > 0 && c.generation == generation {
 		c.cache.Add(key, verdict{decision: decision, expires: start.Add(ttl)})
 	}
+	c.mu.Unlock()
 	return decision
 }
 
@@ -116,3 +137,15 @@ type noMetrics struct{}
 func (noMetrics) CacheLookup(bool) {}
 
 func (noMetrics) CheckFailed(entity.ID) {}
+
+func (c *checks) invalidate(org, user, conn entity.ID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.generation++
+	for _, key := range c.cache.Keys() {
+		if key.org == org && key.user == user && key.connection == conn {
+			c.cache.Remove(key)
+			c.flight.Forget(key.String())
+		}
+	}
+}

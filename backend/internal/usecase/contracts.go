@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -102,6 +103,7 @@ type PackageProcessor interface {
 
 // Intake is the ingest module for people: the universal import, receipts and conflicts (UC-06, UI-12, UI-13).
 type Intake interface {
+	SubmitCI(context.Context, entity.Subject, io.Reader) (entity.Receipt, error)
 	Import(ctx context.Context, s entity.Subject, f entity.ImportFile) (entity.Receipt, error)
 	Receipt(ctx context.Context, s entity.Subject, id entity.ID) (entity.Receipt, error)
 	ListReceipts(ctx context.Context, s entity.Subject, f entity.ReceiptFilter) (entity.ReceiptPage, error)
@@ -194,4 +196,11 @@ type Documentation interface {
 	ListRoots(ctx context.Context, s entity.Subject, scope entity.Scope, serviceID entity.ID) (entity.DocumentationRootSet, error)
 	ReplaceRoots(ctx context.Context, s entity.Subject, serviceID entity.ID, base int64, key entity.ID, roots []entity.DocumentationRoot) (entity.DocumentationRootSet, error)
 	RootsAt(ctx context.Context, orgID entity.ID, scope entity.Scope, serviceID, areaID entity.ID, seq int64) ([]entity.DocumentationRoot, error)
+}
+
+type SourceLinks interface {
+	ListSourceLinks(context.Context, entity.Subject) ([]entity.SourceLink, error)
+	StartSourceLink(context.Context, entity.Subject, entity.ID, string, string) (string, error)
+	CompleteSourceLink(context.Context, entity.Subject, entity.SourceLinkCallback) string
+	DeleteSourceLink(context.Context, entity.Subject, entity.ID) error
 }

@@ -1,0 +1,11 @@
+body {
+  margin: 0;
+}
+main {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2rem;
+}
+.app-header {
+  margin-bottom: 2rem;
+}

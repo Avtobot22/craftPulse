@@ -58,6 +58,16 @@ func report(out io.Writer, result *envelope.Result) error {
 		_, err := fmt.Fprintf(out, "package rejected: %s\n", result.Envelope)
 		return err
 	}
+	if m := result.ScanManifest; m != nil {
+		if _, err := fmt.Fprintf(out, "scan manifest: %s, %d tool runs\n", m.SchemaVersion, len(m.Tools)); err != nil {
+			return err
+		}
+	}
+	if m := result.ExecutionManifest; m != nil {
+		if _, err := fmt.Fprintf(out, "execution manifest: %s, %d attempts\n", m.SchemaVersion, len(m.Steps)); err != nil {
+			return err
+		}
+	}
 	for _, rec := range result.Records {
 		line := fmt.Sprintf("record %d accepted %s %s sha256=%s", rec.No, rec.Kind, key(rec), rec.Hash)
 		if rec.Rejection != nil {

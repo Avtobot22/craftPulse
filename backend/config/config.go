@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"strings"
 
@@ -30,12 +31,14 @@ func (s *Secret) UnmarshalText(b []byte) error {
 }
 
 type Config struct {
-	LogLevel    string `env:"LOG_LEVEL" envDefault:"info"`
-	HTTPAddr    string `env:"HTTP_ADDR" envDefault:":8080"`
-	MetricsAddr string `env:"METRICS_ADDR" envDefault:":9090"`
-	DB          DB
-	ObjectStore ObjectStore
-	MasterKeys  MasterKeys `envPrefix:"CORE_"`
+	RunnerNetwork  []netip.Prefix `env:"RUNNER_NETWORK"`
+	TrustedProxies []string       `env:"TRUSTED_PROXIES"`
+	LogLevel       string         `env:"LOG_LEVEL" envDefault:"info"`
+	HTTPAddr       string         `env:"HTTP_ADDR" envDefault:":8080"`
+	MetricsAddr    string         `env:"METRICS_ADDR" envDefault:":9090"`
+	DB             DB
+	ObjectStore    ObjectStore
+	MasterKeys     MasterKeys `envPrefix:"CORE_"`
 }
 
 type DB struct {
@@ -124,6 +127,13 @@ func Load(environ map[string]string) (Config, error) {
 	}
 	if cfg.ObjectStore.Endpoint != "" {
 		errs = append(errs, validateHTTPURL("OBJECT_STORE_ENDPOINT", cfg.ObjectStore.Endpoint))
+	}
+	for _, address := range cfg.TrustedProxies {
+		if _, err := netip.ParsePrefix(address); err != nil {
+			if _, err := netip.ParseAddr(address); err != nil {
+				errs = append(errs, errors.New("TRUSTED_PROXIES must contain IP addresses or CIDR prefixes"))
+			}
+		}
 	}
 	errs = append(errs, cfg.MasterKeys.validate("CORE_"))
 	if err := errors.Join(errs...); err != nil {

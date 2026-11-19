@@ -30,6 +30,9 @@ func Clean(r io.Reader, limits Limits, w io.Writer) (*Result, error) {
 		return &Result{Manifest: c.result.Manifest, Envelope: rejection}, nil //nolint:nilerr // the rejection is the outcome of the check
 	}
 	c.checkFiles()
+	if rejection := c.checkCIManifests(); rejection != nil {
+		return &Result{Manifest: c.result.Manifest, Envelope: rejection}, nil //nolint:nilerr // invalid input is a rejected package, not an I/O failure
+	}
 	if err := c.write(data, c.result.Manifest, w); err != nil {
 		return nil, err
 	}
@@ -56,9 +59,26 @@ func (c *checker) write(data []byte, m *Manifest, w io.Writer) error {
 			wanted[ref.path] = true
 		}
 	}
+	if c.result.ScanManifest != nil {
+		for i := range c.result.ScanManifest.Tools {
+			for _, r := range c.result.ScanManifest.Tools[i].Reports {
+				wanted[r.File.Path] = true
+			}
+		}
+	}
 	pw, err := NewWriter(w, m)
 	if err != nil {
 		return err
+	}
+	if c.scanRaw != nil {
+		if err := pw.entry(ScanManifestName, c.scanRaw); err != nil {
+			return err
+		}
+	}
+	if c.executionRaw != nil {
+		if err := pw.entry(ExecutionManifestName, c.executionRaw); err != nil {
+			return err
+		}
 	}
 	if err := copyFiles(data, wanted, pw); err != nil {
 		return err

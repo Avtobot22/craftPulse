@@ -59,6 +59,7 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 	})
 	return v1.Deps{
 		Handler: handler.New(handler.Deps{
+			SourceLinks: decisions, SiteURL: siteURL,
 			Documentation: docs.New(docs.Deps{
 				Repo: docsrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx,
 				Access: decisions, References: orgs, Areas: m.documentationAreas, Auditor: auditor, Clock: c, NewID: newID,

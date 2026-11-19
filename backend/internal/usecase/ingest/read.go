@@ -28,7 +28,7 @@ func AffectedMetrics(schemaID string) []string {
 }
 
 // Receipt reads a receipt its subject may see: an administrator any, a tech lead the ones of projects
-// where they may import, an upload token those of its own packages; another one is not found.
+// where they may import, an upload token those of CI packages of its project; another one is not found.
 func (u *UseCase) Receipt(ctx context.Context, s entity.Subject, id entity.ID) (entity.Receipt, error) {
 	var rc entity.Receipt
 	err := u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
@@ -52,7 +52,7 @@ func (u *UseCase) Receipt(ctx context.Context, s entity.Subject, id entity.ID) (
 
 func (u *UseCase) visible(ctx context.Context, s entity.Subject, rc entity.Receipt) error {
 	if !s.UploadTokenID.IsZero() {
-		if rc.UploadTokenID == nil || *rc.UploadTokenID != s.UploadTokenID {
+		if rc.Channel != entity.ChannelCI || rc.UploadTokenID == nil || rc.ProjectID == nil || *rc.ProjectID != s.ProjectID {
 			return entity.ErrNotFound
 		}
 		return nil

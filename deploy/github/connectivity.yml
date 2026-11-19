@@ -1,0 +1,24 @@
+name: craftPulse stand connectivity
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: cp89-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  stand-connectivity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: craftpulse-ci HTTPS connectivity
+        env:
+          CRAFTPULSE_URL: https://craftpulse.defects.team
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl --silent --show-error --max-time 30 --output /dev/null \
+            --write-out '%{http_code}' "$CRAFTPULSE_URL/")
+          test "$status" = 200
+          echo "HTTPS to craftPulse verified on GitHub-hosted runner"

@@ -50,6 +50,32 @@ func (q *Queries) CountOutcomes(ctx context.Context, arg CountOutcomesParams) ([
 	return items, nil
 }
 
+const firstCIReceiptOfHash = `-- name: FirstCIReceiptOfHash :one
+SELECT id FROM ingest.receipt
+WHERE organization_id = $1 AND project_id = $2 AND id <> $3 AND package_hash = $4
+    AND channel = 'ci' AND upload_token_id IS NOT NULL AND status IN ('quarantined', 'accepted', 'partial')
+ORDER BY received_at, id LIMIT 1
+`
+
+type FirstCIReceiptOfHashParams struct {
+	OrganizationID uuid.UUID
+	ProjectID      uuid.NullUUID
+	ID             uuid.UUID
+	PackageHash    []byte
+}
+
+func (q *Queries) FirstCIReceiptOfHash(ctx context.Context, arg FirstCIReceiptOfHashParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, firstCIReceiptOfHash,
+		arg.OrganizationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.PackageHash,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const firstReceiptOfHash = `-- name: FirstReceiptOfHash :one
 SELECT id FROM ingest.receipt
 WHERE organization_id = $1 AND package_hash = $2 AND status IN ('accepted', 'partial')

@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"net/netip"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -17,11 +18,13 @@ const _maxBodyBytes = 25 << 20
 var _strictJSON sync.Once
 
 type Deps struct {
-	UploadTokens usecase.UploadTokens
-	Handler      *handler.Handler
-	Logins       usecase.Logins
-	Access       usecase.Access
-	Metrics      *middleware.Metrics
+	RunnerNetwork  []netip.Prefix
+	TrustedProxies []string
+	UploadTokens   usecase.UploadTokens
+	Handler        *handler.Handler
+	Logins         usecase.Logins
+	Access         usecase.Access
+	Metrics        *middleware.Metrics
 	// SiteOrigin is the only Origin accepted on a changing request with the session cookie.
 	SiteOrigin string
 }
@@ -38,6 +41,7 @@ func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
 	guard := []gin.HandlerFunc{
 		middleware.Operation(openapi.Operations),
 		middleware.UploadAuthentication(d.UploadTokens),
+		middleware.CIIngress(d.RunnerNetwork),
 		middleware.Authenticate(d.Logins, d.SiteOrigin),
 		middleware.Authorize(d.Access, d.Metrics),
 		middleware.Contract(),
@@ -49,6 +53,7 @@ func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
 	// The contract serves login from the site root; the generated routes also answer under api.
 	login := openapi.ServerInterfaceWrapper{Handler: strict, ErrorHandler: handler.ParameterError}
 	site := root.Group("", guard...)
+	site.GET("/source-links/callback", login.CompleteSourceLink)
 	site.GET("/o/:org_slug/login", login.StartLogin)
 	site.GET("/o/:org_slug/callback", login.CompleteLogin)
 }

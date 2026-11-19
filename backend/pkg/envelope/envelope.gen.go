@@ -6,6 +6,8 @@ package envelope
 import (
 	"encoding/json"
 	"time"
+
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for AccountV1AccountKind.
@@ -203,6 +205,63 @@ func (e GitRefV1RefKind) Valid() bool {
 	case GitRefV1RefKindBranch:
 		return true
 	case GitRefV1RefKindTag:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JenkinsExecutionManifestV1SchemaVersion.
+const (
+	JenkinsExecutionManifestV1SchemaVersionN1 JenkinsExecutionManifestV1SchemaVersion = "1"
+)
+
+// Valid indicates whether the value is a known member of the JenkinsExecutionManifestV1SchemaVersion enum.
+func (e JenkinsExecutionManifestV1SchemaVersion) Valid() bool {
+	switch e {
+	case JenkinsExecutionManifestV1SchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JenkinsExecutionManifestV1StepsOutcome.
+const (
+	JenkinsExecutionManifestV1StepsOutcomeCanceled JenkinsExecutionManifestV1StepsOutcome = "canceled"
+	JenkinsExecutionManifestV1StepsOutcomeFailure  JenkinsExecutionManifestV1StepsOutcome = "failure"
+	JenkinsExecutionManifestV1StepsOutcomeSuccess  JenkinsExecutionManifestV1StepsOutcome = "success"
+	JenkinsExecutionManifestV1StepsOutcomeTimeout  JenkinsExecutionManifestV1StepsOutcome = "timeout"
+)
+
+// Valid indicates whether the value is a known member of the JenkinsExecutionManifestV1StepsOutcome enum.
+func (e JenkinsExecutionManifestV1StepsOutcome) Valid() bool {
+	switch e {
+	case JenkinsExecutionManifestV1StepsOutcomeCanceled:
+		return true
+	case JenkinsExecutionManifestV1StepsOutcomeFailure:
+		return true
+	case JenkinsExecutionManifestV1StepsOutcomeSuccess:
+		return true
+	case JenkinsExecutionManifestV1StepsOutcomeTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JenkinsExecutionManifestV1StepsReportsFormat.
+const (
+	JenkinsExecutionManifestV1StepsReportsFormatCobertura JenkinsExecutionManifestV1StepsReportsFormat = "cobertura"
+	JenkinsExecutionManifestV1StepsReportsFormatJunit     JenkinsExecutionManifestV1StepsReportsFormat = "junit"
+)
+
+// Valid indicates whether the value is a known member of the JenkinsExecutionManifestV1StepsReportsFormat enum.
+func (e JenkinsExecutionManifestV1StepsReportsFormat) Valid() bool {
+	switch e {
+	case JenkinsExecutionManifestV1StepsReportsFormatCobertura:
+		return true
+	case JenkinsExecutionManifestV1StepsReportsFormatJunit:
 		return true
 	default:
 		return false
@@ -644,6 +703,282 @@ func (e ReportFileV1ReportKind) Valid() bool {
 	}
 }
 
+// Defines values for ScanCiCoordinatesProvider.
+const (
+	ScanCiCoordinatesProviderGithub  ScanCiCoordinatesProvider = "github"
+	ScanCiCoordinatesProviderGitlab  ScanCiCoordinatesProvider = "gitlab"
+	ScanCiCoordinatesProviderJenkins ScanCiCoordinatesProvider = "jenkins"
+)
+
+// Valid indicates whether the value is a known member of the ScanCiCoordinatesProvider enum.
+func (e ScanCiCoordinatesProvider) Valid() bool {
+	switch e {
+	case ScanCiCoordinatesProviderGithub:
+		return true
+	case ScanCiCoordinatesProviderGitlab:
+		return true
+	case ScanCiCoordinatesProviderJenkins:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScanManifestV1SchemaVersion.
+const (
+	ScanManifestV1SchemaVersionN1 ScanManifestV1SchemaVersion = "1"
+)
+
+// Valid indicates whether the value is a known member of the ScanManifestV1SchemaVersion enum.
+func (e ScanManifestV1SchemaVersion) Valid() bool {
+	switch e {
+	case ScanManifestV1SchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScanReportReportFormat.
+const (
+	ScanReportReportFormatCobertura         ScanReportReportFormat = "cobertura"
+	ScanReportReportFormatDocsJson          ScanReportReportFormat = "docs_json"
+	ScanReportReportFormatEnvelope          ScanReportReportFormat = "envelope"
+	ScanReportReportFormatGitlabCodeQuality ScanReportReportFormat = "gitlab_code_quality"
+	ScanReportReportFormatGitlabSecurity    ScanReportReportFormat = "gitlab_security"
+	ScanReportReportFormatGitleaksJson      ScanReportReportFormat = "gitleaks_json"
+	ScanReportReportFormatGolangciJson      ScanReportReportFormat = "golangci_json"
+	ScanReportReportFormatJacoco            ScanReportReportFormat = "jacoco"
+	ScanReportReportFormatJunitXml          ScanReportReportFormat = "junit_xml"
+	ScanReportReportFormatLcov              ScanReportReportFormat = "lcov"
+	ScanReportReportFormatSarif             ScanReportReportFormat = "sarif"
+	ScanReportReportFormatSpectralJson      ScanReportReportFormat = "spectral_json"
+)
+
+// Valid indicates whether the value is a known member of the ScanReportReportFormat enum.
+func (e ScanReportReportFormat) Valid() bool {
+	switch e {
+	case ScanReportReportFormatCobertura:
+		return true
+	case ScanReportReportFormatDocsJson:
+		return true
+	case ScanReportReportFormatEnvelope:
+		return true
+	case ScanReportReportFormatGitlabCodeQuality:
+		return true
+	case ScanReportReportFormatGitlabSecurity:
+		return true
+	case ScanReportReportFormatGitleaksJson:
+		return true
+	case ScanReportReportFormatGolangciJson:
+		return true
+	case ScanReportReportFormatJacoco:
+		return true
+	case ScanReportReportFormatJunitXml:
+		return true
+	case ScanReportReportFormatLcov:
+		return true
+	case ScanReportReportFormatSarif:
+		return true
+	case ScanReportReportFormatSpectralJson:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScanReportReportKind.
+const (
+	ScanReportReportKindCode     ScanReportReportKind = "code"
+	ScanReportReportKindCoverage ScanReportReportKind = "coverage"
+	ScanReportReportKindDocs     ScanReportReportKind = "docs"
+	ScanReportReportKindIac      ScanReportReportKind = "iac"
+	ScanReportReportKindImage    ScanReportReportKind = "image"
+	ScanReportReportKindJunit    ScanReportReportKind = "junit"
+	ScanReportReportKindOpenapi  ScanReportReportKind = "openapi"
+	ScanReportReportKindSast     ScanReportReportKind = "sast"
+	ScanReportReportKindSca      ScanReportReportKind = "sca"
+	ScanReportReportKindSecrets  ScanReportReportKind = "secrets"
+	ScanReportReportKindSonar    ScanReportReportKind = "sonar"
+)
+
+// Valid indicates whether the value is a known member of the ScanReportReportKind enum.
+func (e ScanReportReportKind) Valid() bool {
+	switch e {
+	case ScanReportReportKindCode:
+		return true
+	case ScanReportReportKindCoverage:
+		return true
+	case ScanReportReportKindDocs:
+		return true
+	case ScanReportReportKindIac:
+		return true
+	case ScanReportReportKindImage:
+		return true
+	case ScanReportReportKindJunit:
+		return true
+	case ScanReportReportKindOpenapi:
+		return true
+	case ScanReportReportKindSast:
+		return true
+	case ScanReportReportKindSca:
+		return true
+	case ScanReportReportKindSecrets:
+		return true
+	case ScanReportReportKindSonar:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScanSkippedTargetReason.
+const (
+	ScanSkippedTargetReasonExcluded         ScanSkippedTargetReason = "excluded"
+	ScanSkippedTargetReasonHistoryTruncated ScanSkippedTargetReason = "history_truncated"
+	ScanSkippedTargetReasonLimit            ScanSkippedTargetReason = "limit"
+	ScanSkippedTargetReasonNotApplicable    ScanSkippedTargetReason = "not_applicable"
+	ScanSkippedTargetReasonTimeout          ScanSkippedTargetReason = "timeout"
+	ScanSkippedTargetReasonUnavailable      ScanSkippedTargetReason = "unavailable"
+	ScanSkippedTargetReasonUnsupported      ScanSkippedTargetReason = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ScanSkippedTargetReason enum.
+func (e ScanSkippedTargetReason) Valid() bool {
+	switch e {
+	case ScanSkippedTargetReasonExcluded:
+		return true
+	case ScanSkippedTargetReasonHistoryTruncated:
+		return true
+	case ScanSkippedTargetReasonLimit:
+		return true
+	case ScanSkippedTargetReasonNotApplicable:
+		return true
+	case ScanSkippedTargetReasonTimeout:
+		return true
+	case ScanSkippedTargetReasonUnavailable:
+		return true
+	case ScanSkippedTargetReasonUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScanToolRunCompleteness.
+const (
+	ScanToolRunCompletenessComplete ScanToolRunCompleteness = "complete"
+	ScanToolRunCompletenessPartial  ScanToolRunCompleteness = "partial"
+	ScanToolRunCompletenessUnknown  ScanToolRunCompleteness = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ScanToolRunCompleteness enum.
+func (e ScanToolRunCompleteness) Valid() bool {
+	switch e {
+	case ScanToolRunCompletenessComplete:
+		return true
+	case ScanToolRunCompletenessPartial:
+		return true
+	case ScanToolRunCompletenessUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScanToolRunExitClass.
+const (
+	ScanToolRunExitClassFailed   ScanToolRunExitClass = "failed"
+	ScanToolRunExitClassFindings ScanToolRunExitClass = "findings"
+	ScanToolRunExitClassPartial  ScanToolRunExitClass = "partial"
+	ScanToolRunExitClassSuccess  ScanToolRunExitClass = "success"
+	ScanToolRunExitClassTimeout  ScanToolRunExitClass = "timeout"
+	ScanToolRunExitClassUnknown  ScanToolRunExitClass = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ScanToolRunExitClass enum.
+func (e ScanToolRunExitClass) Valid() bool {
+	switch e {
+	case ScanToolRunExitClassFailed:
+		return true
+	case ScanToolRunExitClassFindings:
+		return true
+	case ScanToolRunExitClassPartial:
+		return true
+	case ScanToolRunExitClassSuccess:
+		return true
+	case ScanToolRunExitClassTimeout:
+		return true
+	case ScanToolRunExitClassUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScanToolRunMode.
+const (
+	ScanToolRunModeBuiltin ScanToolRunMode = "builtin"
+	ScanToolRunModeImport  ScanToolRunMode = "import"
+)
+
+// Valid indicates whether the value is a known member of the ScanToolRunMode enum.
+func (e ScanToolRunMode) Valid() bool {
+	switch e {
+	case ScanToolRunModeBuiltin:
+		return true
+	case ScanToolRunModeImport:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScanToolRunReportKind.
+const (
+	ScanToolRunReportKindCode     ScanToolRunReportKind = "code"
+	ScanToolRunReportKindCoverage ScanToolRunReportKind = "coverage"
+	ScanToolRunReportKindDocs     ScanToolRunReportKind = "docs"
+	ScanToolRunReportKindIac      ScanToolRunReportKind = "iac"
+	ScanToolRunReportKindImage    ScanToolRunReportKind = "image"
+	ScanToolRunReportKindJunit    ScanToolRunReportKind = "junit"
+	ScanToolRunReportKindOpenapi  ScanToolRunReportKind = "openapi"
+	ScanToolRunReportKindSast     ScanToolRunReportKind = "sast"
+	ScanToolRunReportKindSca      ScanToolRunReportKind = "sca"
+	ScanToolRunReportKindSecrets  ScanToolRunReportKind = "secrets"
+	ScanToolRunReportKindSonar    ScanToolRunReportKind = "sonar"
+)
+
+// Valid indicates whether the value is a known member of the ScanToolRunReportKind enum.
+func (e ScanToolRunReportKind) Valid() bool {
+	switch e {
+	case ScanToolRunReportKindCode:
+		return true
+	case ScanToolRunReportKindCoverage:
+		return true
+	case ScanToolRunReportKindDocs:
+		return true
+	case ScanToolRunReportKindIac:
+		return true
+	case ScanToolRunReportKindImage:
+		return true
+	case ScanToolRunReportKindJunit:
+		return true
+	case ScanToolRunReportKindOpenapi:
+		return true
+	case ScanToolRunReportKindSast:
+		return true
+	case ScanToolRunReportKindSca:
+		return true
+	case ScanToolRunReportKindSecrets:
+		return true
+	case ScanToolRunReportKindSonar:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SourceProvider.
 const (
 	SourceProviderClient          SourceProvider = "client"
@@ -901,6 +1236,43 @@ type GitRefV1 struct {
 // GitRefV1RefKind defines model for GitRefV1.RefKind.
 type GitRefV1RefKind string
 
+// JenkinsExecutionManifestV1 Версия 1 execution-manifest.json совпадает с набором показа. Отсутствие файла означает неизвестную историю внутренних попыток. Идентичность шага: job, build_number, stage, name, configuration_hash и attempt; dataset ID не входит в ключ.
+type JenkinsExecutionManifestV1 struct {
+	BuildNumber   int                                     `json:"build_number"`
+	BuildUrl      string                                  `json:"build_url"`
+	DatasetRunId  string                                  `json:"dataset_run_id"`
+	Job           string                                  `json:"job"`
+	SchemaVersion JenkinsExecutionManifestV1SchemaVersion `json:"schema_version"`
+	Sha           string                                  `json:"sha"`
+	Steps         []struct {
+		AgentLabel        string                                 `json:"agent_label"`
+		Attempt           int                                    `json:"attempt"`
+		Axes              map[string]string                      `json:"axes"`
+		ConfigurationHash string                                 `json:"configuration_hash"`
+		DatasetAttemptId  string                                 `json:"dataset_attempt_id"`
+		FinishedAt        time.Time                              `json:"finished_at"`
+		Name              string                                 `json:"name"`
+		Outcome           JenkinsExecutionManifestV1StepsOutcome `json:"outcome"`
+		Reports           []struct {
+			Format    JenkinsExecutionManifestV1StepsReportsFormat `json:"format"`
+			Path      string                                       `json:"path"`
+			Sha256    string                                       `json:"sha256"`
+			SourceSha string                                       `json:"source_sha"`
+		} `json:"reports"`
+		Stage     string    `json:"stage"`
+		StartedAt time.Time `json:"started_at"`
+	} `json:"steps"`
+}
+
+// JenkinsExecutionManifestV1SchemaVersion defines model for JenkinsExecutionManifestV1.SchemaVersion.
+type JenkinsExecutionManifestV1SchemaVersion string
+
+// JenkinsExecutionManifestV1StepsOutcome defines model for JenkinsExecutionManifestV1.Steps.Outcome.
+type JenkinsExecutionManifestV1StepsOutcome string
+
+// JenkinsExecutionManifestV1StepsReportsFormat defines model for JenkinsExecutionManifestV1.Steps.Reports.Format.
+type JenkinsExecutionManifestV1StepsReportsFormat string
+
 // Manifest Первый файл пакета `manifest.json`.
 type Manifest struct {
 	// Area Область источника, к которой относятся записи пакета.
@@ -1085,6 +1457,110 @@ type ReportFileV1ReportFormat string
 
 // ReportFileV1ReportKind defines model for ReportFileV1.ReportKind.
 type ReportFileV1ReportKind string
+
+// ScanCiCoordinates defines model for ScanCiCoordinates.
+type ScanCiCoordinates struct {
+	AttemptNativeId *string                   `json:"attempt_native_id"`
+	AttemptNo       *int                      `json:"attempt_no"`
+	JobNativeId     *string                   `json:"job_native_id"`
+	MrNativeId      *string                   `json:"mr_native_id"`
+	ProjectNativeId string                    `json:"project_native_id"`
+	Provider        ScanCiCoordinatesProvider `json:"provider"`
+	RefName         string                    `json:"ref_name"`
+	RunNativeId     string                    `json:"run_native_id"`
+}
+
+// ScanCiCoordinatesProvider defines model for ScanCiCoordinates.Provider.
+type ScanCiCoordinatesProvider string
+
+// ScanComponent defines model for ScanComponent.
+type ScanComponent struct {
+	Id         *openapi_types.UUID `json:"id"`
+	PathPrefix string              `json:"path_prefix"`
+}
+
+// ScanHistory defines model for ScanHistory.
+type ScanHistory struct {
+	FromSha   string `json:"from_sha"`
+	ToSha     string `json:"to_sha"`
+	Truncated bool   `json:"truncated"`
+}
+
+// ScanManifestV1 Версия 1 файла scan-manifest.json. Один элемент tools описывает один запуск инструмента; значения секретов и выдержки evidence не передаются.
+type ScanManifestV1 struct {
+	SchemaVersion ScanManifestV1SchemaVersion `json:"schema_version"`
+	Tools         []ScanToolRun               `json:"tools"`
+}
+
+// ScanManifestV1SchemaVersion defines model for ScanManifestV1.SchemaVersion.
+type ScanManifestV1SchemaVersion string
+
+// ScanReport defines model for ScanReport.
+type ScanReport struct {
+	File          FileRef                `json:"file"`
+	FormatVersion string                 `json:"format_version"`
+	ParserVersion *string                `json:"parser_version"`
+	ReportFormat  ScanReportReportFormat `json:"report_format"`
+	ReportKind    ScanReportReportKind   `json:"report_kind"`
+}
+
+// ScanReportReportFormat defines model for ScanReport.ReportFormat.
+type ScanReportReportFormat string
+
+// ScanReportReportKind defines model for ScanReport.ReportKind.
+type ScanReportReportKind string
+
+// ScanSkippedTarget defines model for ScanSkippedTarget.
+type ScanSkippedTarget struct {
+	Path   string                  `json:"path"`
+	Reason ScanSkippedTargetReason `json:"reason"`
+}
+
+// ScanSkippedTargetReason defines model for ScanSkippedTarget.Reason.
+type ScanSkippedTargetReason string
+
+// ScanToolRun Происхождение DR-009. null обозначает неизвестное или неприменимое поле; builtin требует profile_id и digest образа. Задан sha или artifact_digest. При failed/timeout/unknown полнота не бывает complete.
+type ScanToolRun struct {
+	ArtifactDigest     *string                 `json:"artifact_digest"`
+	Ci                 *ScanCiCoordinates      `json:"ci"`
+	Completeness       ScanToolRunCompleteness `json:"completeness"`
+	Component          *ScanComponent          `json:"component"`
+	ConfigHash         *string                 `json:"config_hash"`
+	DbPublishedAt      *time.Time              `json:"db_published_at"`
+	DbVersion          *string                 `json:"db_version"`
+	ExitClass          ScanToolRunExitClass    `json:"exit_class"`
+	FinishedAt         time.Time               `json:"finished_at"`
+	History            *ScanHistory            `json:"history"`
+	Id                 string                  `json:"id"`
+	Language           *string                 `json:"language"`
+	Mode               ScanToolRunMode         `json:"mode"`
+	ParserVersion      *string                 `json:"parser_version"`
+	Producer           string                  `json:"producer"`
+	ProducerVersion    string                  `json:"producer_version"`
+	ProfileId          *string                 `json:"profile_id"`
+	ProfileImageDigest *string                 `json:"profile_image_digest"`
+	ReportKind         ScanToolRunReportKind   `json:"report_kind"`
+	Reports            []ScanReport            `json:"reports"`
+	RulesHash          *string                 `json:"rules_hash"`
+	ScannedCount       *int                    `json:"scanned_count"`
+	ScopeHash          string                  `json:"scope_hash"`
+	Sha                *string                 `json:"sha"`
+	SkippedCount       *int                    `json:"skipped_count"`
+	SkippedTargets     []ScanSkippedTarget     `json:"skipped_targets"`
+	StartedAt          time.Time               `json:"started_at"`
+}
+
+// ScanToolRunCompleteness defines model for ScanToolRun.Completeness.
+type ScanToolRunCompleteness string
+
+// ScanToolRunExitClass defines model for ScanToolRun.ExitClass.
+type ScanToolRunExitClass string
+
+// ScanToolRunMode defines model for ScanToolRun.Mode.
+type ScanToolRunMode string
+
+// ScanToolRunReportKind defines model for ScanToolRun.ReportKind.
+type ScanToolRunReportKind string
 
 // Selection Границы выборки страницы.
 type Selection struct {

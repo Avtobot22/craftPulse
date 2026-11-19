@@ -72,3 +72,8 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
           IMAGE_NAME: ${{ inputs.image }}
         run: docker build --build-arg COMMIT_SHA="$COMMIT_SHA" -t "$IMAGE_NAME:$COMMIT_SHA" -f Dockerfile .
+      - name: Verify server version on disposable PostgreSQL
+        if: inputs.image == 'craftpulse-server'
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: python3 ../scripts/check_release_server.py --image "craftpulse-server:$COMMIT_SHA" --sha "$COMMIT_SHA"

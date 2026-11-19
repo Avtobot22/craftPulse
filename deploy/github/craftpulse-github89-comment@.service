@@ -1,0 +1,22 @@
+[Unit]
+Description=craftPulse fixture PR comment request
+
+[Service]
+Type=exec
+User=cp89-comment-bot
+Group=cp89-comment-bot
+ExecStart=/usr/bin/python3 /opt/craftpulse/github89/comment.py --config /etc/craftpulse-github89-bot/config.json
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+UMask=0077

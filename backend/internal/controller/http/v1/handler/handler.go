@@ -18,6 +18,7 @@ import (
 
 // Domain handlers are embedded here; the fallback is one level deeper, so their methods win.
 type Handler struct {
+	sourceLinks
 	documentation
 	links
 	uploads
@@ -37,6 +38,8 @@ type fallback struct {
 }
 
 type Deps struct {
+	SourceLinks   usecase.SourceLinks
+	SiteURL       string
 	Documentation usecase.Documentation
 	Links         usecase.Links
 	UploadTokens  usecase.UploadTokens
@@ -59,6 +62,7 @@ type Deps struct {
 
 func New(d Deps) *Handler {
 	return &Handler{
+		sourceLinks:    sourceLinks{uc: d.SourceLinks, callbackURL: d.SiteURL + "/source-links/callback"},
 		documentation:  documentation{uc: d.Documentation},
 		links:          links{uc: d.Links},
 		uploads:        uploads{tokens: d.UploadTokens},
@@ -97,6 +101,11 @@ func RequestError(c *gin.Context, err error) {
 
 func Error(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, entity.ErrObjectStoreUnavailable):
+		_ = c.Error(err)
+		c.Header("Retry-After", "3")
+		response.Write(c, response.ServiceUnavailable)
+		return
 	case errors.Is(err, openapi.ErrNotImplemented):
 		response.Write(c, response.NotImplemented)
 		return
