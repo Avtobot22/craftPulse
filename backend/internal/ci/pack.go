@@ -22,7 +22,7 @@ type Scrubber interface {
 	Scrub(report *envelope.ScanReport, content []byte) ([]byte, error)
 }
 
-// KeepContent passes reports unchanged; it stands until the secrets profile provides its scrubber.
+// KeepContent passes reports unchanged when the secrets profile is not active.
 type KeepContent struct{}
 
 func (KeepContent) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, error) { return content, nil }
@@ -57,6 +57,11 @@ func (p *Packer) Build(limits envelope.Limits) (*Package, error) {
 	if len(runs) == 0 {
 		return nil, ErrNoRuns
 	}
+	for i := range runs {
+		if runs[i].ProfileId != nil && *runs[i].ProfileId == SecretsProfileID && p.Scrubber == nil {
+			return nil, errors.New("secrets profile requires a fresh in-memory scrubber before upload")
+		}
+	}
 	now := p.Now().UTC()
 	var files []packedFile
 	for i := range runs {
@@ -70,8 +75,15 @@ func (p *Packer) Build(limits envelope.Limits) (*Package, error) {
 		}
 	}
 	scan := &envelope.ScanManifestV1{SchemaVersion: "1", Tools: runs}
+	if err := p.scrubMetadata(scan); err != nil {
+		return nil, err
+	}
+	manifest := p.manifest(runs, now)
+	if err := p.scrubMetadata(manifest); err != nil {
+		return nil, err
+	}
 	var buf bytes.Buffer
-	w, err := envelope.NewWriter(&buf, p.manifest(runs, now))
+	w, err := envelope.NewWriter(&buf, manifest)
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +101,9 @@ func (p *Packer) Build(limits envelope.Limits) (*Package, error) {
 			if err != nil {
 				return nil, err
 			}
+			if err := p.scrubMetadata(rec); err != nil {
+				return nil, err
+			}
 			if err := w.AddRecord(rec); err != nil {
 				return nil, err
 			}
@@ -96,6 +111,11 @@ func (p *Packer) Build(limits envelope.Limits) (*Package, error) {
 	}
 	if err := w.Close(); err != nil {
 		return nil, err
+	}
+	if verifier, ok := p.Scrubber.(interface{ VerifyPackage([]byte) error }); ok {
+		if err := verifier.VerifyPackage(buf.Bytes()); err != nil {
+			return nil, err
+		}
 	}
 	if err := check(buf.Bytes(), limits); err != nil {
 		return nil, err
@@ -186,6 +206,25 @@ func check(data []byte, limits envelope.Limits) error {
 		if rec.Rejection != nil {
 			return &RefusedError{Code: rec.Rejection.Code, Detail: fmt.Sprintf("checked before upload: record %d: %s", rec.No, rec.Rejection.Detail)}
 		}
+	}
+	return nil
+}
+
+// scrubMetadata covers manifest, provenance and record strings as well as report contents.
+func (p *Packer) scrubMetadata(value any) error {
+	if p.Scrubber == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	data, err = p.Scrubber.Scrub(nil, data)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, value); err != nil {
+		return errors.New("cannot decode redacted package metadata")
 	}
 	return nil
 }

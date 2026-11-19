@@ -3,11 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -468,3 +471,82 @@ func TestFixtures_MarksMissingAndExtraFindings(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestSecretsProfile_RedactsLogsStateAndUpload(t *testing.T) {
+	api := newFakeAPI(t)
+	api.uploads = []reply{api.accepted("quarantined", 1)}
+	api.receipts = []reply{api.receipt("accepted", nil)}
+	c := newCLI(t, api)
+	sum := sha256.Sum256([]byte("craftpulse fixture marker, not a credential"))
+	marker := base64.RawURLEncoding.EncodeToString(sum[:])[:32]
+	repo := filepath.Join(c.dir, "repo")
+	require.NoError(t, os.Mkdir(repo, 0o700))
+	git := func(args ...string) string {
+		cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"}, args...)...)
+		data, err := cmd.CombinedOutput()
+		require.NoError(t, err, "fixture Git failed")
+		return strings.TrimSpace(string(data))
+	}
+	git("init", "--quiet")
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "config.go"), []byte("package config\nconst defaultPartnerAPIKey = \""+marker+"\"\n"), 0o600))
+	git("add", ".")
+	git("commit", "--quiet", "-m", "fixture")
+	c.env["CI_COMMIT_SHA"], c.env["CI_PROJECT_DIR"], c.env["CRAFTPULSE_SECRETS"] = git("rev-parse", "HEAD"), repo, "1"
+	c.env["CI_COMMIT_REF_NAME"] = "test/" + marker
+	logs := c.mustRun("secrets")
+	// Raw tool stdout and stderr must never bypass the protected app writers.
+	command := []string{"--", "sh", "-c", `printf '%s' "$1"; printf '%s' "$1" >&2; cp "$2" "$3"`, "sh", marker, c.path("fixture.sarif"), c.path("report.sarif")}
+	logs += c.mustRun(c.goTool(command...)...)
+	require.NoError(t, os.WriteFile(c.path("junit.xml"), []byte(`<testsuites><testsuite name="`+marker+`"/></testsuites>`), 0o600))
+	logs += c.mustRun("import", "--report", "junit:junit_xml:"+c.path("junit.xml"))
+	logs += c.mustRun("upload", "--save", c.path("secrets.tar.gz"))
+	code, out := c.run("--unknown=" + marker)
+	assert.Equal(t, _exitFailed, code)
+	logs += out
+	for i := 0; i+8 <= len(marker); i++ {
+		assert.NotContains(t, logs, marker[i:i+8], "secret fragment in CLI output")
+	}
+	require.Len(t, api.bodies, 1)
+	checkPackage(t, api.bodies[0])
+	scan, err := ci.ScanSecrets(t.Context(), repo, "", c.env["CI_COMMIT_SHA"])
+	require.NoError(t, err)
+	require.NoError(t, scan.Scrubber.VerifyPackage(api.bodies[0]))
+	state := filepath.Join(c.dir, "state")
+	require.NoError(t, filepath.WalkDir(filepath.Join(state, "files"), func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		for i := 0; i+8 <= len(marker); i++ {
+			assert.NotContains(t, string(data), marker[i:i+8], "secret fragment in stored report")
+		}
+		return nil
+	}))
+	c.env["CRAFTPULSE_SECRETS"] = ""
+	code, _ = c.run("upload")
+	assert.Equal(t, _exitFailed, code)
+	require.Len(t, api.bodies, 1)
+}
+
+func TestSecretsProfile_ScanFailureReleasesNoRawOutput(t *testing.T) {
+	var out bytes.Buffer
+	env := func(key string) string {
+		if key == "CRAFTPULSE_SECRETS" {
+			return "1"
+		}
+		if key == "CI_COMMIT_SHA" {
+			return _sha
+		}
+		if key == "CI_PROJECT_DIR" {
+			return t.TempDir()
+		}
+		return ""
+	}
+	code := execute(t.Context(), []string{"secrets"}, &out, &out, env, ci.ClientConfig{})
+	assert.Equal(t, _exitFailed, code)
+	assert.Equal(t, "craftpulse-ci: secrets scan failed; no output or package released\n", out.String())
+}
