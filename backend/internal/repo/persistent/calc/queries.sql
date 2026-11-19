@@ -228,3 +228,55 @@ LEFT JOIN calc.task_slice s ON s.organization_id = c.organization_id AND s.part_
 WHERE rp.organization_id = sqlc.arg(organization_id) AND rp.revision_id = sqlc.arg(revision_id) AND p.metric_id = sqlc.arg(metric_id)
     AND p.estimator = sqlc.arg(estimator) AND p.point_start >= sqlc.arg(from_at) AND p.point_end <= sqlc.arg(to_at)
 ORDER BY p.point_start, c.object_id, c.item_no;
+
+-- name: LockSavedRevision :one
+SELECT id FROM calc.revision
+WHERE organization_id = $1 AND id = $2 AND series_id = $3 AND published_at IS NOT NULL
+FOR KEY SHARE;
+
+-- name: InsertSavedView :exec
+INSERT INTO calc.saved_view (organization_id, id, owner_user_id, name, series_id, filters, pinned_revision_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+
+-- name: PinSavedRevision :exec
+INSERT INTO calc.revision_pin (organization_id, revision_id, holder_kind, holder_id)
+VALUES ($1, $2, 'saved_view', $3);
+
+-- name: GetSavedView :one
+SELECT * FROM calc.saved_view WHERE organization_id = $1 AND id = $2;
+
+-- name: LockSavedView :one
+SELECT * FROM calc.saved_view WHERE organization_id = $1 AND id = $2 FOR UPDATE;
+
+-- name: PageSavedViews :many
+SELECT * FROM calc.saved_view
+WHERE organization_id = sqlc.arg(organization_id) AND owner_user_id = sqlc.arg(owner_user_id)
+    AND (sqlc.narg(after_at)::timestamptz IS NULL OR (created_at, id) < (sqlc.narg(after_at), sqlc.arg(after_id)::uuid))
+ORDER BY created_at DESC, id DESC LIMIT sqlc.arg(page_limit);
+
+-- name: UnpinSavedRevision :exec
+DELETE FROM calc.revision_pin WHERE organization_id = $1 AND holder_kind = 'saved_view' AND holder_id = $2;
+
+-- name: DeleteSavedView :exec
+DELETE FROM calc.saved_view WHERE organization_id = $1 AND id = $2;
+
+-- name: ExpiredRevisions :many
+SELECT r.id FROM calc.revision r
+WHERE r.organization_id = sqlc.arg(organization_id) AND r.status = 'superseded' AND r.superseded_at < sqlc.arg(before_at)
+    AND NOT EXISTS (SELECT 1 FROM calc.revision_pin p WHERE p.organization_id = r.organization_id AND p.revision_id = r.id)
+    AND NOT EXISTS (SELECT 1 FROM calc.saved_view v WHERE v.organization_id = r.organization_id AND v.pinned_revision_id = r.id)
+    AND NOT EXISTS (SELECT 1 FROM calc.series s WHERE s.organization_id = r.organization_id AND s.current_revision_id = r.id)
+ORDER BY r.superseded_at, r.id LIMIT sqlc.arg(batch_limit) FOR UPDATE OF r SKIP LOCKED;
+
+-- name: DeleteExpiredRevisions :one
+WITH deleted AS (
+    DELETE FROM calc.revision r WHERE r.organization_id = sqlc.arg(organization_id) AND r.id = ANY(sqlc.arg(ids)::uuid[])
+        AND NOT EXISTS (SELECT 1 FROM calc.revision_pin p WHERE p.organization_id = r.organization_id AND p.revision_id = r.id)
+        AND NOT EXISTS (SELECT 1 FROM calc.saved_view v WHERE v.organization_id = r.organization_id AND v.pinned_revision_id = r.id)
+    RETURNING id
+), logged AS (
+    INSERT INTO audit.deletion (organization_id, requested_at, basis, scope_kind, retention_class, cutoff_at, status, applied_at)
+    SELECT sqlc.arg(organization_id), sqlc.arg(applied_at)::timestamptz, 'retention', 'class', 'SUPERSEDED_REVISIONS',
+        sqlc.arg(before_at)::timestamptz, 'applied', sqlc.arg(applied_at)::timestamptz WHERE EXISTS (SELECT 1 FROM deleted)
+)
+SELECT count(*) FROM deleted;

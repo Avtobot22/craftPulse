@@ -391,6 +391,13 @@ type CalcRepo interface {
 	// UnusedParts locks up to limit parts after the cursor that no live revision refers to, created before before.
 	UnusedParts(ctx context.Context, orgID, after entity.ID, before time.Time, limit int) ([]entity.ID, error)
 	DeleteParts(ctx context.Context, orgID entity.ID, ids []entity.ID) error
+	CreateSavedView(ctx context.Context, v entity.SavedView) error
+	SavedView(ctx context.Context, orgID, id entity.ID) (entity.SavedView, error)
+	PageSavedViews(ctx context.Context, orgID, ownerID entity.ID, q entity.SavedViewQuery) ([]entity.SavedView, error)
+	// DeleteSavedView deletes only the owner's view; a missing view succeeds, another owner's is not found.
+	DeleteSavedView(ctx context.Context, orgID, ownerID, id entity.ID) error
+	// PurgeRevisions deletes at most limit superseded revisions before the cutoff without any holder.
+	PurgeRevisions(ctx context.Context, orgID entity.ID, before, at time.Time, limit int) (int64, error)
 }
 
 // ViewRepo keeps the public descriptors of runs users asked for (TZ 12.5.8).
