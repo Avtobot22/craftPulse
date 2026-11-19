@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func (r jobRunner) run(t *testing.T, q *queued) error {
 		_, err := tx.Exec(ctx, "UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1", q.id)
 		return err
 	}
-	holder := "river-job-" + uuid.NewString()
+	holder := "river-job-" + strconv.FormatInt(q.id, 10)
 	switch q.kind {
 	case entity.KindSyncPage:
 		return r.sync.RunPage(t.Context(), args[entity.SyncPageJob](t, q), holder, complete)
