@@ -264,7 +264,7 @@ func TestCalcSeries_BuildsAndPublishesRevisionInParts(t *testing.T) {
 	assert.Equal(t, task.Intervals, intervals, "the pieces of the parts join into the intervals of the task")
 	inputs, err := e.calc.RevisionInputs(t.Context(), e.orgID, first.ID)
 	require.NoError(t, err)
-	assert.Len(t, inputs, len(calc.Definitions())+2, "definitions, the mapping and the structure")
+	assert.Len(t, inputs, len(calc.SetDefinitions(entity.MetricSetFlow))+2, "definitions, the mapping and the structure")
 
 	e.refresh(t, _seriesAsOf)
 	e.runJobs(t, 3)

@@ -41,6 +41,8 @@ const (
 	InputStructure  = "structure"
 	InputTarget     = "target"
 	InputWatermark  = "source_watermark"
+	// InputAccounts is the confirmed kinds of accounts at the knowledge number (FR-018).
+	InputAccounts = "accounts"
 )
 
 // _followUpDays is the window H of T23 in version 1 of its definition (BR-008); another window is a new version.
@@ -184,9 +186,9 @@ var _definitions = []Definition{
 	},
 }
 
-// Definitions is the registry of the definitions of the flow metrics in force.
+// Definitions is the registry of the definitions in force: the flow of tasks, the review of MRs and the events.
 func Definitions() []Definition {
-	out := slices.Clone(_definitions)
+	out := registry()
 	for i := range out {
 		out[i].Estimators = slices.Clone(out[i].Estimators)
 		out[i].Roles = slices.Clone(out[i].Roles)
@@ -198,14 +200,15 @@ func Definitions() []Definition {
 
 // lookup finds a definition in force; a retired one is absent.
 func lookup(id string) (Definition, bool) {
-	i := slices.IndexFunc(_definitions, func(d Definition) bool { return d.ID == id })
+	all := registry()
+	i := slices.IndexFunc(all, func(d Definition) bool { return d.ID == id })
 	if i < 0 {
 		return Definition{}, false
 	}
-	return _definitions[i], true
+	return all[i], true
 }
 
 func definition(id string) Definition {
-	i := slices.IndexFunc(_definitions, func(d Definition) bool { return d.ID == id })
-	return _definitions[i]
+	d, _ := lookup(id)
+	return d
 }

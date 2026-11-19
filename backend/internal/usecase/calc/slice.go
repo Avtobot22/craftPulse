@@ -109,17 +109,25 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 	if err != nil {
 		return err
 	}
-	team, err := scopeTeam(series.Scope)
+	scope, err := parseScope(series.Scope)
 	if err != nil {
 		return err
 	}
-	mapping, mapped, err := u.d.Settings.MappingAt(ctx, org, team, seq)
-	if err != nil {
-		return err
+	team, flow := scope.TeamID, series.MetricSet == entity.MetricSetFlow
+	var (
+		mapping entity.MappingVersion
+		mapped  bool
+		targets []entity.TargetVersion
+	)
+	if !team.IsZero() {
+		if mapping, mapped, err = u.d.Settings.MappingAt(ctx, org, team, seq); err != nil {
+			return err
+		}
 	}
-	targets, err := u.d.Settings.TargetVersionsAt(ctx, org, team, seq)
-	if err != nil {
-		return err
+	if flow {
+		if targets, err = u.d.Settings.TargetVersionsAt(ctx, org, team, seq); err != nil {
+			return err
+		}
 	}
 	id, err := u.d.NewID()
 	if err != nil {
@@ -130,10 +138,14 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		ID: id, SeriesID: series.ID, Window: entity.Window{From: job.From, To: job.To, Step: series.Step}, AsOf: job.AsOf,
 		KnowledgeSeq: seq, Timezone: "UTC", StartedAt: now, PreviousRevisionID: series.CurrentRevisionID,
 	}
-	inputs := definitionInputs()
-	inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindStructure, ID: team.String(), Version: entity.GroupingCurrentStructure})
+	inputs := definitionInputs(series.MetricSet)
+	if !team.IsZero() {
+		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindStructure, ID: team.String(), Version: entity.GroupingCurrentStructure})
+	}
 	if mapped {
 		rev.Timezone = mapping.Timezone
+	}
+	if mapped && flow {
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindMapping, ID: mapping.ID.String(), Version: strconv.Itoa(mapping.VersionNo)})
 	}
 	for i := range targets {
@@ -144,7 +156,11 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 	if err != nil {
 		return err
 	}
-	sources, err := u.teamCollection(ctx, org, team)
+	areas, err := u.scopeAreas(ctx, org, scope)
+	if err != nil {
+		return err
+	}
+	sources, err := u.collectionOf(ctx, org, areas)
 	if err != nil {
 		return err
 	}
@@ -226,18 +242,11 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 	if rev.Status != entity.RevisionBuilding {
 		return u.d.Tx.InOrgTx(ctx, org, complete)
 	}
-	team, err := scopeTeam(series.Scope)
+	src, scope, err := u.source(ctx, job, &rev, &series)
 	if err != nil {
 		return err
 	}
-	in, err := u.input(ctx, entity.CalcRequest{
-		OrganizationID: org, TeamID: team, KnowledgeSeq: rev.KnowledgeSeq, Window: entity.Window{From: rev.Window.From, To: rev.Window.To, Step: series.Step},
-		AsOf: rev.AsOf, Sources: job.Sources,
-	})
-	if err != nil {
-		return err
-	}
-	chunks := chunk(periods(in.window, in.asOf, in.location), u.d.PartPoints)
+	chunks := chunk(src.periods(), u.d.PartPoints)
 	var (
 		stored *entity.StoredPart
 		kept   entity.ID
@@ -245,9 +254,8 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 	)
 	if job.PartNo <= len(chunks) {
 		c := chunks[job.PartNo-1]
-		pr := prepare(in)
 		from, to := c[0].start, c[len(c)-1].end
-		hash := pr.partHash(series.ScopeHash, series.Step, from, to)
+		hash := src.hash(from, to)
 		err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 			var err error
 			kept, reused, err = u.d.Repo.PartByHash(ctx, org, hash)
@@ -257,7 +265,7 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 			return err
 		}
 		if !reused {
-			stored = storedPart(pr.calculate(c), hash, from, to)
+			stored = src.stored(c, hash, from, to)
 		}
 	}
 	last := job.PartNo >= len(chunks)
@@ -266,7 +274,7 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 		collection []entity.AreaCollection
 	)
 	if last {
-		if areas, err = u.teamAreas(ctx, org, team); err != nil {
+		if areas, err = u.scopeAreas(ctx, org, scope); err != nil {
 			return err
 		}
 		if collection, err = u.collectionOf(ctx, org, areas); err != nil {
@@ -315,7 +323,7 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 			return err
 		}
 		published = true
-		return u.again(ctx, job, &rev, team, areas, collection, now)
+		return u.again(ctx, job, &rev, scope.TeamID, areas, collection, now)
 	})
 	if err != nil {
 		return err
@@ -344,9 +352,11 @@ func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entit
 	if err != nil {
 		return err
 	}
-	settings, err := u.d.Settings.LastSettingsSeq(ctx, job.OrganizationID, team)
-	if err != nil {
-		return err
+	var settings int64
+	if !team.IsZero() {
+		if settings, err = u.d.Settings.LastSettingsSeq(ctx, job.OrganizationID, team); err != nil {
+			return err
+		}
 	}
 	structure, err := u.d.Structure.StructureVersion(ctx, job.OrganizationID)
 	if err != nil {
@@ -434,10 +444,11 @@ func storedPart(r entity.CalcResult, hash []byte, from, to time.Time) *entity.St
 	return out
 }
 
-func definitionInputs() []entity.RevisionInput {
-	out := make([]entity.RevisionInput, len(_definitions))
-	for i := range _definitions {
-		out[i] = entity.RevisionInput{Kind: entity.InputKindDefinition, ID: _definitions[i].ID, Version: strconv.Itoa(_definitions[i].Version)}
+func definitionInputs(set string) []entity.RevisionInput {
+	defs := definitionsOf(set)
+	out := make([]entity.RevisionInput, len(defs))
+	for i := range defs {
+		out[i] = entity.RevisionInput{Kind: entity.InputKindDefinition, ID: defs[i].ID, Version: strconv.Itoa(defs[i].Version)}
 	}
 	return out
 }
@@ -482,18 +493,6 @@ func sameRun(a, b *entity.ReconcileRun) bool {
 	return a.ID == b.ID && a.Outcome == b.Outcome && sameTime(a.FinishedAt, b.FinishedAt)
 }
 
-// teamCollection is the state of the collection of the areas of the projects of the team now.
-func (u *UseCase) teamCollection(ctx context.Context, org, team entity.ID) ([]entity.AreaCollection, error) {
-	if u.d.Collection == nil {
-		return nil, nil
-	}
-	areas, err := u.teamAreas(ctx, org, team)
-	if err != nil {
-		return nil, err
-	}
-	return u.collectionOf(ctx, org, areas)
-}
-
 func (u *UseCase) collectionOf(ctx context.Context, org entity.ID, areas []entity.ID) ([]entity.AreaCollection, error) {
 	if u.d.Collection == nil || len(areas) == 0 {
 		return nil, nil
@@ -529,15 +528,6 @@ func teamScopeOf(teamID entity.ID) (scope, hash []byte, err error) {
 	}
 	sum := sha256.Sum256(scope)
 	return scope, sum[:], nil
-}
-
-// teamOf is the team of a scope; false for a scope of another kind, which the recount of teams leaves alone.
-func teamOf(raw []byte) (entity.ID, bool, error) {
-	var s teamScope
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return entity.ID{}, false, fmt.Errorf("calc: scope of the series: %w", err)
-	}
-	return s.TeamID, s.Kind == "team", nil
 }
 
 func scopeTeam(raw []byte) (entity.ID, error) {

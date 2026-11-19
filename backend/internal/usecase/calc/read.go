@@ -125,9 +125,10 @@ func (u *UseCase) MarkBasisExpired(ctx context.Context, orgID entity.ID) (int64,
 
 // MarkDefinitionRetired marks the revisions computed with a definition the registry no longer has.
 func (u *UseCase) MarkDefinitionRetired(ctx context.Context, orgID entity.ID) (int64, error) {
-	current := make([]string, len(_definitions))
-	for i := range _definitions {
-		current[i] = _definitions[i].ID + "@" + strconv.Itoa(_definitions[i].Version)
+	all := registry()
+	current := make([]string, len(all))
+	for i := range all {
+		current[i] = all[i].ID + "@" + strconv.Itoa(all[i].Version)
 	}
 	var n int64
 	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
