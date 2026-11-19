@@ -134,14 +134,16 @@ func (u *UseCase) placeAreas(ctx context.Context, org entity.ID, in *input, obje
 }
 
 type writer struct {
-	u        *UseCase
-	org      entity.ID
-	seq      int64
-	now      time.Time
-	resolved int
-	objects  map[entity.SourceKey]entity.SourceObject
-	accounts map[string]entity.ID
-	changes  changes
+	u            *UseCase
+	org          entity.ID
+	seq          int64
+	now          time.Time
+	resolved     int
+	objects      map[entity.SourceKey]entity.SourceObject
+	accounts     map[string]entity.ID
+	changes      changes
+	linkMRIDs    []entity.ID
+	linkTaskKeys []string
 }
 
 func (w *writer) tasks(ctx context.Context, candidates []*taskCandidate) error {
@@ -179,6 +181,12 @@ func (w *writer) tasks(ctx context.Context, candidates []*taskCandidate) error {
 			continue
 		}
 		v := c.version
+		if v.TaskKey != "" {
+			w.linkTaskKeys = unionKeys(w.linkTaskKeys, []string{v.TaskKey})
+		}
+		if has && cur.TaskKey != "" {
+			w.linkTaskKeys = unionKeys(w.linkTaskKeys, []string{cur.TaskKey})
+		}
 		v.TaskID, v.AreaID, v.KnownSeq = obj.ID, w.objects[c.area].ID, w.seq
 		v.AssigneeAccountID = w.account(c.assignee)
 		if c.parent != nil {

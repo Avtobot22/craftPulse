@@ -373,7 +373,11 @@ ORDER BY v.job_key, v.config_fingerprint, v.attempt_no, v.attempt_id;
 SELECT v.* FROM normalize.mr_version v
 JOIN normalize.source_object o ON o.organization_id=v.organization_id AND o.id=v.mr_id
 WHERE v.organization_id=$1 AND v.area_id=ANY(sqlc.arg(areas)::uuid[])
- AND v.superseded_seq IS NULL AND o.deleted_at IS NULL ORDER BY v.mr_id;
+ AND v.superseded_seq IS NULL AND o.deleted_at IS NULL
+ AND (v.mr_id=ANY(sqlc.arg(mr_ids)::uuid[]) OR EXISTS (
+  SELECT 1 FROM unnest(sqlc.arg(task_keys)::text[]) AS k(value)
+  WHERE strpos(v.title,k.value)>0 OR strpos(v.source_branch,k.value)>0
+ )) ORDER BY v.mr_id;
 
 -- name: LinkTaskVersions :many
 SELECT v.* FROM normalize.task_version v

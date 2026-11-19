@@ -284,3 +284,30 @@ func (u *UseCase) ReconcileCandidates(ctx context.Context, org, mr entity.ID, pr
 	}
 	return nil
 }
+
+func (u *UseCase) ReconcileMRRun(ctx context.Context, org, run entity.ID, mr *entity.ID, record *entity.RecordRef) error {
+	if err := u.LockWrites(ctx, org); err != nil {
+		return err
+	}
+	current, err := u.d.Repo.EdgesAt(ctx, org, run, entity.LinksTo, math.MaxInt64)
+	if err != nil {
+		return err
+	}
+	for i := range current {
+		e := &current[i]
+		if e.Type != entity.LinkMRRun || e.Method != entity.LinkSourceExplicit || (mr != nil && e.From == *mr) {
+			continue
+		}
+		seq, err := u.d.Tenants.NextSeq(ctx, org)
+		if err != nil {
+			return err
+		}
+		if err := u.d.Repo.SupersedeEdge(ctx, org, e.ID, seq, u.d.Clock.Now()); err != nil {
+			return err
+		}
+	}
+	if mr != nil {
+		_, err = u.Record(ctx, org, entity.LinkProposal{Type: entity.LinkMRRun, From: *mr, To: run, Method: entity.LinkSourceExplicit, Record: record})
+	}
+	return err
+}

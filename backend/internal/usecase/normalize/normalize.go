@@ -24,7 +24,7 @@ type Ingest interface {
 	Accepted(ctx context.Context, orgID, receiptID entity.ID) (entity.Receipt, []entity.IngestRecord, error)
 }
 
-// Accounts is the org module, which owns the accounts of sources (TZ 10.3, rules 1 and 7).
+// Accounts is org: source accounts and the confirmed project areas (TZ 10.3, rules 1 and 7).
 type Accounts interface {
 	ProjectAreas(context.Context, entity.ID, time.Time) ([]entity.Link, error)
 	EnsureSourceAccounts(ctx context.Context, orgID, instanceID entity.ID, accounts []entity.SourceAccount) (map[string]entity.ID, error)

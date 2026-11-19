@@ -1358,16 +1358,27 @@ const linkMRVersions = `-- name: LinkMRVersions :many
 SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.mr_id, v.area_id, v.source_updated_at, v.iid, v.title, v.state, v.draft, v.author_account_id, v.source_branch, v.target_branch, v.head_sha, v.base_sha, v.merge_base_sha, v.reviewer_field, v.reviewer_account_ids, v.opened_at, v.ready_at, v.merged_at, v.closed_at FROM normalize.mr_version v
 JOIN normalize.source_object o ON o.organization_id=v.organization_id AND o.id=v.mr_id
 WHERE v.organization_id=$1 AND v.area_id=ANY($2::uuid[])
- AND v.superseded_seq IS NULL AND o.deleted_at IS NULL ORDER BY v.mr_id
+ AND v.superseded_seq IS NULL AND o.deleted_at IS NULL
+ AND (v.mr_id=ANY($3::uuid[]) OR EXISTS (
+  SELECT 1 FROM unnest($4::text[]) AS k(value)
+  WHERE strpos(v.title,k.value)>0 OR strpos(v.source_branch,k.value)>0
+ )) ORDER BY v.mr_id
 `
 
 type LinkMRVersionsParams struct {
 	OrganizationID uuid.UUID
 	Areas          []uuid.UUID
+	MrIds          []uuid.UUID
+	TaskKeys       []string
 }
 
 func (q *Queries) LinkMRVersions(ctx context.Context, arg LinkMRVersionsParams) ([]NormalizeMrVersion, error) {
-	rows, err := q.db.Query(ctx, linkMRVersions, arg.OrganizationID, arg.Areas)
+	rows, err := q.db.Query(ctx, linkMRVersions,
+		arg.OrganizationID,
+		arg.Areas,
+		arg.MrIds,
+		arg.TaskKeys,
+	)
 	if err != nil {
 		return nil, err
 	}

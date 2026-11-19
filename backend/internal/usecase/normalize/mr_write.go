@@ -104,6 +104,7 @@ func (w *writer) mergeRequests(ctx context.Context, candidates []*mrCandidate) e
 		}
 		v := c.version
 		v.MRID, v.KnownSeq = obj.ID, w.seq
+		w.linkMRIDs = append(w.linkMRIDs, obj.ID)
 		v.AreaID = w.objects[c.area].ID
 		v.AuthorAccountID = w.account(c.author)
 		for _, native := range c.reviewers {

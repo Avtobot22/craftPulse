@@ -3,6 +3,7 @@ package normalize
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"regexp"
 	"slices"
 	"unicode"
@@ -31,6 +32,9 @@ func taskKeys(text string) []string {
 }
 
 func (w *writer) linkCandidates(ctx context.Context) error {
+	if len(w.linkMRIDs) == 0 && len(w.linkTaskKeys) == 0 {
+		return nil
+	}
 	links, err := w.u.d.Accounts.ProjectAreas(ctx, w.org, w.now)
 	if err != nil {
 		return err
@@ -52,33 +56,49 @@ func (w *writer) linkCandidates(ctx context.Context) error {
 			areas = union(areas, group)
 		}
 	}
-	mrs, err := w.u.d.Repo.LinkMRVersions(ctx, w.org, areas)
+	mrs, err := w.u.d.Repo.LinkMRVersions(ctx, w.org, entity.LinkMRFilter{Areas: areas, MRIDs: w.linkMRIDs, TaskKeys: w.linkTaskKeys})
 	if err != nil {
 		return err
 	}
+	areasByMR := map[entity.ID][]entity.ID{}
+	allAreas := []entity.ID{}
+	allKeys := map[string]bool{}
 	for i := range mrs {
 		mr := &mrs[i]
-		taskAreas := []entity.ID{}
 		for _, group := range byProject {
 			if slices.Contains(group, mr.AreaID) {
-				taskAreas = union(taskAreas, group)
+				areasByMR[mr.MRID] = union(areasByMR[mr.MRID], group)
 			}
 		}
+		allAreas = union(allAreas, areasByMR[mr.MRID])
+		for _, key := range unionKeys(taskKeys(mr.SourceBranch), taskKeys(mr.Title)) {
+			allKeys[key] = true
+		}
+	}
+	tasks, err := w.u.d.Repo.LinkTaskVersions(ctx, w.org, allAreas, slices.Sorted(maps.Keys(allKeys)))
+	if err != nil {
+		return err
+	}
+	tasksByKey := map[string][]*entity.TaskVersion{}
+	for i := range tasks {
+		t := &tasks[i]
+		tasksByKey[t.TaskKey] = append(tasksByKey[t.TaskKey], t)
+	}
+	for i := range mrs {
+		mr := &mrs[i]
 		fields := []struct {
 			value, field string
 			method       entity.LinkMethod
 		}{
 			{mr.SourceBranch, "source_branch", entity.LinkBranchKey}, {mr.Title, "title", entity.LinkTitleKey},
 		}
-		keys := unionKeys(taskKeys(mr.SourceBranch), taskKeys(mr.Title))
-		tasks, err := w.u.d.Repo.LinkTaskVersions(ctx, w.org, taskAreas, keys)
-		if err != nil {
-			return err
-		}
 		byKey := map[string][]entity.ID{}
-		for i := range tasks {
-			t := &tasks[i]
-			byKey[t.TaskKey] = append(byKey[t.TaskKey], t.TaskID)
+		for _, key := range unionKeys(taskKeys(mr.SourceBranch), taskKeys(mr.Title)) {
+			for _, t := range tasksByKey[key] {
+				if slices.Contains(areasByMR[mr.MRID], t.AreaID) {
+					byKey[key] = append(byKey[key], t.TaskID)
+				}
+			}
 		}
 		var proposals []entity.LinkProposal
 		for _, f := range fields {

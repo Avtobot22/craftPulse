@@ -9,8 +9,8 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
 
-func (r *Repo) LinkMRVersions(ctx context.Context, org entity.ID, areas []entity.ID) ([]entity.MRVersion, error) {
-	rows, err := r.q(ctx).LinkMRVersions(ctx, LinkMRVersionsParams{OrganizationID: uuid.UUID(org), Areas: ids(areas)})
+func (r *Repo) LinkMRVersions(ctx context.Context, org entity.ID, filter entity.LinkMRFilter) ([]entity.MRVersion, error) {
+	rows, err := r.q(ctx).LinkMRVersions(ctx, LinkMRVersionsParams{OrganizationID: uuid.UUID(org), Areas: ids(filter.Areas), MrIds: ids(filter.MRIDs), TaskKeys: filter.TaskKeys})
 	if err != nil {
 		return nil, fmt.Errorf("normalize: link MR versions: %w", err)
 	}

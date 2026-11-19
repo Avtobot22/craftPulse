@@ -12,6 +12,7 @@ import (
 // modules (TZ 10.3, rule 7).
 type Links interface {
 	LockWrites(context.Context, entity.ID) error
+	ReconcileMRRun(context.Context, entity.ID, entity.ID, *entity.ID, *entity.RecordRef) error
 	Record(context.Context, entity.ID, entity.LinkProposal) (entity.LinkEdge, error)
 	ReconcileCandidates(context.Context, entity.ID, entity.ID, []entity.LinkProposal) error
 	Edge(ctx context.Context, orgID, id entity.ID) (entity.LinkEdge, error)

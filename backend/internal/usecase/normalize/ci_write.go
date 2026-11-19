@@ -91,15 +91,11 @@ func (w *writer) ciRuns(ctx context.Context, in *input) error {
 	}
 	for i := range insert {
 		v := &insert[i]
-		if v.MRID != nil {
-			if _, err := w.u.d.Links.Record(ctx, w.org, entity.LinkProposal{
-				Type: entity.LinkMRRun, From: *v.MRID, To: v.RunID,
-				Method: entity.LinkSourceExplicit, Record: &v.Record,
-			}); err != nil {
-				return err
-			}
+		if err := w.u.d.Links.ReconcileMRRun(ctx, w.org, v.RunID, v.MRID, &v.Record); err != nil {
+			return err
 		}
 	}
+
 	return nil
 }
 

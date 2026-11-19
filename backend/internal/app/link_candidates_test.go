@@ -139,3 +139,16 @@ func TestNormalizeLinks_VerifiedPipelineOnly(t *testing.T) {
 	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT o.native_id FROM link.edge e JOIN normalize.source_object o ON o.id=e.to_object_id WHERE e.link_type='mr_run'`).Scan(&native))
 	assert.Equal(t, "5001", native)
 }
+
+func TestNormalizeLinks_RunCorrectionClosesExplicitLink(t *testing.T) {
+	t.Parallel()
+	e := newNormalizeEnv(t)
+	candidateMR(t, e, "9001", "No key", "feature/plain", "v1", _t1)
+	e.imported(t, e.admin, pack(t, ciManifest("42"), ciRun(t, runSpec{id: "5001", project: "42", sha: _headA, status: "success", revision: "r1", updated: _t1, mr: "9001"})))
+	e.drain(t)
+	assert.Equal(t, 1, linkCandidateCount(t, e, "link_type='mr_run' AND superseded_seq IS NULL"))
+	e.imported(t, e.admin, pack(t, ciManifest("42"), ciRun(t, runSpec{id: "5001", project: "42", sha: _headB, status: "success", revision: "r2", updated: _t2, mr: "9001"})))
+	e.drain(t)
+	assert.Zero(t, linkCandidateCount(t, e, "link_type='mr_run' AND superseded_seq IS NULL"))
+	assert.Equal(t, 1, linkCandidateCount(t, e, "link_type='mr_run' AND superseded_seq IS NOT NULL"))
+}
