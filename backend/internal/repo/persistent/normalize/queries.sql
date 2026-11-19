@@ -297,3 +297,74 @@ SELECT v.* FROM normalize.repository_version v
 JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.repository_id
 WHERE v.organization_id = sqlc.arg(organization_id) AND v.repository_id = sqlc.arg(repository_id) AND o.deleted_at IS NULL
     AND v.superseded_seq IS NULL;
+
+-- name: CurrentCIRunVersions :many
+SELECT * FROM normalize.ci_run_version WHERE organization_id = sqlc.arg(organization_id) AND run_id = ANY (sqlc.arg(object_ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: KnownCIRunVersions :many
+SELECT run_id, source_revision, content_hash FROM normalize.ci_run_version
+WHERE organization_id = sqlc.arg(organization_id) AND run_id = ANY (sqlc.arg(object_ids)::uuid[]);
+
+-- name: SupersedeCIRunVersions :exec
+UPDATE normalize.ci_run_version SET superseded_seq = sqlc.arg(known_seq)::bigint, superseded_at = sqlc.arg(at)::timestamptz
+WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: InsertCIRunVersions :batchexec
+INSERT INTO normalize.ci_run_version (organization_id, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);
+
+-- name: CurrentCIAttemptVersions :many
+SELECT * FROM normalize.ci_attempt_version WHERE organization_id = sqlc.arg(organization_id) AND attempt_id = ANY (sqlc.arg(object_ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: KnownCIAttemptVersions :many
+SELECT attempt_id, source_revision, content_hash FROM normalize.ci_attempt_version
+WHERE organization_id = sqlc.arg(organization_id) AND attempt_id = ANY (sqlc.arg(object_ids)::uuid[]);
+
+-- name: SupersedeCIAttemptVersions :exec
+UPDATE normalize.ci_attempt_version SET superseded_seq = sqlc.arg(known_seq)::bigint, superseded_at = sqlc.arg(at)::timestamptz
+WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: InsertCIAttemptVersions :batchexec
+INSERT INTO normalize.ci_attempt_version (organization_id, attempt_id, run_id, job_key, config_fingerprint, attempt_no, native_status, outcome, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_s, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);
+
+-- name: MatchRunMRs :many
+SELECT i::integer AS ord, o.id FROM generate_subscripts(sqlc.arg(mr_native_ids)::text[], 1) AS i
+JOIN normalize.source_object o ON o.organization_id = sqlc.arg(organization_id) AND o.instance_id = sqlc.arg(instance_id)::uuid
+    AND o.object_kind = 'merge_request' AND o.native_ns = '' AND o.native_id = (sqlc.arg(mr_native_ids)::text[])[i]
+WHERE o.deleted_at IS NULL AND o.current_area_id = (sqlc.arg(area_ids)::uuid[])[i]
+    AND (EXISTS (
+        SELECT 1 FROM normalize.mr_revision r WHERE r.organization_id = o.organization_id AND r.mr_id = o.id AND r.head_sha = (sqlc.arg(shas)::text[])[i]
+    ) OR EXISTS (
+        SELECT 1 FROM normalize.mr_version v WHERE v.organization_id = o.organization_id AND v.mr_id = o.id AND v.head_sha = (sqlc.arg(shas)::text[])[i]
+    ));
+
+-- name: ReadCIRunVersions :many
+SELECT v.* FROM normalize.ci_run_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
+WHERE v.organization_id = sqlc.arg(organization_id) AND o.deleted_at IS NULL AND o.current_area_id = ANY(sqlc.arg(areas)::uuid[])
+    AND (NOT o.restricted OR o.id = ANY(sqlc.arg(allowed)::uuid[]))
+    AND v.run_id = ANY(sqlc.arg(run_ids)::uuid[])
+    AND v.known_seq <= sqlc.arg(known_seq) AND (v.superseded_seq IS NULL OR v.superseded_seq > sqlc.arg(known_seq))
+ORDER BY v.started_at NULLS LAST, v.run_id;
+
+-- name: FindCIRunIDs :many
+SELECT v.run_id FROM normalize.ci_run_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
+WHERE v.organization_id = sqlc.arg(organization_id) AND o.deleted_at IS NULL AND o.current_area_id = ANY(sqlc.arg(areas)::uuid[])
+    AND (NOT o.restricted OR o.id = ANY(sqlc.arg(allowed)::uuid[]))
+    AND v.known_seq <= sqlc.arg(known_seq) AND (v.superseded_seq IS NULL OR v.superseded_seq > sqlc.arg(known_seq))
+    AND (sqlc.narg(mr_id)::uuid IS NULL OR v.mr_id = sqlc.narg(mr_id))
+    AND (sqlc.narg(parent_run_ids)::uuid[] IS NULL OR v.parent_run_id = ANY(sqlc.narg(parent_run_ids)::uuid[]))
+    AND (sqlc.narg(started_from)::timestamptz IS NULL OR v.started_at >= sqlc.narg(started_from))
+    AND (sqlc.narg(started_before)::timestamptz IS NULL OR v.started_at < sqlc.narg(started_before))
+ORDER BY v.run_id;
+
+-- name: ReadCIAttemptVersions :many
+SELECT v.* FROM normalize.ci_attempt_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
+WHERE v.organization_id = sqlc.arg(organization_id) AND o.deleted_at IS NULL AND o.current_area_id = ANY(sqlc.arg(areas)::uuid[])
+    AND (NOT o.restricted OR o.id = ANY(sqlc.arg(allowed)::uuid[]))
+    AND v.run_id = ANY(sqlc.arg(run_ids)::uuid[])
+    AND v.known_seq <= sqlc.arg(known_seq) AND (v.superseded_seq IS NULL OR v.superseded_seq > sqlc.arg(known_seq))
+ORDER BY v.job_key, v.config_fingerprint, v.attempt_no, v.attempt_id;

@@ -296,6 +296,20 @@ type NormalizeRepo interface {
 	FindMRIDs(ctx context.Context, orgID entity.ID, areas, allowed []entity.ID, key entity.SourceKey, sha string, seq int64) ([]entity.ID, error)
 	ReadRepositoryVersion(ctx context.Context, orgID, repositoryID entity.ID) (entity.RepositoryVersion, error)
 
+	CurrentCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.CIRunVersion, error)
+	KnownCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.Revision, error)
+	SupersedeCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
+	InsertCIRunVersions(ctx context.Context, orgID entity.ID, versions []entity.CIRunVersion) error
+	CurrentCIAttemptVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.CIAttemptVersion, error)
+	KnownCIAttemptVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.Revision, error)
+	SupersedeCIAttemptVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
+	InsertCIAttemptVersions(ctx context.Context, orgID entity.ID, versions []entity.CIAttemptVersion) error
+	// MatchRunMRs returns, by the index of each match, the MR that passes it.
+	MatchRunMRs(ctx context.Context, orgID, instanceID entity.ID, matches []entity.RunMRMatch) (map[int]entity.ID, error)
+	ReadCIRunVersions(ctx context.Context, orgID entity.ID, areas, allowed, runs []entity.ID, seq int64) ([]entity.CIRunVersion, error)
+	FindCIRunIDs(ctx context.Context, orgID entity.ID, areas, allowed []entity.ID, q entity.RunsQuery, seq int64) ([]entity.ID, error)
+	ReadCIAttemptVersions(ctx context.Context, orgID entity.ID, areas, allowed, runs []entity.ID, seq int64) ([]entity.CIAttemptVersion, error)
+
 	RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error)
 	// EnsureObjects creates the identities that are new with the knowledge number seq and returns all by key.
 	EnsureObjects(ctx context.Context, orgID entity.ID, keys []entity.SourceKey, quality entity.IdentityQuality, seq int64) (map[entity.SourceKey]entity.SourceObject, error)

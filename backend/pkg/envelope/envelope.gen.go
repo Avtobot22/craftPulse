@@ -1164,6 +1164,7 @@ func (e TaskStatusV1Category) Valid() bool {
 
 // Defines values for TruncatedHistoryRecordKind.
 const (
+	TruncatedHistoryRecordKindCiRun        TruncatedHistoryRecordKind = "ci_run"
 	TruncatedHistoryRecordKindMergeRequest TruncatedHistoryRecordKind = "merge_request"
 	TruncatedHistoryRecordKindTask         TruncatedHistoryRecordKind = "task"
 )
@@ -1171,6 +1172,8 @@ const (
 // Valid indicates whether the value is a known member of the TruncatedHistoryRecordKind enum.
 func (e TruncatedHistoryRecordKind) Valid() bool {
 	switch e {
+	case TruncatedHistoryRecordKindCiRun:
+		return true
 	case TruncatedHistoryRecordKindMergeRequest:
 		return true
 	case TruncatedHistoryRecordKindTask:
@@ -1812,11 +1815,13 @@ type TaskV1 struct {
 // TruncatedHistory defines model for TruncatedHistory.
 type TruncatedHistory struct {
 	// HistoryFrom С какого времени история в пакете полная.
-	HistoryFrom *time.Time                 `json:"history_from"`
-	NativeId    string                     `json:"native_id"`
-	NativeNs    string                     `json:"native_ns"`
-	RecordKind  TruncatedHistoryRecordKind `json:"record_kind"`
+	HistoryFrom *time.Time `json:"history_from"`
+	NativeId    string     `json:"native_id"`
+	NativeNs    string     `json:"native_ns"`
+
+	// RecordKind У `ci_run` обрезана история попыток: известны не все повторы jobs запуска.
+	RecordKind TruncatedHistoryRecordKind `json:"record_kind"`
 }
 
-// TruncatedHistoryRecordKind defines model for TruncatedHistory.RecordKind.
+// TruncatedHistoryRecordKind У `ci_run` обрезана история попыток: известны не все повторы jobs запуска.
 type TruncatedHistoryRecordKind string

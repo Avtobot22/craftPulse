@@ -404,7 +404,8 @@
                         ],
                         "enum": [
                           "task",
-                          "merge_request"
+                          "merge_request",
+                          "ci_run"
                         ]
                       }
                     },

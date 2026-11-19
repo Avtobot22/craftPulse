@@ -135,6 +135,112 @@ func (q *Queries) AreaOf(ctx context.Context, arg AreaOfParams) (uuid.UUID, erro
 	return area_id, err
 }
 
+const currentCIAttemptVersions = `-- name: CurrentCIAttemptVersions :many
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, attempt_id, run_id, job_key, config_fingerprint, attempt_no, native_status, outcome, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_s FROM normalize.ci_attempt_version WHERE organization_id = $1 AND attempt_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+`
+
+type CurrentCIAttemptVersionsParams struct {
+	OrganizationID uuid.UUID
+	ObjectIds      []uuid.UUID
+}
+
+func (q *Queries) CurrentCIAttemptVersions(ctx context.Context, arg CurrentCIAttemptVersionsParams) ([]NormalizeCiAttemptVersion, error) {
+	rows, err := q.db.Query(ctx, currentCIAttemptVersions, arg.OrganizationID, arg.ObjectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeCiAttemptVersion
+	for rows.Next() {
+		var i NormalizeCiAttemptVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.AttemptID,
+			&i.RunID,
+			&i.JobKey,
+			&i.ConfigFingerprint,
+			&i.AttemptNo,
+			&i.NativeStatus,
+			&i.Outcome,
+			&i.AllowFailure,
+			&i.FailureKind,
+			&i.RunnerClass,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.DurationS,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const currentCIRunVersions = `-- name: CurrentCIRunVersions :many
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history FROM normalize.ci_run_version WHERE organization_id = $1 AND run_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+`
+
+type CurrentCIRunVersionsParams struct {
+	OrganizationID uuid.UUID
+	ObjectIds      []uuid.UUID
+}
+
+func (q *Queries) CurrentCIRunVersions(ctx context.Context, arg CurrentCIRunVersionsParams) ([]NormalizeCiRunVersion, error) {
+	rows, err := q.db.Query(ctx, currentCIRunVersions, arg.OrganizationID, arg.ObjectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeCiRunVersion
+	for rows.Next() {
+		var i NormalizeCiRunVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.RunID,
+			&i.AreaID,
+			&i.MrID,
+			&i.SourceUpdatedAt,
+			&i.RefName,
+			&i.Sha,
+			&i.ParentRunID,
+			&i.DefinitionVersion,
+			&i.NativeStatus,
+			&i.Outcome,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.AttemptHistory,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const currentDictionaryEntries = `-- name: CurrentDictionaryEntries :many
 SELECT d.organization_id, d.id, d.area_id, d.entry_kind, d.native_id, d.source_revision, d.content_hash, d.known_seq, d.superseded_seq, d.superseded_at, d.receipt_id, d.record_no, d.name, d.attributes FROM normalize.dictionary_entry d
 JOIN (
@@ -728,6 +834,59 @@ func (q *Queries) DictionaryRevisions(ctx context.Context, arg DictionaryRevisio
 	return items, nil
 }
 
+const findCIRunIDs = `-- name: FindCIRunIDs :many
+SELECT v.run_id FROM normalize.ci_run_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
+WHERE v.organization_id = $1 AND o.deleted_at IS NULL AND o.current_area_id = ANY($2::uuid[])
+    AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
+    AND v.known_seq <= $4 AND (v.superseded_seq IS NULL OR v.superseded_seq > $4)
+    AND ($5::uuid IS NULL OR v.mr_id = $5)
+    AND ($6::uuid[] IS NULL OR v.parent_run_id = ANY($6::uuid[]))
+    AND ($7::timestamptz IS NULL OR v.started_at >= $7)
+    AND ($8::timestamptz IS NULL OR v.started_at < $8)
+ORDER BY v.run_id
+`
+
+type FindCIRunIDsParams struct {
+	OrganizationID uuid.UUID
+	Areas          []uuid.UUID
+	Allowed        []uuid.UUID
+	KnownSeq       int64
+	MrID           uuid.NullUUID
+	ParentRunIds   []uuid.UUID
+	StartedFrom    pgtype.Timestamptz
+	StartedBefore  pgtype.Timestamptz
+}
+
+func (q *Queries) FindCIRunIDs(ctx context.Context, arg FindCIRunIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, findCIRunIDs,
+		arg.OrganizationID,
+		arg.Areas,
+		arg.Allowed,
+		arg.KnownSeq,
+		arg.MrID,
+		arg.ParentRunIds,
+		arg.StartedFrom,
+		arg.StartedBefore,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var run_id uuid.UUID
+		if err := rows.Scan(&run_id); err != nil {
+			return nil, err
+		}
+		items = append(items, run_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findMRIDs = `-- name: FindMRIDs :many
 SELECT o.id FROM normalize.source_object o
 WHERE o.organization_id = $1 AND o.object_kind = 'merge_request'
@@ -905,6 +1064,78 @@ func (q *Queries) InsertObjects(ctx context.Context, arg InsertObjectsParams) er
 		arg.KnownSeq,
 	)
 	return err
+}
+
+const knownCIAttemptVersions = `-- name: KnownCIAttemptVersions :many
+SELECT attempt_id, source_revision, content_hash FROM normalize.ci_attempt_version
+WHERE organization_id = $1 AND attempt_id = ANY ($2::uuid[])
+`
+
+type KnownCIAttemptVersionsParams struct {
+	OrganizationID uuid.UUID
+	ObjectIds      []uuid.UUID
+}
+
+type KnownCIAttemptVersionsRow struct {
+	AttemptID      uuid.UUID
+	SourceRevision string
+	ContentHash    []byte
+}
+
+func (q *Queries) KnownCIAttemptVersions(ctx context.Context, arg KnownCIAttemptVersionsParams) ([]KnownCIAttemptVersionsRow, error) {
+	rows, err := q.db.Query(ctx, knownCIAttemptVersions, arg.OrganizationID, arg.ObjectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []KnownCIAttemptVersionsRow
+	for rows.Next() {
+		var i KnownCIAttemptVersionsRow
+		if err := rows.Scan(&i.AttemptID, &i.SourceRevision, &i.ContentHash); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const knownCIRunVersions = `-- name: KnownCIRunVersions :many
+SELECT run_id, source_revision, content_hash FROM normalize.ci_run_version
+WHERE organization_id = $1 AND run_id = ANY ($2::uuid[])
+`
+
+type KnownCIRunVersionsParams struct {
+	OrganizationID uuid.UUID
+	ObjectIds      []uuid.UUID
+}
+
+type KnownCIRunVersionsRow struct {
+	RunID          uuid.UUID
+	SourceRevision string
+	ContentHash    []byte
+}
+
+func (q *Queries) KnownCIRunVersions(ctx context.Context, arg KnownCIRunVersionsParams) ([]KnownCIRunVersionsRow, error) {
+	rows, err := q.db.Query(ctx, knownCIRunVersions, arg.OrganizationID, arg.ObjectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []KnownCIRunVersionsRow
+	for rows.Next() {
+		var i KnownCIRunVersionsRow
+		if err := rows.Scan(&i.RunID, &i.SourceRevision, &i.ContentHash); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const knownMREvents = `-- name: KnownMREvents :many
@@ -1123,6 +1354,57 @@ func (q *Queries) LinkEnds(ctx context.Context, arg LinkEndsParams) ([]LinkEndsR
 	return items, nil
 }
 
+const matchRunMRs = `-- name: MatchRunMRs :many
+SELECT i::integer AS ord, o.id FROM generate_subscripts($1::text[], 1) AS i
+JOIN normalize.source_object o ON o.organization_id = $2 AND o.instance_id = $3::uuid
+    AND o.object_kind = 'merge_request' AND o.native_ns = '' AND o.native_id = ($1::text[])[i]
+WHERE o.deleted_at IS NULL AND o.current_area_id = ($4::uuid[])[i]
+    AND (EXISTS (
+        SELECT 1 FROM normalize.mr_revision r WHERE r.organization_id = o.organization_id AND r.mr_id = o.id AND r.head_sha = ($5::text[])[i]
+    ) OR EXISTS (
+        SELECT 1 FROM normalize.mr_version v WHERE v.organization_id = o.organization_id AND v.mr_id = o.id AND v.head_sha = ($5::text[])[i]
+    ))
+`
+
+type MatchRunMRsParams struct {
+	MrNativeIds    []string
+	OrganizationID uuid.UUID
+	InstanceID     uuid.UUID
+	AreaIds        []uuid.UUID
+	Shas           []string
+}
+
+type MatchRunMRsRow struct {
+	Ord int32
+	ID  uuid.UUID
+}
+
+func (q *Queries) MatchRunMRs(ctx context.Context, arg MatchRunMRsParams) ([]MatchRunMRsRow, error) {
+	rows, err := q.db.Query(ctx, matchRunMRs,
+		arg.MrNativeIds,
+		arg.OrganizationID,
+		arg.InstanceID,
+		arg.AreaIds,
+		arg.Shas,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MatchRunMRsRow
+	for rows.Next() {
+		var i MatchRunMRsRow
+		if err := rows.Scan(&i.Ord, &i.ID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const placeObjects = `-- name: PlaceObjects :exec
 UPDATE normalize.source_object o SET current_area_id = k.area_id, restricted = k.restricted
 FROM (
@@ -1147,6 +1429,142 @@ func (q *Queries) PlaceObjects(ctx context.Context, arg PlaceObjectsParams) erro
 		arg.Restricted,
 	)
 	return err
+}
+
+const readCIAttemptVersions = `-- name: ReadCIAttemptVersions :many
+SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.attempt_id, v.run_id, v.job_key, v.config_fingerprint, v.attempt_no, v.native_status, v.outcome, v.allow_failure, v.failure_kind, v.runner_class, v.started_at, v.finished_at, v.duration_s FROM normalize.ci_attempt_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
+WHERE v.organization_id = $1 AND o.deleted_at IS NULL AND o.current_area_id = ANY($2::uuid[])
+    AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
+    AND v.run_id = ANY($4::uuid[])
+    AND v.known_seq <= $5 AND (v.superseded_seq IS NULL OR v.superseded_seq > $5)
+ORDER BY v.job_key, v.config_fingerprint, v.attempt_no, v.attempt_id
+`
+
+type ReadCIAttemptVersionsParams struct {
+	OrganizationID uuid.UUID
+	Areas          []uuid.UUID
+	Allowed        []uuid.UUID
+	RunIds         []uuid.UUID
+	KnownSeq       int64
+}
+
+func (q *Queries) ReadCIAttemptVersions(ctx context.Context, arg ReadCIAttemptVersionsParams) ([]NormalizeCiAttemptVersion, error) {
+	rows, err := q.db.Query(ctx, readCIAttemptVersions,
+		arg.OrganizationID,
+		arg.Areas,
+		arg.Allowed,
+		arg.RunIds,
+		arg.KnownSeq,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeCiAttemptVersion
+	for rows.Next() {
+		var i NormalizeCiAttemptVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.AttemptID,
+			&i.RunID,
+			&i.JobKey,
+			&i.ConfigFingerprint,
+			&i.AttemptNo,
+			&i.NativeStatus,
+			&i.Outcome,
+			&i.AllowFailure,
+			&i.FailureKind,
+			&i.RunnerClass,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.DurationS,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const readCIRunVersions = `-- name: ReadCIRunVersions :many
+SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.run_id, v.area_id, v.mr_id, v.source_updated_at, v.ref_name, v.sha, v.parent_run_id, v.definition_version, v.native_status, v.outcome, v.started_at, v.finished_at, v.attempt_history FROM normalize.ci_run_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
+WHERE v.organization_id = $1 AND o.deleted_at IS NULL AND o.current_area_id = ANY($2::uuid[])
+    AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
+    AND v.run_id = ANY($4::uuid[])
+    AND v.known_seq <= $5 AND (v.superseded_seq IS NULL OR v.superseded_seq > $5)
+ORDER BY v.started_at NULLS LAST, v.run_id
+`
+
+type ReadCIRunVersionsParams struct {
+	OrganizationID uuid.UUID
+	Areas          []uuid.UUID
+	Allowed        []uuid.UUID
+	RunIds         []uuid.UUID
+	KnownSeq       int64
+}
+
+func (q *Queries) ReadCIRunVersions(ctx context.Context, arg ReadCIRunVersionsParams) ([]NormalizeCiRunVersion, error) {
+	rows, err := q.db.Query(ctx, readCIRunVersions,
+		arg.OrganizationID,
+		arg.Areas,
+		arg.Allowed,
+		arg.RunIds,
+		arg.KnownSeq,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeCiRunVersion
+	for rows.Next() {
+		var i NormalizeCiRunVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.RunID,
+			&i.AreaID,
+			&i.MrID,
+			&i.SourceUpdatedAt,
+			&i.RefName,
+			&i.Sha,
+			&i.ParentRunID,
+			&i.DefinitionVersion,
+			&i.NativeStatus,
+			&i.Outcome,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.AttemptHistory,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const readMREvents = `-- name: ReadMREvents :many
@@ -1474,6 +1892,50 @@ type SetAreaChangeSeqParams struct {
 
 func (q *Queries) SetAreaChangeSeq(ctx context.Context, arg SetAreaChangeSeqParams) error {
 	_, err := q.db.Exec(ctx, setAreaChangeSeq, arg.KnownSeq, arg.OrganizationID, arg.AreaIds)
+	return err
+}
+
+const supersedeCIAttemptVersions = `-- name: SupersedeCIAttemptVersions :exec
+UPDATE normalize.ci_attempt_version SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = ANY ($4::uuid[]) AND superseded_seq IS NULL
+`
+
+type SupersedeCIAttemptVersionsParams struct {
+	KnownSeq       int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) SupersedeCIAttemptVersions(ctx context.Context, arg SupersedeCIAttemptVersionsParams) error {
+	_, err := q.db.Exec(ctx, supersedeCIAttemptVersions,
+		arg.KnownSeq,
+		arg.At,
+		arg.OrganizationID,
+		arg.Ids,
+	)
+	return err
+}
+
+const supersedeCIRunVersions = `-- name: SupersedeCIRunVersions :exec
+UPDATE normalize.ci_run_version SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = ANY ($4::uuid[]) AND superseded_seq IS NULL
+`
+
+type SupersedeCIRunVersionsParams struct {
+	KnownSeq       int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) SupersedeCIRunVersions(ctx context.Context, arg SupersedeCIRunVersionsParams) error {
+	_, err := q.db.Exec(ctx, supersedeCIRunVersions,
+		arg.KnownSeq,
+		arg.At,
+		arg.OrganizationID,
+		arg.Ids,
+	)
 	return err
 }
 

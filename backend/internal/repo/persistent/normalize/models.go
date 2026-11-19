@@ -11,6 +11,58 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type NormalizeCiAttemptVersion struct {
+	OrganizationID    uuid.UUID
+	ID                uuid.UUID
+	KnownSeq          int64
+	SupersededSeq     pgtype.Int8
+	SupersededAt      pgtype.Timestamptz
+	ReceiptID         uuid.UUID
+	RecordNo          int32
+	SourceRevision    string
+	ContentHash       []byte
+	ObservedAt        time.Time
+	AttemptID         uuid.UUID
+	RunID             uuid.UUID
+	JobKey            string
+	ConfigFingerprint []byte
+	AttemptNo         int32
+	NativeStatus      string
+	Outcome           string
+	AllowFailure      bool
+	FailureKind       pgtype.Text
+	RunnerClass       pgtype.Text
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	DurationS         pgtype.Int8
+}
+
+type NormalizeCiRunVersion struct {
+	OrganizationID    uuid.UUID
+	ID                uuid.UUID
+	KnownSeq          int64
+	SupersededSeq     pgtype.Int8
+	SupersededAt      pgtype.Timestamptz
+	ReceiptID         uuid.UUID
+	RecordNo          int32
+	SourceRevision    string
+	ContentHash       []byte
+	ObservedAt        time.Time
+	RunID             uuid.UUID
+	AreaID            uuid.UUID
+	MrID              uuid.NullUUID
+	SourceUpdatedAt   pgtype.Timestamptz
+	RefName           string
+	Sha               string
+	ParentRunID       uuid.NullUUID
+	DefinitionVersion pgtype.Text
+	NativeStatus      string
+	Outcome           string
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	AttemptHistory    string
+}
+
 type NormalizeDictionaryEntry struct {
 	OrganizationID uuid.UUID
 	ID             uuid.UUID
