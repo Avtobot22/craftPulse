@@ -188,3 +188,82 @@ func assertNoFragments(t *testing.T, data []byte, marker string) {
 		assert.False(t, bytes.Contains(data, []byte(marker[i:i+8])), "secret fragment present")
 	}
 }
+
+func TestSecrets_DiffCannotHideAdditionsAsBinary(t *testing.T) {
+	for _, name := range []string{"attributes", "nul"} {
+		t.Run(name, func(t *testing.T) {
+			repo := t.TempDir()
+			fixtureGit(t, repo, "init", "--quiet")
+			if name == "attributes" {
+				require.NoError(t, os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("config.go -diff\n"), 0o600))
+			}
+			base := fixtureCommit(t, repo, "package config\n// clean\n")
+			content := "package config\nconst defaultPartnerAPIKey = \"" + fixtureMarker() + "\"\n"
+			if name == "nul" {
+				content = "\x00" + content
+			}
+			added := fixtureCommit(t, repo, content)
+			removed := fixtureCommit(t, repo, "package config\n// removed\n")
+			scan, err := ScanSecrets(t.Context(), repo, base, removed)
+			require.NoError(t, err)
+			assert.Empty(t, scan.Head)
+			require.Len(t, scan.Diff, 1)
+			assert.Equal(t, added, scan.Diff[0].Commit)
+			assert.Equal(t, 2, scan.Diff[0].StartLine)
+			safe, err := scan.Scrubber.Scrub(nil, []byte(fixtureMarker()))
+			require.NoError(t, err)
+			assertNoFragments(t, safe, fixtureMarker())
+		})
+	}
+}
+
+func TestSecrets_RecordRejectsAChangedRange(t *testing.T) {
+	repo, base, head := fixtureRepo(t)
+	scan, err := ScanSecrets(t.Context(), repo, base, head)
+	require.NoError(t, err)
+	job, err := JobFromEnv(gitlabEnv(map[string]string{"CI_COMMIT_SHA": head, "CRAFTPULSE_WORK_DIR": t.TempDir()}))
+	require.NoError(t, err)
+	var profile ciapi.CiCheckProfile
+	require.NoError(t, json.Unmarshal([]byte(`{"entries":[{"component_id":"0193a5b0-7777-7000-8000-000000000001","path_prefix":"","language":"go","analysis_kind":"secrets","mode":"builtin","profile_id":"gitleaks-default","image_digest":"sha256:`+strings.Repeat("a", 64)+`"}]}`), &profile))
+	runner := &Runner{Job: &job, Profile: &profile, Store: NewStore(job.WorkDir)}
+	require.NoError(t, scan.Record(runner, ""))
+	require.NoError(t, scan.Record(runner, ""))
+	changed, err := ScanSecrets(t.Context(), repo, head, head)
+	require.NoError(t, err)
+	assert.ErrorContains(t, changed.Record(runner, ""), "different secrets scan scope")
+	runs, err := runner.Store.Runs()
+	require.NoError(t, err)
+	require.Len(t, runs, 2)
+	for _, run := range runs {
+		if strings.HasSuffix(run.Id, "-diff") {
+			assert.Equal(t, base, run.History.FromSha)
+		}
+	}
+}
+
+func TestSecretScrubber_PreservesXMLNamespaces(t *testing.T) {
+	s := NewSecretScrubber(8)
+	s.add(fixtureMarker())
+	content := []byte(`<testsuite xmlns="urn:fixture" xmlns:x="urn:other"><x:testcase name="` + fixtureMarker() + `"/></testsuite>`)
+	for range 2 {
+		safe, err := s.Scrub(nil, content)
+		require.NoError(t, err)
+		assertNoFragments(t, safe, fixtureMarker())
+		decoder := xml.NewDecoder(bytes.NewReader(safe))
+		for {
+			token, err := decoder.Token()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+			if start, ok := token.(xml.StartElement); ok {
+				seen := map[xml.Name]bool{}
+				for _, attr := range start.Attr {
+					require.False(t, seen[attr.Name], "duplicate XML namespace/attribute")
+					seen[attr.Name] = true
+				}
+			}
+		}
+		content = safe
+	}
+}

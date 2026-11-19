@@ -12,6 +12,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -153,7 +154,7 @@ func ScanSecrets(ctx context.Context, repo, base, head string) (*SecretScan, err
 			if len(path) == 0 {
 				continue
 			}
-			patch, err := secretGit(ctx, repo, "show", "--format=", "--diff-merges=first-parent", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=0", commit, "--", string(path))
+			patch, err := secretGit(ctx, repo, "show", "--format=", "--text", "--diff-merges=first-parent", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=0", commit, "--", string(path))
 			if err != nil {
 				return nil, err
 			}
@@ -293,10 +294,17 @@ func (s *SecretScan) Record(r *Runner, component string) error {
 		}
 		exists := false
 		for i := range existing {
-			if existing[i].Id == tool.ID {
-				exists = true
-				break
+			if existing[i].Id != tool.ID {
+				continue
 			}
+			// Idempotence is valid only for the same SHA, range, profile and configuration.
+			previous := existing[i]
+			previous.StartedAt, previous.FinishedAt = run.StartedAt, run.FinishedAt
+			if !reflect.DeepEqual(previous, *run) {
+				return errors.New("state contains a different secrets scan scope; use a fresh work directory")
+			}
+			exists = true
+			break
 		}
 		if exists {
 			continue

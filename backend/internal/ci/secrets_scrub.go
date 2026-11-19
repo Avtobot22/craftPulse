@@ -94,7 +94,7 @@ func (s *SecretScrubber) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, 
 		var out bytes.Buffer
 		encoder := xml.NewEncoder(&out)
 		for {
-			token, err := decoder.Token()
+			token, err := decoder.RawToken()
 			if errors.Is(err, io.EOF) {
 				break
 			}
@@ -127,7 +127,7 @@ func (s *SecretScrubber) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, 
 				return nil, errors.New("cannot encode redacted XML")
 			}
 		}
-		if err := encoder.Flush(); err != nil {
+		if err := encoder.Close(); err != nil {
 			return nil, errors.New("cannot finish redacted XML")
 		}
 		data = out.Bytes()
@@ -144,6 +144,12 @@ func (s *SecretScrubber) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, 
 func (s *SecretScrubber) xmlName(n xml.Name) xml.Name {
 	n.Space = string(s.clean([]byte(n.Space)))
 	n.Local = string(s.clean([]byte(n.Local)))
+	// RawToken preserves namespace prefixes, including declarations and QName attribute values.
+	// Encode the original qualified name literally rather than synthesizing duplicate xmlns attributes.
+	if n.Space != "" {
+		n.Local = n.Space + ":" + n.Local
+		n.Space = ""
+	}
 	return n
 }
 

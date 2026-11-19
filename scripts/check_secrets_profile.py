@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
+import xml.etree.ElementTree as ET
 
 
 def run(args, *, cwd=None):
@@ -49,6 +50,10 @@ def check(image, platform):
         head = commit(repo, '// adjacent edit\npackage config\nconst defaultPartnerAPIKey = "' + marker + '"\n')
         shallow = root / "shallow"
         git(root, "clone", "--quiet", "--depth=1", repo.as_uri(), str(shallow))
+        (repo / ".gitattributes").write_text("config.go -diff\n")
+        binary_base = commit(repo, "package config\n// clean before binary addition\n")
+        commit(repo, '\x00package config\nconst defaultPartnerAPIKey = "' + marker + '"\n')
+        removed = commit(repo, "package config\n// removed binary secret\n")
         common = ["docker", "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}"]
         if platform:
             common += ["--platform", platform]
@@ -56,11 +61,12 @@ def check(image, platform):
         if info["gitleaks_version"] != "8.30.1":
             raise RuntimeError("unexpected scanner version")
         fingerprints = []
-        for name, source, sha, expected_head, expected_diff, truncated in [
-            ("clean", repo, base, 0, 0, False),
-            ("head", repo, added, 1, 1, False),
-            ("diff", repo, head, 1, 1, False),
-            ("shallow", shallow, head, 1, 1, True),
+        for name, source, scan_base, sha, expected_head, expected_diff, truncated in [
+            ("clean", repo, base, base, 0, 0, False),
+            ("head", repo, base, added, 1, 1, False),
+            ("diff", repo, base, head, 1, 1, False),
+            ("shallow", shallow, base, head, 1, 1, True),
+            ("binary-removed", repo, binary_base, removed, 0, 1, False),
         ]:
             state = root / ("state-" + name)
             state.mkdir()
@@ -70,9 +76,9 @@ def check(image, platform):
             (state / "profile.json").write_text(json.dumps(profile))
             # This other report repeats the full marker, a fragment, and an entity-escaped value.
             entities = "".join("&#" + str(ord(c)) + ";" for c in marker)
-            (state / "junit.xml").write_text('<testsuites><testsuite name="fixture"><testcase><failure>' +
-                marker + " " + marker[4:12] + " " + entities + '</failure></testcase></testsuite></testsuites>')
-            env = {"CI_PROJECT_DIR": "/repo", "CI_COMMIT_SHA": sha, "CI_MERGE_REQUEST_DIFF_BASE_SHA": base,
+            (state / "junit.xml").write_text('<testsuites xmlns="urn:fixture" xmlns:x="urn:other"><testsuite name="fixture"><x:testcase><failure>' +
+                marker + " " + marker[4:12] + " " + entities + '</failure></x:testcase></testsuite></testsuites>')
+            env = {"CI_PROJECT_DIR": "/repo", "CI_COMMIT_SHA": sha, "CI_MERGE_REQUEST_DIFF_BASE_SHA": scan_base,
                 "CRAFTPULSE_WORK_DIR": "/state", "CRAFTPULSE_URL": "https://craftpulse.example",
                 "CRAFTPULSE_UPLOAD_TOKEN": "fixture-token", "CI_SERVER_HOST": "gitlab.example",
                 "CI_PROJECT_ID": "42", "CI_PIPELINE_ID": "5001", "CI_JOB_ID": "7002"}
@@ -90,6 +96,8 @@ def check(image, platform):
                 files = {f.name: package.extractfile(f).read() for f in package if f.isfile()}
             for path, data in files.items():
                 assert_safe(path.encode() + data, marker)
+                if path.endswith(".xml"):
+                    ET.fromstring(data)
             scan = json.loads(files["scan-manifest.json"])
             tools = {tool["id"].rsplit("-", 1)[-1]: tool for tool in scan["tools"] if tool["producer"] == "gitleaks"}
             for scope, count in [("head", expected_head), ("diff", expected_diff)]:
