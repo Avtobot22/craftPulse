@@ -117,3 +117,9 @@ type LinkResult struct {
 	Edge LinkEdge
 	To   LinkEnd
 }
+
+type LinkMRFilter struct {
+	Areas    []ID
+	MRIDs    []ID
+	TaskKeys []string
+}

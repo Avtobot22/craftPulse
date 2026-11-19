@@ -368,3 +368,19 @@ WHERE v.organization_id = sqlc.arg(organization_id) AND o.deleted_at IS NULL AND
     AND v.run_id = ANY(sqlc.arg(run_ids)::uuid[])
     AND v.known_seq <= sqlc.arg(known_seq) AND (v.superseded_seq IS NULL OR v.superseded_seq > sqlc.arg(known_seq))
 ORDER BY v.job_key, v.config_fingerprint, v.attempt_no, v.attempt_id;
+
+-- name: LinkMRVersions :many
+SELECT v.* FROM normalize.mr_version v
+JOIN normalize.source_object o ON o.organization_id=v.organization_id AND o.id=v.mr_id
+WHERE v.organization_id=$1 AND v.area_id=ANY(sqlc.arg(areas)::uuid[])
+ AND v.superseded_seq IS NULL AND o.deleted_at IS NULL
+ AND (v.mr_id=ANY(sqlc.arg(mr_ids)::uuid[]) OR EXISTS (
+  SELECT 1 FROM unnest(sqlc.arg(task_keys)::text[]) AS k(value)
+  WHERE strpos(v.title,k.value)>0 OR strpos(v.source_branch,k.value)>0
+ )) ORDER BY v.mr_id;
+
+-- name: LinkTaskVersions :many
+SELECT v.* FROM normalize.task_version v
+JOIN normalize.source_object o ON o.organization_id=v.organization_id AND o.id=v.task_id
+WHERE v.organization_id=$1 AND v.area_id=ANY(sqlc.arg(areas)::uuid[])
+ AND v.task_key=ANY(sqlc.arg(keys)::text[]) AND v.superseded_seq IS NULL AND o.deleted_at IS NULL ORDER BY v.task_id;

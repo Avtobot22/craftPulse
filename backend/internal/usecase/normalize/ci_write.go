@@ -86,7 +86,17 @@ func (w *writer) ciRuns(ctx context.Context, in *input) error {
 	if err := w.u.d.Repo.InsertCIRunVersions(ctx, w.org, insert); err != nil {
 		return err
 	}
-	return w.u.d.Repo.PlaceObjects(ctx, w.org, placements)
+	if err := w.u.d.Repo.PlaceObjects(ctx, w.org, placements); err != nil {
+		return err
+	}
+	for i := range insert {
+		v := &insert[i]
+		if err := w.u.d.Links.ReconcileMRRun(ctx, w.org, v.RunID, v.MRID, &v.Record); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // runMRs are the MRs of the runs by their index: a run belongs to the MR the source names only when the MR

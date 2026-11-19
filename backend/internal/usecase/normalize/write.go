@@ -49,6 +49,11 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 	if err := w.entries(ctx, in.entries, objects[in.area].ID); err != nil {
 		return nil, err
 	}
+	if len(in.tasks) > 0 || len(in.mrs) > 0 {
+		if err := w.linkCandidates(ctx); err != nil {
+			return nil, err
+		}
+	}
 	list := w.changes.list()
 	if err := u.d.Repo.RecordAreaChanges(ctx, org, seq, list, now); err != nil {
 		return nil, err
@@ -129,14 +134,16 @@ func (u *UseCase) placeAreas(ctx context.Context, org entity.ID, in *input, obje
 }
 
 type writer struct {
-	u        *UseCase
-	org      entity.ID
-	seq      int64
-	now      time.Time
-	resolved int
-	objects  map[entity.SourceKey]entity.SourceObject
-	accounts map[string]entity.ID
-	changes  changes
+	u            *UseCase
+	org          entity.ID
+	seq          int64
+	now          time.Time
+	resolved     int
+	objects      map[entity.SourceKey]entity.SourceObject
+	accounts     map[string]entity.ID
+	changes      changes
+	linkMRIDs    []entity.ID
+	linkTaskKeys []string
 }
 
 func (w *writer) tasks(ctx context.Context, candidates []*taskCandidate) error {
@@ -174,6 +181,12 @@ func (w *writer) tasks(ctx context.Context, candidates []*taskCandidate) error {
 			continue
 		}
 		v := c.version
+		if v.TaskKey != "" {
+			w.linkTaskKeys = unionKeys(w.linkTaskKeys, []string{v.TaskKey})
+		}
+		if has && cur.TaskKey != "" {
+			w.linkTaskKeys = unionKeys(w.linkTaskKeys, []string{cur.TaskKey})
+		}
 		v.TaskID, v.AreaID, v.KnownSeq = obj.ID, w.objects[c.area].ID, w.seq
 		v.AssigneeAccountID = w.account(c.assignee)
 		if c.parent != nil {
