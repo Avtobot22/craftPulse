@@ -28,6 +28,100 @@ type NormalizeDictionaryEntry struct {
 	Attributes     []byte
 }
 
+type NormalizeMrEvent struct {
+	OrganizationID  uuid.UUID
+	ID              uuid.UUID
+	KnownSeq        int64
+	SupersededSeq   pgtype.Int8
+	SupersededAt    pgtype.Timestamptz
+	ReceiptID       uuid.UUID
+	RecordNo        int32
+	SourceRevision  string
+	ContentHash     []byte
+	ObservedAt      time.Time
+	MrID            uuid.UUID
+	EventKey        string
+	EventKind       string
+	ActorAccountID  uuid.NullUUID
+	TargetAccountID uuid.NullUUID
+	HeadSha         pgtype.Text
+	ReviewState     pgtype.Text
+	EventTime       time.Time
+	EventOffsetS    int32
+	ObservedVia     string
+}
+
+type NormalizeMrRevision struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	KnownSeq       int64
+	SupersededSeq  pgtype.Int8
+	SupersededAt   pgtype.Timestamptz
+	ReceiptID      uuid.UUID
+	RecordNo       int32
+	SourceRevision string
+	ContentHash    []byte
+	ObservedAt     time.Time
+	MrID           uuid.UUID
+	RevisionKey    string
+	HeadSha        string
+	BaseSha        pgtype.Text
+	StartSha       pgtype.Text
+	CreatedAt      time.Time
+}
+
+type NormalizeMrVersion struct {
+	OrganizationID     uuid.UUID
+	ID                 uuid.UUID
+	KnownSeq           int64
+	SupersededSeq      pgtype.Int8
+	SupersededAt       pgtype.Timestamptz
+	ReceiptID          uuid.UUID
+	RecordNo           int32
+	SourceRevision     string
+	ContentHash        []byte
+	ObservedAt         time.Time
+	MrID               uuid.UUID
+	AreaID             uuid.UUID
+	SourceUpdatedAt    pgtype.Timestamptz
+	Iid                pgtype.Int8
+	Title              pgtype.Text
+	State              string
+	Draft              bool
+	AuthorAccountID    uuid.NullUUID
+	SourceBranch       string
+	TargetBranch       string
+	HeadSha            string
+	BaseSha            pgtype.Text
+	MergeBaseSha       pgtype.Text
+	ReviewerField      bool
+	ReviewerAccountIds []uuid.UUID
+	OpenedAt           time.Time
+	ReadyAt            pgtype.Timestamptz
+	MergedAt           pgtype.Timestamptz
+	ClosedAt           pgtype.Timestamptz
+}
+
+type NormalizeRepositoryVersion struct {
+	OrganizationID  uuid.UUID
+	ID              uuid.UUID
+	KnownSeq        int64
+	SupersededSeq   pgtype.Int8
+	SupersededAt    pgtype.Timestamptz
+	ReceiptID       uuid.UUID
+	RecordNo        int32
+	SourceRevision  string
+	ContentHash     []byte
+	ObservedAt      time.Time
+	RepositoryID    uuid.UUID
+	SourceUpdatedAt pgtype.Timestamptz
+	Path            string
+	Name            string
+	DefaultBranch   pgtype.Text
+	Visibility      string
+	WebUrl          string
+}
+
 type NormalizeTaskEvent struct {
 	OrganizationID  uuid.UUID
 	ID              uuid.UUID
