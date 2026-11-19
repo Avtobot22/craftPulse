@@ -50,9 +50,13 @@ func (h *reports) GetTeamReport(ctx context.Context, req openapi.GetTeamReportRe
 	if err != nil {
 		return nil, err
 	}
+	return openapi.GetTeamReport200JSONResponse(teamReport(&r, &q)), nil
+}
+
+func teamReport(r *entity.TeamReport, q *entity.ReportQuery) openapi.TeamReport {
 	rev := &r.Revision
 	out := openapi.TeamReport{
-		TeamId: req.TeamId, Period: openapi.Period{From: q.From, To: q.To}, Step: openapi.TeamReportStep(q.Step),
+		TeamId: uuid.UUID(q.TeamID), Period: openapi.Period{From: q.From, To: q.To}, Step: openapi.TeamReportStep(q.Step),
 		Revision: openapi.RevisionSummary{
 			Id: uuid.UUID(rev.ID), SeriesId: uuid.UUID(rev.SeriesID), RevisionNo: rev.RevisionNo, AsOf: rev.AsOf, PublishedAt: rev.PublishedAt,
 			Loading: rev.Loading,
@@ -67,7 +71,7 @@ func (h *reports) GetTeamReport(ctx context.Context, req openapi.GetTeamReportRe
 	for i := range r.Series {
 		out.Metrics = append(out.Metrics, metricSeries(&r.Series[i]))
 	}
-	return openapi.GetTeamReport200JSONResponse(out), nil
+	return out
 }
 
 func metricSeries(s *entity.Series) openapi.MetricSeries {

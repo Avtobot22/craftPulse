@@ -60,6 +60,39 @@ func (q *Queries) CreateRevision(ctx context.Context, arg CreateRevisionParams) 
 	return revision_no, err
 }
 
+const deleteExpiredRevisions = `-- name: DeleteExpiredRevisions :one
+WITH deleted AS (
+    DELETE FROM calc.revision r WHERE r.organization_id = $1 AND r.id = ANY($2::uuid[])
+        AND NOT EXISTS (SELECT 1 FROM calc.revision_pin p WHERE p.organization_id = r.organization_id AND p.revision_id = r.id)
+        AND NOT EXISTS (SELECT 1 FROM calc.saved_view v WHERE v.organization_id = r.organization_id AND v.pinned_revision_id = r.id)
+    RETURNING id
+), logged AS (
+    INSERT INTO audit.deletion (organization_id, requested_at, basis, scope_kind, retention_class, cutoff_at, status, applied_at)
+    SELECT $1, $3::timestamptz, 'retention', 'class', 'SUPERSEDED_REVISIONS',
+        $4::timestamptz, 'applied', $3::timestamptz WHERE EXISTS (SELECT 1 FROM deleted)
+)
+SELECT count(*) FROM deleted
+`
+
+type DeleteExpiredRevisionsParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+	AppliedAt      time.Time
+	BeforeAt       time.Time
+}
+
+func (q *Queries) DeleteExpiredRevisions(ctx context.Context, arg DeleteExpiredRevisionsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, deleteExpiredRevisions,
+		arg.OrganizationID,
+		arg.Ids,
+		arg.AppliedAt,
+		arg.BeforeAt,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deletePartLinks = `-- name: DeletePartLinks :exec
 DELETE FROM calc.revision_part WHERE organization_id = $1 AND part_id = ANY ($2::uuid[])
 `
@@ -88,6 +121,20 @@ func (q *Queries) DeleteParts(ctx context.Context, arg DeletePartsParams) error 
 	return err
 }
 
+const deleteSavedView = `-- name: DeleteSavedView :exec
+DELETE FROM calc.saved_view WHERE organization_id = $1 AND id = $2
+`
+
+type DeleteSavedViewParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) DeleteSavedView(ctx context.Context, arg DeleteSavedViewParams) error {
+	_, err := q.db.Exec(ctx, deleteSavedView, arg.OrganizationID, arg.ID)
+	return err
+}
+
 const ensureSeries = `-- name: EnsureSeries :exec
 INSERT INTO calc.series (organization_id, id, scope_hash, scope, metric_set, step, consumed_seq)
 VALUES ($1, $2, $3, $4, $5, $6, 0)
@@ -113,6 +160,41 @@ func (q *Queries) EnsureSeries(ctx context.Context, arg EnsureSeriesParams) erro
 		arg.Step,
 	)
 	return err
+}
+
+const expiredRevisions = `-- name: ExpiredRevisions :many
+SELECT r.id FROM calc.revision r
+WHERE r.organization_id = $1 AND r.status = 'superseded' AND r.superseded_at < $2
+    AND NOT EXISTS (SELECT 1 FROM calc.revision_pin p WHERE p.organization_id = r.organization_id AND p.revision_id = r.id)
+    AND NOT EXISTS (SELECT 1 FROM calc.saved_view v WHERE v.organization_id = r.organization_id AND v.pinned_revision_id = r.id)
+    AND NOT EXISTS (SELECT 1 FROM calc.series s WHERE s.organization_id = r.organization_id AND s.current_revision_id = r.id)
+ORDER BY r.superseded_at, r.id LIMIT $3 FOR UPDATE OF r SKIP LOCKED
+`
+
+type ExpiredRevisionsParams struct {
+	OrganizationID uuid.UUID
+	BeforeAt       pgtype.Timestamptz
+	BatchLimit     int32
+}
+
+func (q *Queries) ExpiredRevisions(ctx context.Context, arg ExpiredRevisionsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, expiredRevisions, arg.OrganizationID, arg.BeforeAt, arg.BatchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const failRevision = `-- name: FailRevision :execrows
@@ -203,6 +285,31 @@ func (q *Queries) GetRevision(ctx context.Context, arg GetRevisionParams) (GetRe
 		&i.SupersededAt,
 		&i.IrreproducibleReason,
 		&i.PreviousRevisionID,
+	)
+	return i, err
+}
+
+const getSavedView = `-- name: GetSavedView :one
+SELECT organization_id, id, owner_user_id, name, series_id, filters, pinned_revision_id, created_at FROM calc.saved_view WHERE organization_id = $1 AND id = $2
+`
+
+type GetSavedViewParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) GetSavedView(ctx context.Context, arg GetSavedViewParams) (CalcSavedView, error) {
+	row := q.db.QueryRow(ctx, getSavedView, arg.OrganizationID, arg.ID)
+	var i CalcSavedView
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.OwnerUserID,
+		&i.Name,
+		&i.SeriesID,
+		&i.Filters,
+		&i.PinnedRevisionID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -387,6 +494,36 @@ func (q *Queries) InsertRevisionInputs(ctx context.Context, arg InsertRevisionIn
 	return err
 }
 
+const insertSavedView = `-- name: InsertSavedView :exec
+INSERT INTO calc.saved_view (organization_id, id, owner_user_id, name, series_id, filters, pinned_revision_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type InsertSavedViewParams struct {
+	OrganizationID   uuid.UUID
+	ID               uuid.UUID
+	OwnerUserID      uuid.UUID
+	Name             string
+	SeriesID         uuid.UUID
+	Filters          []byte
+	PinnedRevisionID uuid.NullUUID
+	CreatedAt        time.Time
+}
+
+func (q *Queries) InsertSavedView(ctx context.Context, arg InsertSavedViewParams) error {
+	_, err := q.db.Exec(ctx, insertSavedView,
+		arg.OrganizationID,
+		arg.ID,
+		arg.OwnerUserID,
+		arg.Name,
+		arg.SeriesID,
+		arg.Filters,
+		arg.PinnedRevisionID,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const insertTaskSlices = `-- name: InsertTaskSlices :exec
 INSERT INTO calc.task_slice (organization_id, part_id, task_id, project_id, task_type, size_label)
 SELECT $1, $2, ($3::uuid[])[i], ($4::uuid[])[i],
@@ -453,6 +590,50 @@ func (q *Queries) LinkPart(ctx context.Context, arg LinkPartParams) error {
 		arg.PartID,
 	)
 	return err
+}
+
+const lockSavedRevision = `-- name: LockSavedRevision :one
+SELECT id FROM calc.revision
+WHERE organization_id = $1 AND id = $2 AND series_id = $3 AND published_at IS NOT NULL
+FOR KEY SHARE
+`
+
+type LockSavedRevisionParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	SeriesID       uuid.UUID
+}
+
+func (q *Queries) LockSavedRevision(ctx context.Context, arg LockSavedRevisionParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockSavedRevision, arg.OrganizationID, arg.ID, arg.SeriesID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const lockSavedView = `-- name: LockSavedView :one
+SELECT organization_id, id, owner_user_id, name, series_id, filters, pinned_revision_id, created_at FROM calc.saved_view WHERE organization_id = $1 AND id = $2 FOR UPDATE
+`
+
+type LockSavedViewParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) LockSavedView(ctx context.Context, arg LockSavedViewParams) (CalcSavedView, error) {
+	row := q.db.QueryRow(ctx, lockSavedView, arg.OrganizationID, arg.ID)
+	var i CalcSavedView
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.OwnerUserID,
+		&i.Name,
+		&i.SeriesID,
+		&i.Filters,
+		&i.PinnedRevisionID,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const markBasisDeleted = `-- name: MarkBasisDeleted :execrows
@@ -582,6 +763,56 @@ func (q *Queries) OrgSeries(ctx context.Context, arg OrgSeriesParams) ([]CalcSer
 	return items, nil
 }
 
+const pageSavedViews = `-- name: PageSavedViews :many
+SELECT organization_id, id, owner_user_id, name, series_id, filters, pinned_revision_id, created_at FROM calc.saved_view
+WHERE organization_id = $1 AND owner_user_id = $2
+    AND ($3::timestamptz IS NULL OR (created_at, id) < ($3, $4::uuid))
+ORDER BY created_at DESC, id DESC LIMIT $5
+`
+
+type PageSavedViewsParams struct {
+	OrganizationID uuid.UUID
+	OwnerUserID    uuid.UUID
+	AfterAt        pgtype.Timestamptz
+	AfterID        uuid.UUID
+	PageLimit      int32
+}
+
+func (q *Queries) PageSavedViews(ctx context.Context, arg PageSavedViewsParams) ([]CalcSavedView, error) {
+	rows, err := q.db.Query(ctx, pageSavedViews,
+		arg.OrganizationID,
+		arg.OwnerUserID,
+		arg.AfterAt,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CalcSavedView
+	for rows.Next() {
+		var i CalcSavedView
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.OwnerUserID,
+			&i.Name,
+			&i.SeriesID,
+			&i.Filters,
+			&i.PinnedRevisionID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const partByHash = `-- name: PartByHash :one
 SELECT id FROM calc.part WHERE organization_id = $1 AND input_hash = $2
 `
@@ -596,6 +827,22 @@ func (q *Queries) PartByHash(ctx context.Context, arg PartByHashParams) (uuid.UU
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const pinSavedRevision = `-- name: PinSavedRevision :exec
+INSERT INTO calc.revision_pin (organization_id, revision_id, holder_kind, holder_id)
+VALUES ($1, $2, 'saved_view', $3)
+`
+
+type PinSavedRevisionParams struct {
+	OrganizationID uuid.UUID
+	RevisionID     uuid.UUID
+	HolderID       uuid.UUID
+}
+
+func (q *Queries) PinSavedRevision(ctx context.Context, arg PinSavedRevisionParams) error {
+	_, err := q.db.Exec(ctx, pinSavedRevision, arg.OrganizationID, arg.RevisionID, arg.HolderID)
+	return err
 }
 
 const pointContributions = `-- name: PointContributions :many
@@ -1165,6 +1412,20 @@ func (q *Queries) TouchRevision(ctx context.Context, arg TouchRevisionParams) (i
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const unpinSavedRevision = `-- name: UnpinSavedRevision :exec
+DELETE FROM calc.revision_pin WHERE organization_id = $1 AND holder_kind = 'saved_view' AND holder_id = $2
+`
+
+type UnpinSavedRevisionParams struct {
+	OrganizationID uuid.UUID
+	HolderID       uuid.UUID
+}
+
+func (q *Queries) UnpinSavedRevision(ctx context.Context, arg UnpinSavedRevisionParams) error {
+	_, err := q.db.Exec(ctx, unpinSavedRevision, arg.OrganizationID, arg.HolderID)
+	return err
 }
 
 const unusedParts = `-- name: UnusedParts :many

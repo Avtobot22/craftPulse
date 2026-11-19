@@ -5,8 +5,21 @@
 package calc
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 )
+
+type CalcSavedView struct {
+	OrganizationID   uuid.UUID
+	ID               uuid.UUID
+	OwnerUserID      uuid.UUID
+	Name             string
+	SeriesID         uuid.UUID
+	Filters          []byte
+	PinnedRevisionID uuid.NullUUID
+	CreatedAt        time.Time
+}
 
 type CalcSeries struct {
 	OrganizationID    uuid.UUID

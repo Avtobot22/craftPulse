@@ -30,6 +30,11 @@ type Reports interface {
 	VisibleCohort(ctx context.Context, s entity.Subject, scope entity.Scope, rev entity.CalcRevision, teamID entity.ID,
 		q entity.CohortQuery) (entity.CohortPage, error)
 	MetricDefinitions() []entity.MetricDefinition
+	ReportSeries(ctx context.Context, orgID, seriesID entity.ID) (entity.CalcSeries, error)
+	CreateSavedView(ctx context.Context, v entity.SavedView) error
+	SavedView(ctx context.Context, orgID, id entity.ID) (entity.SavedView, error)
+	ListSavedViews(ctx context.Context, orgID, ownerID entity.ID, q entity.SavedViewQuery) (entity.SavedViewPage, error)
+	DeleteSavedView(ctx context.Context, orgID, ownerID, id entity.ID) error
 }
 
 // Instances is the connect module: the source instance an object came from, for the link to the source.
