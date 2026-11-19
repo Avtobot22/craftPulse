@@ -115,6 +115,14 @@ func (c *checker) recordRule(record map[string]any) (recordRule, *Rejection) {
 // semantic checks the conditions between fields that the schema cannot express.
 func semantic(kind string, payload map[string]any) string {
 	switch kind {
+	case "merge_request":
+		if payload["state"] == "merged" && payload["merged_at"] == nil {
+			return "payload.merged_at: required for merged MR"
+		}
+	case "mr_event":
+		if payload["event_kind"] == "head_pushed" && payload["head_sha"] == nil {
+			return "payload.head_sha: required for head_pushed"
+		}
 	case "task_event":
 		if payload["event_kind"] == "field_change" && payload["field_native_id"] == nil {
 			return "payload.field_native_id: required for field_change"

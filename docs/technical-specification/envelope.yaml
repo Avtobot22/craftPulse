@@ -54,7 +54,7 @@ x-craftpulse-schemas:
     kinds: [account]
   merge_requests:
     versions: ['1']
-    kinds: [merge_request, mr_revision, mr_event, account]
+    kinds: [repository, merge_request, mr_revision, mr_event, account]
   ci_runs:
     versions: ['1']
     kinds: [ci_run, ci_attempt, report_file]
@@ -191,7 +191,7 @@ components:
         record_class: {type: string, enum: [event, object, snapshot, file]}
         record_kind:
           type: string
-          enum: [task, task_event, task_status, task_resolution, task_type, task_field, relation, account, merge_request, mr_revision, mr_event, ci_run, ci_attempt, report_file, finding, document, git_ref]
+          enum: [repository, task, task_event, task_status, task_resolution, task_type, task_field, relation, account, merge_request, mr_revision, mr_event, ci_run, ci_attempt, report_file, finding, document, git_ref]
         payload_schema: {type: string, pattern: '^[a-z_]+/[0-9]+$', description: 'Вид и версия схемы тела, например `task_event/1`.'}
         native_ns: {type: string, maxLength: 255, description: 'Пространство имён исходного ID по правилу `x-craftpulse-identity` контракта адаптера; пусто, если ID уникален в экземпляре.'}
         native_id: {type: string, minLength: 1, maxLength: 1024}
@@ -370,10 +370,24 @@ components:
         account_kind: {type: string, enum: [human, bot, system, unknown]}
         active: {type: boolean}
       example: {login: demo-person-05, display_name: Demo person 5, email: null, account_kind: human, active: true}
+    RepositoryV1:
+      type: object
+      description: Метаданные репозитория. `native_id` - глобальный ID проекта, путь и название не входят в идентичность.
+      x-craftpulse-record: {kind: repository, version: '1', classes: [object, snapshot]}
+      required: [path, name, visibility, web_url]
+      additionalProperties: false
+      properties:
+        path: {type: string, minLength: 1, maxLength: 1024}
+        name: {type: string, minLength: 1, maxLength: 1024}
+        default_branch: {type: [string, 'null'], maxLength: 1024}
+        visibility: {type: string, enum: [private, internal, public, unknown]}
+        web_url: {type: string, format: uri, maxLength: 2048}
+        updated_at: {type: [string, 'null'], format: date-time}
+      example: {path: demo/orders-service, name: Orders service, default_branch: main, visibility: private, web_url: 'https://gitlab.example.test/demo/orders-service', updated_at: '2026-10-02T11:00:00+03:00'}
     MergeRequestV1:
       type: object
       description: Состояние MR или PR (`normalize.mr_version`). `native_id` - глобальный ID, номер внутри проекта - атрибут.
-      x-craftpulse-record: {kind: merge_request, version: '1', classes: [object]}
+      x-craftpulse-record: {kind: merge_request, version: '1', classes: [object, snapshot]}
       required: [project_native_id, state, draft, source_branch, target_branch, head_sha, opened_at]
       additionalProperties: false
       properties:
@@ -424,6 +438,21 @@ components:
         target_account_native_id: {type: [string, 'null'], maxLength: 255}
         head_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
         review_state: {type: [string, 'null'], enum: [approved, changes_requested, commented, null]}
+      example: {mr_native_id: '9001', event_kind: review, actor_account_native_id: demo-person-03, target_account_native_id: null, head_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, review_state: commented}
+    MrEventV2:
+      type: object
+      description: Событие MR (`normalize.mr_event`). `native_ns` - ID MR, `native_id` - ID note, approval или события у источника.
+      x-craftpulse-record: {kind: mr_event, version: '2', classes: [event]}
+      required: [mr_native_id, event_kind]
+      additionalProperties: false
+      properties:
+        mr_native_id: {type: string, minLength: 1, maxLength: 255}
+        event_kind: {type: string, enum: [ready, reviewer_assigned, reviewer_removed, review, comment, approval, head_pushed, merged, closed, reopened]}
+        actor_account_native_id: {type: [string, 'null'], maxLength: 255}
+        target_account_native_id: {type: [string, 'null'], maxLength: 255}
+        head_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        review_state: {type: [string, 'null'], enum: [approved, changes_requested, commented, null]}
+        system_note: {type: boolean, description: Системная заметка. Переход сохраняется как событие; comment и review пропускаются.}
       example: {mr_native_id: '9001', event_kind: review, actor_account_native_id: demo-person-03, target_account_native_id: null, head_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, review_state: commented}
     CiRunV1:
       type: object
