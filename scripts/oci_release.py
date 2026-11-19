@@ -48,6 +48,7 @@ def plan(root=ROOT):
     images = [
         {"name": "craftpulse-server", "context": "backend", "dockerfile": "backend/Dockerfile"},
         {"name": "craftpulse-frontend", "context": "frontend", "dockerfile": "frontend/Dockerfile"},
+        {"name": "craftpulse-ci", "context": "backend", "dockerfile": "backend/ci.Dockerfile"},
     ]
     for directory in sorted((root / "backend/cmd").glob("adapter-*")):
         # The recorded-answer server explicitly excludes itself from release images.
@@ -142,6 +143,11 @@ def smoke_adapter(ref):
          'test "$GIT_CACHE_DIR" = /var/cache/craftpulse-git; '
          'mkdir -p "$GIT_CACHE_DIR/clones" "$GIT_CACHE_DIR/work"; '
          'ssh -G -F /dev/null git@example.invalid >/dev/null'])
+
+
+def smoke_ci(ref):
+    run(["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", ref, "sh", "-ec",
+         'test "$(id -u)" = 65532; test "$(id -g)" = 65532; craftpulse-ci version'])
 
 
 def validate_original(manifest, sha, images, resolved, expected_metadata):
@@ -254,6 +260,8 @@ def release(sha, output, tools, root=ROOT):
             raise ReleaseError(f"image revision does not match release: {name}")
         if image.get("adapter"):
             smoke_adapter(reference)
+        if name == "craftpulse-ci":
+            smoke_ci(reference)
         references[name] = reference
     licenses = scan(images, references, output, tools)
     publish_images(images, sha, references, resolved, registry)
@@ -276,7 +284,7 @@ def release(sha, output, tools, root=ROOT):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["plan", "check", "build-adapters", "install-tools", "release"])
+    parser.add_argument("command", choices=["plan", "check", "build-adapters", "build-ci", "install-tools", "release"])
     parser.add_argument("--sha", default="0" * 40)
     parser.add_argument("--output", type=Path, default=ROOT / "build/release")
     parser.add_argument("--tools", type=Path, default=ROOT / "build/release-tools")
@@ -293,6 +301,12 @@ def main():
                     reference = f"{image['name']}:check"
                     build(image, args.sha, reference)
                     smoke_adapter(reference)
+        elif args.command == "build-ci":
+            for image in plan():
+                if image["name"] == "craftpulse-ci":
+                    reference = f"{image['name']}:check"
+                    build(image, args.sha, reference)
+                    smoke_ci(reference)
         elif args.command == "install-tools":
             install_tools(args.tools.resolve())
         else:

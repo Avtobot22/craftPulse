@@ -1,0 +1,4 @@
+{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"stub"}},"results":[
+{"rule":{"id":"G101"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"config.go"},"region":{"startLine":5}}}]},
+{"ruleId":"G104","locations":[{"physicalLocation":{"artifactLocation":{"uri":"main.go"},"region":{"startLine":3}}}]}
+]}]}
