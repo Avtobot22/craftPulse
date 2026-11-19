@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -235,7 +236,12 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 }
 
 func secretGit(ctx context.Context, repo string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-pager", "-C", repo, "-c", "core.hooksPath=/dev/null", "-c", "diff.external="}, args...)...) //nolint:gosec // arguments are fixed commands and validated SHAs
+	absolute, err := filepath.Abs(repo)
+	if err != nil {
+		return nil, errors.New("cannot resolve scan repository")
+	}
+	// The CI checkout may belong to the runner helper UID. Trust only the requested directory.
+	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-pager", "-C", absolute, "-c", "safe.directory=" + absolute, "-c", "core.hooksPath=/dev/null", "-c", "diff.external="}, args...)...) //nolint:gosec // arguments are fixed commands and validated SHAs
 	var out cappedBuffer
 	cmd.Stdout, cmd.Stderr, cmd.Env = &out, io.Discard, toolEnv("GIT_NO_REPLACE_OBJECTS=1", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_LITERAL_PATHSPECS=1")
 	cmd.WaitDelay = _killGrace

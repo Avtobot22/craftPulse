@@ -233,7 +233,7 @@ location /api/v1/ingest/packages {
 Образ строится поверх базового CLI отдельной целью того же Dockerfile:
 
 ```sh
-docker build --target gitleaks-default -f backend/ci.Dockerfile -t craftpulse-secrets:local backend
+docker build --platform linux/amd64 --target gitleaks-default -f backend/ci.Dockerfile -t craftpulse-secrets:local backend
 python3 scripts/check_secrets_profile.py --image craftpulse-secrets:local
 ```
 

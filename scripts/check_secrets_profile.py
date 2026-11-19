@@ -62,7 +62,7 @@ def check(image, platform):
             ("diff", repo, head, 1, 1, False),
             ("shallow", shallow, head, 1, 1, True),
         ]:
-            state = root / name
+            state = root / ("state-" + name)
             state.mkdir()
             profile = {"entries": [{"component_id": "0193a5b0-7777-7000-8000-000000000001",
                 "path_prefix": "", "language": "go", "analysis_kind": "secrets", "mode": "builtin",
