@@ -83,3 +83,25 @@ func TestUploadSubjectScope(t *testing.T) {
 		assert.ErrorIs(t, err, entity.ErrForbidden)
 	}
 }
+
+func TestProjectManagerDecidesInOwnProjects(t *testing.T) {
+	t.Parallel()
+	core, other := entity.ID{1}, entity.ID{2}
+	manager := entity.Profile{
+		Roles: []entity.RoleAssignment{{Role: entity.RoleProjectManager, ProjectID: core}, {Role: entity.RoleDeveloper, ProjectID: other}},
+		Areas: entity.Areas{Projects: []entity.Area{{ID: core}, {ID: other}}},
+	}
+	_, err := decide(manager, entity.AccessRequest{Action: "links.decide"})
+	assert.NoError(t, err)
+	_, err = decide(manager, entity.AccessRequest{Action: "links.decide", Area: entity.AreaRef{Kind: entity.AreaProject, ID: other}})
+	assert.ErrorIs(t, err, entity.ErrForbidden, "a developer role does not decide links in its project")
+	assert.Equal(t, []entity.ID{core}, managedScope(manager).Projects(), "source checks see only the managed projects")
+
+	developer := entity.Profile{Roles: []entity.RoleAssignment{{Role: entity.RoleDeveloper, ProjectID: core}}, Areas: entity.Areas{Projects: []entity.Area{{ID: core}}}}
+	_, err = decide(developer, entity.AccessRequest{Action: "links.decide"})
+	assert.ErrorIs(t, err, entity.ErrForbidden)
+
+	whole := entity.Profile{Whole: true, Roles: []entity.RoleAssignment{{Role: entity.RoleProjectManager}}, Areas: manager.Areas}
+	assert.True(t, managedScope(whole).Whole())
+	assert.ElementsMatch(t, []entity.ID{core, other}, managedScope(whole).Projects())
+}

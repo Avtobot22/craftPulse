@@ -36,6 +36,7 @@ type apiModules struct {
 	previews           usecase.MappingPreviews
 	targets            usecase.Targets
 	documentationAreas docs.Areas
+	links              usecase.Links
 }
 
 func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvider, c clock.Clock, siteURL string, reg prometheus.Registerer,
@@ -63,6 +64,7 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 				Repo: docsrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx,
 				Access: decisions, References: orgs, Areas: m.documentationAreas, Auditor: auditor, Clock: c, NewID: newID,
 			}),
+			Links:        m.links,
 			UploadTokens: logins, Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
 			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg, Connections: m.connections, Intake: m.intake,
 			Sync: m.sync, Operations: m.operations, Accounts: orgs, Process: m.process, Previews: m.previews, Targets: m.targets,

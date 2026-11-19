@@ -205,6 +205,28 @@ func (r *Repo) RestrictedObjects(ctx context.Context, orgID entity.ID, areaIDs [
 	return out, nil
 }
 
+func (r *Repo) LinkEnds(ctx context.Context, orgID entity.ID, objectIDs []entity.ID) ([]entity.LinkEnd, error) {
+	rows, err := r.q(ctx).LinkEnds(ctx, LinkEndsParams{OrganizationID: uuid.UUID(orgID), Ids: ids(objectIDs)})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: link ends: %w", err)
+	}
+	out := make([]entity.LinkEnd, len(rows))
+	for i := range rows {
+		row := &rows[i]
+		out[i] = entity.LinkEnd{
+			ID: entity.ID(row.ID), Kind: entity.ObjectKind(row.ObjectKind), AreaID: entity.ID(row.CurrentAreaID.UUID),
+			Restricted: row.Restricted, NativeNS: row.NativeNs, NativeID: row.NativeID,
+		}
+		if row.TaskKey.Valid {
+			out[i].DisplayKey = &row.TaskKey.String
+		}
+		if row.Title.Valid {
+			out[i].Title = &row.Title.String
+		}
+	}
+	return out, nil
+}
+
 func taskEvents(rows []NormalizeTaskEvent) []entity.TaskEvent {
 	out := make([]entity.TaskEvent, len(rows))
 	for i := range rows {

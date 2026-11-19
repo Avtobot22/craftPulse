@@ -29,6 +29,11 @@ type Access interface {
 	CurrentUser(ctx context.Context, s entity.Subject) (entity.CurrentUser, error)
 }
 
+// Links is normalize for the decisions on link candidates at the ends it keeps (UC-19, FR-024).
+type Links interface {
+	DecideLink(ctx context.Context, s entity.Subject, scope entity.Scope, linkID entity.ID, d entity.LinkDecision, key entity.ID) (entity.LinkResult, error)
+}
+
 // Structure is the org module for the confirmed structure of the organization (UC-02, FR-012).
 type Structure interface {
 	Structure(ctx context.Context, s entity.Subject) (entity.Structure, error)

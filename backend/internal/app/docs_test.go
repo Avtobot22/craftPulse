@@ -58,7 +58,7 @@ func newDocsEnv(t *testing.T) *docsEnv {
 	require.NoError(t, err)
 	e.rolesFor(t, []roleInput{{Role: "service_owner", ServiceID: &e.service}, {Role: "developer", ProjectID: &e.project}})
 	m := e.modules(t)
-	normalizer, err := newNormalize(e.app, nil, nil, m.orgs, e.clock)
+	normalizer, err := newNormalize(e.app, nil, nil, m.orgs, nil, e.clock)
 	require.NoError(t, err)
 	m.documentationAreas = normalizer
 	reg := prometheus.NewRegistry()
@@ -318,7 +318,7 @@ func TestDocumentationRoots_AuditFailureRollsBack(t *testing.T) {
 	require.Equal(t, 200, e.putRoots(t, e.member, `"0"`, uuid.New(), e.root("docs")).Code)
 	before := e.rootCounts(t)
 	m := e.modules(t)
-	n, err := newNormalize(e.app, nil, nil, m.orgs, e.clock)
+	n, err := newNormalize(e.app, nil, nil, m.orgs, nil, e.clock)
 	require.NoError(t, err)
 	u := docs.New(docs.Deps{
 		Repo: docsrepo.NewRepo(e.app), Tenants: platform.NewRepo(e.app), Tx: persistent.NewTransactor(e.app), Access: m.access,

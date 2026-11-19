@@ -641,6 +641,58 @@ func (q *Queries) InsertObjects(ctx context.Context, arg InsertObjectsParams) er
 	return err
 }
 
+const linkEnds = `-- name: LinkEnds :many
+SELECT o.id, o.object_kind, o.current_area_id, o.restricted, o.native_ns, o.native_id, t.task_key, t.title
+FROM normalize.source_object o
+LEFT JOIN normalize.task_version t ON t.organization_id = o.organization_id AND t.task_id = o.id AND t.superseded_seq IS NULL
+WHERE o.organization_id = $1 AND o.id = ANY ($2::uuid[]) AND o.deleted_at IS NULL
+`
+
+type LinkEndsParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+type LinkEndsRow struct {
+	ID            uuid.UUID
+	ObjectKind    string
+	CurrentAreaID uuid.NullUUID
+	Restricted    bool
+	NativeNs      string
+	NativeID      string
+	TaskKey       pgtype.Text
+	Title         pgtype.Text
+}
+
+func (q *Queries) LinkEnds(ctx context.Context, arg LinkEndsParams) ([]LinkEndsRow, error) {
+	rows, err := q.db.Query(ctx, linkEnds, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LinkEndsRow
+	for rows.Next() {
+		var i LinkEndsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ObjectKind,
+			&i.CurrentAreaID,
+			&i.Restricted,
+			&i.NativeNs,
+			&i.NativeID,
+			&i.TaskKey,
+			&i.Title,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const placeObjects = `-- name: PlaceObjects :exec
 UPDATE normalize.source_object o SET current_area_id = k.area_id, restricted = k.restricted
 FROM (

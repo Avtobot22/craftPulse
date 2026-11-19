@@ -96,7 +96,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return err
 	}
-	normalizer, err := newNormalize(pool, store, intake, orgs, clock.System{})
+	normalizer, err := newNormalize(pool, store, intake, orgs, rights, clock.System{})
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	}
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection,
-		operations: newView(pool, collection, calculator, rights, clock.System{}), process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer,
+		operations: newView(pool, collection, calculator, rights, clock.System{}), process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
 	}
 	api := newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules)
 	api.RunnerNetwork, api.TrustedProxies = cfg.RunnerNetwork, cfg.TrustedProxies
@@ -174,7 +174,7 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	normalizer, err := newNormalize(pool, store, packages, orgs, clock.System{})
+	normalizer, err := newNormalize(pool, store, packages, orgs, rights, clock.System{})
 	if err != nil {
 		return err
 	}

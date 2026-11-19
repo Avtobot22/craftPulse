@@ -20,6 +20,7 @@ import (
 type Handler struct {
 	sourceLinks
 	documentation
+	links
 	uploads
 	accounts
 	connections
@@ -40,6 +41,7 @@ type Deps struct {
 	SourceLinks   usecase.SourceLinks
 	SiteURL       string
 	Documentation usecase.Documentation
+	Links         usecase.Links
 	UploadTokens  usecase.UploadTokens
 	Logins        usecase.Logins
 	Access        usecase.Access
@@ -62,6 +64,7 @@ func New(d Deps) *Handler {
 	return &Handler{
 		sourceLinks:    sourceLinks{uc: d.SourceLinks, callbackURL: d.SiteURL + "/source-links/callback"},
 		documentation:  documentation{uc: d.Documentation},
+		links:          links{uc: d.Links},
 		uploads:        uploads{tokens: d.UploadTokens},
 		connections:    connections{uc: d.Connections, sync: d.Sync, operations: d.Operations},
 		accounts:       accounts{uc: d.Accounts, connections: d.Connections},
