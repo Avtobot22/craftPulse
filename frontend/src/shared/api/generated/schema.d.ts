@@ -4147,6 +4147,8 @@ export interface components {
             metric_id: string;
             definition_version: number;
             unit: string;
+            /** @description Оценка показателя с несколькими рядами: `p50` и `p85` у T08 и T14, поле у T38 (`size`, `type`, `team`, `start`), вид у T40 (`lag`, `last_success_age`), T41 (`tasks`, `transitions`) и T42 (`missing`, `changed`). Отсутствует у показателя с одним рядом. */
+            estimator?: string;
             /** @description Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для отчёта команды - тип или размер задачи. */
             group?: {
                 task_type?: string | null;
@@ -4224,6 +4226,8 @@ export interface components {
             /** Format: uuid */
             series_id: string;
             revision_no: number;
+            /** @description Срез знания: факты и настройки ревизии прочитаны на этот номер (раздел 12.6). */
+            knowledge_seq: number;
             /** @enum {string} */
             status: "building" | "published" | "superseded" | "failed";
             window: components["schemas"]["Period"];
@@ -9620,6 +9624,7 @@ export interface operations {
                      *           "metric_id": "T08",
                      *           "definition_version": 1,
                      *           "unit": "seconds",
+                     *           "estimator": "p50",
                      *           "points": [
                      *             {
                      *               "point_start": "2026-10-05T00:00:00Z",
@@ -9888,6 +9893,7 @@ export interface operations {
                      *       },
                      *       "as_of": "2026-11-01T00:00:00Z",
                      *       "timezone": "Europe/Moscow",
+                     *       "knowledge_seq": 18452,
                      *       "published_at": "2026-11-08T03:40:00Z",
                      *       "superseded_at": null,
                      *       "loading": false,
@@ -9934,6 +9940,8 @@ export interface operations {
             query: {
                 metric_id: string;
                 point_start: string;
+                /** @description Оценка точки показателя с несколькими рядами, как `MetricSeries.estimator`; без параметра - первая оценка показателя. */
+                estimator?: string;
                 role?: "numerator" | "denominator" | "excluded" | "missing";
                 /** @description Размер страницы. */
                 limit?: components["parameters"]["Limit"];

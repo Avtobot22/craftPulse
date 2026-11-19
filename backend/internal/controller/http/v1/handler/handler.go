@@ -54,6 +54,7 @@ type Deps struct {
 	Intake        usecase.Intake
 	Sync          usecase.SyncStatus
 	Operations    usecase.Operations
+	Reports       usecase.TeamReports
 	Process       usecase.Process
 	Previews      usecase.MappingPreviews
 	Targets       usecase.Targets
@@ -70,7 +71,7 @@ func New(d Deps) *Handler {
 		accounts:       accounts{uc: d.Accounts, connections: d.Connections},
 		intake:         intake{uc: d.Intake},
 		process:        process{uc: d.Process, previews: d.Previews, targets: d.Targets, connections: d.Connections},
-		reports:        reports{operations: d.Operations},
+		reports:        reports{operations: d.Operations, views: d.Reports},
 		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),
 		organization:   organization{structure: d.Structure, access: d.Access, connections: d.Connections},
 		administration: administration{users: d.Users, audit: d.Audit, protocols: d.Protocols},

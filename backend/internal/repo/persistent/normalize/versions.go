@@ -214,7 +214,7 @@ func (r *Repo) LinkEnds(ctx context.Context, orgID entity.ID, objectIDs []entity
 	for i := range rows {
 		row := &rows[i]
 		out[i] = entity.LinkEnd{
-			ID: entity.ID(row.ID), Kind: entity.ObjectKind(row.ObjectKind), AreaID: entity.ID(row.CurrentAreaID.UUID),
+			ID: entity.ID(row.ID), Kind: entity.ObjectKind(row.ObjectKind), InstanceID: entity.ID(row.InstanceID), AreaID: entity.ID(row.CurrentAreaID.UUID),
 			Restricted: row.Restricted, NativeNS: row.NativeNs, NativeID: row.NativeID,
 		}
 		if row.TaskKey.Valid {

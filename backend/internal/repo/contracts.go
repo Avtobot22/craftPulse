@@ -379,6 +379,10 @@ type CalcRepo interface {
 	PointSamples(ctx context.Context, orgID, revisionID entity.ID, metricID, estimator string, w entity.Window) ([]entity.PointSample, error)
 	PointContributions(ctx context.Context, orgID, revisionID entity.ID, q entity.ContributionQuery) ([]entity.Contribution, error)
 	TaskIntervals(ctx context.Context, orgID, revisionID, taskID entity.ID) ([]entity.WorkflowInterval, error)
+	// TasksIntervals are the intervals of several tasks of a revision, ordered by task.
+	TasksIntervals(ctx context.Context, orgID, revisionID entity.ID, taskIDs []entity.ID) ([]entity.WorkflowInterval, error)
+	// RevisionCohort reads every contribution of a revision with the attributes of its task.
+	RevisionCohort(ctx context.Context, orgID, revisionID entity.ID) ([]entity.CohortRow, error)
 	RevisionInputs(ctx context.Context, orgID, revisionID entity.ID) ([]entity.RevisionInput, error)
 	MarkBasisDeleted(ctx context.Context, orgID, objectID entity.ID) (int64, error)
 	MarkBasisExpired(ctx context.Context, orgID entity.ID, reproducibleFrom int64) (int64, error)

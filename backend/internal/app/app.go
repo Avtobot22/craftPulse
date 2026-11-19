@@ -113,9 +113,10 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return err
 	}
+	views := newView(pool, viewModules{collection: collection, series: calculator, reports: calculator, instances: connections, rights: rights}, clock.System{})
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection,
-		operations: newView(pool, collection, calculator, rights, clock.System{}), process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
+		operations: views, reports: views, process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
 	}
 	api := newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules)
 	api.RunnerNetwork, api.TrustedProxies = cfg.RunnerNetwork, cfg.TrustedProxies
@@ -191,7 +192,8 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	purges := newRetention(pool, connections, newView(pool, collection, calculator, rights, clock.System{}), clock.System{})
+	views := newView(pool, viewModules{collection: collection, series: calculator, reports: calculator, instances: connections, rights: rights}, clock.System{})
+	purges := newRetention(pool, connections, views, clock.System{})
 	workers := river.NewWorkers()
 	kinds := workerctrl.Register(workers, workerctrl.Deps{
 		Probes: connections, Packages: packages, Collection: collection, Normalizer: normalizer, Calculator: calculator,

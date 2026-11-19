@@ -56,7 +56,7 @@ func TestRetention_PurgesWhatIsPastItsTerm(t *testing.T) {
 
 	conn, err := newConnect(e.app, e.keyring, nil, e.clock)
 	require.NoError(t, err)
-	purges := newRetention(e.app, conn, newView(e.app, nil, nil, nil, e.clock), e.clock)
+	purges := newRetention(e.app, conn, newView(e.app, viewModules{}, e.clock), e.clock)
 	require.NoError(t, purges.Purge(t.Context()))
 	require.NoError(t, purges.Purge(t.Context()), "a repeat finds nothing more")
 

@@ -150,7 +150,7 @@ WHERE organization_id = sqlc.arg(organization_id) AND current_area_id = ANY (sql
 ORDER BY current_area_id, id;
 
 -- name: LinkEnds :many
-SELECT o.id, o.object_kind, o.current_area_id, o.restricted, o.native_ns, o.native_id, t.task_key, t.title
+SELECT o.id, o.object_kind, o.instance_id, o.current_area_id, o.restricted, o.native_ns, o.native_id, t.task_key, t.title
 FROM normalize.source_object o
 LEFT JOIN normalize.task_version t ON t.organization_id = o.organization_id AND t.task_id = o.id AND t.superseded_seq IS NULL
 WHERE o.organization_id = sqlc.arg(organization_id) AND o.id = ANY (sqlc.arg(ids)::uuid[]) AND o.deleted_at IS NULL;

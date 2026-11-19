@@ -194,6 +194,21 @@ func (u *UseCase) AreaOf(ctx context.Context, orgID, instanceID entity.ID, kind 
 	return out, err
 }
 
+// CurrentObjects reads where objects are now: the current area and restriction access decides them by, and
+// what a reference shows (TZ 12.7). Deleted objects are absent; ids are read in one query.
+func (u *UseCase) CurrentObjects(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.LinkEnd, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var out []entity.LinkEnd
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.LinkEnds(ctx, orgID, ids)
+		return err
+	})
+	return out, err
+}
+
 // AreaChanges reads the changes of an area after a knowledge number, for the recount of calc.
 func (u *UseCase) AreaChanges(ctx context.Context, orgID, areaID entity.ID, afterSeq int64) ([]entity.AreaChange, error) {
 	var out []entity.AreaChange

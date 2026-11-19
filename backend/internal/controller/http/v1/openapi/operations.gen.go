@@ -72,7 +72,7 @@ var Operations = map[string]Operation{
 	"GET /receipts/:receipt_id":                                    {ID: "getReceipt", Action: "receipts.read", Query: []string{}, IfMatch: false},
 	"GET /receipts/:receipt_id/records":                            {ID: "listReceiptRecords", Action: "receipts.read", Query: []string{"cursor", "limit", "outcome"}, IfMatch: false},
 	"GET /revisions/:revision_id":                                  {ID: "getRevision", Action: "report.read", Query: []string{}, IfMatch: false},
-	"GET /revisions/:revision_id/cohort":                           {ID: "listRevisionCohort", Action: "report.read", Query: []string{"cursor", "limit", "metric_id", "point_start", "role"}, IfMatch: false},
+	"GET /revisions/:revision_id/cohort":                           {ID: "listRevisionCohort", Action: "report.read", Query: []string{"cursor", "estimator", "limit", "metric_id", "point_start", "role"}, IfMatch: false},
 	"GET /saved-views":                                             {ID: "listSavedViews", Action: "report.read", Query: []string{"cursor", "limit"}, IfMatch: false},
 	"GET /saved-views/:saved_view_id":                              {ID: "getSavedView", Action: "report.read", Query: []string{}, IfMatch: false},
 	"GET /series":                                                  {ID: "listSeries", Action: "report.read", Query: []string{"cursor", "limit", "project_id", "team_id"}, IfMatch: false},

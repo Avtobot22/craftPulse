@@ -182,3 +182,33 @@ func (u *UseCase) RunGC(ctx context.Context, job entity.CalcGCJob, complete Comp
 		return u.d.Queue.Enqueue(ctx, entity.CalcGCJob{OrganizationID: org, AfterPartID: ids[len(ids)-1]}, entity.QueueBulk)
 	})
 }
+
+// RevisionOf reads a revision by its ID; a revision of another set of metrics is entity.ErrNotFound.
+func (u *UseCase) RevisionOf(ctx context.Context, orgID, revisionID entity.ID) (entity.CalcRevision, error) {
+	var out entity.CalcRevision
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.Revision(ctx, orgID, revisionID)
+		return err
+	})
+	return out, err
+}
+
+// RequestTeamRevision queues the recount of the series of a team, for a series that has no revision yet: its
+// first chain starts after the delay that gathers the facts (TZ 10.6).
+func (u *UseCase) RequestTeamRevision(ctx context.Context, orgID, teamID, corr entity.ID) error {
+	return u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return u.d.Queue.Enqueue(ctx, entity.CalcRecountJob{OrganizationID: orgID, TeamID: teamID, CorrelationID: corr}, entity.QueueBulk)
+	})
+}
+
+// MetricDefinitions is the registry of the definitions in force as the API shows it.
+func (*UseCase) MetricDefinitions() []entity.MetricDefinition {
+	defs := Definitions()
+	out := make([]entity.MetricDefinition, len(defs))
+	for i := range defs {
+		d := &defs[i]
+		out[i] = entity.MetricDefinition{ID: d.ID, Version: d.Version, Name: d.Name, Unit: d.Unit, CatalogRef: d.CatalogRef, Parameters: d.Parameters}
+	}
+	return out
+}

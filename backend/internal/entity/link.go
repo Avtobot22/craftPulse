@@ -103,6 +103,7 @@ type LinkProposal struct {
 type LinkEnd struct {
 	ID         ID
 	Kind       ObjectKind
+	InstanceID ID
 	AreaID     ID
 	Restricted bool
 	NativeNS   string

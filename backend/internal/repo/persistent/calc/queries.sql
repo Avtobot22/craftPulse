@@ -157,13 +157,24 @@ WHERE rp.organization_id = sqlc.arg(organization_id) AND rp.revision_id = sqlc.a
 ORDER BY c.object_id, c.item_no
 LIMIT sqlc.arg(row_limit);
 
--- name: TaskIntervals :many
-SELECT i.episode_no, i.interval_no, i.class, lower(i.during)::timestamptz AS during_from, upper(i.during)::timestamptz AS during_to,
-    i.source_event_ids
+-- name: RevisionCohort :many
+SELECT c.metric_id, c.estimator, c.point_start, c.object_id, c.item_no, c.object_kind, c.role,
+    COALESCE(c.value, 0)::float8 AS value, (c.value IS NOT NULL)::boolean AS has_value, c.reason_code,
+    s.project_id, s.task_type, s.size_label
+FROM calc.revision_part rp
+JOIN calc.contribution c ON c.organization_id = rp.organization_id AND c.part_id = rp.part_id
+LEFT JOIN calc.task_slice s ON s.organization_id = c.organization_id AND s.part_id = c.part_id AND s.task_id = c.object_id
+WHERE rp.organization_id = sqlc.arg(organization_id) AND rp.revision_id = sqlc.arg(revision_id)
+ORDER BY c.metric_id, c.estimator, c.point_start, c.object_id, c.item_no;
+
+-- name: TasksIntervals :many
+SELECT i.task_id, i.episode_no, i.interval_no, i.class, lower(i.during)::timestamptz AS during_from,
+    upper(i.during)::timestamptz AS during_to, i.source_event_ids
 FROM calc.revision_part rp
 JOIN calc.interval i ON i.organization_id = rp.organization_id AND i.part_id = rp.part_id
-WHERE rp.organization_id = sqlc.arg(organization_id) AND rp.revision_id = sqlc.arg(revision_id) AND i.task_id = sqlc.arg(task_id)
-ORDER BY i.episode_no, i.interval_no, lower(i.during);
+WHERE rp.organization_id = sqlc.arg(organization_id) AND rp.revision_id = sqlc.arg(revision_id)
+    AND i.task_id = ANY (sqlc.arg(task_ids)::uuid[])
+ORDER BY i.task_id, i.episode_no, i.interval_no, lower(i.during);
 
 -- name: MarkBasisDeleted :execrows
 UPDATE calc.revision r SET irreproducible_reason = 'basis_deleted'

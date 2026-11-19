@@ -11,6 +11,7 @@ import (
 
 type reports struct {
 	operations usecase.Operations
+	views      usecase.TeamReports
 }
 
 func (h *reports) RefreshSeries(ctx context.Context, req openapi.RefreshSeriesRequestObject) (openapi.RefreshSeriesResponseObject, error) {

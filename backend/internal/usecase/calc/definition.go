@@ -196,6 +196,15 @@ func Definitions() []Definition {
 	return out
 }
 
+// lookup finds a definition in force; a retired one is absent.
+func lookup(id string) (Definition, bool) {
+	i := slices.IndexFunc(_definitions, func(d Definition) bool { return d.ID == id })
+	if i < 0 {
+		return Definition{}, false
+	}
+	return _definitions[i], true
+}
+
 func definition(id string) Definition {
 	i := slices.IndexFunc(_definitions, func(d Definition) bool { return d.ID == id })
 	return _definitions[i]

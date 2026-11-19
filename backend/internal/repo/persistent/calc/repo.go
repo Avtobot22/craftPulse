@@ -318,27 +318,68 @@ func (r *Repo) PointContributions(ctx context.Context, orgID, revisionID entity.
 
 // TaskIntervals joins the pieces a task has in the parts of a revision back into its intervals.
 func (r *Repo) TaskIntervals(ctx context.Context, orgID, revisionID, taskID entity.ID) ([]entity.WorkflowInterval, error) {
-	rows, err := r.q(ctx).TaskIntervals(ctx, TaskIntervalsParams{OrganizationID: uuid.UUID(orgID), RevisionID: uuid.UUID(revisionID), TaskID: uuid.UUID(taskID)})
+	return r.TasksIntervals(ctx, orgID, revisionID, []entity.ID{taskID})
+}
+
+// TasksIntervals joins the pieces the tasks have in the parts of a revision back into their intervals, by task.
+func (r *Repo) TasksIntervals(ctx context.Context, orgID, revisionID entity.ID, taskIDs []entity.ID) ([]entity.WorkflowInterval, error) {
+	tasks := make([]uuid.UUID, len(taskIDs))
+	for i, id := range taskIDs {
+		tasks[i] = uuid.UUID(id)
+	}
+	rows, err := r.q(ctx).TasksIntervals(ctx, TasksIntervalsParams{OrganizationID: uuid.UUID(orgID), RevisionID: uuid.UUID(revisionID), TaskIds: tasks})
 	if err != nil {
 		return nil, fmt.Errorf("calc: task intervals: %w", err)
 	}
 	var out []entity.WorkflowInterval
 	for i := range rows {
 		row := &rows[i]
-		if n := len(out); n > 0 && out[n-1].EpisodeNo == int(row.EpisodeNo) && out[n-1].IntervalNo == int(row.IntervalNo) {
+		task := entity.ID(row.TaskID)
+		if n := len(out); n > 0 && out[n-1].TaskID == task && out[n-1].EpisodeNo == int(row.EpisodeNo) && out[n-1].IntervalNo == int(row.IntervalNo) {
 			if row.DuringTo.After(out[n-1].To) {
 				out[n-1].To = row.DuringTo.UTC()
 			}
 			continue
 		}
 		iv := entity.WorkflowInterval{
-			TaskID: taskID, EpisodeNo: int(row.EpisodeNo), IntervalNo: int(row.IntervalNo), Class: entity.IntervalClass(row.Class),
+			TaskID: task, EpisodeNo: int(row.EpisodeNo), IntervalNo: int(row.IntervalNo), Class: entity.IntervalClass(row.Class),
 			From: row.DuringFrom.UTC(), To: row.DuringTo.UTC(), SourceEventIDs: make([]entity.ID, len(row.SourceEventIds)),
 		}
 		for j, id := range row.SourceEventIds {
 			iv.SourceEventIDs[j] = entity.ID(id)
 		}
 		out = append(out, iv)
+	}
+	return out, nil
+}
+
+// RevisionCohort reads every contribution of a revision with the project, the type and the size of its task.
+func (r *Repo) RevisionCohort(ctx context.Context, orgID, revisionID entity.ID) ([]entity.CohortRow, error) {
+	rows, err := r.q(ctx).RevisionCohort(ctx, RevisionCohortParams{OrganizationID: uuid.UUID(orgID), RevisionID: uuid.UUID(revisionID)})
+	if err != nil {
+		return nil, fmt.Errorf("calc: revision cohort: %w", err)
+	}
+	out := make([]entity.CohortRow, len(rows))
+	for i := range rows {
+		row := &rows[i]
+		c := entity.CohortRow{
+			MetricID: row.MetricID, Estimator: row.Estimator, PointStart: row.PointStart.UTC(),
+			Contribution: entity.Contribution{
+				ObjectID: entity.ID(row.ObjectID), ItemNo: int(row.ItemNo), ObjectKind: entity.ObjectKind(row.ObjectKind),
+				Role: entity.ContributionRole(row.Role), Value: optional(row.Value, row.HasValue), ReasonCode: row.ReasonCode.String,
+			},
+		}
+		if row.ProjectID.Valid {
+			project := entity.ID(row.ProjectID.UUID)
+			c.ProjectID = &project
+		}
+		if row.TaskType.Valid {
+			c.TaskType = &row.TaskType.String
+		}
+		if row.SizeLabel.Valid {
+			c.SizeLabel = &row.SizeLabel.String
+		}
+		out[i] = c
 	}
 	return out, nil
 }

@@ -46,13 +46,15 @@ type Authorizer interface {
 }
 
 type Deps struct {
-	Repo   repo.ViewRepo
-	Tx     repo.Transactor
-	Sync   Sync
-	Series Series
-	Access Authorizer
-	Clock  clock.Clock
-	NewID  func() (entity.ID, error)
+	Repo      repo.ViewRepo
+	Tx        repo.Transactor
+	Sync      Sync
+	Series    Series
+	Reports   Reports
+	Instances Instances
+	Access    Authorizer
+	Clock     clock.Clock
+	NewID     func() (entity.ID, error)
 }
 
 type UseCase struct {
