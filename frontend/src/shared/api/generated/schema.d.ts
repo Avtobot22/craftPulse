@@ -1357,7 +1357,7 @@ export interface paths {
         };
         /**
          * Сохранённые срезы пользователя
-         * @description Срезы, сохранённые текущим пользователем (UI-37).
+         * @description Срезы, сохранённые текущим пользователем (UI-37), от новых к старым по created_at и id. Курсор продолжает этот порядок; данные отчёта в список не входят.
          */
         get: operations["listSavedViews"];
         put?: never;
@@ -1381,7 +1381,7 @@ export interface paths {
         };
         /**
          * Открыть сохранённый срез
-         * @description Срез строится по правам открывающего, а не автора (раздел 7.4). Ссылку на срез может открыть любой пользователь организации; данные выдаются по его правам.
+         * @description Срез строится по правам открывающего, а не автора (раздел 7.4). Ссылку на срез может открыть любой пользователь организации; поле report содержит отчёт по его правам, включая access_limited. Закреплённый срез использует прежнюю ревизию, обновляемый - текущую ревизию сохранённого ряда. Недоступный ряд или срез другой организации даёт 404.
          */
         get: operations["getSavedView"];
         put?: never;
@@ -4295,14 +4295,29 @@ export interface components {
             access_limited: boolean;
             access_notes: components["schemas"]["AccessNote"][];
         };
+        /** @description Параметры UI-20. Период задаётся парой from/to [from,to) или period_days (по умолчанию 90 суток до as_of выбранной ревизии). У закреплённого среза относительный период сохраняется при новых расчётах. step должен совпадать с шагом series_id. Остальные поля состояния интерфейса сохраняются без интерпретации; права и выбранную ревизию они не меняют. */
+        SavedViewFilters: {
+            /** Format: date-time */
+            from?: string;
+            /** Format: date-time */
+            to?: string;
+            period_days?: number;
+            /** @enum {string} */
+            step?: "week" | "month";
+            project_id?: string[];
+            task_type?: string;
+            /** @description unknown - группа без размера. */
+            size_label?: string;
+            /** @enum {string} */
+            group_by?: "task_type" | "size_label";
+        } & {
+            [key: string]: unknown;
+        };
         SavedViewInput: {
             name: string;
             /** Format: uuid */
             series_id: string;
-            /** @description Параметры представления UI-20 - период, шаг, группы; права не расширяют. */
-            filters: {
-                [key: string]: unknown;
-            };
+            filters: components["schemas"]["SavedViewFilters"];
             /** Format: uuid */
             pinned_revision_id: string | null;
         };
@@ -4312,13 +4327,13 @@ export interface components {
             name: string;
             /** Format: uuid */
             series_id: string;
-            filters: {
-                [key: string]: unknown;
-            };
+            filters: components["schemas"]["SavedViewFilters"];
             /** Format: uuid */
             pinned_revision_id: string | null;
             /** Format: date-time */
             created_at: string;
+            /** @description Отчёт по правам открывающего; присутствует в getSavedView, отсутствует в списке и ответе создания. */
+            report?: components["schemas"]["TeamReport"];
         };
         SavedViewPage: {
             data: components["schemas"]["SavedView"][];

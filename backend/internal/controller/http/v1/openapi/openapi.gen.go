@@ -7360,21 +7360,29 @@ type RunbookDrillPage struct {
 
 // SavedView defines model for SavedView.
 type SavedView struct {
-	CreatedAt        time.Time              `json:"created_at"`
-	Filters          map[string]interface{} `json:"filters"`
-	Id               openapi_types.UUID     `json:"id"`
-	Name             string                 `json:"name"`
-	PinnedRevisionId *openapi_types.UUID    `json:"pinned_revision_id"`
-	SeriesId         openapi_types.UUID     `json:"series_id"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// Filters Параметры UI-20. Период задаётся парой from/to [from,to) или period_days (по умолчанию 90 суток до as_of выбранной ревизии). У закреплённого среза относительный период сохраняется при новых расчётах. step должен совпадать с шагом series_id. Остальные поля состояния интерфейса сохраняются без интерпретации; права и выбранную ревизию они не меняют.
+	Filters          SavedViewFilters    `json:"filters"`
+	Id               openapi_types.UUID  `json:"id"`
+	Name             string              `json:"name"`
+	PinnedRevisionId *openapi_types.UUID `json:"pinned_revision_id"`
+
+	// Report Отчёт по правам открывающего; присутствует в getSavedView, отсутствует в списке и ответе создания.
+	Report   *TeamReport        `json:"report,omitempty"`
+	SeriesId openapi_types.UUID `json:"series_id"`
 }
+
+// SavedViewFilters Параметры UI-20. Период задаётся парой from/to [from,to) или period_days (по умолчанию 90 суток до as_of выбранной ревизии). У закреплённого среза относительный период сохраняется при новых расчётах. step должен совпадать с шагом series_id. Остальные поля состояния интерфейса сохраняются без интерпретации; права и выбранную ревизию они не меняют.
+type SavedViewFilters = map[string]any
 
 // SavedViewInput defines model for SavedViewInput.
 type SavedViewInput struct {
-	// Filters Параметры представления UI-20 - период, шаг, группы; права не расширяют.
-	Filters          map[string]interface{} `json:"filters"`
-	Name             string                 `json:"name"`
-	PinnedRevisionId *openapi_types.UUID    `json:"pinned_revision_id"`
-	SeriesId         openapi_types.UUID     `json:"series_id"`
+	// Filters Параметры UI-20. Период задаётся парой from/to [from,to) или period_days (по умолчанию 90 суток до as_of выбранной ревизии). У закреплённого среза относительный период сохраняется при новых расчётах. step должен совпадать с шагом series_id. Остальные поля состояния интерфейса сохраняются без интерпретации; права и выбранную ревизию они не меняют.
+	Filters          SavedViewFilters    `json:"filters"`
+	Name             string              `json:"name"`
+	PinnedRevisionId *openapi_types.UUID `json:"pinned_revision_id"`
+	SeriesId         openapi_types.UUID  `json:"series_id"`
 }
 
 // SavedViewPage defines model for SavedViewPage.

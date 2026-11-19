@@ -2406,7 +2406,7 @@ paths:
     get:
       operationId: listSavedViews
       summary: Сохранённые срезы пользователя
-      description: Срезы, сохранённые текущим пользователем (UI-37).
+      description: Срезы, сохранённые текущим пользователем (UI-37), от новых к старым по created_at и id. Курсор продолжает этот порядок; данные отчёта в список не входят.
       tags: [reports]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M0
@@ -2458,7 +2458,7 @@ paths:
     get:
       operationId: getSavedView
       summary: Открыть сохранённый срез
-      description: Срез строится по правам открывающего, а не автора (раздел 7.4). Ссылку на срез может открыть любой пользователь организации; данные выдаются по его правам.
+      description: Срез строится по правам открывающего, а не автора (раздел 7.4). Ссылку на срез может открыть любой пользователь организации; поле report содержит отчёт по его правам, включая access_limited. Закреплённый срез использует прежнюю ревизию, обновляемый - текущую ревизию сохранённого ряда. Недоступный ряд или срез другой организации даёт 404.
       tags: [reports]
       x-craftpulse-action: report.read
       x-craftpulse-delivery: M0
@@ -6865,6 +6865,26 @@ components:
         next_cursor: {type: [string, 'null']}
         access_limited: {type: boolean}
         access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}
+    SavedViewFilters:
+      x-go-type: map[string]any
+      type: object
+      maxProperties: 50
+      additionalProperties: true
+      description: >-
+        Параметры UI-20. Период задаётся парой from/to [from,to) или period_days
+        (по умолчанию 90 суток до as_of выбранной ревизии). У закреплённого среза
+        относительный период сохраняется при новых расчётах. step должен совпадать
+        с шагом series_id. Остальные поля состояния интерфейса сохраняются без
+        интерпретации; права и выбранную ревизию они не меняют.
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        period_days: {type: integer, minimum: 1, maximum: 3660}
+        step: {type: string, enum: [week, month]}
+        project_id: {type: array, items: {type: string, format: uuid}}
+        task_type: {type: string}
+        size_label: {type: string, description: 'unknown - группа без размера.'}
+        group_by: {type: string, enum: [task_type, size_label]}
     SavedViewInput:
       type: object
       additionalProperties: false
@@ -6872,7 +6892,7 @@ components:
       properties:
         name: {type: string, minLength: 1, maxLength: 200}
         series_id: {type: string, format: uuid}
-        filters: {type: object, maxProperties: 50, additionalProperties: true, description: 'Параметры представления UI-20 - период, шаг, группы; права не расширяют.'}
+        filters: {$ref: '#/components/schemas/SavedViewFilters'}
         pinned_revision_id: {type: [string, 'null'], format: uuid}
     SavedView:
       type: object
@@ -6881,9 +6901,10 @@ components:
         id: {type: string, format: uuid}
         name: {type: string}
         series_id: {type: string, format: uuid}
-        filters: {type: object, additionalProperties: true}
+        filters: {$ref: '#/components/schemas/SavedViewFilters'}
         pinned_revision_id: {type: [string, 'null'], format: uuid}
         created_at: {type: string, format: date-time}
+        report: {$ref: '#/components/schemas/TeamReport', description: 'Отчёт по правам открывающего; присутствует в getSavedView, отсутствует в списке и ответе создания.'}
     SavedViewPage:
       type: object
       required: [data, next_cursor]
