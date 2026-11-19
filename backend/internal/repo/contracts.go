@@ -253,6 +253,10 @@ type ObjectStore interface {
 
 // SyncRepo is the state of collection and the lease of a connection under row-level security.
 type SyncRepo interface {
+	ReceiveWebhook(context.Context, entity.ID, entity.ID, time.Time) (entity.ID, error)
+	RejectWebhook(context.Context, entity.ID, entity.ID, time.Time, string) (bool, error)
+	WebhookStatus(context.Context, entity.ID, entity.ID, time.Time) (*entity.WebhookStatus, error)
+	PendingRereads(context.Context, entity.ID, entity.ID) (bool, error)
 	State(ctx context.Context, orgID, connectionID entity.ID, dataKind string) (entity.SyncState, bool, error)
 	SaveState(ctx context.Context, orgID entity.ID, s entity.SyncState) error
 	// AcquireLease takes or renews the lease; false means another holder has it until it runs out.
@@ -279,6 +283,8 @@ type SyncRepo interface {
 
 // NormalizeRepo is the normalize schema under row-level security: canonical facts in versions of knowledge.
 type NormalizeRepo interface {
+	WebhookTargets(context.Context, entity.ID, entity.ID, []entity.ObjectKey) (map[entity.ObjectKey]entity.WebhookMRTarget, error)
+	CurrentSyncVersions(context.Context, entity.ID, entity.ID, []string) (map[entity.ObjectKey]entity.SyncObjectVersion, error)
 	LinkMRVersions(context.Context, entity.ID, entity.LinkMRFilter) ([]entity.MRVersion, error)
 	LinkTaskVersions(context.Context, entity.ID, []entity.ID, []string) ([]entity.TaskVersion, error)
 	CurrentRepositoryVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.RepositoryVersion, error)

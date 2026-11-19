@@ -505,6 +505,58 @@ func (q *Queries) CurrentRepositoryVersions(ctx context.Context, arg CurrentRepo
 	return items, nil
 }
 
+const currentSyncVersions = `-- name: CurrentSyncVersions :many
+SELECT obj.object_kind, obj.native_ns, obj.native_id, v.source_revision, v.source_updated_at
+FROM normalize.source_object obj
+JOIN normalize.mr_version v ON v.organization_id = obj.organization_id AND v.mr_id = obj.id AND v.superseded_seq IS NULL
+WHERE obj.organization_id = $1 AND v.area_id = $2 AND obj.native_id = ANY($3::text[]) AND obj.deleted_at IS NULL
+UNION ALL
+SELECT obj.object_kind, obj.native_ns, obj.native_id, v.source_revision, v.source_updated_at
+FROM normalize.source_object obj
+JOIN normalize.ci_run_version v ON v.organization_id = obj.organization_id AND v.run_id = obj.id AND v.superseded_seq IS NULL
+WHERE obj.organization_id = $1 AND v.area_id = $2 AND obj.native_id = ANY($3::text[]) AND obj.deleted_at IS NULL
+`
+
+type CurrentSyncVersionsParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	Column3        []string
+}
+
+type CurrentSyncVersionsRow struct {
+	ObjectKind      string
+	NativeNs        string
+	NativeID        string
+	SourceRevision  string
+	SourceUpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) CurrentSyncVersions(ctx context.Context, arg CurrentSyncVersionsParams) ([]CurrentSyncVersionsRow, error) {
+	rows, err := q.db.Query(ctx, currentSyncVersions, arg.OrganizationID, arg.AreaID, arg.Column3)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CurrentSyncVersionsRow
+	for rows.Next() {
+		var i CurrentSyncVersionsRow
+		if err := rows.Scan(
+			&i.ObjectKind,
+			&i.NativeNs,
+			&i.NativeID,
+			&i.SourceRevision,
+			&i.SourceUpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const currentTaskEvents = `-- name: CurrentTaskEvents :many
 SELECT e.organization_id, e.id, e.task_id, e.area_id, e.event_key, e.source_revision, e.content_hash, e.known_seq, e.superseded_seq, e.superseded_at, e.receipt_id, e.record_no, e.event_kind, e.field_native_id, e.before_value, e.after_value, e.before_account_id, e.after_account_id, e.actor_account_id, e.event_time, e.event_offset_s, e.observed_at, e.observed_via FROM normalize.task_event e
 JOIN (
@@ -2429,6 +2481,64 @@ func (q *Queries) TaskVersionsAt(ctx context.Context, arg TaskVersionsAtParams) 
 			&i.ParentTaskID,
 			&i.RestrictionNative,
 			&i.RawFields,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const webhookTargets = `-- name: WebhookTargets :many
+SELECT (k.key->>'object_kind')::text AS object_kind, (k.key->>'native_ns')::text AS input_ns, (k.key->>'native_id')::text AS input_id,
+    COALESCE(mr.native_ns, (k.key->>'native_ns'))::text AS native_ns, COALESCE(mr.native_id, (k.key->>'native_id'))::text AS native_id,
+    COALESCE(v.state, '')::text AS state, COALESCE(area.native_id, (k.key->>'native_ns'))::text AS scope_native_id
+FROM jsonb_array_elements($1::jsonb) AS k(key)
+LEFT JOIN normalize.source_object obj ON obj.organization_id = $2 AND obj.instance_id = $3
+    AND obj.object_kind = (k.key->>'object_kind') AND obj.native_ns = (k.key->>'native_ns') AND obj.native_id = (k.key->>'native_id') AND obj.deleted_at IS NULL
+LEFT JOIN normalize.ci_run_version run ON run.organization_id = obj.organization_id AND run.run_id = obj.id AND run.superseded_seq IS NULL
+LEFT JOIN normalize.source_object mr ON mr.organization_id = obj.organization_id AND mr.instance_id = obj.instance_id
+    AND mr.id = CASE WHEN obj.object_kind = 'merge_request' THEN obj.id ELSE run.mr_id END AND mr.deleted_at IS NULL
+LEFT JOIN normalize.mr_version v ON v.organization_id = mr.organization_id AND v.mr_id = mr.id AND v.superseded_seq IS NULL
+LEFT JOIN normalize.source_object area ON area.organization_id = obj.organization_id AND area.id = COALESCE(v.area_id, obj.current_area_id)
+`
+
+type WebhookTargetsParams struct {
+	Keys           []byte
+	OrganizationID uuid.UUID
+	InstanceID     uuid.UUID
+}
+
+type WebhookTargetsRow struct {
+	ObjectKind    string
+	InputNs       string
+	InputID       string
+	NativeNs      string
+	NativeID      string
+	State         string
+	ScopeNativeID string
+}
+
+func (q *Queries) WebhookTargets(ctx context.Context, arg WebhookTargetsParams) ([]WebhookTargetsRow, error) {
+	rows, err := q.db.Query(ctx, webhookTargets, arg.Keys, arg.OrganizationID, arg.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WebhookTargetsRow
+	for rows.Next() {
+		var i WebhookTargetsRow
+		if err := rows.Scan(
+			&i.ObjectKind,
+			&i.InputNs,
+			&i.InputID,
+			&i.NativeNs,
+			&i.NativeID,
+			&i.State,
+			&i.ScopeNativeID,
 		); err != nil {
 			return nil, err
 		}

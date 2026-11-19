@@ -100,7 +100,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	if err != nil {
 		return err
 	}
-	collection, err := newSync(pool, connections, intake, normalizer, clock.System{}, reg)
+	collection, err := newSync(pool, keyring, connections, intake, normalizer, clock.System{}, reg)
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	}
 	views := newView(pool, viewModules{collection: collection, series: calculator, reports: calculator, instances: connections, rights: rights}, clock.System{})
 	modules := apiModules{
-		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection,
+		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection, webhooks: collection,
 		operations: views, reports: views, process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
 	}
 	api := newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules)
@@ -179,7 +179,7 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	collection, err := newSync(pool, connections, packages, normalizer, clock.System{}, reg)
+	collection, err := newSync(pool, keyring, connections, packages, normalizer, clock.System{}, reg)
 	if err != nil {
 		return err
 	}

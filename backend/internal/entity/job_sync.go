@@ -1,6 +1,38 @@
 package entity
 
 const (
+	KindSyncWebhook = "sync.webhook"
+	KindSyncMR      = "sync.mr"
+)
+
+type SyncWebhookJob struct {
+	OrganizationID ID     `json:"organization_id"`
+	ConnectionID   ID     `json:"connection_id"`
+	DeliveryID     ID     `json:"delivery_id"`
+	PayloadEnc     []byte `json:"payload_enc"`
+	KeyVersion     uint32 `json:"key_version"`
+	CorrelationID  ID     `json:"correlation_id"`
+	Retry          int    `json:"retry,omitempty"`
+}
+
+func (SyncWebhookJob) Kind() string { return KindSyncWebhook }
+
+type SyncMRJob struct {
+	OrganizationID ID            `json:"organization_id" river:"unique"`
+	ConnectionID   ID            `json:"connection_id" river:"unique"`
+	ScopeID        ID            `json:"scope_id"`
+	ScopeIDs       []ID          `json:"scope_ids,omitempty"`
+	NativeNS       string        `json:"native_ns" river:"unique"`
+	NativeID       string        `json:"native_id" river:"unique"`
+	SchemaID       string        `json:"schema_id,omitempty"`
+	Cursor         *SourceCursor `json:"cursor,omitempty"`
+	Retry          int           `json:"retry,omitempty"`
+}
+
+func (SyncMRJob) Kind() string       { return KindSyncMR }
+func (SyncMRJob) UniqueWhileActive() {}
+
+const (
 	KindSyncPage      = "sync.page"
 	KindSyncHistory   = "sync.history"
 	KindSyncReconcile = "sync.reconcile"
@@ -62,8 +94,8 @@ const (
 
 // SyncDirtyJob reads again the objects in the set of a connection.
 type SyncDirtyJob struct {
-	OrganizationID ID  `json:"organization_id"`
-	ConnectionID   ID  `json:"connection_id"`
+	OrganizationID ID  `json:"organization_id" river:"unique"`
+	ConnectionID   ID  `json:"connection_id" river:"unique"`
 	Retry          int `json:"retry,omitempty"`
 }
 

@@ -137,11 +137,12 @@ func (u *UseCase) failDirty(ctx context.Context, job entity.SyncDirtyJob, f *fai
 		at = u.d.Clock.Now().Add(Pause(job.Retry, u.d.Rand()))
 	}
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
-		if !f.stop {
-			if err := u.d.Queue.EnqueueAt(ctx, retry, entity.QueueBulk, at); err != nil {
-				return err
-			}
+		if err := u.end(ctx, org, conn, holder, complete); err != nil {
+			return err
 		}
-		return u.end(ctx, org, conn, holder, complete)
+		if f.stop {
+			return nil
+		}
+		return u.d.Queue.EnqueueAt(ctx, retry, entity.QueueBulk, at)
 	})
 }

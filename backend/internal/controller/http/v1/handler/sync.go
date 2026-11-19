@@ -31,6 +31,11 @@ func (h *connections) GetSyncStatus(ctx context.Context, req openapi.GetSyncStat
 		ConnectionId: req.ConnectionId, ConnectionStatus: openapi.SyncStatusConnectionStatus(st.ConnectionStatus), PausedUntil: st.PausedUntil,
 		DataKinds: make([]openapi.SyncDataKindStatus, 0, len(st.DataKinds)),
 	}
+	if w := st.Webhooks; w != nil {
+		out.Webhooks = alloc(out.Webhooks)
+		out.Webhooks.LastReceivedAt, out.Webhooks.LastRejectedAt = w.LastReceivedAt, w.LastRejectedAt
+		out.Webhooks.RejectedCount, out.Webhooks.LastRejectReason = w.RejectedCount, optional(w.LastRejectReason)
+	}
 	for i := range st.DataKinds {
 		out.DataKinds = append(out.DataKinds, dataKindStatus(&st.DataKinds[i]))
 	}

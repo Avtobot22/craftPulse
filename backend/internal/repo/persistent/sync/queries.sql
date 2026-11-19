@@ -73,3 +73,21 @@ DELETE FROM sync.dirty_key WHERE organization_id = sqlc.arg(organization_id) AND
 
 -- name: CountDirtyKeys :one
 SELECT count(*) FROM sync.dirty_key WHERE organization_id = $1 AND connection_id = $2;
+
+-- name: ReceiveWebhook :one
+INSERT INTO sync.webhook_delivery (organization_id, connection_id, received_at) VALUES ($1, $2, $3) RETURNING id;
+
+-- name: RejectWebhook :execrows
+UPDATE sync.webhook_delivery SET rejected_at = $3, reject_reason = $4
+WHERE organization_id = $1 AND id = $2 AND rejected_at IS NULL;
+
+-- name: WebhookStatus :one
+SELECT received_at AS last_received_at,
+    (SELECT count(*) FROM sync.webhook_delivery r WHERE r.organization_id = d.organization_id AND r.connection_id = d.connection_id
+        AND r.rejected_at >= sqlc.arg(since)::timestamptz) AS rejected_count
+FROM sync.webhook_delivery d WHERE d.organization_id = $1 AND d.connection_id = $2
+ORDER BY received_at DESC, id DESC LIMIT 1;
+
+-- name: LastWebhookRejection :one
+SELECT rejected_at, reject_reason FROM sync.webhook_delivery WHERE organization_id = $1 AND connection_id = $2 AND rejected_at IS NOT NULL
+ORDER BY rejected_at DESC, id DESC LIMIT 1;

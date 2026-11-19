@@ -25,7 +25,7 @@ const (
 )
 
 // _manifestSchemas are the schemas whose objects a reconciliation compares; normalize keeps their versions.
-var _manifestSchemas = map[string]string{"tasks": "tasks"}
+var _manifestSchemas = map[string]string{"tasks": "tasks", "merge_requests": "merge_requests", "ci": "ci_runs"}
 
 // queueReconcile writes a running reconciliation of a data kind and queues its job in the caller's
 // transaction; one already running absorbs the request.
@@ -138,26 +138,39 @@ func (u *UseCase) compare(ctx context.Context, org, conn entity.ID, scope *entit
 // compareBatch counts the objects of a page of the manifest. A version of the source is compared with
 // source_revision; without one, its time of change with source_updated_at, since the revision is a hash.
 func (u *UseCase) compareBatch(ctx context.Context, org, area, scope entity.ID, dataKind string, items []entity.ManifestItem, t *tally) error {
-	current := map[string]entity.TaskVersion{}
+	current := map[entity.ObjectKey]entity.SyncObjectVersion{}
 	if !area.IsZero() {
 		ids := make([]string, 0, len(items))
 		for i := range items {
 			ids = append(ids, items[i].NativeID)
 		}
-		var err error
-		if current, err = u.d.Normalize.CurrentTasks(ctx, org, area, ids); err != nil {
-			return err
+		if dataKind == "tasks" {
+			tasks, err := u.d.Normalize.CurrentTasks(ctx, org, area, ids)
+			if err != nil {
+				return err
+			}
+			for _, item := range items {
+				if v, ok := tasks[item.NativeID]; ok {
+					current[entity.ObjectKey{ObjectKind: item.RecordKind, NativeNS: item.NativeNS, NativeID: item.NativeID}] = entity.SyncObjectVersion{Revision: v.Revision.Source, UpdatedAt: v.SourceUpdatedAt}
+				}
+			}
+		} else {
+			var err error
+			current, err = u.d.Normalize.CurrentSyncVersions(ctx, org, area, ids)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	for i := range items {
 		it := &items[i]
 		t.expected++
-		cur, ok := current[it.NativeID]
+		cur, ok := current[entity.ObjectKey{ObjectKind: it.RecordKind, NativeNS: it.NativeNS, NativeID: it.NativeID}]
 		switch {
 		case !ok:
 			t.missing++
-		case it.Version != "" && it.Version != cur.Revision.Source,
-			it.Version == "" && it.UpdatedAt != nil && (cur.SourceUpdatedAt == nil || !it.UpdatedAt.Equal(*cur.SourceUpdatedAt)):
+		case it.Version != "" && it.Version != cur.Revision,
+			it.Version == "" && it.UpdatedAt != nil && (cur.UpdatedAt == nil || !it.UpdatedAt.Equal(*cur.UpdatedAt)):
 			t.observed++
 			t.changed++
 		default:

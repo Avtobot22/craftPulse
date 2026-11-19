@@ -39,7 +39,7 @@ func (r jobRunner) next(t *testing.T) *queued {
 	t.Helper()
 	var q queued
 	err := r.owner.QueryRow(t.Context(), `SELECT id, kind, args, scheduled_at FROM river_job
-		WHERE kind IN ('sync.page', 'sync.history', 'sync.reconcile', 'sync.dirty', 'sync.schedule', 'normalize.batch')
+		WHERE kind IN ('sync.page', 'sync.history', 'sync.reconcile', 'sync.dirty', 'sync.schedule', 'sync.webhook', 'sync.mr', 'normalize.batch')
 			AND state NOT IN ('completed', 'discarded', 'cancelled')
 		ORDER BY scheduled_at, id LIMIT 1`).Scan(&q.id, &q.kind, &q.args, &q.scheduledAt)
 	if err != nil {
@@ -60,6 +60,10 @@ func (r jobRunner) run(t *testing.T, q *queued) error {
 	}
 	holder := "river-job-" + strconv.FormatInt(q.id, 10)
 	switch q.kind {
+	case entity.KindSyncWebhook:
+		return r.sync.RunWebhook(t.Context(), args[entity.SyncWebhookJob](t, q), complete)
+	case entity.KindSyncMR:
+		return r.sync.RunMR(t.Context(), args[entity.SyncMRJob](t, q), holder, complete)
 	case entity.KindSyncPage:
 		return r.sync.RunPage(t.Context(), args[entity.SyncPageJob](t, q), holder, complete)
 	case entity.KindSyncHistory:

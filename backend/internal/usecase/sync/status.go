@@ -22,6 +22,10 @@ func (u *UseCase) Status(ctx context.Context, orgID, connectionID entity.ID) (en
 		if states, err = u.d.Repo.States(ctx, orgID, connectionID); err != nil {
 			return err
 		}
+		out.Webhooks, err = u.d.Repo.WebhookStatus(ctx, orgID, connectionID, u.d.Clock.Now().Add(-24*time.Hour))
+		if err != nil {
+			return err
+		}
 		last, found, err := u.d.Repo.LastReconcile(ctx, orgID, connectionID, "")
 		if found {
 			out.LastReconcile = &last

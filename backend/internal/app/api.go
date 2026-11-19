@@ -29,6 +29,7 @@ type apiModules struct {
 	orgs               *org.UseCase
 	access             *access.UseCase
 	connections        usecase.Connections
+	webhooks           usecase.Webhooks
 	intake             usecase.Intake
 	sync               usecase.SyncStatus
 	operations         usecase.Operations
@@ -60,7 +61,7 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 	})
 	return v1.Deps{
 		Handler: handler.New(handler.Deps{
-			SourceLinks: decisions, SiteURL: siteURL,
+			SourceLinks: decisions, SiteURL: siteURL, Webhooks: m.webhooks,
 			Documentation: docs.New(docs.Deps{
 				Repo: docsrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx,
 				Access: decisions, References: orgs, Areas: m.documentationAreas, Auditor: auditor, Clock: c, NewID: newID,

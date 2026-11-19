@@ -85,7 +85,7 @@ func newSyncEnv(t *testing.T, scenario testadapter.Config) *syncEnv {
 	require.NoError(t, err)
 	e.reg = reg
 	e.uc = sync.New(sync.Deps{
-		Repo: syncrepo.NewRepo(e.app), Tenants: platform.NewRepo(e.app), Connect: e.connect, Ingest: intake, Normalize: e.norm,
+		Keyring: adapterKeyring(t), Repo: syncrepo.NewRepo(e.app), Tenants: platform.NewRepo(e.app), Connect: e.connect, Ingest: intake, Normalize: e.norm,
 		Queue: queue.New(jobs), Tx: persistent.NewTransactor(e.app), Metrics: e.metrics,
 		Clock: e.clock, Rand: func() float64 { return e.jitter.Load().(float64) }, PageSize: 3,
 	})

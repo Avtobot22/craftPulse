@@ -16,6 +16,7 @@ import (
 const _connectionCursor = "connection"
 
 type connections struct {
+	siteURL    string
 	uc         usecase.Connections
 	sync       usecase.SyncStatus
 	operations usecase.Operations
@@ -75,7 +76,7 @@ func (h *connections) ListConnections(ctx context.Context, req openapi.ListConne
 	}
 	out := openapi.ConnectionPage{Data: make([]openapi.Connection, 0, len(page.Items))}
 	for i := range page.Items {
-		out.Data = append(out.Data, connectionBody(page.Items[i]))
+		out.Data = append(out.Data, h.connectionBody(page.Items[i]))
 	}
 	if err := h.withLastSuccess(ctx, s.OrganizationID, out.Data); err != nil {
 		return nil, err
@@ -115,7 +116,7 @@ func (h *connections) CreateConnection(ctx context.Context, req openapi.CreateCo
 	}
 	tag, location := etag(int64(st.Connection.RowVersion)), "/api/v1/connections/"+st.Connection.ID.String()
 	return connectionCreated{openapi.CreateConnection201JSONResponse{
-		Body: connectionBody(st), Headers: openapi.CreateConnection201ResponseHeaders{ETag: &tag, Location: &location},
+		Body: h.connectionBody(st), Headers: openapi.CreateConnection201ResponseHeaders{ETag: &tag, Location: &location},
 	}}, nil
 }
 
@@ -129,7 +130,7 @@ func (h *connections) GetConnection(ctx context.Context, req openapi.GetConnecti
 		return nil, err
 	}
 	tag := etag(int64(st.Connection.RowVersion))
-	body := []openapi.Connection{connectionBody(st)}
+	body := []openapi.Connection{h.connectionBody(st)}
 	if err := h.withLastSuccess(ctx, s.OrganizationID, body); err != nil {
 		return nil, err
 	}
@@ -165,7 +166,7 @@ func (h *connections) UpdateConnection(ctx context.Context, req openapi.UpdateCo
 		return nil, err
 	}
 	tag := etag(int64(st.Connection.RowVersion))
-	return openapi.UpdateConnection200JSONResponse{Body: connectionBody(st), Headers: openapi.UpdateConnection200ResponseHeaders{ETag: &tag}}, nil
+	return openapi.UpdateConnection200JSONResponse{Body: h.connectionBody(st), Headers: openapi.UpdateConnection200ResponseHeaders{ETag: &tag}}, nil
 }
 
 func (h *connections) DeleteConnection(ctx context.Context, req openapi.DeleteConnectionRequestObject) (openapi.DeleteConnectionResponseObject, error) {
@@ -222,7 +223,7 @@ func (h *connections) ActivateConnection(ctx context.Context, req openapi.Activa
 		return nil, err
 	}
 	tag := etag(int64(st.Connection.RowVersion))
-	return openapi.ActivateConnection200JSONResponse{Body: connectionBody(st), Headers: openapi.ActivateConnection200ResponseHeaders{ETag: &tag}}, nil
+	return openapi.ActivateConnection200JSONResponse{Body: h.connectionBody(st), Headers: openapi.ActivateConnection200ResponseHeaders{ETag: &tag}}, nil
 }
 
 // connectionCreated keeps the answer out of caches: it follows a request with credentials.
@@ -267,13 +268,17 @@ func scopeInputs(in []openapi.ConnectionScopeInput) []entity.NewScope {
 }
 
 // connectionBody shows the active scopes; credentials appear only as the date they were set.
-func connectionBody(st entity.ConnectionState) openapi.Connection {
+func (h *connections) connectionBody(st entity.ConnectionState) openapi.Connection {
 	c := st.Connection
 	out := openapi.Connection{
 		Id: uuid.UUID(c.ID), Name: c.Name, Provider: openapi.Provider(c.Provider), Status: openapi.ConnectionStatus(c.Status),
 		AdapterKind: openapi.ConnectionAdapterKind(c.AdapterKind), AccessMode: openapi.ConnectionAccessMode(c.AccessMode),
 		CredentialsSetAt: c.CredentialsSetAt, SyncPaused: c.SyncPaused, PausedUntil: c.PausedUntil,
 		Scopes: make([]openapi.ConnectionScope, 0, len(st.Scopes)), Capabilities: make([]openapi.Capability, 0, len(st.Capabilities)),
+	}
+	if st.WebhookRouteID != nil {
+		url := h.siteURL + "/api/v1/webhooks/" + st.WebhookRouteID.String()
+		out.WebhookUrl = &url
 	}
 	out.Instance.Id = uuid.UUID(st.Instance.ID)
 	out.Instance.BaseUrl, out.Instance.Edition, out.Instance.SourceVersion = optional(st.Instance.BaseURL), optional(st.Instance.Edition), optional(st.Instance.SourceVersion)
