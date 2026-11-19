@@ -75,11 +75,11 @@ func (p *Packer) Build(limits envelope.Limits) (*Package, error) {
 		}
 	}
 	scan := &envelope.ScanManifestV1{SchemaVersion: "1", Tools: runs}
-	if err := p.scrubMetadata(scan); err != nil {
+	if err := scrubMetadata(p.Scrubber, scan); err != nil {
 		return nil, err
 	}
 	manifest := p.manifest(runs, now)
-	if err := p.scrubMetadata(manifest); err != nil {
+	if err := scrubMetadata(p.Scrubber, manifest); err != nil {
 		return nil, err
 	}
 	var buf bytes.Buffer
@@ -101,7 +101,7 @@ func (p *Packer) Build(limits envelope.Limits) (*Package, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := p.scrubMetadata(rec); err != nil {
+			if err := scrubMetadata(p.Scrubber, rec); err != nil {
 				return nil, err
 			}
 			if err := w.AddRecord(rec); err != nil {
@@ -210,16 +210,16 @@ func check(data []byte, limits envelope.Limits) error {
 	return nil
 }
 
-// scrubMetadata covers manifest, provenance and record strings as well as report contents.
-func (p *Packer) scrubMetadata(value any) error {
-	if p.Scrubber == nil {
+// scrubMetadata covers provenance strings in persisted state and in the package.
+func scrubMetadata(scrubber Scrubber, value any) error {
+	if scrubber == nil {
 		return nil
 	}
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	data, err = p.Scrubber.Scrub(nil, data)
+	data, err = scrubber.Scrub(nil, data)
 	if err != nil {
 		return err
 	}

@@ -512,7 +512,7 @@ func TestSecretsProfile_RedactsLogsStateAndUpload(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, scan.Scrubber.VerifyPackage(api.bodies[0]))
 	state := filepath.Join(c.dir, "state")
-	require.NoError(t, filepath.WalkDir(filepath.Join(state, "files"), func(path string, d os.DirEntry, err error) error {
+	require.NoError(t, filepath.WalkDir(state, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -522,7 +522,7 @@ func TestSecretsProfile_RedactsLogsStateAndUpload(t *testing.T) {
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
 		for i := 0; i+8 <= len(marker); i++ {
-			assert.NotContains(t, string(data), marker[i:i+8], "secret fragment in stored report")
+			assert.False(t, bytes.Contains(data, []byte(marker[i:i+8])), "secret fragment in stored state")
 		}
 		return nil
 	}))

@@ -254,6 +254,7 @@ func secretGit(ctx context.Context, repo string, args ...string) ([]byte, error)
 
 // Record writes only the safe reports. Repeated scans still recreate the in-memory scrubber.
 func (s *SecretScan) Record(r *Runner, component string) error {
+	r.Store.Scrubber = s.Scrubber
 	for _, scope := range []struct {
 		name     string
 		findings []SecretFinding
@@ -288,6 +289,9 @@ func (s *SecretScan) Record(r *Runner, component string) error {
 		}
 		name := "files/reports/" + tool.ID + "/report.json"
 		run.Reports = []envelope.ScanReport{{ReportKind: envelope.ScanReportReportKindSecrets, ReportFormat: envelope.ScanReportReportFormatGitleaksJson, FormatVersion: "1", File: envelope.FileRef{Path: name, MediaType: "application/json"}}}
+		if err := scrubMetadata(s.Scrubber, run); err != nil {
+			return err
+		}
 		existing, err := r.Store.Runs()
 		if err != nil {
 			return err

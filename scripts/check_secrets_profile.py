@@ -81,7 +81,8 @@ def check(image, platform):
             env = {"CI_PROJECT_DIR": "/repo", "CI_COMMIT_SHA": sha, "CI_MERGE_REQUEST_DIFF_BASE_SHA": scan_base,
                 "CRAFTPULSE_WORK_DIR": "/state", "CRAFTPULSE_URL": "https://craftpulse.example",
                 "CRAFTPULSE_UPLOAD_TOKEN": "fixture-token", "CI_SERVER_HOST": "gitlab.example",
-                "CI_PROJECT_ID": "42", "CI_PIPELINE_ID": "5001", "CI_JOB_ID": "7002"}
+                "CI_PROJECT_ID": "42", "CI_PIPELINE_ID": "5001", "CI_JOB_ID": "7002",
+                "CI_COMMIT_REF_NAME": "demo/fixture" if name == "clean" else "demo/" + marker}
             args = common + ["--mount", f"type=bind,source={source},target=/repo,readonly",
                              "--mount", f"type=bind,source={state},target=/state"]
             for key, value in env.items():
@@ -92,6 +93,10 @@ def check(image, platform):
                 logs += run(args + ["import", "--report", "junit:junit_xml:/state/junit.xml"])
             logs += run(args + ["upload", "--dry-run", "--save", "/state/package.tar.gz"])
             assert_safe(logs, marker)
+            for stored in state.rglob("*"):
+                # junit.xml is the pre-existing client report; all copies written by CLI must be safe.
+                if stored.is_file() and stored.name != "junit.xml" and stored.suffix != ".gz":
+                    assert_safe(stored.read_bytes(), marker)
             with tarfile.open(state / "package.tar.gz") as package:
                 files = {f.name: package.extractfile(f).read() for f in package if f.isfile()}
             for path, data in files.items():

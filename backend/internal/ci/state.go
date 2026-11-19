@@ -197,6 +197,13 @@ func (s *Store) copyIn(local, target string) error {
 }
 
 func (s *Store) write(name string, data []byte) error {
+	if s.Scrubber != nil {
+		safe, err := s.Scrubber.Scrub(nil, data)
+		if err != nil {
+			return err
+		}
+		data = safe
+	}
 	target := filepath.Join(s.dir, filepath.FromSlash(name))
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return fmt.Errorf("create state directory: %w", err)
