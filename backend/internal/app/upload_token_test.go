@@ -82,7 +82,7 @@ func TestUploadTokens_LifecycleAndPagination(t *testing.T) {
 	require.Equal(t, http.StatusConflict, conflict.Code)
 	assert.Equal(t, "state_conflict", decode[problemBody](t, conflict).Code)
 	assert.NotContains(t, conflict.Body.String(), first.Value)
-	assert.Equal(t, http.StatusNotImplemented, e.bearer(t, first.Value, "/api/v1/ci/check-profile").Code)
+	assert.Equal(t, http.StatusNotFound, e.bearer(t, first.Value, "/api/v1/ci/check-profile").Code, "a live token reaches the profile; the project has no matrix yet")
 	var stored []byte
 	var createdBy uuid.UUID
 	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT token_hash,created_by FROM auth.upload_token WHERE organization_id=$1 AND id=$2`, uuid.UUID(e.orgID), first.ID).Scan(&stored, &createdBy))
@@ -165,7 +165,7 @@ func TestUploadTokens_ScopedRolesAndIsolation(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, e.bearer(t, token.Value, "/api/v1/me").Code)
 	assert.Equal(t, http.StatusForbidden, e.bearer(t, token.Value, "/api/v1/upload-tokens?project_id="+own.String()).Code)
 	assert.Equal(t, http.StatusBadRequest, e.bearer(t, token.Value, "/api/v1/ci/check-profile?project_id="+hidden.String()).Code)
-	assert.Equal(t, http.StatusNotImplemented, e.bearer(t, token.Value, "/api/v1/ci/check-profile").Code)
+	assert.Equal(t, http.StatusNotFound, e.bearer(t, token.Value, "/api/v1/ci/check-profile").Code, "the project has no matrix of checks yet")
 	assert.Equal(t, http.StatusUnauthorized, e.bearer(t, "cpt_"+strings.Repeat("A", 43), "/api/v1/ci/check-profile").Code)
 }
 

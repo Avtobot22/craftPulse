@@ -35,29 +35,32 @@ const (
 	ruleServiceOwner
 	// ruleProjectManager is a project manager of the project; the scope holds only the projects of that role.
 	ruleProjectManager
+	// ruleTechLead is a tech lead of the project; an administrator does not stand in for it.
+	ruleTechLead
 )
 
 // _rules is table 5.3 for the actions served so far; an action missing here is granted to nobody.
 var _rules = map[string]rule{
-	"profile.manage":       ruleSession,
-	"session.read":         ruleSession,
-	"session.manage":       ruleSession,
-	"org.read":             ruleAreaRead,
-	"report.read":          ruleAreaRead,
-	"org.manage":           ruleAdministrator,
-	"users.manage":         ruleAdministrator,
-	"installation.read":    ruleAdministrator,
-	"audit.read":           ruleAdministrator,
-	"connections.manage":   ruleAdministrator,
-	"accounts.manage":      ruleAdministrator,
-	"upload_tokens.manage": ruleProjectLead,
-	"imports.create":       ruleProjectLead,
-	"receipts.read":        ruleReceipts,
-	"sync.read":            ruleAdministrator,
-	"process.manage":       ruleProcessOwner,
-	"docs.read":            ruleAreaRead,
-	"docs.manage":          ruleServiceOwner,
-	"links.decide":         ruleProjectManager,
+	"profile.manage":        ruleSession,
+	"session.read":          ruleSession,
+	"session.manage":        ruleSession,
+	"org.read":              ruleAreaRead,
+	"report.read":           ruleAreaRead,
+	"org.manage":            ruleAdministrator,
+	"users.manage":          ruleAdministrator,
+	"installation.read":     ruleAdministrator,
+	"audit.read":            ruleAdministrator,
+	"connections.manage":    ruleAdministrator,
+	"accounts.manage":       ruleAdministrator,
+	"upload_tokens.manage":  ruleProjectLead,
+	"imports.create":        ruleProjectLead,
+	"receipts.read":         ruleReceipts,
+	"sync.read":             ruleAdministrator,
+	"process.manage":        ruleProcessOwner,
+	"docs.read":             ruleAreaRead,
+	"docs.manage":           ruleServiceOwner,
+	"links.decide":          ruleProjectManager,
+	"check_profiles.manage": ruleTechLead,
 }
 
 // Profiles is the org module; Profile runs in the caller's organization transaction.
@@ -218,6 +221,9 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 	if rule := _rules[r.Action]; (rule == ruleProjectLead || rule == ruleReceipts) && !r.Area.ID.IsZero() && !slices.Contains(p.UploadProjects, r.Area.ID) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
+	if _rules[r.Action] == ruleTechLead && !r.Area.ID.IsZero() && !slices.Contains(p.LeadProjects, r.Area.ID) {
+		return ReasonNoPermission, entity.ErrForbidden
+	}
 	if _rules[r.Action] == ruleProcessOwner && !ownsProcess(p, r.Area) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
@@ -274,6 +280,8 @@ func granted(p entity.Profile, action string) bool {
 	switch _rules[action] {
 	case ruleProjectLead:
 		return len(p.UploadProjects) > 0
+	case ruleTechLead:
+		return len(p.LeadProjects) > 0
 	case ruleReceipts:
 		return len(p.UploadProjects) > 0 || slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleAdministrator })
 	case ruleSession:

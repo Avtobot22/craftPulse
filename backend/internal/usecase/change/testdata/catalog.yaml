@@ -1,0 +1,52 @@
+version: 1
+step:
+  image: ghcr.io/avtobot22/craftpulse-ci
+  digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+profiles:
+  - id: go-default
+    mode: builtin
+    languages: [go]
+    analysis_kinds: [code]
+    image: ghcr.io/avtobot22/craftpulse-profile-go
+    digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+    tool_versions: {golangci-lint: 2.6.1, lizard: 1.17.31, jscpd: 4.0.5}
+    rules_hash: 3333333333333333333333333333333333333333333333333333333333333333
+    script:
+      - craftpulse-ci run --profile-id go-default --kind code --format golangci_json --producer golangci-lint --producer-version 2.6.1 --report golangci.json -- golangci-lint run --output.json.path=golangci.json ./...
+  - id: gitleaks-default
+    mode: builtin
+    analysis_kinds: [secrets]
+    image: ghcr.io/avtobot22/craftpulse-profile-gitleaks
+    digest: sha256:4444444444444444444444444444444444444444444444444444444444444444
+    tool_versions: {gitleaks: 8.28.0}
+    script:
+      - craftpulse-ci run --profile-id gitleaks-default --kind secrets --format gitleaks_json --producer gitleaks --producer-version 8.28.0 --report gitleaks.json -- gitleaks dir --report-format json --report-path gitleaks.json .
+  - id: trivy-default
+    mode: builtin
+    analysis_kinds: [sca, iac]
+    image: ghcr.io/avtobot22/craftpulse-profile-trivy
+    digest: sha256:5555555555555555555555555555555555555555555555555555555555555555
+    tool_versions: {trivy: 0.67.2}
+    script:
+      - craftpulse-ci run --profile-id trivy-default --kind sca --format sarif --producer trivy --producer-version 0.67.2 --report trivy.sarif -- trivy fs --format sarif --output trivy.sarif .
+  - id: docs-default
+    mode: builtin
+    analysis_kinds: [docs, openapi]
+    image: ghcr.io/avtobot22/craftpulse-profile-docs
+    digest: sha256:6666666666666666666666666666666666666666666666666666666666666666
+    tool_versions: {spectral: 6.15.0}
+    script:
+      - craftpulse-ci run --profile-id docs-default --kind docs --format docs_json --producer craftpulse-docs --producer-version 1 --report docs.json -- craftpulse-docs --report docs.json
+  - id: sarif-import
+    mode: import
+    any_language: true
+    analysis_kinds: [code, sast]
+    report_format: sarif
+  - id: sca-import
+    mode: import
+    analysis_kinds: [sca]
+    report_format: sarif
+  - id: sonar-import
+    mode: import
+    any_language: true
+    analysis_kinds: [code]

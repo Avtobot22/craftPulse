@@ -25,6 +25,7 @@ func main() {
 		in       config.Install
 		site     config.Site
 		adapters config.Adapters
+		checks   config.Checks
 	)
 	switch command {
 	case "install":
@@ -33,10 +34,11 @@ func main() {
 		err = errors.Join(err, inErr)
 	case "migrate":
 	default:
-		var siteErr, adaptersErr error
+		var siteErr, adaptersErr, checksErr error
 		site, siteErr = config.LoadSite(environ)
 		adapters, adaptersErr = config.LoadAdapters(environ)
-		err = errors.Join(err, siteErr, adaptersErr)
+		checks, checksErr = config.LoadChecks(environ)
+		err = errors.Join(err, siteErr, adaptersErr, checksErr)
 	}
 	if err != nil {
 		boot.Fatal().Err(err).Msg("config")
@@ -52,7 +54,7 @@ func main() {
 	case "install":
 		err = app.RunInstall(cfg, in, log)
 	default:
-		err = app.RunAPI(cfg, site, adapters, log)
+		err = app.RunAPI(cfg, site, adapters, checks, log)
 	}
 	if err != nil {
 		log.Fatal().Err(err).Msg("api stopped with error")

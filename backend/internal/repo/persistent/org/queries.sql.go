@@ -310,6 +310,43 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 	return err
 }
 
+const currentComponents = `-- name: CurrentComponents :many
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, service_id, repository_area_id, path_prefix, status, origin, confirmed_by, confirmed_at FROM org.component WHERE organization_id = $1 AND superseded_seq IS NULL ORDER BY service_id, repository_area_id, path_prefix, id
+`
+
+func (q *Queries) CurrentComponents(ctx context.Context, organizationID uuid.UUID) ([]OrgComponent, error) {
+	rows, err := q.db.Query(ctx, currentComponents, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgComponent
+	for rows.Next() {
+		var i OrgComponent
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ServiceID,
+			&i.RepositoryAreaID,
+			&i.PathPrefix,
+			&i.Status,
+			&i.Origin,
+			&i.ConfirmedBy,
+			&i.ConfirmedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const describeSourceAccounts = `-- name: DescribeSourceAccounts :exec
 INSERT INTO org.source_account (organization_id, instance_id, native_account_id, login, display_name, email, proposed_kind, first_seen_at)
 SELECT $1::uuid, $2::uuid, ($3::text[])[i],
@@ -451,6 +488,41 @@ func (q *Queries) InsertAssignment(ctx context.Context, arg InsertAssignmentPara
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const insertComponent = `-- name: InsertComponent :exec
+INSERT INTO org.component (organization_id, id, known_seq, service_id, repository_area_id, path_prefix, status, origin, confirmed_by, confirmed_at)
+VALUES ($1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10)
+`
+
+type InsertComponentParams struct {
+	OrganizationID   uuid.UUID
+	ID               uuid.UUID
+	KnownSeq         int64
+	ServiceID        uuid.UUID
+	RepositoryAreaID uuid.UUID
+	PathPrefix       string
+	Status           string
+	Origin           string
+	ConfirmedBy      uuid.NullUUID
+	ConfirmedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) InsertComponent(ctx context.Context, arg InsertComponentParams) error {
+	_, err := q.db.Exec(ctx, insertComponent,
+		arg.OrganizationID,
+		arg.ID,
+		arg.KnownSeq,
+		arg.ServiceID,
+		arg.RepositoryAreaID,
+		arg.PathPrefix,
+		arg.Status,
+		arg.Origin,
+		arg.ConfirmedBy,
+		arg.ConfirmedAt,
+	)
+	return err
 }
 
 const insertPerson = `-- name: InsertPerson :one
@@ -2014,6 +2086,55 @@ func (q *Queries) PageUsersByNameDesc(ctx context.Context, arg PageUsersByNameDe
 	return items, nil
 }
 
+const projectComponents = `-- name: ProjectComponents :many
+SELECT c.organization_id, c.id, c.known_seq, c.superseded_seq, c.superseded_at, c.service_id, c.repository_area_id, c.path_prefix, c.status, c.origin, c.confirmed_by, c.confirmed_at FROM org.component c
+WHERE c.organization_id = $1 AND c.superseded_seq IS NULL AND c.status = 'confirmed'
+    AND c.repository_area_id IN (
+        SELECT pa.area_id FROM org.project_area pa
+        WHERE pa.organization_id = c.organization_id AND pa.project_id = $2 AND pa.superseded_seq IS NULL
+            AND pa.valid @> $3::timestamptz)
+ORDER BY c.repository_area_id, c.path_prefix, c.id
+`
+
+type ProjectComponentsParams struct {
+	OrganizationID uuid.UUID
+	ProjectID      uuid.UUID
+	At             time.Time
+}
+
+func (q *Queries) ProjectComponents(ctx context.Context, arg ProjectComponentsParams) ([]OrgComponent, error) {
+	rows, err := q.db.Query(ctx, projectComponents, arg.OrganizationID, arg.ProjectID, arg.At)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgComponent
+	for rows.Next() {
+		var i OrgComponent
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ServiceID,
+			&i.RepositoryAreaID,
+			&i.PathPrefix,
+			&i.Status,
+			&i.Origin,
+			&i.ConfirmedBy,
+			&i.ConfirmedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const referSourceAccounts = `-- name: ReferSourceAccounts :exec
 INSERT INTO org.source_account (organization_id, instance_id, native_account_id, proposed_kind, first_seen_at)
 SELECT $1::uuid, $2::uuid, t.native_id, 'unknown', $3::timestamptz
@@ -2231,6 +2352,28 @@ func (q *Queries) SupersedeAssignments(ctx context.Context, arg SupersedeAssignm
 		arg.At,
 		arg.OrganizationID,
 		arg.Ids,
+	)
+	return err
+}
+
+const supersedeComponent = `-- name: SupersedeComponent :exec
+UPDATE org.component SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = $4 AND superseded_seq IS NULL
+`
+
+type SupersedeComponentParams struct {
+	Seq            int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) SupersedeComponent(ctx context.Context, arg SupersedeComponentParams) error {
+	_, err := q.db.Exec(ctx, supersedeComponent,
+		arg.Seq,
+		arg.At,
+		arg.OrganizationID,
+		arg.ID,
 	)
 	return err
 }

@@ -264,3 +264,18 @@ func validate(in []entity.DocumentationRoot) ([]entity.DocumentationRoot, []byte
 func invalid(i int, field string, code string) error {
 	return &entity.ValidationError{Fields: []entity.FieldError{{Field: "/data/" + strconv.Itoa(i) + "/" + field, Code: code}}}
 }
+
+// AreaRoots are the confirmed roots in force in the repositories, for the profile of the step of CI of a project;
+// the caller decides which project the step may read.
+func (u *UseCase) AreaRoots(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.DocumentationRoot, error) {
+	if len(areaIDs) == 0 {
+		return nil, nil
+	}
+	var roots []entity.DocumentationRoot
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		roots, err = u.d.Repo.CurrentAreaRoots(ctx, orgID, areaIDs)
+		return err
+	})
+	return roots, err
+}

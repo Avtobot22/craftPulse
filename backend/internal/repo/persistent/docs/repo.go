@@ -76,6 +76,22 @@ func (r *Repo) RootsAt(ctx context.Context, orgID, serviceID entity.ID, seq int6
 	if err != nil {
 		return nil, readError(err)
 	}
+	return mapRoots(rows), nil
+}
+
+func (r *Repo) CurrentAreaRoots(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.DocumentationRoot, error) {
+	ids := make([]uuid.UUID, len(areaIDs))
+	for i, id := range areaIDs {
+		ids[i] = uuid.UUID(id)
+	}
+	rows, err := r.q(ctx).CurrentAreaRoots(ctx, CurrentAreaRootsParams{OrganizationID: uuid.UUID(orgID), AreaIds: ids})
+	if err != nil {
+		return nil, readError(err)
+	}
+	return mapRoots(rows), nil
+}
+
+func mapRoots(rows []DocsRoot) []entity.DocumentationRoot {
 	roots := make([]entity.DocumentationRoot, len(rows))
 	for i := range rows {
 		row := &rows[i]
@@ -98,7 +114,7 @@ func (r *Repo) RootsAt(ctx context.Context, orgID, serviceID entity.ID, seq int6
 			roots[i].SupersededAt = &at
 		}
 	}
-	return roots, nil
+	return roots
 }
 
 func (r *Repo) SupersedeRoots(ctx context.Context, orgID, serviceID entity.ID, seq int64, at time.Time) error {

@@ -294,7 +294,15 @@ func structureInput(b *openapi.OrganizationStructureInput) (entity.StructureInpu
 		TeamProjects: make([]entity.LinkInput, len(b.TeamProjects)),
 		TeamMembers:  make([]entity.LinkInput, len(b.TeamMembers)),
 		ProjectAreas: make([]entity.LinkInput, len(b.ProjectAreas)),
-		Components:   len(b.Components),
+		Components:   make([]entity.ComponentInput, len(b.Components)),
+	}
+	for i, c := range b.Components {
+		in.Components[i] = entity.ComponentInput{
+			ServiceID: entity.ID(c.ServiceId), RepositoryAreaID: entity.ID(c.RepositoryAreaId), PathPrefix: c.PathPrefix, Status: string(c.Status),
+		}
+		if c.Id != nil {
+			in.Components[i].ID = entity.ID(*c.Id)
+		}
 	}
 	for i, l := range b.ProjectAreas {
 		in.ProjectAreas[i] = entity.LinkInput{From: entity.ID(l.ProjectId), To: entity.ID(l.AreaId), ValidFrom: l.ValidFrom, ValidTo: l.ValidTo}

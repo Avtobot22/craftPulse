@@ -94,6 +94,10 @@ type StructureRepo interface {
 	CurrentLinks(ctx context.Context, orgID entity.ID, kind entity.LinkKind, at time.Time) ([]entity.Link, error)
 	SupersedeLink(ctx context.Context, orgID entity.ID, kind entity.LinkKind, rowID entity.ID, seq int64, at time.Time) error
 	InsertLink(ctx context.Context, orgID entity.ID, kind entity.LinkKind, l entity.Link, seq int64) error
+	CurrentComponents(ctx context.Context, orgID entity.ID) ([]entity.Component, error)
+	ProjectComponents(ctx context.Context, orgID, projectID entity.ID, at time.Time) ([]entity.Component, error)
+	SupersedeComponent(ctx context.Context, orgID, id entity.ID, seq int64, at time.Time) error
+	InsertComponent(ctx context.Context, orgID entity.ID, c entity.Component, seq int64) error
 	PageAreas(ctx context.Context, orgID entity.ID, kind entity.AreaKind, scope entity.Scope, f entity.AreaFilter,
 		p entity.PageRequest, at time.Time) ([]entity.Area, error)
 }
@@ -460,4 +464,11 @@ type ViewRepo interface {
 	UpdateOperation(ctx context.Context, op entity.Operation) error
 	// PurgeOperations deletes up to limit operations completed by before and reports how many went.
 	PurgeOperations(ctx context.Context, orgID entity.ID, before time.Time, limit int) (int64, error)
+}
+
+// ChangeRepo keeps the versions of the matrix of checks of projects.
+type ChangeRepo interface {
+	LatestProfileVersion(ctx context.Context, orgID, projectID entity.ID) (entity.CheckProfileVersion, error)
+	ProfileVersionByConfirmation(ctx context.Context, orgID, confirmationID entity.ID) (entity.CheckProfileVersion, error)
+	InsertProfileVersion(ctx context.Context, orgID entity.ID, v entity.CheckProfileVersion) error
 }

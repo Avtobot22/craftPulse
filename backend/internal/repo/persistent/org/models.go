@@ -24,3 +24,18 @@ type OrgAccountAssignment struct {
 	ConfirmedAt     time.Time
 	ConfirmationID  uuid.UUID
 }
+
+type OrgComponent struct {
+	OrganizationID   uuid.UUID
+	ID               uuid.UUID
+	KnownSeq         int64
+	SupersededSeq    pgtype.Int8
+	SupersededAt     pgtype.Timestamptz
+	ServiceID        uuid.UUID
+	RepositoryAreaID uuid.UUID
+	PathPrefix       string
+	Status           string
+	Origin           string
+	ConfirmedBy      uuid.NullUUID
+	ConfirmedAt      pgtype.Timestamptz
+}

@@ -178,3 +178,12 @@ func TestLoad_CIIngress(t *testing.T) {
 		assert.Contains(t, err.Error(), want)
 	}
 }
+
+func TestLoadChecks(t *testing.T) {
+	t.Parallel()
+	c, err := config.LoadChecks(map[string]string{"CHECK_PROFILES_FILE": "/etc/craftpulse/check-profiles.yaml"})
+	require.NoError(t, err)
+	assert.Equal(t, "/etc/craftpulse/check-profiles.yaml", c.CatalogFile)
+	_, err = config.LoadChecks(map[string]string{})
+	require.ErrorContains(t, err, "CHECK_PROFILES_FILE", "api does not start without the catalog and names the parameter")
+}

@@ -13,6 +13,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const currentAreaRoots = `-- name: CurrentAreaRoots :many
+SELECT organization_id, id, service_id, area_id, path_prefix, profile_id, owner_person_id, audience, known_seq, superseded_seq, superseded_at, confirmed_by, confirmed_at, confirmation_id FROM docs.root WHERE organization_id = $1 AND area_id = ANY($2::uuid[]) AND superseded_seq IS NULL
+ORDER BY area_id, path_prefix, id
+`
+
+type CurrentAreaRootsParams struct {
+	OrganizationID uuid.UUID
+	AreaIds        []uuid.UUID
+}
+
+func (q *Queries) CurrentAreaRoots(ctx context.Context, arg CurrentAreaRootsParams) ([]DocsRoot, error) {
+	rows, err := q.db.Query(ctx, currentAreaRoots, arg.OrganizationID, arg.AreaIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocsRoot
+	for rows.Next() {
+		var i DocsRoot
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.ServiceID,
+			&i.AreaID,
+			&i.PathPrefix,
+			&i.ProfileID,
+			&i.OwnerPersonID,
+			&i.Audience,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ConfirmedBy,
+			&i.ConfirmedAt,
+			&i.ConfirmationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertRoot = `-- name: InsertRoot :exec
 INSERT INTO docs.root (organization_id, id, service_id, area_id, path_prefix, profile_id, owner_person_id, audience,
     known_seq, confirmed_by, confirmed_at, confirmation_id)

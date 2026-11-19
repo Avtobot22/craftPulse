@@ -372,3 +372,24 @@ JOIN org.source_account a ON a.organization_id = x.organization_id AND a.id = x.
 WHERE u.organization_id = sqlc.arg(organization_id) AND u.id = sqlc.arg(user_id) AND a.instance_id = sqlc.arg(instance_id)
 ORDER BY x.confirmed_at DESC, x.id DESC
 LIMIT 1;
+
+-- name: CurrentComponents :many
+SELECT * FROM org.component WHERE organization_id = sqlc.arg(organization_id) AND superseded_seq IS NULL ORDER BY service_id, repository_area_id, path_prefix, id;
+
+-- name: SupersedeComponent :exec
+UPDATE org.component SET superseded_seq = sqlc.arg(seq)::bigint, superseded_at = sqlc.arg(at)::timestamptz
+WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND superseded_seq IS NULL;
+
+-- name: InsertComponent :exec
+INSERT INTO org.component (organization_id, id, known_seq, service_id, repository_area_id, path_prefix, status, origin, confirmed_by, confirmed_at)
+VALUES (sqlc.arg(organization_id), sqlc.arg(id), sqlc.arg(known_seq), sqlc.arg(service_id), sqlc.arg(repository_area_id), sqlc.arg(path_prefix),
+    sqlc.arg(status), sqlc.arg(origin), sqlc.narg(confirmed_by), sqlc.narg(confirmed_at));
+
+-- name: ProjectComponents :many
+SELECT c.* FROM org.component c
+WHERE c.organization_id = sqlc.arg(organization_id) AND c.superseded_seq IS NULL AND c.status = 'confirmed'
+    AND c.repository_area_id IN (
+        SELECT pa.area_id FROM org.project_area pa
+        WHERE pa.organization_id = c.organization_id AND pa.project_id = sqlc.arg(project_id) AND pa.superseded_seq IS NULL
+            AND pa.valid @> sqlc.arg(at)::timestamptz)
+ORDER BY c.repository_area_id, c.path_prefix, c.id;

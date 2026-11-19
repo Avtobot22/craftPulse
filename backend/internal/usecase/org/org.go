@@ -3,6 +3,7 @@ package org
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -180,36 +181,52 @@ func (u *UseCase) Profile(ctx context.Context, orgID, userID entity.ID, at time.
 		return entity.Profile{}, err
 	}
 
-	var uploadTeams, uploadProjects []entity.ID
-	uploadWhole := false
+	if p.UploadProjects, err = u.roleProjects(ctx, orgID, roles, at, entity.RoleAdministrator, entity.RoleTechLead); err != nil {
+		return entity.Profile{}, err
+	}
+	if p.LeadProjects, err = u.roleProjects(ctx, orgID, roles, at, entity.RoleTechLead); err != nil {
+		return entity.Profile{}, err
+	}
+	return p, nil
+}
+
+// roleProjects are the projects the roles of the kinds cover: a project role names it, a team role takes the
+// projects of the team, a role of the organization takes them all.
+func (u *UseCase) roleProjects(ctx context.Context, orgID entity.ID, roles []entity.RoleAssignment, at time.Time, kinds ...entity.Role) ([]entity.ID, error) {
+	var teams, projects []entity.ID
+	whole := false
 	for _, r := range roles {
-		if r.Role != entity.RoleAdministrator && r.Role != entity.RoleTechLead {
+		if !slices.Contains(kinds, r.Role) {
 			continue
 		}
 		switch {
 		case !r.ProjectID.IsZero():
-			uploadProjects = append(uploadProjects, r.ProjectID)
+			projects = append(projects, r.ProjectID)
 		case !r.TeamID.IsZero():
-			uploadTeams = append(uploadTeams, r.TeamID)
+			teams = append(teams, r.TeamID)
 		case r.ServiceID.IsZero():
-			uploadWhole = true
+			whole = true
 		}
 	}
-	if len(uploadTeams) > 0 {
-		owned, err := u.orgs.TeamProjectIDs(ctx, orgID, uploadTeams, at)
+	if len(teams) > 0 {
+		owned, err := u.orgs.TeamProjectIDs(ctx, orgID, teams, at)
 		if err != nil {
-			return entity.Profile{}, err
+			return nil, err
 		}
-		uploadProjects = append(uploadProjects, owned...)
+		projects = append(projects, owned...)
 	}
-	allowed, err := u.orgs.VisibleAreas(ctx, orgID, entity.AreaProject, uploadWhole, uploadProjects)
+	if !whole && len(projects) == 0 {
+		return nil, nil
+	}
+	allowed, err := u.orgs.VisibleAreas(ctx, orgID, entity.AreaProject, whole, projects)
 	if err != nil {
-		return entity.Profile{}, err
+		return nil, err
 	}
-	for _, a := range allowed {
-		p.UploadProjects = append(p.UploadProjects, a.ID)
+	out := make([]entity.ID, len(allowed))
+	for i, a := range allowed {
+		out[i] = a.ID
 	}
-	return p, nil
+	return out, nil
 }
 
 // EnsureSourceAccounts records the accounts a package names in the caller's transaction and returns

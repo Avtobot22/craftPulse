@@ -189,3 +189,16 @@ func origin(u *url.URL) string {
 	}
 	return strings.TrimSuffix(host, ":")
 }
+
+// Checks is the catalog of check profiles of the release api serves to the step of CI (FR-011 A1).
+type Checks struct {
+	CatalogFile string `env:"CHECK_PROFILES_FILE,required,notEmpty"`
+}
+
+func LoadChecks(environ map[string]string) (Checks, error) {
+	var c Checks
+	if err := env.ParseWithOptions(&c, env.Options{Environment: environ}); err != nil {
+		return Checks{}, fmt.Errorf("invalid checks: %w", err)
+	}
+	return c, nil
+}

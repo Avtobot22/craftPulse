@@ -9,6 +9,7 @@ import (
 var (
 	ErrVersionConflict = errors.New("org: structure version has changed")
 	ErrIntervalOverlap = errors.New("org: intervals of one pair overlap")
+	ErrComponentPath   = errors.New("org: two components take one path of a service")
 )
 
 // Limits of one structure in the contract (OrganizationStructureInput).
@@ -45,6 +46,37 @@ type Structure struct {
 	TeamProjects []Link
 	TeamMembers  []Link
 	ProjectAreas []Link
+	Components   []Component
+}
+
+// Component is a path of a repository inside a service (TZ 12.5.1); an empty PathPrefix is the whole repository.
+// Only a confirmed one is in force.
+type Component struct {
+	ID               ID
+	ServiceID        ID
+	RepositoryAreaID ID
+	PathPrefix       string
+	Status           string
+	Origin           string
+	ConfirmedBy      *ID
+	ConfirmedAt      *time.Time
+}
+
+const (
+	ComponentProposed  = "proposed"
+	ComponentConfirmed = "confirmed"
+	ComponentRejected  = "rejected"
+	ComponentManual    = "manual"
+	ComponentManifest  = "manifest"
+)
+
+// ComponentInput is a component of a confirmed structure; a zero ID is a new one.
+type ComponentInput struct {
+	ID               ID
+	ServiceID        ID
+	RepositoryAreaID ID
+	PathPrefix       string
+	Status           string
 }
 
 // AreaInput is a team, project or service of a confirmed structure; a zero ID is a new record.
@@ -70,8 +102,7 @@ type StructureInput struct {
 	TeamMembers  []LinkInput
 	// ProjectAreas link a project (From) to a source area of a connection (To).
 	ProjectAreas []LinkInput
-	// Components counts the entries that reference repositories.
-	Components int
+	Components   []ComponentInput
 }
 
 // Field error codes of the contract (FieldError).
