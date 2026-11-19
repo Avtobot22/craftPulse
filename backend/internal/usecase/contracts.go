@@ -139,10 +139,19 @@ type Operations interface {
 // TeamReports is the view module for readers of reports: the report of a team, the passport and the cohort of a
 // revision with the links of its objects to their sources, and the registry of definitions (FR-021, FR-023).
 type TeamReports interface {
+	SavedViews
 	TeamReport(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.ReportQuery) (entity.TeamReport, error)
 	Revision(ctx context.Context, s entity.Subject, revisionID entity.ID) (entity.RevisionPassport, error)
 	Cohort(ctx context.Context, s entity.Subject, revisionID entity.ID, q entity.CohortQuery) (entity.CohortPage, []string, error)
 	MetricDefinitions() []entity.MetricDefinition
+}
+
+// SavedViews is the view module for personal report queries and links opened under the reader's rights.
+type SavedViews interface {
+	CreateSavedView(ctx context.Context, s entity.Subject, v entity.SavedView) (entity.SavedView, error)
+	ListSavedViews(ctx context.Context, s entity.Subject, q entity.SavedViewQuery) (entity.SavedViewPage, error)
+	OpenSavedView(ctx context.Context, s entity.Subject, id entity.ID) (entity.OpenSavedView, error)
+	DeleteSavedView(ctx context.Context, s entity.Subject, id entity.ID) error
 }
 
 // Normalizer runs the job normalize.batch; complete ends the job in the transaction of its part.
