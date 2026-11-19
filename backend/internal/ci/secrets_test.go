@@ -267,3 +267,34 @@ func TestSecretScrubber_PreservesXMLNamespaces(t *testing.T) {
 		content = safe
 	}
 }
+
+func TestSecretScrubber_DecodesUTF8BOMReports(t *testing.T) {
+	s := NewSecretScrubber(8)
+	s.add(fixtureMarker())
+	var entities, unicode strings.Builder
+	for _, c := range fixtureMarker() {
+		fmt.Fprintf(&entities, "&#%d;", c)
+		fmt.Fprintf(&unicode, "\\u%04x", c)
+	}
+	for _, format := range []string{"json", "xml"} {
+		t.Run(format, func(t *testing.T) {
+			var content string
+			if format == "json" {
+				content = `{"value":"` + unicode.String() + `"}`
+			} else {
+				content = `<failure>` + entities.String() + `</failure>`
+			}
+			safe, err := s.Scrub(nil, append([]byte{0xef, 0xbb, 0xbf}, []byte(content)...))
+			require.NoError(t, err)
+			if format == "json" {
+				var value map[string]string
+				require.NoError(t, json.Unmarshal(bytes.TrimPrefix(safe, []byte{0xef, 0xbb, 0xbf}), &value))
+				assertNoFragments(t, []byte(value["value"]), fixtureMarker())
+			} else {
+				var value string
+				require.NoError(t, xml.Unmarshal(safe, &value))
+				assertNoFragments(t, []byte(value), fixtureMarker())
+			}
+		})
+	}
+}

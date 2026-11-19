@@ -80,6 +80,8 @@ func (s *SecretScrubber) contains(data []byte) bool { return !bytes.Equal(data, 
 // Scrub decodes text strings before redaction so JSON/XML escaping cannot preserve a value.
 // It preserves the report syntax, then checks the serialized text again.
 func (s *SecretScrubber) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, error) {
+	// UTF-8 BOMs are common in JUnit from Windows runners; do not let them bypass parsing.
+	content = bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
 	data := content
 	if json.Valid(content) {
 		var value any
