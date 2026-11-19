@@ -1354,6 +1354,127 @@ func (q *Queries) LinkEnds(ctx context.Context, arg LinkEndsParams) ([]LinkEndsR
 	return items, nil
 }
 
+const linkMRVersions = `-- name: LinkMRVersions :many
+SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.mr_id, v.area_id, v.source_updated_at, v.iid, v.title, v.state, v.draft, v.author_account_id, v.source_branch, v.target_branch, v.head_sha, v.base_sha, v.merge_base_sha, v.reviewer_field, v.reviewer_account_ids, v.opened_at, v.ready_at, v.merged_at, v.closed_at FROM normalize.mr_version v
+JOIN normalize.source_object o ON o.organization_id=v.organization_id AND o.id=v.mr_id
+WHERE v.organization_id=$1 AND v.area_id=ANY($2::uuid[])
+ AND v.superseded_seq IS NULL AND o.deleted_at IS NULL ORDER BY v.mr_id
+`
+
+type LinkMRVersionsParams struct {
+	OrganizationID uuid.UUID
+	Areas          []uuid.UUID
+}
+
+func (q *Queries) LinkMRVersions(ctx context.Context, arg LinkMRVersionsParams) ([]NormalizeMrVersion, error) {
+	rows, err := q.db.Query(ctx, linkMRVersions, arg.OrganizationID, arg.Areas)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeMrVersion
+	for rows.Next() {
+		var i NormalizeMrVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.MrID,
+			&i.AreaID,
+			&i.SourceUpdatedAt,
+			&i.Iid,
+			&i.Title,
+			&i.State,
+			&i.Draft,
+			&i.AuthorAccountID,
+			&i.SourceBranch,
+			&i.TargetBranch,
+			&i.HeadSha,
+			&i.BaseSha,
+			&i.MergeBaseSha,
+			&i.ReviewerField,
+			&i.ReviewerAccountIds,
+			&i.OpenedAt,
+			&i.ReadyAt,
+			&i.MergedAt,
+			&i.ClosedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const linkTaskVersions = `-- name: LinkTaskVersions :many
+SELECT v.organization_id, v.id, v.task_id, v.area_id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.source_updated_at, v.task_key, v.title, v.type_native_id, v.status_native_id, v.resolution_native_id, v.created_src_at, v.size_native, v.team_native, v.assignee_account_id, v.parent_task_id, v.restriction_native, v.raw_fields FROM normalize.task_version v
+JOIN normalize.source_object o ON o.organization_id=v.organization_id AND o.id=v.task_id
+WHERE v.organization_id=$1 AND v.area_id=ANY($2::uuid[])
+ AND v.task_key=ANY($3::text[]) AND v.superseded_seq IS NULL AND o.deleted_at IS NULL ORDER BY v.task_id
+`
+
+type LinkTaskVersionsParams struct {
+	OrganizationID uuid.UUID
+	Areas          []uuid.UUID
+	Keys           []string
+}
+
+func (q *Queries) LinkTaskVersions(ctx context.Context, arg LinkTaskVersionsParams) ([]NormalizeTaskVersion, error) {
+	rows, err := q.db.Query(ctx, linkTaskVersions, arg.OrganizationID, arg.Areas, arg.Keys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeTaskVersion
+	for rows.Next() {
+		var i NormalizeTaskVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.TaskID,
+			&i.AreaID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.SourceUpdatedAt,
+			&i.TaskKey,
+			&i.Title,
+			&i.TypeNativeID,
+			&i.StatusNativeID,
+			&i.ResolutionNativeID,
+			&i.CreatedSrcAt,
+			&i.SizeNative,
+			&i.TeamNative,
+			&i.AssigneeAccountID,
+			&i.ParentTaskID,
+			&i.RestrictionNative,
+			&i.RawFields,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const matchRunMRs = `-- name: MatchRunMRs :many
 SELECT i::integer AS ord, o.id FROM generate_subscripts($1::text[], 1) AS i
 JOIN normalize.source_object o ON o.organization_id = $2 AND o.instance_id = $3::uuid

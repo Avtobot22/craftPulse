@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo"
@@ -25,6 +26,7 @@ type Ingest interface {
 
 // Accounts is the org module, which owns the accounts of sources (TZ 10.3, rules 1 and 7).
 type Accounts interface {
+	ProjectAreas(context.Context, entity.ID, time.Time) ([]entity.Link, error)
 	EnsureSourceAccounts(ctx context.Context, orgID, instanceID entity.ID, accounts []entity.SourceAccount) (map[string]entity.ID, error)
 	AssignmentAt(ctx context.Context, orgID, accountID entity.ID, seq int64) (entity.AccountAssignment, bool, error)
 }
@@ -37,7 +39,7 @@ type Deps struct {
 	Tenants  repo.TenantRepo
 	Ingest   Ingest
 	Accounts Accounts
-	// Links and Rights serve decideLink; the worker leaves them nil.
+	// Links records normalized relationships; Rights is needed only for decideLink.
 	Links   Links
 	Rights  Rights
 	Objects repo.ObjectStore
@@ -87,6 +89,9 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		areas := job.Areas
 		if in != nil {
+			if err := u.d.Links.LockWrites(ctx, org); err != nil {
+				return err
+			}
 			seq, err := u.d.Tenants.NextSeq(ctx, org)
 			if err != nil {
 				return err

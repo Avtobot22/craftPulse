@@ -49,6 +49,11 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 	if err := w.entries(ctx, in.entries, objects[in.area].ID); err != nil {
 		return nil, err
 	}
+	if len(in.tasks) > 0 || len(in.mrs) > 0 {
+		if err := w.linkCandidates(ctx); err != nil {
+			return nil, err
+		}
+	}
 	list := w.changes.list()
 	if err := u.d.Repo.RecordAreaChanges(ctx, org, seq, list, now); err != nil {
 		return nil, err

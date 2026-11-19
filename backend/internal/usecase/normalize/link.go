@@ -11,6 +11,9 @@ import (
 // at their ends and checks them here: a check inside link through normalize or access would close a cycle of
 // modules (TZ 10.3, rule 7).
 type Links interface {
+	LockWrites(context.Context, entity.ID) error
+	Record(context.Context, entity.ID, entity.LinkProposal) (entity.LinkEdge, error)
+	ReconcileCandidates(context.Context, entity.ID, entity.ID, []entity.LinkProposal) error
 	Edge(ctx context.Context, orgID, id entity.ID) (entity.LinkEdge, error)
 	Decide(ctx context.Context, orgID, actor, linkID entity.ID, d entity.LinkDecision, key entity.ID) (entity.LinkEdge, error)
 }

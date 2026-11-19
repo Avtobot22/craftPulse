@@ -274,6 +274,8 @@ type SyncRepo interface {
 
 // NormalizeRepo is the normalize schema under row-level security: canonical facts in versions of knowledge.
 type NormalizeRepo interface {
+	LinkMRVersions(context.Context, entity.ID, []entity.ID) ([]entity.MRVersion, error)
+	LinkTaskVersions(context.Context, entity.ID, []entity.ID, []string) ([]entity.TaskVersion, error)
 	CurrentRepositoryVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.RepositoryVersion, error)
 	KnownRepositoryVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.Revision, error)
 	SupersedeRepositoryVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error

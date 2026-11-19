@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -227,4 +228,59 @@ func sameEvidence(a, b json.RawMessage) (bool, error) {
 		return false, fmt.Errorf("%w: evidence is not JSON", errProposal)
 	}
 	return reflect.DeepEqual(x, y), nil
+}
+
+// LockWrites precedes the organization knowledge clock so normalize and decisions take locks in the same order.
+func (u *UseCase) LockWrites(ctx context.Context, org entity.ID) error {
+	return u.d.Repo.LockEdgeWrites(ctx, org)
+}
+
+// ReconcileCandidates closes vanished heuristic bases while preserving user decisions.
+func (u *UseCase) ReconcileCandidates(ctx context.Context, org, mr entity.ID, proposals []entity.LinkProposal) error {
+	if err := u.LockWrites(ctx, org); err != nil {
+		return err
+	}
+	current, err := u.d.Repo.EdgesAt(ctx, org, mr, entity.LinksTo, math.MaxInt64)
+	if err != nil {
+		return err
+	}
+	type key struct {
+		task   entity.ID
+		method entity.LinkMethod
+	}
+	wanted := map[key]bool{}
+	rejected := map[key]bool{}
+	for i := range current {
+		e := &current[i]
+		if e.Type == entity.LinkTaskMR && e.Status == entity.LinkRejected {
+			rejected[key{e.From, e.Method}] = true
+		}
+	}
+	for _, p := range proposals {
+		if p.Type != entity.LinkTaskMR || p.To != mr || (p.Method != entity.LinkBranchKey && p.Method != entity.LinkTitleKey) {
+			return errProposal
+		}
+		k := key{p.From, p.Method}
+		wanted[k] = true
+		if rejected[k] {
+			continue
+		}
+		if _, err := u.Record(ctx, org, p); err != nil {
+			return err
+		}
+	}
+	for i := range current {
+		e := &current[i]
+		if e.Type != entity.LinkTaskMR || e.Status != entity.LinkCandidate || (e.Method != entity.LinkBranchKey && e.Method != entity.LinkTitleKey) || wanted[key{e.From, e.Method}] {
+			continue
+		}
+		seq, err := u.d.Tenants.NextSeq(ctx, org)
+		if err != nil {
+			return err
+		}
+		if err := u.d.Repo.SupersedeEdge(ctx, org, e.ID, seq, u.d.Clock.Now()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
