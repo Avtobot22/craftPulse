@@ -26,6 +26,7 @@ type Ingest interface {
 // Accounts is the org module, which owns the accounts of sources (TZ 10.3, rules 1 and 7).
 type Accounts interface {
 	EnsureSourceAccounts(ctx context.Context, orgID, instanceID entity.ID, accounts []entity.SourceAccount) (map[string]entity.ID, error)
+	AssignmentAt(ctx context.Context, orgID, accountID entity.ID, seq int64) (entity.AccountAssignment, bool, error)
 }
 
 // Complete ends the job in the transaction of its part.

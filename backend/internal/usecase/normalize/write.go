@@ -34,6 +34,9 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 		return nil, err
 	}
 	w := &writer{u: u, org: org, seq: seq, now: now, resolved: resolved, objects: objects, accounts: accounts, changes: changes{}}
+	if err := w.writeMRFacts(ctx, in); err != nil {
+		return nil, err
+	}
 	if err := w.tasks(ctx, in.tasks); err != nil {
 		return nil, err
 	}
@@ -66,6 +69,18 @@ func (in *input) keys() []entity.SourceKey {
 	for _, e := range in.events {
 		set[e.task] = true
 	}
+	for _, c := range in.repositories {
+		set[c.key] = true
+	}
+	for _, c := range in.mrs {
+		set[c.key], set[c.area] = true, true
+	}
+	for _, c := range in.mrEvents {
+		set[c.mr] = true
+	}
+	for _, c := range in.mrRevisions {
+		set[c.mr] = true
+	}
 	return slices.SortedFunc(maps.Keys(set), compareKeys)
 }
 
@@ -75,6 +90,15 @@ func (u *UseCase) placeAreas(ctx context.Context, org entity.ID, in *input, obje
 	var placements []entity.ObjectPlacement
 	for _, k := range in.keys() {
 		o := objects[k]
+		if k.Kind == entity.ObjectMergeRequest {
+			if o.CurrentAreaID == nil {
+				area := objects[in.area].ID
+				placements = append(placements, entity.ObjectPlacement{ObjectID: o.ID, AreaID: area})
+				o.CurrentAreaID = &area
+				objects[k] = o
+			}
+			continue
+		}
 		if k.Kind == entity.ObjectTask {
 			continue
 		}
