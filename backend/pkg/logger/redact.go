@@ -42,3 +42,6 @@ func (r *redactor) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+// Redact masks the secrets in everything written to w, the same way the logger does.
+func Redact(w io.Writer, secrets []string) io.Writer { return newRedactor(w, secrets) }

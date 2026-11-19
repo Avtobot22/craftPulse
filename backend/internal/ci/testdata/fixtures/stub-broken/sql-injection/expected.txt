@@ -1,0 +1,2 @@
+G101 config.go:5
+G201 db/query.go:12

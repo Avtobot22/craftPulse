@@ -138,6 +138,18 @@ linters:
             - "github.com/Avtobot22/craftPulse/backend/pkg/envelope/"
             - "github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk$"
             - "github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk/"
+        ci-isolation:
+          # craftpulse-ci runs on the client runner: it carries only the package format and its API client.
+          files: ["**/internal/ci/**"]
+          list-mode: strict
+          allow:
+            - "$gostd"
+            - "github.com/Avtobot22/craftPulse/backend/internal/ci$"
+            - "github.com/Avtobot22/craftPulse/backend/internal/ci/"
+            - "github.com/Avtobot22/craftPulse/backend/pkg/envelope$"
+            - "github.com/google/uuid$"
+            - "github.com/oapi-codegen/runtime"
+            - "github.com/stretchr/testify/"
         usecase-unknown-module:
           files: ["**/internal/usecase/**", "!**/internal/usecase/{org,install,auth,access,audit,connect,sync,ingest,normalize,link,process,calc,change,decision,docs,outbound,view,survey}/**"]
           deny:

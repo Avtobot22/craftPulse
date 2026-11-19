@@ -22,7 +22,7 @@ class ReleaseTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         for name in ["backend/cmd/adapter-git/main.go", "backend/cmd/adapter-test/main.go", "backend/Dockerfile",
-                     "backend/adapter.Dockerfile", "frontend/Dockerfile", "backend/migrations/core/00001_init.sql",
+                     "backend/adapter.Dockerfile", "backend/ci.Dockerfile", "frontend/Dockerfile", "backend/migrations/core/00001_init.sql",
                      "backend/migrations/core/00019_latest.sql", "backend/migrations/adapter/00002_latest.sql"]:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -38,7 +38,7 @@ class ReleaseTests(unittest.TestCase):
         path.parent.mkdir()
         path.touch()
         names = [image["name"] for image in release.plan(self.root)]
-        self.assertEqual(names, ["craftpulse-server", "craftpulse-frontend", "craftpulse-adapter-future", "craftpulse-adapter-git"])
+        self.assertEqual(names, ["craftpulse-server", "craftpulse-frontend", "craftpulse-ci", "craftpulse-adapter-future", "craftpulse-adapter-git"])
         self.assertNotIn("craftpulse-adapter-test", names)
 
     def test_core_and_adapter_versions_come_from_distinct_migrations(self):
@@ -93,7 +93,7 @@ class ReleaseTests(unittest.TestCase):
         run.side_effect = execute
         with self.assertRaisesRegex(release.ReleaseError, "Trivy blocked"):
             release.scan(images, {image["name"]: image["name"] for image in images}, output, self.root / "tools")
-        self.assertEqual(len(list(output.glob("*.trivy.json"))), 3)
+        self.assertEqual(len(list(output.glob("*.trivy.json"))), len(images))
         self.assertFalse(any(call.args[0][:2] == ["docker", "push"] for call in run.call_args_list))
 
     @patch.object(release, "run")

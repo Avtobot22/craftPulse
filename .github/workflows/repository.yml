@@ -170,6 +170,10 @@ jobs:
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: python3 scripts/oci_release.py build-adapters --sha "$COMMIT_SHA"
+      - name: Build the CI step image without registry credentials
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: python3 scripts/oci_release.py build-ci --sha "$COMMIT_SHA"
 
   ci:
     name: ci

@@ -1,0 +1,10 @@
+package: ciapi
+output: ciapi.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  include-operation-ids: [getCiCheckProfile, uploadPackage, getReceipt]
+compatibility:
+  # Значения вроде `client` иначе совпадают с именами типов.
+  always-prefix-enum-values: true
