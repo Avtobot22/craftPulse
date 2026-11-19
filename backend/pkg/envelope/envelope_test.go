@@ -343,3 +343,37 @@ func TestWriter_StreamedEqualsBuffered(t *testing.T) {
 	_, err = w.AddFileFrom("files/x.xml", "application/xml", bytes.NewReader(report), int64(len(report))+1)
 	assert.Error(t, err, "a short reader is refused")
 }
+
+func TestCheck_MRRequiredTimesAndRevision(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, kind, field string
+		value             any
+	}{
+		{name: "merge needs time", kind: "merge_request", field: "state", value: "merged"},
+		{name: "push needs SHA", kind: "mr_event", field: "event_kind", value: "head_pushed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			data := build(t, manifest(envelope.ManifestSchemaIdMergeRequests, false), func(w *envelope.Writer) {
+				r := exampleRecord(t, w, schemaOf(t, tt.kind))
+				var payload map[string]any
+				require.NoError(t, json.Unmarshal(r.Payload, &payload))
+				payload[tt.field] = tt.value
+				if tt.kind == "mr_event" {
+					delete(payload, "head_sha")
+				}
+				var err error
+				r.Payload, err = json.Marshal(payload)
+				require.NoError(t, err)
+				require.NoError(t, w.AddRecord(r))
+			})
+			result := check(data)
+			require.Nil(t, result.Envelope)
+			require.Len(t, result.Records, 1)
+			require.NotNil(t, result.Records[0].Rejection)
+			assert.Equal(t, envelope.ReasonSchemaViolation, result.Records[0].Rejection.Code)
+		})
+	}
+}

@@ -274,6 +274,28 @@ type SyncRepo interface {
 
 // NormalizeRepo is the normalize schema under row-level security: canonical facts in versions of knowledge.
 type NormalizeRepo interface {
+	CurrentRepositoryVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.RepositoryVersion, error)
+	KnownRepositoryVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.Revision, error)
+	SupersedeRepositoryVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
+	InsertRepositoryVersions(ctx context.Context, orgID entity.ID, versions []entity.RepositoryVersion) error
+	CurrentMRVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.MRVersion, error)
+	KnownMRVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.Revision, error)
+	SupersedeMRVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
+	InsertMRVersions(ctx context.Context, orgID entity.ID, versions []entity.MRVersion) error
+	CurrentMREvents(ctx context.Context, orgID entity.ID, keys []entity.MRFactKey) ([]entity.MREvent, error)
+	KnownMREvents(ctx context.Context, orgID entity.ID, keys []entity.MRFactKey) (map[entity.MRFactKey][]entity.Revision, error)
+	SupersedeMREvents(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
+	InsertMREvents(ctx context.Context, orgID entity.ID, versions []entity.MREvent) error
+	CurrentMRRevisions(ctx context.Context, orgID entity.ID, keys []entity.MRFactKey) ([]entity.MRRevision, error)
+	KnownMRRevisions(ctx context.Context, orgID entity.ID, keys []entity.MRFactKey) (map[entity.MRFactKey][]entity.Revision, error)
+	SupersedeMRRevisions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
+	InsertMRRevisions(ctx context.Context, orgID entity.ID, versions []entity.MRRevision) error
+	ReadMRVersions(ctx context.Context, orgID entity.ID, areas, allowed, mrs []entity.ID, seq int64) ([]entity.MRVersion, error)
+	ReadMRRevisions(ctx context.Context, orgID entity.ID, areas, allowed, mrs []entity.ID, seq int64) ([]entity.MRRevision, error)
+	ReadMREvents(ctx context.Context, orgID entity.ID, areas, allowed, mrs []entity.ID, seq int64) ([]entity.MREvent, error)
+	FindMRIDs(ctx context.Context, orgID entity.ID, areas, allowed []entity.ID, key entity.SourceKey, sha string, seq int64) ([]entity.ID, error)
+	ReadRepositoryVersion(ctx context.Context, orgID, repositoryID entity.ID) (entity.RepositoryVersion, error)
+
 	RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error)
 	// EnsureObjects creates the identities that are new with the knowledge number seq and returns all by key.
 	EnsureObjects(ctx context.Context, orgID entity.ID, keys []entity.SourceKey, quality entity.IdentityQuality, seq int64) (map[entity.SourceKey]entity.SourceObject, error)

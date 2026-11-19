@@ -418,6 +418,72 @@ func (e MrEventV1ReviewState) Valid() bool {
 	}
 }
 
+// Defines values for MrEventV2EventKind.
+const (
+	MrEventV2EventKindApproval         MrEventV2EventKind = "approval"
+	MrEventV2EventKindClosed           MrEventV2EventKind = "closed"
+	MrEventV2EventKindComment          MrEventV2EventKind = "comment"
+	MrEventV2EventKindHeadPushed       MrEventV2EventKind = "head_pushed"
+	MrEventV2EventKindMerged           MrEventV2EventKind = "merged"
+	MrEventV2EventKindReady            MrEventV2EventKind = "ready"
+	MrEventV2EventKindReopened         MrEventV2EventKind = "reopened"
+	MrEventV2EventKindReview           MrEventV2EventKind = "review"
+	MrEventV2EventKindReviewerAssigned MrEventV2EventKind = "reviewer_assigned"
+	MrEventV2EventKindReviewerRemoved  MrEventV2EventKind = "reviewer_removed"
+)
+
+// Valid indicates whether the value is a known member of the MrEventV2EventKind enum.
+func (e MrEventV2EventKind) Valid() bool {
+	switch e {
+	case MrEventV2EventKindApproval:
+		return true
+	case MrEventV2EventKindClosed:
+		return true
+	case MrEventV2EventKindComment:
+		return true
+	case MrEventV2EventKindHeadPushed:
+		return true
+	case MrEventV2EventKindMerged:
+		return true
+	case MrEventV2EventKindReady:
+		return true
+	case MrEventV2EventKindReopened:
+		return true
+	case MrEventV2EventKindReview:
+		return true
+	case MrEventV2EventKindReviewerAssigned:
+		return true
+	case MrEventV2EventKindReviewerRemoved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MrEventV2ReviewState.
+const (
+	MrEventV2ReviewStateApproved         MrEventV2ReviewState = "approved"
+	MrEventV2ReviewStateChangesRequested MrEventV2ReviewState = "changes_requested"
+	MrEventV2ReviewStateCommented        MrEventV2ReviewState = "commented"
+	MrEventV2ReviewStateLessThannil      MrEventV2ReviewState = "<nil>"
+)
+
+// Valid indicates whether the value is a known member of the MrEventV2ReviewState enum.
+func (e MrEventV2ReviewState) Valid() bool {
+	switch e {
+	case MrEventV2ReviewStateApproved:
+		return true
+	case MrEventV2ReviewStateChangesRequested:
+		return true
+	case MrEventV2ReviewStateCommented:
+		return true
+	case MrEventV2ReviewStateLessThannil:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ObjectRefObjectKind.
 const (
 	ObjectRefObjectKindCiRun        ObjectRefObjectKind = "ci_run"
@@ -482,6 +548,7 @@ const (
 	RecordRecordKindMrRevision     RecordRecordKind = "mr_revision"
 	RecordRecordKindRelation       RecordRecordKind = "relation"
 	RecordRecordKindReportFile     RecordRecordKind = "report_file"
+	RecordRecordKindRepository     RecordRecordKind = "repository"
 	RecordRecordKindTask           RecordRecordKind = "task"
 	RecordRecordKindTaskEvent      RecordRecordKind = "task_event"
 	RecordRecordKindTaskField      RecordRecordKind = "task_field"
@@ -514,6 +581,8 @@ func (e RecordRecordKind) Valid() bool {
 	case RecordRecordKindRelation:
 		return true
 	case RecordRecordKindReportFile:
+		return true
+	case RecordRecordKindRepository:
 		return true
 	case RecordRecordKindTask:
 		return true
@@ -697,6 +766,30 @@ func (e ReportFileV1ReportKind) Valid() bool {
 	case ReportFileV1ReportKindSecrets:
 		return true
 	case ReportFileV1ReportKindSonar:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryV1Visibility.
+const (
+	RepositoryV1VisibilityInternal RepositoryV1Visibility = "internal"
+	RepositoryV1VisibilityPrivate  RepositoryV1Visibility = "private"
+	RepositoryV1VisibilityPublic   RepositoryV1Visibility = "public"
+	RepositoryV1VisibilityUnknown  RepositoryV1Visibility = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryV1Visibility enum.
+func (e RepositoryV1Visibility) Valid() bool {
+	switch e {
+	case RepositoryV1VisibilityInternal:
+		return true
+	case RepositoryV1VisibilityPrivate:
+		return true
+	case RepositoryV1VisibilityPublic:
+		return true
+	case RepositoryV1VisibilityUnknown:
 		return true
 	default:
 		return false
@@ -1348,6 +1441,25 @@ type MrEventV1EventKind string
 // MrEventV1ReviewState defines model for MrEventV1.ReviewState.
 type MrEventV1ReviewState string
 
+// MrEventV2 Событие MR (`normalize.mr_event`). `native_ns` - ID MR, `native_id` - ID note, approval или события у источника.
+type MrEventV2 struct {
+	ActorAccountNativeId *string               `json:"actor_account_native_id,omitempty"`
+	EventKind            MrEventV2EventKind    `json:"event_kind"`
+	HeadSha              *string               `json:"head_sha,omitempty"`
+	MrNativeId           string                `json:"mr_native_id"`
+	ReviewState          *MrEventV2ReviewState `json:"review_state,omitempty"`
+
+	// SystemNote Системная заметка. Переход сохраняется как событие; comment и review пропускаются.
+	SystemNote            *bool   `json:"system_note,omitempty"`
+	TargetAccountNativeId *string `json:"target_account_native_id,omitempty"`
+}
+
+// MrEventV2EventKind defines model for MrEventV2.EventKind.
+type MrEventV2EventKind string
+
+// MrEventV2ReviewState defines model for MrEventV2.ReviewState.
+type MrEventV2ReviewState string
+
 // MrRevisionV1 Ревизия MR - пара head и base после push. `native_ns` - ID MR, `native_id` - ID ревизии у источника или head SHA.
 type MrRevisionV1 struct {
 	BaseSha    *string   `json:"base_sha"`
@@ -1457,6 +1569,19 @@ type ReportFileV1ReportFormat string
 
 // ReportFileV1ReportKind defines model for ReportFileV1.ReportKind.
 type ReportFileV1ReportKind string
+
+// RepositoryV1 Метаданные репозитория. `native_id` - глобальный ID проекта, путь и название не входят в идентичность.
+type RepositoryV1 struct {
+	DefaultBranch *string                `json:"default_branch,omitempty"`
+	Name          string                 `json:"name"`
+	Path          string                 `json:"path"`
+	UpdatedAt     *time.Time             `json:"updated_at,omitempty"`
+	Visibility    RepositoryV1Visibility `json:"visibility"`
+	WebUrl        string                 `json:"web_url"`
+}
+
+// RepositoryV1Visibility defines model for RepositoryV1.Visibility.
+type RepositoryV1Visibility string
 
 // ScanCiCoordinates defines model for ScanCiCoordinates.
 type ScanCiCoordinates struct {

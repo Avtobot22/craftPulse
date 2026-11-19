@@ -179,3 +179,121 @@ ORDER BY area_id, entry_kind, native_id;
 
 -- name: RepositoryAreas :many
 SELECT area_id FROM normalize.area WHERE organization_id = $1 AND area_id = ANY(sqlc.arg(ids)::uuid[]) AND area_kind = 'repository';
+
+-- name: CurrentRepositoryVersions :many
+SELECT * FROM normalize.repository_version WHERE organization_id = sqlc.arg(organization_id) AND repository_id = ANY (sqlc.arg(object_ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: KnownRepositoryVersions :many
+SELECT repository_id, source_revision, content_hash FROM normalize.repository_version
+WHERE organization_id = sqlc.arg(organization_id) AND repository_id = ANY (sqlc.arg(object_ids)::uuid[]);
+
+-- name: SupersedeRepositoryVersions :exec
+UPDATE normalize.repository_version SET superseded_seq = sqlc.arg(known_seq)::bigint, superseded_at = sqlc.arg(at)::timestamptz
+WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: InsertRepositoryVersions :batchexec
+INSERT INTO normalize.repository_version (organization_id, repository_id, source_updated_at, path, name, default_branch, visibility, web_url, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);
+
+-- name: CurrentMRVersions :many
+SELECT * FROM normalize.mr_version WHERE organization_id = sqlc.arg(organization_id) AND mr_id = ANY (sqlc.arg(object_ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: KnownMRVersions :many
+SELECT mr_id, source_revision, content_hash FROM normalize.mr_version
+WHERE organization_id = sqlc.arg(organization_id) AND mr_id = ANY (sqlc.arg(object_ids)::uuid[]);
+
+-- name: SupersedeMRVersions :exec
+UPDATE normalize.mr_version SET superseded_seq = sqlc.arg(known_seq)::bigint, superseded_at = sqlc.arg(at)::timestamptz
+WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: InsertMRVersions :batchexec
+INSERT INTO normalize.mr_version (organization_id, mr_id, area_id, source_updated_at, iid, title, state, draft, author_account_id, source_branch, target_branch, head_sha, base_sha, merge_base_sha, reviewer_field, reviewer_account_ids, opened_at, ready_at, merged_at, closed_at, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26);
+
+-- name: CurrentMREvents :many
+SELECT * FROM normalize.mr_event WHERE organization_id = sqlc.arg(organization_id) AND (mr_id, event_key) IN (
+    SELECT (sqlc.arg(mr_ids)::uuid[])[i], (sqlc.arg(fact_keys)::text[])[i]
+    FROM generate_subscripts(sqlc.arg(mr_ids)::uuid[], 1) AS i) AND superseded_seq IS NULL;
+
+-- name: KnownMREvents :many
+SELECT mr_id, event_key, source_revision, content_hash FROM normalize.mr_event
+WHERE organization_id = sqlc.arg(organization_id) AND (mr_id, event_key) IN (
+    SELECT (sqlc.arg(mr_ids)::uuid[])[i], (sqlc.arg(fact_keys)::text[])[i]
+    FROM generate_subscripts(sqlc.arg(mr_ids)::uuid[], 1) AS i);
+
+-- name: SupersedeMREvents :exec
+UPDATE normalize.mr_event SET superseded_seq = sqlc.arg(known_seq)::bigint, superseded_at = sqlc.arg(at)::timestamptz
+WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: InsertMREvents :batchexec
+INSERT INTO normalize.mr_event (organization_id, mr_id, event_key, event_kind, actor_account_id, target_account_id, head_sha, review_state, event_time, event_offset_s, observed_via, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17);
+
+-- name: CurrentMRRevisions :many
+SELECT * FROM normalize.mr_revision WHERE organization_id = sqlc.arg(organization_id) AND (mr_id, revision_key) IN (
+    SELECT (sqlc.arg(mr_ids)::uuid[])[i], (sqlc.arg(fact_keys)::text[])[i]
+    FROM generate_subscripts(sqlc.arg(mr_ids)::uuid[], 1) AS i) AND superseded_seq IS NULL;
+
+-- name: KnownMRRevisions :many
+SELECT mr_id, revision_key, source_revision, content_hash FROM normalize.mr_revision
+WHERE organization_id = sqlc.arg(organization_id) AND (mr_id, revision_key) IN (
+    SELECT (sqlc.arg(mr_ids)::uuid[])[i], (sqlc.arg(fact_keys)::text[])[i]
+    FROM generate_subscripts(sqlc.arg(mr_ids)::uuid[], 1) AS i);
+
+-- name: SupersedeMRRevisions :exec
+UPDATE normalize.mr_revision SET superseded_seq = sqlc.arg(known_seq)::bigint, superseded_at = sqlc.arg(at)::timestamptz
+WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(ids)::uuid[]) AND superseded_seq IS NULL;
+
+-- name: InsertMRRevisions :batchexec
+INSERT INTO normalize.mr_revision (organization_id, mr_id, revision_key, head_sha, base_sha, start_sha, created_at, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
+
+-- name: ReadMRVersions :many
+SELECT v.* FROM normalize.mr_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.mr_id
+WHERE v.organization_id = sqlc.arg(organization_id) AND o.deleted_at IS NULL AND o.current_area_id = ANY(sqlc.arg(areas)::uuid[])
+    AND (NOT o.restricted OR o.id = ANY(sqlc.arg(allowed)::uuid[]))
+    AND v.mr_id = ANY(sqlc.arg(mr_ids)::uuid[])
+    AND v.known_seq <= sqlc.arg(known_seq) AND (v.superseded_seq IS NULL OR v.superseded_seq > sqlc.arg(known_seq))
+ORDER BY v.mr_id;
+
+-- name: ReadMRRevisions :many
+SELECT v.* FROM normalize.mr_revision v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.mr_id
+WHERE v.organization_id = sqlc.arg(organization_id) AND o.deleted_at IS NULL AND o.current_area_id = ANY(sqlc.arg(areas)::uuid[])
+    AND (NOT o.restricted OR o.id = ANY(sqlc.arg(allowed)::uuid[]))
+    AND v.mr_id = ANY(sqlc.arg(mr_ids)::uuid[])
+    AND v.known_seq <= sqlc.arg(known_seq) AND (v.superseded_seq IS NULL OR v.superseded_seq > sqlc.arg(known_seq))
+ORDER BY v.created_at, v.id;
+
+-- name: ReadMREvents :many
+SELECT v.* FROM normalize.mr_event v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.mr_id
+WHERE v.organization_id = sqlc.arg(organization_id) AND o.deleted_at IS NULL AND o.current_area_id = ANY(sqlc.arg(areas)::uuid[])
+    AND (NOT o.restricted OR o.id = ANY(sqlc.arg(allowed)::uuid[]))
+    AND v.mr_id = ANY(sqlc.arg(mr_ids)::uuid[])
+    AND v.known_seq <= sqlc.arg(known_seq) AND (v.superseded_seq IS NULL OR v.superseded_seq > sqlc.arg(known_seq))
+ORDER BY v.event_time, v.id;
+
+-- name: FindMRIDs :many
+SELECT o.id FROM normalize.source_object o
+WHERE o.organization_id = sqlc.arg(organization_id) AND o.object_kind = 'merge_request'
+    AND o.deleted_at IS NULL AND o.current_area_id = ANY(sqlc.arg(areas)::uuid[])
+    AND (NOT o.restricted OR o.id = ANY(sqlc.arg(allowed)::uuid[]))
+    AND (sqlc.arg(native_id)::text = '' OR (o.instance_id = sqlc.arg(instance_id)::uuid AND o.native_ns = sqlc.arg(native_ns)::text AND o.native_id = sqlc.arg(native_id)))
+    AND (sqlc.arg(head_sha)::text = '' OR EXISTS (
+        SELECT 1 FROM normalize.mr_version v WHERE v.organization_id = o.organization_id AND v.mr_id = o.id
+            AND v.head_sha = sqlc.arg(head_sha) AND v.known_seq <= sqlc.arg(known_seq)
+            AND (v.superseded_seq IS NULL OR v.superseded_seq > sqlc.arg(known_seq))
+    ) OR EXISTS (
+        SELECT 1 FROM normalize.mr_revision r WHERE r.organization_id = o.organization_id AND r.mr_id = o.id
+            AND r.head_sha = sqlc.arg(head_sha) AND r.known_seq <= sqlc.arg(known_seq)
+            AND (r.superseded_seq IS NULL OR r.superseded_seq > sqlc.arg(known_seq))
+    ))
+ORDER BY o.id;
+
+-- name: ReadRepositoryVersion :one
+SELECT v.* FROM normalize.repository_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.repository_id
+WHERE v.organization_id = sqlc.arg(organization_id) AND v.repository_id = sqlc.arg(repository_id) AND o.deleted_at IS NULL
+    AND v.superseded_seq IS NULL;

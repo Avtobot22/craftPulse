@@ -26,12 +26,16 @@ var _dictionaries = map[envelope.RecordRecordKind]entity.DictionaryKind{
 // input is a part of a receipt parsed and canonized before the transaction (TZ 12.6): only the decisions
 // against the current versions are left for the time the knowledge counter is locked.
 type input struct {
-	instance entity.ID
-	area     entity.SourceKey
-	accounts map[string]entity.SourceAccount
-	tasks    []*taskCandidate
-	events   []*eventCandidate
-	entries  []*entryCandidate
+	instance     entity.ID
+	area         entity.SourceKey
+	accounts     map[string]entity.SourceAccount
+	tasks        []*taskCandidate
+	events       []*eventCandidate
+	entries      []*entryCandidate
+	repositories []*repositoryCandidate
+	mrs          []*mrCandidate
+	mrEvents     []*mrEventCandidate
+	mrRevisions  []*mrRevisionCandidate
 }
 
 type taskCandidate struct {
@@ -70,6 +74,10 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 	tasks := map[entity.SourceKey]int{}
 	events := map[[2]string]int{}
 	entries := map[entity.DictionaryKey]int{}
+	repositories := map[entity.SourceKey]int{}
+	mrs := map[entity.SourceKey]int{}
+	mrEvents := map[entity.SourceKey]int{}
+	mrRevisions := map[entity.SourceKey]int{}
 	for i := range part {
 		r := &part[i]
 		rec, ok, err := pkg.Record(r.No)
@@ -84,6 +92,36 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 			observed: rc.ReceivedAt,
 		}
 		switch kind := rec.RecordKind; {
+		case kind == "repository":
+			c, err := in.repository(rec, base)
+			if err != nil {
+				return nil, err
+			}
+			keep(&in.repositories, repositories, c.key, c, func(old *repositoryCandidate) bool {
+				return !olderTimes(c.version.SourceUpdatedAt, c.version.ObservedAt, old.version.SourceUpdatedAt, old.version.ObservedAt, c.snapshot)
+			})
+		case kind == "merge_request":
+			c, err := in.mergeRequest(rec, base)
+			if err != nil {
+				return nil, err
+			}
+			keep(&in.mrs, mrs, c.key, c, func(old *mrCandidate) bool {
+				return !olderTimes(c.version.SourceUpdatedAt, c.version.ObservedAt, old.version.SourceUpdatedAt, old.version.ObservedAt, c.snapshot)
+			})
+		case kind == "mr_event":
+			c, err := in.mrEvent(rec, base, via)
+			if err != nil {
+				return nil, err
+			}
+			if c != nil {
+				keep(&in.mrEvents, mrEvents, entity.SourceKey{NativeNS: c.mr.NativeID, NativeID: c.event.EventKey}, c, func(*mrEventCandidate) bool { return true })
+			}
+		case kind == "mr_revision":
+			c, err := in.mrRevision(rec, base)
+			if err != nil {
+				return nil, err
+			}
+			keep(&in.mrRevisions, mrRevisions, entity.SourceKey{NativeNS: c.mr.NativeID, NativeID: c.revision.RevisionKey}, c, func(*mrRevisionCandidate) bool { return true })
 		case kind == "task":
 			c, err := in.task(rec, base, taskNS)
 			if err != nil {

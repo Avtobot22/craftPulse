@@ -88,6 +88,330 @@ func (b *InsertDictionaryEntryBatchResults) Close() error {
 	return b.br.Close()
 }
 
+const insertMREvents = `-- name: InsertMREvents :batchexec
+INSERT INTO normalize.mr_event (organization_id, mr_id, event_key, event_kind, actor_account_id, target_account_id, head_sha, review_state, event_time, event_offset_s, observed_via, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+`
+
+type InsertMREventsBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type InsertMREventsParams struct {
+	OrganizationID  uuid.UUID
+	MrID            uuid.UUID
+	EventKey        string
+	EventKind       string
+	ActorAccountID  uuid.NullUUID
+	TargetAccountID uuid.NullUUID
+	HeadSha         pgtype.Text
+	ReviewState     pgtype.Text
+	EventTime       time.Time
+	EventOffsetS    int32
+	ObservedVia     string
+	KnownSeq        int64
+	ReceiptID       uuid.UUID
+	RecordNo        int32
+	SourceRevision  string
+	ContentHash     []byte
+	ObservedAt      time.Time
+}
+
+func (q *Queries) InsertMREvents(ctx context.Context, arg []InsertMREventsParams) *InsertMREventsBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.OrganizationID,
+			a.MrID,
+			a.EventKey,
+			a.EventKind,
+			a.ActorAccountID,
+			a.TargetAccountID,
+			a.HeadSha,
+			a.ReviewState,
+			a.EventTime,
+			a.EventOffsetS,
+			a.ObservedVia,
+			a.KnownSeq,
+			a.ReceiptID,
+			a.RecordNo,
+			a.SourceRevision,
+			a.ContentHash,
+			a.ObservedAt,
+		}
+		batch.Queue(insertMREvents, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &InsertMREventsBatchResults{br, len(arg), false}
+}
+
+func (b *InsertMREventsBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *InsertMREventsBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
+const insertMRRevisions = `-- name: InsertMRRevisions :batchexec
+INSERT INTO normalize.mr_revision (organization_id, mr_id, revision_key, head_sha, base_sha, start_sha, created_at, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+`
+
+type InsertMRRevisionsBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type InsertMRRevisionsParams struct {
+	OrganizationID uuid.UUID
+	MrID           uuid.UUID
+	RevisionKey    string
+	HeadSha        string
+	BaseSha        pgtype.Text
+	StartSha       pgtype.Text
+	CreatedAt      time.Time
+	KnownSeq       int64
+	ReceiptID      uuid.UUID
+	RecordNo       int32
+	SourceRevision string
+	ContentHash    []byte
+	ObservedAt     time.Time
+}
+
+func (q *Queries) InsertMRRevisions(ctx context.Context, arg []InsertMRRevisionsParams) *InsertMRRevisionsBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.OrganizationID,
+			a.MrID,
+			a.RevisionKey,
+			a.HeadSha,
+			a.BaseSha,
+			a.StartSha,
+			a.CreatedAt,
+			a.KnownSeq,
+			a.ReceiptID,
+			a.RecordNo,
+			a.SourceRevision,
+			a.ContentHash,
+			a.ObservedAt,
+		}
+		batch.Queue(insertMRRevisions, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &InsertMRRevisionsBatchResults{br, len(arg), false}
+}
+
+func (b *InsertMRRevisionsBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *InsertMRRevisionsBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
+const insertMRVersions = `-- name: InsertMRVersions :batchexec
+INSERT INTO normalize.mr_version (organization_id, mr_id, area_id, source_updated_at, iid, title, state, draft, author_account_id, source_branch, target_branch, head_sha, base_sha, merge_base_sha, reviewer_field, reviewer_account_ids, opened_at, ready_at, merged_at, closed_at, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+`
+
+type InsertMRVersionsBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type InsertMRVersionsParams struct {
+	OrganizationID     uuid.UUID
+	MrID               uuid.UUID
+	AreaID             uuid.UUID
+	SourceUpdatedAt    pgtype.Timestamptz
+	Iid                pgtype.Int8
+	Title              pgtype.Text
+	State              string
+	Draft              bool
+	AuthorAccountID    uuid.NullUUID
+	SourceBranch       string
+	TargetBranch       string
+	HeadSha            string
+	BaseSha            pgtype.Text
+	MergeBaseSha       pgtype.Text
+	ReviewerField      bool
+	ReviewerAccountIds []uuid.UUID
+	OpenedAt           time.Time
+	ReadyAt            pgtype.Timestamptz
+	MergedAt           pgtype.Timestamptz
+	ClosedAt           pgtype.Timestamptz
+	KnownSeq           int64
+	ReceiptID          uuid.UUID
+	RecordNo           int32
+	SourceRevision     string
+	ContentHash        []byte
+	ObservedAt         time.Time
+}
+
+func (q *Queries) InsertMRVersions(ctx context.Context, arg []InsertMRVersionsParams) *InsertMRVersionsBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.OrganizationID,
+			a.MrID,
+			a.AreaID,
+			a.SourceUpdatedAt,
+			a.Iid,
+			a.Title,
+			a.State,
+			a.Draft,
+			a.AuthorAccountID,
+			a.SourceBranch,
+			a.TargetBranch,
+			a.HeadSha,
+			a.BaseSha,
+			a.MergeBaseSha,
+			a.ReviewerField,
+			a.ReviewerAccountIds,
+			a.OpenedAt,
+			a.ReadyAt,
+			a.MergedAt,
+			a.ClosedAt,
+			a.KnownSeq,
+			a.ReceiptID,
+			a.RecordNo,
+			a.SourceRevision,
+			a.ContentHash,
+			a.ObservedAt,
+		}
+		batch.Queue(insertMRVersions, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &InsertMRVersionsBatchResults{br, len(arg), false}
+}
+
+func (b *InsertMRVersionsBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *InsertMRVersionsBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
+const insertRepositoryVersions = `-- name: InsertRepositoryVersions :batchexec
+INSERT INTO normalize.repository_version (organization_id, repository_id, source_updated_at, path, name, default_branch, visibility, web_url, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+`
+
+type InsertRepositoryVersionsBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type InsertRepositoryVersionsParams struct {
+	OrganizationID  uuid.UUID
+	RepositoryID    uuid.UUID
+	SourceUpdatedAt pgtype.Timestamptz
+	Path            string
+	Name            string
+	DefaultBranch   pgtype.Text
+	Visibility      string
+	WebUrl          string
+	KnownSeq        int64
+	ReceiptID       uuid.UUID
+	RecordNo        int32
+	SourceRevision  string
+	ContentHash     []byte
+	ObservedAt      time.Time
+}
+
+func (q *Queries) InsertRepositoryVersions(ctx context.Context, arg []InsertRepositoryVersionsParams) *InsertRepositoryVersionsBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.OrganizationID,
+			a.RepositoryID,
+			a.SourceUpdatedAt,
+			a.Path,
+			a.Name,
+			a.DefaultBranch,
+			a.Visibility,
+			a.WebUrl,
+			a.KnownSeq,
+			a.ReceiptID,
+			a.RecordNo,
+			a.SourceRevision,
+			a.ContentHash,
+			a.ObservedAt,
+		}
+		batch.Queue(insertRepositoryVersions, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &InsertRepositoryVersionsBatchResults{br, len(arg), false}
+}
+
+func (b *InsertRepositoryVersionsBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *InsertRepositoryVersionsBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
 const insertTaskEvent = `-- name: InsertTaskEvent :batchexec
 INSERT INTO normalize.task_event (organization_id, task_id, area_id, event_key, source_revision, content_hash, known_seq, receipt_id,
     record_no, event_kind, field_native_id, before_value, after_value, before_account_id, after_account_id, actor_account_id, event_time,

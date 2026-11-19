@@ -191,6 +191,214 @@ func (q *Queries) CurrentDictionaryEntries(ctx context.Context, arg CurrentDicti
 	return items, nil
 }
 
+const currentMREvents = `-- name: CurrentMREvents :many
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, mr_id, event_key, event_kind, actor_account_id, target_account_id, head_sha, review_state, event_time, event_offset_s, observed_via FROM normalize.mr_event WHERE organization_id = $1 AND (mr_id, event_key) IN (
+    SELECT ($2::uuid[])[i], ($3::text[])[i]
+    FROM generate_subscripts($2::uuid[], 1) AS i) AND superseded_seq IS NULL
+`
+
+type CurrentMREventsParams struct {
+	OrganizationID uuid.UUID
+	MrIds          []uuid.UUID
+	FactKeys       []string
+}
+
+func (q *Queries) CurrentMREvents(ctx context.Context, arg CurrentMREventsParams) ([]NormalizeMrEvent, error) {
+	rows, err := q.db.Query(ctx, currentMREvents, arg.OrganizationID, arg.MrIds, arg.FactKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeMrEvent
+	for rows.Next() {
+		var i NormalizeMrEvent
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.MrID,
+			&i.EventKey,
+			&i.EventKind,
+			&i.ActorAccountID,
+			&i.TargetAccountID,
+			&i.HeadSha,
+			&i.ReviewState,
+			&i.EventTime,
+			&i.EventOffsetS,
+			&i.ObservedVia,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const currentMRRevisions = `-- name: CurrentMRRevisions :many
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, mr_id, revision_key, head_sha, base_sha, start_sha, created_at FROM normalize.mr_revision WHERE organization_id = $1 AND (mr_id, revision_key) IN (
+    SELECT ($2::uuid[])[i], ($3::text[])[i]
+    FROM generate_subscripts($2::uuid[], 1) AS i) AND superseded_seq IS NULL
+`
+
+type CurrentMRRevisionsParams struct {
+	OrganizationID uuid.UUID
+	MrIds          []uuid.UUID
+	FactKeys       []string
+}
+
+func (q *Queries) CurrentMRRevisions(ctx context.Context, arg CurrentMRRevisionsParams) ([]NormalizeMrRevision, error) {
+	rows, err := q.db.Query(ctx, currentMRRevisions, arg.OrganizationID, arg.MrIds, arg.FactKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeMrRevision
+	for rows.Next() {
+		var i NormalizeMrRevision
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.MrID,
+			&i.RevisionKey,
+			&i.HeadSha,
+			&i.BaseSha,
+			&i.StartSha,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const currentMRVersions = `-- name: CurrentMRVersions :many
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, mr_id, area_id, source_updated_at, iid, title, state, draft, author_account_id, source_branch, target_branch, head_sha, base_sha, merge_base_sha, reviewer_field, reviewer_account_ids, opened_at, ready_at, merged_at, closed_at FROM normalize.mr_version WHERE organization_id = $1 AND mr_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+`
+
+type CurrentMRVersionsParams struct {
+	OrganizationID uuid.UUID
+	ObjectIds      []uuid.UUID
+}
+
+func (q *Queries) CurrentMRVersions(ctx context.Context, arg CurrentMRVersionsParams) ([]NormalizeMrVersion, error) {
+	rows, err := q.db.Query(ctx, currentMRVersions, arg.OrganizationID, arg.ObjectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeMrVersion
+	for rows.Next() {
+		var i NormalizeMrVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.MrID,
+			&i.AreaID,
+			&i.SourceUpdatedAt,
+			&i.Iid,
+			&i.Title,
+			&i.State,
+			&i.Draft,
+			&i.AuthorAccountID,
+			&i.SourceBranch,
+			&i.TargetBranch,
+			&i.HeadSha,
+			&i.BaseSha,
+			&i.MergeBaseSha,
+			&i.ReviewerField,
+			&i.ReviewerAccountIds,
+			&i.OpenedAt,
+			&i.ReadyAt,
+			&i.MergedAt,
+			&i.ClosedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const currentRepositoryVersions = `-- name: CurrentRepositoryVersions :many
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, repository_id, source_updated_at, path, name, default_branch, visibility, web_url FROM normalize.repository_version WHERE organization_id = $1 AND repository_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+`
+
+type CurrentRepositoryVersionsParams struct {
+	OrganizationID uuid.UUID
+	ObjectIds      []uuid.UUID
+}
+
+func (q *Queries) CurrentRepositoryVersions(ctx context.Context, arg CurrentRepositoryVersionsParams) ([]NormalizeRepositoryVersion, error) {
+	rows, err := q.db.Query(ctx, currentRepositoryVersions, arg.OrganizationID, arg.ObjectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeRepositoryVersion
+	for rows.Next() {
+		var i NormalizeRepositoryVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.RepositoryID,
+			&i.SourceUpdatedAt,
+			&i.Path,
+			&i.Name,
+			&i.DefaultBranch,
+			&i.Visibility,
+			&i.WebUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const currentTaskEvents = `-- name: CurrentTaskEvents :many
 SELECT e.organization_id, e.id, e.task_id, e.area_id, e.event_key, e.source_revision, e.content_hash, e.known_seq, e.superseded_seq, e.superseded_at, e.receipt_id, e.record_no, e.event_kind, e.field_native_id, e.before_value, e.after_value, e.before_account_id, e.after_account_id, e.actor_account_id, e.event_time, e.event_offset_s, e.observed_at, e.observed_via FROM normalize.task_event e
 JOIN (
@@ -520,6 +728,64 @@ func (q *Queries) DictionaryRevisions(ctx context.Context, arg DictionaryRevisio
 	return items, nil
 }
 
+const findMRIDs = `-- name: FindMRIDs :many
+SELECT o.id FROM normalize.source_object o
+WHERE o.organization_id = $1 AND o.object_kind = 'merge_request'
+    AND o.deleted_at IS NULL AND o.current_area_id = ANY($2::uuid[])
+    AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
+    AND ($4::text = '' OR (o.instance_id = $5::uuid AND o.native_ns = $6::text AND o.native_id = $4))
+    AND ($7::text = '' OR EXISTS (
+        SELECT 1 FROM normalize.mr_version v WHERE v.organization_id = o.organization_id AND v.mr_id = o.id
+            AND v.head_sha = $7 AND v.known_seq <= $8
+            AND (v.superseded_seq IS NULL OR v.superseded_seq > $8)
+    ) OR EXISTS (
+        SELECT 1 FROM normalize.mr_revision r WHERE r.organization_id = o.organization_id AND r.mr_id = o.id
+            AND r.head_sha = $7 AND r.known_seq <= $8
+            AND (r.superseded_seq IS NULL OR r.superseded_seq > $8)
+    ))
+ORDER BY o.id
+`
+
+type FindMRIDsParams struct {
+	OrganizationID uuid.UUID
+	Areas          []uuid.UUID
+	Allowed        []uuid.UUID
+	NativeID       string
+	InstanceID     uuid.UUID
+	NativeNs       string
+	HeadSha        string
+	KnownSeq       int64
+}
+
+func (q *Queries) FindMRIDs(ctx context.Context, arg FindMRIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, findMRIDs,
+		arg.OrganizationID,
+		arg.Areas,
+		arg.Allowed,
+		arg.NativeID,
+		arg.InstanceID,
+		arg.NativeNs,
+		arg.HeadSha,
+		arg.KnownSeq,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getObjects = `-- name: GetObjects :many
 SELECT o.id, o.instance_id, o.object_kind, o.native_ns, o.native_id, o.identity_quality, o.first_known_seq, o.current_area_id,
     o.restricted, o.deleted_at
@@ -641,6 +907,168 @@ func (q *Queries) InsertObjects(ctx context.Context, arg InsertObjectsParams) er
 	return err
 }
 
+const knownMREvents = `-- name: KnownMREvents :many
+SELECT mr_id, event_key, source_revision, content_hash FROM normalize.mr_event
+WHERE organization_id = $1 AND (mr_id, event_key) IN (
+    SELECT ($2::uuid[])[i], ($3::text[])[i]
+    FROM generate_subscripts($2::uuid[], 1) AS i)
+`
+
+type KnownMREventsParams struct {
+	OrganizationID uuid.UUID
+	MrIds          []uuid.UUID
+	FactKeys       []string
+}
+
+type KnownMREventsRow struct {
+	MrID           uuid.UUID
+	EventKey       string
+	SourceRevision string
+	ContentHash    []byte
+}
+
+func (q *Queries) KnownMREvents(ctx context.Context, arg KnownMREventsParams) ([]KnownMREventsRow, error) {
+	rows, err := q.db.Query(ctx, knownMREvents, arg.OrganizationID, arg.MrIds, arg.FactKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []KnownMREventsRow
+	for rows.Next() {
+		var i KnownMREventsRow
+		if err := rows.Scan(
+			&i.MrID,
+			&i.EventKey,
+			&i.SourceRevision,
+			&i.ContentHash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const knownMRRevisions = `-- name: KnownMRRevisions :many
+SELECT mr_id, revision_key, source_revision, content_hash FROM normalize.mr_revision
+WHERE organization_id = $1 AND (mr_id, revision_key) IN (
+    SELECT ($2::uuid[])[i], ($3::text[])[i]
+    FROM generate_subscripts($2::uuid[], 1) AS i)
+`
+
+type KnownMRRevisionsParams struct {
+	OrganizationID uuid.UUID
+	MrIds          []uuid.UUID
+	FactKeys       []string
+}
+
+type KnownMRRevisionsRow struct {
+	MrID           uuid.UUID
+	RevisionKey    string
+	SourceRevision string
+	ContentHash    []byte
+}
+
+func (q *Queries) KnownMRRevisions(ctx context.Context, arg KnownMRRevisionsParams) ([]KnownMRRevisionsRow, error) {
+	rows, err := q.db.Query(ctx, knownMRRevisions, arg.OrganizationID, arg.MrIds, arg.FactKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []KnownMRRevisionsRow
+	for rows.Next() {
+		var i KnownMRRevisionsRow
+		if err := rows.Scan(
+			&i.MrID,
+			&i.RevisionKey,
+			&i.SourceRevision,
+			&i.ContentHash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const knownMRVersions = `-- name: KnownMRVersions :many
+SELECT mr_id, source_revision, content_hash FROM normalize.mr_version
+WHERE organization_id = $1 AND mr_id = ANY ($2::uuid[])
+`
+
+type KnownMRVersionsParams struct {
+	OrganizationID uuid.UUID
+	ObjectIds      []uuid.UUID
+}
+
+type KnownMRVersionsRow struct {
+	MrID           uuid.UUID
+	SourceRevision string
+	ContentHash    []byte
+}
+
+func (q *Queries) KnownMRVersions(ctx context.Context, arg KnownMRVersionsParams) ([]KnownMRVersionsRow, error) {
+	rows, err := q.db.Query(ctx, knownMRVersions, arg.OrganizationID, arg.ObjectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []KnownMRVersionsRow
+	for rows.Next() {
+		var i KnownMRVersionsRow
+		if err := rows.Scan(&i.MrID, &i.SourceRevision, &i.ContentHash); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const knownRepositoryVersions = `-- name: KnownRepositoryVersions :many
+SELECT repository_id, source_revision, content_hash FROM normalize.repository_version
+WHERE organization_id = $1 AND repository_id = ANY ($2::uuid[])
+`
+
+type KnownRepositoryVersionsParams struct {
+	OrganizationID uuid.UUID
+	ObjectIds      []uuid.UUID
+}
+
+type KnownRepositoryVersionsRow struct {
+	RepositoryID   uuid.UUID
+	SourceRevision string
+	ContentHash    []byte
+}
+
+func (q *Queries) KnownRepositoryVersions(ctx context.Context, arg KnownRepositoryVersionsParams) ([]KnownRepositoryVersionsRow, error) {
+	rows, err := q.db.Query(ctx, knownRepositoryVersions, arg.OrganizationID, arg.ObjectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []KnownRepositoryVersionsRow
+	for rows.Next() {
+		var i KnownRepositoryVersionsRow
+		if err := rows.Scan(&i.RepositoryID, &i.SourceRevision, &i.ContentHash); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const linkEnds = `-- name: LinkEnds :many
 SELECT o.id, o.object_kind, o.instance_id, o.current_area_id, o.restricted, o.native_ns, o.native_id, t.task_key, t.title
 FROM normalize.source_object o
@@ -719,6 +1147,243 @@ func (q *Queries) PlaceObjects(ctx context.Context, arg PlaceObjectsParams) erro
 		arg.Restricted,
 	)
 	return err
+}
+
+const readMREvents = `-- name: ReadMREvents :many
+SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.mr_id, v.event_key, v.event_kind, v.actor_account_id, v.target_account_id, v.head_sha, v.review_state, v.event_time, v.event_offset_s, v.observed_via FROM normalize.mr_event v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.mr_id
+WHERE v.organization_id = $1 AND o.deleted_at IS NULL AND o.current_area_id = ANY($2::uuid[])
+    AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
+    AND v.mr_id = ANY($4::uuid[])
+    AND v.known_seq <= $5 AND (v.superseded_seq IS NULL OR v.superseded_seq > $5)
+ORDER BY v.event_time, v.id
+`
+
+type ReadMREventsParams struct {
+	OrganizationID uuid.UUID
+	Areas          []uuid.UUID
+	Allowed        []uuid.UUID
+	MrIds          []uuid.UUID
+	KnownSeq       int64
+}
+
+func (q *Queries) ReadMREvents(ctx context.Context, arg ReadMREventsParams) ([]NormalizeMrEvent, error) {
+	rows, err := q.db.Query(ctx, readMREvents,
+		arg.OrganizationID,
+		arg.Areas,
+		arg.Allowed,
+		arg.MrIds,
+		arg.KnownSeq,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeMrEvent
+	for rows.Next() {
+		var i NormalizeMrEvent
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.MrID,
+			&i.EventKey,
+			&i.EventKind,
+			&i.ActorAccountID,
+			&i.TargetAccountID,
+			&i.HeadSha,
+			&i.ReviewState,
+			&i.EventTime,
+			&i.EventOffsetS,
+			&i.ObservedVia,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const readMRRevisions = `-- name: ReadMRRevisions :many
+SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.mr_id, v.revision_key, v.head_sha, v.base_sha, v.start_sha, v.created_at FROM normalize.mr_revision v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.mr_id
+WHERE v.organization_id = $1 AND o.deleted_at IS NULL AND o.current_area_id = ANY($2::uuid[])
+    AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
+    AND v.mr_id = ANY($4::uuid[])
+    AND v.known_seq <= $5 AND (v.superseded_seq IS NULL OR v.superseded_seq > $5)
+ORDER BY v.created_at, v.id
+`
+
+type ReadMRRevisionsParams struct {
+	OrganizationID uuid.UUID
+	Areas          []uuid.UUID
+	Allowed        []uuid.UUID
+	MrIds          []uuid.UUID
+	KnownSeq       int64
+}
+
+func (q *Queries) ReadMRRevisions(ctx context.Context, arg ReadMRRevisionsParams) ([]NormalizeMrRevision, error) {
+	rows, err := q.db.Query(ctx, readMRRevisions,
+		arg.OrganizationID,
+		arg.Areas,
+		arg.Allowed,
+		arg.MrIds,
+		arg.KnownSeq,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeMrRevision
+	for rows.Next() {
+		var i NormalizeMrRevision
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.MrID,
+			&i.RevisionKey,
+			&i.HeadSha,
+			&i.BaseSha,
+			&i.StartSha,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const readMRVersions = `-- name: ReadMRVersions :many
+SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.mr_id, v.area_id, v.source_updated_at, v.iid, v.title, v.state, v.draft, v.author_account_id, v.source_branch, v.target_branch, v.head_sha, v.base_sha, v.merge_base_sha, v.reviewer_field, v.reviewer_account_ids, v.opened_at, v.ready_at, v.merged_at, v.closed_at FROM normalize.mr_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.mr_id
+WHERE v.organization_id = $1 AND o.deleted_at IS NULL AND o.current_area_id = ANY($2::uuid[])
+    AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
+    AND v.mr_id = ANY($4::uuid[])
+    AND v.known_seq <= $5 AND (v.superseded_seq IS NULL OR v.superseded_seq > $5)
+ORDER BY v.mr_id
+`
+
+type ReadMRVersionsParams struct {
+	OrganizationID uuid.UUID
+	Areas          []uuid.UUID
+	Allowed        []uuid.UUID
+	MrIds          []uuid.UUID
+	KnownSeq       int64
+}
+
+func (q *Queries) ReadMRVersions(ctx context.Context, arg ReadMRVersionsParams) ([]NormalizeMrVersion, error) {
+	rows, err := q.db.Query(ctx, readMRVersions,
+		arg.OrganizationID,
+		arg.Areas,
+		arg.Allowed,
+		arg.MrIds,
+		arg.KnownSeq,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeMrVersion
+	for rows.Next() {
+		var i NormalizeMrVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.MrID,
+			&i.AreaID,
+			&i.SourceUpdatedAt,
+			&i.Iid,
+			&i.Title,
+			&i.State,
+			&i.Draft,
+			&i.AuthorAccountID,
+			&i.SourceBranch,
+			&i.TargetBranch,
+			&i.HeadSha,
+			&i.BaseSha,
+			&i.MergeBaseSha,
+			&i.ReviewerField,
+			&i.ReviewerAccountIds,
+			&i.OpenedAt,
+			&i.ReadyAt,
+			&i.MergedAt,
+			&i.ClosedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const readRepositoryVersion = `-- name: ReadRepositoryVersion :one
+SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.repository_id, v.source_updated_at, v.path, v.name, v.default_branch, v.visibility, v.web_url FROM normalize.repository_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.repository_id
+WHERE v.organization_id = $1 AND v.repository_id = $2 AND o.deleted_at IS NULL
+    AND v.superseded_seq IS NULL
+`
+
+type ReadRepositoryVersionParams struct {
+	OrganizationID uuid.UUID
+	RepositoryID   uuid.UUID
+}
+
+func (q *Queries) ReadRepositoryVersion(ctx context.Context, arg ReadRepositoryVersionParams) (NormalizeRepositoryVersion, error) {
+	row := q.db.QueryRow(ctx, readRepositoryVersion, arg.OrganizationID, arg.RepositoryID)
+	var i NormalizeRepositoryVersion
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.KnownSeq,
+		&i.SupersededSeq,
+		&i.SupersededAt,
+		&i.ReceiptID,
+		&i.RecordNo,
+		&i.SourceRevision,
+		&i.ContentHash,
+		&i.ObservedAt,
+		&i.RepositoryID,
+		&i.SourceUpdatedAt,
+		&i.Path,
+		&i.Name,
+		&i.DefaultBranch,
+		&i.Visibility,
+		&i.WebUrl,
+	)
+	return i, err
 }
 
 const repositoryAreas = `-- name: RepositoryAreas :many
@@ -826,6 +1491,94 @@ type SupersedeDictionaryEntriesParams struct {
 
 func (q *Queries) SupersedeDictionaryEntries(ctx context.Context, arg SupersedeDictionaryEntriesParams) error {
 	_, err := q.db.Exec(ctx, supersedeDictionaryEntries,
+		arg.KnownSeq,
+		arg.At,
+		arg.OrganizationID,
+		arg.Ids,
+	)
+	return err
+}
+
+const supersedeMREvents = `-- name: SupersedeMREvents :exec
+UPDATE normalize.mr_event SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = ANY ($4::uuid[]) AND superseded_seq IS NULL
+`
+
+type SupersedeMREventsParams struct {
+	KnownSeq       int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) SupersedeMREvents(ctx context.Context, arg SupersedeMREventsParams) error {
+	_, err := q.db.Exec(ctx, supersedeMREvents,
+		arg.KnownSeq,
+		arg.At,
+		arg.OrganizationID,
+		arg.Ids,
+	)
+	return err
+}
+
+const supersedeMRRevisions = `-- name: SupersedeMRRevisions :exec
+UPDATE normalize.mr_revision SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = ANY ($4::uuid[]) AND superseded_seq IS NULL
+`
+
+type SupersedeMRRevisionsParams struct {
+	KnownSeq       int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) SupersedeMRRevisions(ctx context.Context, arg SupersedeMRRevisionsParams) error {
+	_, err := q.db.Exec(ctx, supersedeMRRevisions,
+		arg.KnownSeq,
+		arg.At,
+		arg.OrganizationID,
+		arg.Ids,
+	)
+	return err
+}
+
+const supersedeMRVersions = `-- name: SupersedeMRVersions :exec
+UPDATE normalize.mr_version SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = ANY ($4::uuid[]) AND superseded_seq IS NULL
+`
+
+type SupersedeMRVersionsParams struct {
+	KnownSeq       int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) SupersedeMRVersions(ctx context.Context, arg SupersedeMRVersionsParams) error {
+	_, err := q.db.Exec(ctx, supersedeMRVersions,
+		arg.KnownSeq,
+		arg.At,
+		arg.OrganizationID,
+		arg.Ids,
+	)
+	return err
+}
+
+const supersedeRepositoryVersions = `-- name: SupersedeRepositoryVersions :exec
+UPDATE normalize.repository_version SET superseded_seq = $1::bigint, superseded_at = $2::timestamptz
+WHERE organization_id = $3 AND id = ANY ($4::uuid[]) AND superseded_seq IS NULL
+`
+
+type SupersedeRepositoryVersionsParams struct {
+	KnownSeq       int64
+	At             time.Time
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+func (q *Queries) SupersedeRepositoryVersions(ctx context.Context, arg SupersedeRepositoryVersionsParams) error {
+	_, err := q.db.Exec(ctx, supersedeRepositoryVersions,
 		arg.KnownSeq,
 		arg.At,
 		arg.OrganizationID,

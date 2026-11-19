@@ -7,6 +7,8 @@ type ObjectKind string
 const (
 	ObjectTrackerProject ObjectKind = "tracker_project"
 	ObjectTask           ObjectKind = "task"
+	ObjectRepository     ObjectKind = "repository"
+	ObjectMergeRequest   ObjectKind = "merge_request"
 	// ObjectConnection is the object of a contribution to a metric of collection (T40, T42).
 	ObjectConnection ObjectKind = "connection"
 )

@@ -57,6 +57,7 @@
         "1"
       ],
       "kinds": [
+        "repository",
         "merge_request",
         "mr_revision",
         "mr_event",
@@ -562,6 +563,7 @@
             "string"
           ],
           "enum": [
+            "repository",
             "task",
             "task_event",
             "task_status",
@@ -1644,7 +1646,8 @@
       "kind": "merge_request",
       "version": "1",
       "classes": [
-        "object"
+        "object",
+        "snapshot"
       ],
       "schema": {
         "types": [
@@ -1948,6 +1951,116 @@
                 "changes_requested",
                 "commented",
                 null
+              ]
+            }
+          }
+        ],
+        "required": [
+          "mr_native_id",
+          "event_kind"
+        ],
+        "closed": true
+      },
+      "example": {
+        "actor_account_native_id": "demo-person-03",
+        "event_kind": "review",
+        "head_sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+        "mr_native_id": "9001",
+        "review_state": "commented",
+        "target_account_native_id": null
+      }
+    },
+    {
+      "kind": "mr_event",
+      "version": "2",
+      "classes": [
+        "event"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "mr_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "event_kind",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "ready",
+                "reviewer_assigned",
+                "reviewer_removed",
+                "review",
+                "comment",
+                "approval",
+                "head_pushed",
+                "merged",
+                "closed",
+                "reopened"
+              ]
+            }
+          },
+          {
+            "name": "actor_account_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "target_account_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "head_sha",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "review_state",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "approved",
+                "changes_requested",
+                "commented",
+                null
+              ]
+            }
+          },
+          {
+            "name": "system_note",
+            "schema": {
+              "types": [
+                "boolean"
               ]
             }
           }
@@ -2457,6 +2570,100 @@
         "run_native_id": "5001",
         "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
         "started_at": "2026-10-01T09:06:00+03:00"
+      }
+    },
+    {
+      "kind": "repository",
+      "version": "1",
+      "classes": [
+        "object",
+        "snapshot"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "path",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "name",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "default_branch",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "visibility",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "private",
+                "internal",
+                "public",
+                "unknown"
+              ]
+            }
+          },
+          {
+            "name": "web_url",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "format": "uri",
+              "max_length": 2048
+            }
+          },
+          {
+            "name": "updated_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          }
+        ],
+        "required": [
+          "path",
+          "name",
+          "visibility",
+          "web_url"
+        ],
+        "closed": true
+      },
+      "example": {
+        "default_branch": "main",
+        "name": "Orders service",
+        "path": "demo/orders-service",
+        "updated_at": "2026-10-02T11:00:00+03:00",
+        "visibility": "private",
+        "web_url": "https://gitlab.example.test/demo/orders-service"
       }
     },
     {

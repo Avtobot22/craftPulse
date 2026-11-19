@@ -49,8 +49,12 @@ assert.equal(identityRows.size, new Set(srsIdentity).size, 'identity rules outsi
 
 const schemas = envelope.components.schemas;
 const records = Object.entries(schemas).filter(([, schema]) => schema['x-craftpulse-record']);
-const byKind = new Map(records.map(([name, schema]) => [schema['x-craftpulse-record'].kind, name]));
-assert.equal(byKind.size, records.length, 'record kinds must be unique');
+const byKind = new Set(records.map(([, schema]) => schema['x-craftpulse-record'].kind));
+const payloadSchemas = records.map(([, schema]) => {
+  const {kind, version} = schema['x-craftpulse-record'];
+  return `${kind}/${version}`;
+});
+assert.equal(new Set(payloadSchemas).size, records.length, 'record kind/version pairs must be unique');
 assert.deepEqual([...byKind.keys()].sort(), [...schemas.Record.properties.record_kind.enum].sort(), 'Record.record_kind differs from record schemas');
 const packageSchemas = envelope['x-craftpulse-schemas'];
 assert.deepEqual(Object.keys(packageSchemas).sort(), [...schemas.Manifest.properties.schema_id.enum].sort(), 'Manifest.schema_id differs from x-craftpulse-schemas');
@@ -64,7 +68,7 @@ const imports = contract.components.schemas.ImportUpload.properties.schema_id.en
 for (const id of imports) assert(packageSchemas[id], `ImportUpload.schema_id ${id} has no envelope schema`);
 const csvColumns = Object.keys(schemas.TaskCsvRow.properties).filter(column => column !== 'native_id');
 for (const column of csvColumns) assert(schemas.TaskV1.properties[column], `TaskCsvRow.${column} is not a TaskV1 field`);
-console.log(`Adapter contract: ${ids.size} operations, ${identityRows.size} identity rows, ${byKind.size} record schemas.`);
+console.log(`Adapter contract: ${ids.size} operations, ${identityRows.size} identity rows, ${byKind.size} record kinds, ${records.length} record schemas.`);
 
 // The CI step accepts the demo's Jenkins artifact without renaming fields or changing identity.
 const demoExecution = JSON.parse(readFileSync(new URL('demo-dataset/schemas/jenkins-execution.schema.json', root), 'utf8'));
