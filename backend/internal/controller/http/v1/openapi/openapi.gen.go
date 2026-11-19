@@ -6714,6 +6714,9 @@ type MetricPoint struct {
 type MetricSeries struct {
 	DefinitionVersion int `json:"definition_version"`
 
+	// Estimator Оценка показателя с несколькими рядами: `p50` и `p85` у T08 и T14, поле у T38 (`size`, `type`, `team`, `start`), вид у T40 (`lag`, `last_success_age`), T41 (`tasks`, `transitions`) и T42 (`missing`, `changed`). Отсутствует у показателя с одним рядом.
+	Estimator *string `json:"estimator,omitempty"`
+
 	// Group Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для отчёта команды - тип или размер задачи.
 	Group *struct {
 		ActorKind *ActorKind `json:"actor_kind,omitempty"`
@@ -7240,11 +7243,14 @@ type Revision struct {
 		Version   *string                 `json:"version"`
 	} `json:"inputs"`
 	IrreproducibleReason *RevisionIrreproducibleReason `json:"irreproducible_reason"`
-	Loading              bool                          `json:"loading"`
-	PublishedAt          *time.Time                    `json:"published_at"`
-	RevisionNo           int                           `json:"revision_no"`
-	SeriesId             openapi_types.UUID            `json:"series_id"`
-	SourceWatermarks     []struct {
+
+	// KnowledgeSeq Срез знания: факты и настройки ревизии прочитаны на этот номер (раздел 12.6).
+	KnowledgeSeq     int                `json:"knowledge_seq"`
+	Loading          bool               `json:"loading"`
+	PublishedAt      *time.Time         `json:"published_at"`
+	RevisionNo       int                `json:"revision_no"`
+	SeriesId         openapi_types.UUID `json:"series_id"`
+	SourceWatermarks []struct {
 		Completeness RevisionSourceWatermarksCompleteness `json:"completeness"`
 		ConnectionId openapi_types.UUID                   `json:"connection_id"`
 		Watermark    *time.Time                           `json:"watermark"`
@@ -8919,9 +8925,12 @@ type ListReceiptRecordsParamsOutcome string
 
 // ListRevisionCohortParams defines parameters for ListRevisionCohort.
 type ListRevisionCohortParams struct {
-	MetricId   string                        `form:"metric_id" json:"metric_id"`
-	PointStart time.Time                     `form:"point_start" json:"point_start"`
-	Role       *ListRevisionCohortParamsRole `form:"role,omitempty" json:"role,omitempty"`
+	MetricId   string    `form:"metric_id" json:"metric_id"`
+	PointStart time.Time `form:"point_start" json:"point_start"`
+
+	// Estimator Оценка точки показателя с несколькими рядами, как `MetricSeries.estimator`; без параметра - первая оценка показателя.
+	Estimator *string                       `form:"estimator,omitempty" json:"estimator,omitempty"`
+	Role      *ListRevisionCohortParamsRole `form:"role,omitempty" json:"role,omitempty"`
 
 	// Limit Размер страницы.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
@@ -13554,6 +13563,14 @@ func (siw *ServerInterfaceWrapper) ListRevisionCohort(c *gin.Context) {
 	err = runtime.BindQueryParameterWithOptions("form", true, true, "point_start", c.Request.URL.Query(), &params.PointStart, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
 	if err != nil {
 		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter point_start: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "estimator" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "estimator", c.Request.URL.Query(), &params.Estimator, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter estimator: %w", err), http.StatusBadRequest)
 		return
 	}
 

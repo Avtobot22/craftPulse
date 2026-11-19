@@ -82,10 +82,21 @@ func newSync(pool *pgxpool.Pool, connect sync.Connect, intake sync.Ingest, norma
 	}), nil
 }
 
-// newView keeps the descriptors of the runs users ask for; the access module checks their action again.
-func newView(pool *pgxpool.Pool, collection view.Sync, series view.Series, rights view.Authorizer, c clock.Clock) *view.UseCase {
+// viewModules are the modules view reads: the runs of collection from sync, the series and the reports of calc,
+// the source instances of connect and the rights of a reader from access.
+type viewModules struct {
+	collection view.Sync
+	series     view.Series
+	reports    view.Reports
+	instances  view.Instances
+	rights     view.Authorizer
+}
+
+// newView keeps the descriptors of the runs users ask for and reads the reports; the access module checks their
+// action again.
+func newView(pool *pgxpool.Pool, m viewModules, c clock.Clock) *view.UseCase {
 	return view.New(view.Deps{
-		Repo: viewrepo.NewRepo(pool), Tx: persistent.NewTransactor(pool), Sync: collection, Series: series, Access: rights, Clock: c,
-		NewID: newID,
+		Repo: viewrepo.NewRepo(pool), Tx: persistent.NewTransactor(pool), Sync: m.collection, Series: m.series, Reports: m.reports,
+		Instances: m.instances, Access: m.rights, Clock: c, NewID: newID,
 	})
 }

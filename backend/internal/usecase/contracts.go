@@ -136,6 +136,15 @@ type Operations interface {
 	Operation(ctx context.Context, s entity.Subject, id entity.ID) (entity.Operation, error)
 }
 
+// TeamReports is the view module for readers of reports: the report of a team, the passport and the cohort of a
+// revision with the links of its objects to their sources, and the registry of definitions (FR-021, FR-023).
+type TeamReports interface {
+	TeamReport(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.ReportQuery) (entity.TeamReport, error)
+	Revision(ctx context.Context, s entity.Subject, revisionID entity.ID) (entity.RevisionPassport, error)
+	Cohort(ctx context.Context, s entity.Subject, revisionID entity.ID, q entity.CohortQuery) (entity.CohortPage, []string, error)
+	MetricDefinitions() []entity.MetricDefinition
+}
+
 // Normalizer runs the job normalize.batch; complete ends the job in the transaction of its part.
 type Normalizer interface {
 	RunBatch(ctx context.Context, job entity.NormalizeBatchJob, complete func(context.Context) error) error

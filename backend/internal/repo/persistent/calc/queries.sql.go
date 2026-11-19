@@ -754,6 +754,72 @@ func (q *Queries) PublishRevision(ctx context.Context, arg PublishRevisionParams
 	return result.RowsAffected(), nil
 }
 
+const revisionCohort = `-- name: RevisionCohort :many
+SELECT c.metric_id, c.estimator, c.point_start, c.object_id, c.item_no, c.object_kind, c.role,
+    COALESCE(c.value, 0)::float8 AS value, (c.value IS NOT NULL)::boolean AS has_value, c.reason_code,
+    s.project_id, s.task_type, s.size_label
+FROM calc.revision_part rp
+JOIN calc.contribution c ON c.organization_id = rp.organization_id AND c.part_id = rp.part_id
+LEFT JOIN calc.task_slice s ON s.organization_id = c.organization_id AND s.part_id = c.part_id AND s.task_id = c.object_id
+WHERE rp.organization_id = $1 AND rp.revision_id = $2
+ORDER BY c.metric_id, c.estimator, c.point_start, c.object_id, c.item_no
+`
+
+type RevisionCohortParams struct {
+	OrganizationID uuid.UUID
+	RevisionID     uuid.UUID
+}
+
+type RevisionCohortRow struct {
+	MetricID   string
+	Estimator  string
+	PointStart time.Time
+	ObjectID   uuid.UUID
+	ItemNo     int16
+	ObjectKind string
+	Role       string
+	Value      float64
+	HasValue   bool
+	ReasonCode pgtype.Text
+	ProjectID  uuid.NullUUID
+	TaskType   pgtype.Text
+	SizeLabel  pgtype.Text
+}
+
+func (q *Queries) RevisionCohort(ctx context.Context, arg RevisionCohortParams) ([]RevisionCohortRow, error) {
+	rows, err := q.db.Query(ctx, revisionCohort, arg.OrganizationID, arg.RevisionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RevisionCohortRow
+	for rows.Next() {
+		var i RevisionCohortRow
+		if err := rows.Scan(
+			&i.MetricID,
+			&i.Estimator,
+			&i.PointStart,
+			&i.ObjectID,
+			&i.ItemNo,
+			&i.ObjectKind,
+			&i.Role,
+			&i.Value,
+			&i.HasValue,
+			&i.ReasonCode,
+			&i.ProjectID,
+			&i.TaskType,
+			&i.SizeLabel,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const revisionIDAfter = `-- name: RevisionIDAfter :one
 SELECT id FROM calc.revision
 WHERE organization_id = $1 AND series_id = $2 AND revision_no > $3::integer
@@ -1028,22 +1094,24 @@ func (q *Queries) SupersedeRevision(ctx context.Context, arg SupersedeRevisionPa
 	return err
 }
 
-const taskIntervals = `-- name: TaskIntervals :many
-SELECT i.episode_no, i.interval_no, i.class, lower(i.during)::timestamptz AS during_from, upper(i.during)::timestamptz AS during_to,
-    i.source_event_ids
+const tasksIntervals = `-- name: TasksIntervals :many
+SELECT i.task_id, i.episode_no, i.interval_no, i.class, lower(i.during)::timestamptz AS during_from,
+    upper(i.during)::timestamptz AS during_to, i.source_event_ids
 FROM calc.revision_part rp
 JOIN calc.interval i ON i.organization_id = rp.organization_id AND i.part_id = rp.part_id
-WHERE rp.organization_id = $1 AND rp.revision_id = $2 AND i.task_id = $3
-ORDER BY i.episode_no, i.interval_no, lower(i.during)
+WHERE rp.organization_id = $1 AND rp.revision_id = $2
+    AND i.task_id = ANY ($3::uuid[])
+ORDER BY i.task_id, i.episode_no, i.interval_no, lower(i.during)
 `
 
-type TaskIntervalsParams struct {
+type TasksIntervalsParams struct {
 	OrganizationID uuid.UUID
 	RevisionID     uuid.UUID
-	TaskID         uuid.UUID
+	TaskIds        []uuid.UUID
 }
 
-type TaskIntervalsRow struct {
+type TasksIntervalsRow struct {
+	TaskID         uuid.UUID
 	EpisodeNo      int32
 	IntervalNo     int32
 	Class          string
@@ -1052,16 +1120,17 @@ type TaskIntervalsRow struct {
 	SourceEventIds []uuid.UUID
 }
 
-func (q *Queries) TaskIntervals(ctx context.Context, arg TaskIntervalsParams) ([]TaskIntervalsRow, error) {
-	rows, err := q.db.Query(ctx, taskIntervals, arg.OrganizationID, arg.RevisionID, arg.TaskID)
+func (q *Queries) TasksIntervals(ctx context.Context, arg TasksIntervalsParams) ([]TasksIntervalsRow, error) {
+	rows, err := q.db.Query(ctx, tasksIntervals, arg.OrganizationID, arg.RevisionID, arg.TaskIds)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []TaskIntervalsRow
+	var items []TasksIntervalsRow
 	for rows.Next() {
-		var i TaskIntervalsRow
+		var i TasksIntervalsRow
 		if err := rows.Scan(
+			&i.TaskID,
 			&i.EpisodeNo,
 			&i.IntervalNo,
 			&i.Class,

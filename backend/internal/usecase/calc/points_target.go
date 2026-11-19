@@ -76,21 +76,7 @@ func overTargetPoints(tls []*timeline, p period, x *pointContext) []entity.Point
 			t.add(s.TaskID, 2, entity.RoleNumerator, num(1), "")
 		}
 	}
-	pt := t.point()
-	pt.N, pt.LowSample = &with, with < _lowSample
-	switch {
-	case with == 0 && t.missing == 0:
-		pt.State = entity.StateNotApplicable
-	case with == 0:
-		pt.State, pt.ReasonCode = entity.StateUnknown, t.reason
-	default:
-		pt.State, pt.Value = entity.StateAssessed, num(float64(over))
-		pt.Numerator, pt.Denominator = num(float64(over)), num(float64(with))
-		if t.missing > 0 {
-			pt.State, pt.ReasonCode = entity.StateProvisional, t.reason
-		}
-	}
-	return []entity.Point{pt}
+	return []entity.Point{overTarget(t, over, with)}
 }
 
 // reopenedPoints is T23: the tasks first completed in the period reopened in [first, first + H), among those

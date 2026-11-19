@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hashicorp/golang-lru/v2/expirable"
+	"golang.org/x/sync/singleflight"
+
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
@@ -20,12 +23,14 @@ type Structure interface {
 }
 
 // Facts is the normalize module: the tasks and events of an area at a knowledge number, all of them for a
-// series and the ones a scope allows for a reader, and the knowledge number of the last change of areas.
+// series and the ones a scope allows for a reader, the knowledge number of the last change of areas and where
+// counted objects are now.
 type Facts interface {
 	AreaFacts(ctx context.Context, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error)
 	AreaChangeSeq(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) (int64, error)
 	VisibleAreaFacts(ctx context.Context, scope entity.Scope, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error)
 	RestrictedObjects(ctx context.Context, scope entity.Scope, orgID entity.ID, areaIDs []entity.ID) ([]entity.RestrictedObject, error)
+	CurrentObjects(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.LinkEnd, error)
 }
 
 // Settings is the process module: the mapping and the targets of a team in force at a knowledge number, the
@@ -82,7 +87,10 @@ type Deps struct {
 }
 
 type UseCase struct {
-	d Deps
+	d       Deps
+	cohorts *expirable.LRU[entity.ID, *cohort]
+	reports *expirable.LRU[string, *report]
+	flight  singleflight.Group
 }
 
 func New(d Deps) *UseCase {
@@ -95,7 +103,10 @@ func New(d Deps) *UseCase {
 	if d.Metrics == nil {
 		d.Metrics = noMetrics{}
 	}
-	return &UseCase{d: d}
+	return &UseCase{
+		d: d, cohorts: expirable.NewLRU[entity.ID, *cohort](_cohortEntries, nil, _readAge),
+		reports: expirable.NewLRU[string, *report](_reportEntries, nil, _readAge),
+	}
 }
 
 // Calculate computes the flow metrics of a team over the window at the knowledge number of the request: the

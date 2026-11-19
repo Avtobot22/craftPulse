@@ -219,7 +219,7 @@ func TestConnections_OperationPollHoldsOneConnection(t *testing.T) {
 	t.Cleanup(one.Close)
 	collection, err := newSync(one, nil, nil, nil, e.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
-	views := newView(one, collection, nil, e.rights, e.clock)
+	views := newView(one, viewModules{collection: collection, rights: e.rights}, e.clock)
 	s := entity.Subject{OrganizationID: e.orgID}
 	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT requested_by FROM view.operation WHERE id = $1", op.ID).Scan(&s.UserID))
 
@@ -233,7 +233,7 @@ func TestConnections_OperationPollHoldsOneConnection(t *testing.T) {
 	require.NoError(t, err)
 	collection, err = newSync(one, conn, nil, nil, e.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
-	views = newView(one, collection, nil, e.rights, e.clock)
+	views = newView(one, viewModules{collection: collection, rights: e.rights}, e.clock)
 	next, err := views.RequestSyncRun(ctx, s, entity.ID(id), entity.SyncRunRequest{Kind: entity.SyncReconcile, DataKind: "tasks"})
 	require.NoError(t, err, "the request reads the connection in the transaction of the descriptor")
 	assert.Equal(t, entity.OperationQueued, next.Status)

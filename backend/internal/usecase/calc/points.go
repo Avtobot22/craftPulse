@@ -303,7 +303,7 @@ func blockedTimePoint(tls []*timeline, p period) []entity.Point {
 // balancePoint is T18: first starts minus first completions of the period on the scale of T12.
 func balancePoint(tls []*timeline, p period) []entity.Point {
 	t := newTally(p)
-	var balance float64
+	var sum float64
 	for _, tl := range tls {
 		started, completed := tl.firstStartIn(p), tl.firstCompletionIn(p)
 		if started == memberUnknown || completed == memberUnknown {
@@ -311,19 +311,13 @@ func balancePoint(tls []*timeline, p period) []entity.Point {
 			continue
 		}
 		if started == memberIn {
-			balance++
+			sum++
 			t.add(tl.slice.TaskID, 1, entity.RoleNumerator, num(1), entity.ReasonStarted)
 		}
 		if completed == memberIn {
-			balance--
+			sum--
 			t.add(tl.slice.TaskID, 2, entity.RoleNumerator, num(-1), entity.ReasonCompleted)
 		}
 	}
-	pt := t.point()
-	if t.missing > 0 {
-		pt.State, pt.ReasonCode = entity.StateUnknown, t.reason
-		return []entity.Point{pt}
-	}
-	pt.State, pt.Value = entity.StateAssessed, num(balance)
-	return []entity.Point{pt}
+	return []entity.Point{balanceOf(t, sum)}
 }
