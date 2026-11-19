@@ -19,6 +19,178 @@ var (
 	ErrBatchAlreadyClosed = errors.New("batch already closed")
 )
 
+const insertCIAttemptVersions = `-- name: InsertCIAttemptVersions :batchexec
+INSERT INTO normalize.ci_attempt_version (organization_id, attempt_id, run_id, job_key, config_fingerprint, attempt_no, native_status, outcome, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_s, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+`
+
+type InsertCIAttemptVersionsBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type InsertCIAttemptVersionsParams struct {
+	OrganizationID    uuid.UUID
+	AttemptID         uuid.UUID
+	RunID             uuid.UUID
+	JobKey            string
+	ConfigFingerprint []byte
+	AttemptNo         int32
+	NativeStatus      string
+	Outcome           string
+	AllowFailure      bool
+	FailureKind       pgtype.Text
+	RunnerClass       pgtype.Text
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	DurationS         pgtype.Int8
+	KnownSeq          int64
+	ReceiptID         uuid.UUID
+	RecordNo          int32
+	SourceRevision    string
+	ContentHash       []byte
+	ObservedAt        time.Time
+}
+
+func (q *Queries) InsertCIAttemptVersions(ctx context.Context, arg []InsertCIAttemptVersionsParams) *InsertCIAttemptVersionsBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.OrganizationID,
+			a.AttemptID,
+			a.RunID,
+			a.JobKey,
+			a.ConfigFingerprint,
+			a.AttemptNo,
+			a.NativeStatus,
+			a.Outcome,
+			a.AllowFailure,
+			a.FailureKind,
+			a.RunnerClass,
+			a.StartedAt,
+			a.FinishedAt,
+			a.DurationS,
+			a.KnownSeq,
+			a.ReceiptID,
+			a.RecordNo,
+			a.SourceRevision,
+			a.ContentHash,
+			a.ObservedAt,
+		}
+		batch.Queue(insertCIAttemptVersions, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &InsertCIAttemptVersionsBatchResults{br, len(arg), false}
+}
+
+func (b *InsertCIAttemptVersionsBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *InsertCIAttemptVersionsBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
+const insertCIRunVersions = `-- name: InsertCIRunVersions :batchexec
+INSERT INTO normalize.ci_run_version (organization_id, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+`
+
+type InsertCIRunVersionsBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type InsertCIRunVersionsParams struct {
+	OrganizationID    uuid.UUID
+	RunID             uuid.UUID
+	AreaID            uuid.UUID
+	MrID              uuid.NullUUID
+	SourceUpdatedAt   pgtype.Timestamptz
+	RefName           string
+	Sha               string
+	ParentRunID       uuid.NullUUID
+	DefinitionVersion pgtype.Text
+	NativeStatus      string
+	Outcome           string
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	AttemptHistory    string
+	KnownSeq          int64
+	ReceiptID         uuid.UUID
+	RecordNo          int32
+	SourceRevision    string
+	ContentHash       []byte
+	ObservedAt        time.Time
+}
+
+func (q *Queries) InsertCIRunVersions(ctx context.Context, arg []InsertCIRunVersionsParams) *InsertCIRunVersionsBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.OrganizationID,
+			a.RunID,
+			a.AreaID,
+			a.MrID,
+			a.SourceUpdatedAt,
+			a.RefName,
+			a.Sha,
+			a.ParentRunID,
+			a.DefinitionVersion,
+			a.NativeStatus,
+			a.Outcome,
+			a.StartedAt,
+			a.FinishedAt,
+			a.AttemptHistory,
+			a.KnownSeq,
+			a.ReceiptID,
+			a.RecordNo,
+			a.SourceRevision,
+			a.ContentHash,
+			a.ObservedAt,
+		}
+		batch.Queue(insertCIRunVersions, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &InsertCIRunVersionsBatchResults{br, len(arg), false}
+}
+
+func (b *InsertCIRunVersionsBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *InsertCIRunVersionsBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
 const insertDictionaryEntry = `-- name: InsertDictionaryEntry :batchexec
 INSERT INTO normalize.dictionary_entry (organization_id, area_id, entry_kind, native_id, source_revision, content_hash, known_seq, receipt_id,
     record_no, name, attributes)

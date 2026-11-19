@@ -27,7 +27,9 @@ var _dictionaries = map[envelope.RecordRecordKind]entity.DictionaryKind{
 // against the current versions are left for the time the knowledge counter is locked.
 type input struct {
 	instance     entity.ID
+	provider     string
 	area         entity.SourceKey
+	truncated    map[string]bool
 	accounts     map[string]entity.SourceAccount
 	tasks        []*taskCandidate
 	events       []*eventCandidate
@@ -36,6 +38,8 @@ type input struct {
 	mrs          []*mrCandidate
 	mrEvents     []*mrEventCandidate
 	mrRevisions  []*mrRevisionCandidate
+	ciRuns       []*ciRunCandidate
+	ciAttempts   []*ciAttemptCandidate
 }
 
 type taskCandidate struct {
@@ -63,9 +67,11 @@ type entryCandidate struct {
 func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecord, via entity.ObservedVia) (*input, error) {
 	m := pkg.Manifest
 	in := &input{
-		instance: *rc.SourceInstanceID,
-		area:     entity.SourceKey{InstanceID: *rc.SourceInstanceID, Kind: entity.ObjectKind(m.Area.Kind), NativeID: m.Area.NativeId},
-		accounts: map[string]entity.SourceAccount{},
+		instance:  *rc.SourceInstanceID,
+		provider:  string(m.Source.Provider),
+		area:      entity.SourceKey{InstanceID: *rc.SourceInstanceID, Kind: entity.ObjectKind(m.Area.Kind), NativeID: m.Area.NativeId},
+		truncated: truncatedRuns(m.Selection),
+		accounts:  map[string]entity.SourceAccount{},
 	}
 	taskNS := ""
 	if m.Source.Provider == _providerUniversal {
@@ -78,6 +84,8 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 	mrs := map[entity.SourceKey]int{}
 	mrEvents := map[entity.SourceKey]int{}
 	mrRevisions := map[entity.SourceKey]int{}
+	ciRuns := map[entity.SourceKey]int{}
+	ciAttempts := map[entity.SourceKey]int{}
 	for i := range part {
 		r := &part[i]
 		rec, ok, err := pkg.Record(r.No)
@@ -122,6 +130,20 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 				return nil, err
 			}
 			keep(&in.mrRevisions, mrRevisions, entity.SourceKey{NativeNS: c.mr.NativeID, NativeID: c.revision.RevisionKey}, c, func(*mrRevisionCandidate) bool { return true })
+		case kind == "ci_run":
+			c, err := in.ciRun(rec, base, entity.ObjectKind(m.Area.Kind))
+			if err != nil {
+				return nil, err
+			}
+			keep(&in.ciRuns, ciRuns, c.key, c, func(old *ciRunCandidate) bool {
+				return !olderTimes(c.version.SourceUpdatedAt, c.version.ObservedAt, old.version.SourceUpdatedAt, old.version.ObservedAt, false)
+			})
+		case kind == "ci_attempt":
+			c, err := in.ciAttempt(rec, base)
+			if err != nil {
+				return nil, err
+			}
+			keep(&in.ciAttempts, ciAttempts, c.key, c, func(old *ciAttemptCandidate) bool { return !olderAttempt(c.version, old.version) })
 		case kind == "task":
 			c, err := in.task(rec, base, taskNS)
 			if err != nil {

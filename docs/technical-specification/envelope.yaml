@@ -169,7 +169,7 @@ components:
       required: [record_kind, native_ns, native_id, history_from]
       additionalProperties: false
       properties:
-        record_kind: {type: string, enum: [task, merge_request]}
+        record_kind: {type: string, enum: [task, merge_request, ci_run], description: 'У `ci_run` обрезана история попыток: известны не все повторы jobs запуска.'}
         native_ns: {type: string, maxLength: 255}
         native_id: {type: string, minLength: 1, maxLength: 255}
         history_from: {type: [string, 'null'], format: date-time, description: С какого времени история в пакете полная.}
