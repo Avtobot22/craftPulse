@@ -110,7 +110,6 @@ func (pr *prepared) calculate(periods []period) entity.CalcResult {
 func contextOf(in *input) pointContext {
 	x := pointContext{
 		targets: in.targets, followUp: in.followUp, asOf: in.asOf, last: in.window.To, collection: in.collection,
-		incomplete: map[entity.ID]bool{},
 	}
 	if x.followUp == 0 {
 		x.followUp = _followUp
@@ -119,12 +118,19 @@ func contextOf(in *input) pointContext {
 		x.last = in.asOf
 	}
 	x.last = x.last.UTC()
-	for _, c := range in.collection {
+	x.incomplete = incompleteAreas(in.collection)
+	return x
+}
+
+// incompleteAreas are the areas a connection of which has not reconciled without differences.
+func incompleteAreas(collection []entity.AreaCollection) map[entity.ID]bool {
+	out := map[entity.ID]bool{}
+	for _, c := range collection {
 		if c.Completeness != entity.CollectionComplete {
-			x.incomplete[c.AreaID] = true
+			out[c.AreaID] = true
 		}
 	}
-	return x
+	return out
 }
 
 // ofTeam applies the rule of the team field: a task of an instance with such a rule belongs to the team whose
@@ -190,10 +196,7 @@ func periods(w entity.Window, asOf time.Time, loc *time.Location) []period {
 	}
 	var out []period
 	for start := w.From.In(loc); start.Before(end); {
-		next := start.AddDate(0, 0, 7)
-		if w.Step == entity.StepMonth {
-			next = start.AddDate(0, 1, 0)
-		}
+		next := nextStep(start, w.Step)
 		p := period{start: start.UTC(), end: next.UTC()}
 		if end.Before(p.end) {
 			p.end = end.UTC()

@@ -120,3 +120,61 @@ func (u *UseCase) MREventsAt(ctx context.Context, scope entity.Scope, orgID, mrI
 	}
 	return out, nil
 }
+
+// ReviewFacts reads, for calc, the MRs of an area at the slice seq with their events, the events of its tasks and
+// the confirmed kinds of the accounts acting in them at seq; an account without a confirmed assignment is unknown.
+func (u *UseCase) ReviewFacts(ctx context.Context, orgID, areaID entity.ID, seq int64) (entity.ReviewFacts, error) {
+	out := entity.ReviewFacts{AreaID: areaID, ActorKinds: map[entity.ID]entity.PersonKind{}}
+	area := []entity.ID{areaID}
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		ids, err := u.d.Repo.FindMRIDs(ctx, orgID, area, nil, entity.SourceKey{}, "", seq)
+		if err != nil {
+			return err
+		}
+		if out.MRs, err = u.d.Repo.ReadMRVersions(ctx, orgID, area, nil, ids, seq); err != nil {
+			return err
+		}
+		if out.MREvents, err = u.d.Repo.ReadMREvents(ctx, orgID, area, nil, ids, seq); err != nil {
+			return err
+		}
+		restricted, err := u.d.Repo.RestrictedObjects(ctx, orgID, area)
+		if err != nil {
+			return err
+		}
+		all := make([]entity.ID, len(restricted))
+		for i := range restricted {
+			all[i] = restricted[i].ID
+		}
+		out.TaskEvents, err = u.d.Repo.TaskEventsAt(ctx, orgID, areaID, seq, all)
+		return err
+	})
+	if err != nil {
+		return entity.ReviewFacts{}, err
+	}
+	actors := make([]*entity.ID, 0, len(out.MREvents)+len(out.TaskEvents))
+	for i := range out.MREvents {
+		e := &out.MREvents[i]
+		out.ReviewsGiven = out.ReviewsGiven || e.Kind == "review" || e.Kind == "approval"
+		actors = append(actors, e.ActorAccountID)
+	}
+	for i := range out.TaskEvents {
+		actors = append(actors, out.TaskEvents[i].ActorAccountID)
+	}
+	for _, id := range actors {
+		if id == nil {
+			continue
+		}
+		if _, ok := out.ActorKinds[*id]; ok {
+			continue
+		}
+		assignment, found, err := u.d.Accounts.AssignmentAt(ctx, orgID, *id, seq)
+		if err != nil {
+			return entity.ReviewFacts{}, err
+		}
+		out.ActorKinds[*id] = entity.PersonUnknown
+		if found {
+			out.ActorKinds[*id] = assignment.ActorKind
+		}
+	}
+	return out, nil
+}

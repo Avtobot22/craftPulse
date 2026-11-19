@@ -23,14 +23,15 @@ type Structure interface {
 }
 
 // Facts is the normalize module: the tasks and events of an area at a knowledge number, all of them for a
-// series and the ones a scope allows for a reader, the knowledge number of the last change of areas and where
-// counted objects are now.
+// series and the ones a scope allows for a reader, the knowledge number of the last change of areas, where
+// counted objects are now, and the MRs and events of an area with the kinds of their participants.
 type Facts interface {
 	AreaFacts(ctx context.Context, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error)
 	AreaChangeSeq(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) (int64, error)
 	VisibleAreaFacts(ctx context.Context, scope entity.Scope, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error)
 	RestrictedObjects(ctx context.Context, scope entity.Scope, orgID entity.ID, areaIDs []entity.ID) ([]entity.RestrictedObject, error)
 	CurrentObjects(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.LinkEnd, error)
+	ReviewFacts(ctx context.Context, orgID, areaID entity.ID, seq int64) (entity.ReviewFacts, error)
 }
 
 // Settings is the process module: the mapping and the targets of a team in force at a knowledge number, the

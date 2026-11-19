@@ -20,6 +20,8 @@ const (
 	// _windowWeeks and _windowMonths are the window of a series without a revision: ten months.
 	_windowWeeks  = 44
 	_windowMonths = 10
+	// _windowDays is the window of a daily series without a revision.
+	_windowDays = 90
 	// _extendStart and _extendSpan are the night window 01:00-05:00 of the daily extension in the time zone of
 	// the team; the minute of a series inside it comes from its ID.
 	_extendStart = time.Hour
@@ -47,21 +49,21 @@ func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, com
 	var plans []due
 	for i := range all {
 		s := &all[i]
-		team, ok, err := teamOf(s.Scope)
+		scope, ok, err := scopeOf(s.Scope)
 		if err != nil {
 			return err
 		}
-		if !ok || (!job.TeamID.IsZero() && team != job.TeamID) {
+		if !ok || (!job.TeamID.IsZero() && scope.TeamID != job.TeamID) {
 			continue
 		}
-		areas, err := u.teamAreas(ctx, org, team)
+		areas, err := u.scopeAreas(ctx, org, scope)
 		if err != nil {
 			return err
 		}
 		if !job.AreaID.IsZero() && !slices.Contains(areas, job.AreaID) {
 			continue
 		}
-		p, err := u.plan(ctx, org, s, team, areas, at, job.CorrelationID)
+		p, err := u.plan(ctx, org, s, scope.TeamID, areas, at, job.CorrelationID)
 		if err != nil {
 			return err
 		}
@@ -105,13 +107,14 @@ func (u *UseCase) RunExtend(ctx context.Context, job entity.CalcExtendJob, compl
 	var plans []due
 	for i := range all {
 		s := &all[i]
-		team, ok, err := teamOf(s.Scope)
+		scope, ok, err := scopeOf(s.Scope)
 		if err != nil {
 			return err
 		}
 		if !ok {
 			continue
 		}
+		team := scope.TeamID
 		cur, last, err := u.revisions(ctx, org, s)
 		if err != nil {
 			return err
@@ -124,7 +127,7 @@ func (u *UseCase) RunExtend(ctx context.Context, job entity.CalcExtendJob, compl
 		if !ok || (last != nil && last.Status != entity.RevisionFailed && !last.StartedAt.Before(slot)) {
 			continue
 		}
-		areas, err := u.teamAreas(ctx, org, team)
+		areas, err := u.scopeAreas(ctx, org, scope)
 		if err != nil {
 			return err
 		}
@@ -276,7 +279,7 @@ func (u *UseCase) location(ctx context.Context, org, team entity.ID, cur *entity
 	name := "UTC"
 	if cur != nil {
 		name = cur.Timezone
-	} else {
+	} else if !team.IsZero() {
 		mapping, ok, err := u.d.Settings.MappingAt(ctx, org, team, math.MaxInt64)
 		if err != nil {
 			return nil, err
@@ -292,20 +295,27 @@ func (u *UseCase) location(ctx context.Context, org, team entity.ID, cur *entity
 	return loc, nil
 }
 
-// windowStart is the start of the step ten months before the step that holds at.
+// windowStart is the start of the step ten months, or 90 days for a daily series, before the step that holds at.
 func windowStart(at time.Time, loc *time.Location, step entity.Step) time.Time {
 	local := at.In(loc)
 	if step == entity.StepMonth {
 		return time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc).AddDate(0, 1-_windowMonths, 0)
 	}
 	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	if step == entity.StepDay {
+		return day.AddDate(0, 0, 1-_windowDays)
+	}
 	monday := day.AddDate(0, 0, -(int(day.Weekday())+6)%7)
 	return monday.AddDate(0, 0, -7*(_windowWeeks-1))
 }
 
 func nextStep(t time.Time, step entity.Step) time.Time {
-	if step == entity.StepMonth {
+	switch step {
+	case entity.StepMonth:
 		return t.AddDate(0, 1, 0)
+	case entity.StepDay:
+		return t.AddDate(0, 0, 1)
+	case entity.StepWeek:
 	}
 	return t.AddDate(0, 0, 7)
 }
@@ -340,9 +350,14 @@ func (u *UseCase) revisions(ctx context.Context, org entity.ID, s *entity.CalcSe
 func (u *UseCase) orgSeries(ctx context.Context, org entity.ID) ([]entity.CalcSeries, error) {
 	var out []entity.CalcSeries
 	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
-		var err error
-		out, err = u.d.Repo.OrgSeries(ctx, org, entity.MetricSetFlow)
-		return err
+		for _, set := range []string{entity.MetricSetFlow, entity.MetricSetReview, entity.MetricSetEvents} {
+			series, err := u.d.Repo.OrgSeries(ctx, org, set)
+			if err != nil {
+				return err
+			}
+			out = append(out, series...)
+		}
+		return nil
 	})
 	return out, err
 }

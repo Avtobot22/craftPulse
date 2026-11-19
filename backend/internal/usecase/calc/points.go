@@ -1,6 +1,7 @@
 package calc
 
 import (
+	"cmp"
 	"slices"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -17,13 +18,15 @@ type tally struct {
 	excluded      int
 	missing       int
 	reason        string
+	// kind is the kind of the counted objects; zero is a task.
+	kind entity.ObjectKind
 }
 
 func newTally(p period) *tally { return &tally{p: p} }
 
 func (t *tally) add(id entity.ID, item int, role entity.ContributionRole, value *float64, reason string) {
 	t.contributions = append(t.contributions, entity.Contribution{
-		ObjectID: id, ItemNo: item, ObjectKind: entity.ObjectTask, Role: role, Value: value, ReasonCode: reason,
+		ObjectID: id, ItemNo: item, ObjectKind: cmp.Or(t.kind, entity.ObjectTask), Role: role, Value: value, ReasonCode: reason,
 	})
 	switch role {
 	case entity.RoleNumerator:

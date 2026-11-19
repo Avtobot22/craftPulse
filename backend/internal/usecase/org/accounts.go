@@ -98,6 +98,7 @@ func (u *UseCase) AssignAccounts(ctx context.Context, s entity.Subject, key enti
 	}
 	var out []entity.AssignmentOutcome
 	err := u.tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		changed := false
 		seq, err := u.tenants.NextSeq(ctx, org)
 		if err != nil {
 			return err
@@ -134,8 +135,14 @@ func (u *UseCase) AssignAccounts(ctx context.Context, s entity.Subject, key enti
 				return err
 			}
 			out = append(out, res)
+			changed = changed || res.Outcome == entity.AssignmentSaved
 		}
-		return nil
+		if !changed {
+			return nil
+		}
+		// The kind of an account decides who responded and whose event it is, so the series get a new revision (FR-018 A2).
+		recount := entity.CalcRecountJob{OrganizationID: org, CorrelationID: entity.ID(logger.CorrelationID(ctx))}
+		return u.queue.Enqueue(ctx, recount, entity.QueueBulk)
 	})
 	return out, err
 }
