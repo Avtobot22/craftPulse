@@ -41,6 +41,23 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(names, ["craftpulse-server", "craftpulse-frontend", "craftpulse-ci", "craftpulse-adapter-future", "craftpulse-adapter-git"])
         self.assertNotIn("craftpulse-adapter-test", names)
 
+    def test_profile_discovery_pins_dependency_and_hashes_policy(self):
+        directory = self.root / "backend/internal/ci/profiles/gitleaks-default"
+        directory.mkdir(parents=True)
+        release.write_json(directory / "profile.json", {"gitleaks_version": "8.30.1", "min_fragment_length": 8})
+        (directory / "rules.toml").write_text("# rules\n")
+        (self.root / "backend/go.mod").write_text("require github.com/zricethezav/gitleaks/v8 v8.30.1\n")
+        images = release.plan(self.root)
+        self.assertEqual(next(i for i in images if i.get("target"))["name"], "craftpulse-ci-gitleaks-default")
+        metadata = release.metadata(self.root, images)
+        self.assertEqual(metadata["ci_tool_versions"], {"gitleaks": "8.30.1"})
+        original = metadata["rule_hashes"]["gitleaks-default"]
+        (directory / "rules.toml").write_text("# changed rules\n")
+        self.assertNotEqual(release.metadata(self.root, images)["rule_hashes"]["gitleaks-default"], original)
+        (self.root / "backend/go.mod").write_text("require github.com/zricethezav/gitleaks/v8 v8.29.0\n")
+        with self.assertRaisesRegex(release.ReleaseError, "versions disagree"):
+            release.metadata(self.root, images)
+
     def test_core_and_adapter_versions_come_from_distinct_migrations(self):
         metadata = release.metadata(self.root, release.plan(self.root))
         self.assertEqual(metadata["core_schema_version"], 19)

@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import urllib.error
 import urllib.parse
@@ -50,6 +51,9 @@ def plan(root=ROOT):
         {"name": "craftpulse-frontend", "context": "frontend", "dockerfile": "frontend/Dockerfile"},
         {"name": "craftpulse-ci", "context": "backend", "dockerfile": "backend/ci.Dockerfile"},
     ]
+    if (root / "backend/internal/ci/profiles/gitleaks-default/profile.json").is_file():
+        images.append({"name": "craftpulse-ci-gitleaks-default", "context": "backend",
+                       "dockerfile": "backend/ci.Dockerfile", "target": "gitleaks-default"})
     for directory in sorted((root / "backend/cmd").glob("adapter-*")):
         # The recorded-answer server explicitly excludes itself from release images.
         if directory.name == "adapter-test":
@@ -79,10 +83,20 @@ def metadata(root, images):
                          (root / "backend/pkg/adaptersdk/errors.go").read_text())
     if adapters and not contract:
         raise ReleaseError("adapter contract version not found")
+    ci_versions, rule_hashes = {}, {}
+    if any(image.get("target") == "gitleaks-default" for image in images):
+        directory = root / "backend/internal/ci/profiles/gitleaks-default"
+        policy = read_json(directory / "profile.json")
+        version = policy["gitleaks_version"]
+        if not re.search(r"github.com/zricethezav/gitleaks/v8 v" + re.escape(version) + r"\s", (root / "backend/go.mod").read_text()):
+            raise ReleaseError("Gitleaks profile and Go dependency versions disagree")
+        ci_versions["gitleaks"] = version
+        rule_hashes["gitleaks-default"] = hashlib.sha256(version.encode() + b"\n" +
+            (directory / "rules.toml").read_bytes() + (directory / "profile.json").read_bytes()).hexdigest()
     return {"core_schema_version": schema_version(root, "core"),
             "adapter_schema_versions": {name: schema_version(root, "adapter") for name in adapters},
             "adapter_contract_version": contract[1] if adapters else None,
-            "ci_tool_versions": {}, "rule_hashes": {}}
+            "ci_tool_versions": ci_versions, "rule_hashes": rule_hashes}
 
 
 def install_tools(destination, root=ROOT):
@@ -132,6 +146,8 @@ def build(image, sha, ref, root=ROOT):
     args = ["docker", "build", "--platform", "linux/amd64", "--build-arg", f"COMMIT_SHA={sha}",
             "--label", f"org.opencontainers.image.revision={sha}", "--tag", ref,
             "--file", str(root / image["dockerfile"])]
+    if image.get("target"):
+        args += ["--target", image["target"]]
     if image.get("adapter"):
         args += ["--build-arg", f"ADAPTER={image['adapter']}"]
     run(args + [str(root / image["context"])], cwd=root)
@@ -262,6 +278,8 @@ def release(sha, output, tools, root=ROOT):
             smoke_adapter(reference)
         if name == "craftpulse-ci":
             smoke_ci(reference)
+        if image.get("target") == "gitleaks-default":
+            run([sys.executable, str(root / "scripts/check_secrets_profile.py"), "--image", reference], cwd=root)
         references[name] = reference
     licenses = scan(images, references, output, tools)
     publish_images(images, sha, references, resolved, registry)
@@ -303,10 +321,12 @@ def main():
                     smoke_adapter(reference)
         elif args.command == "build-ci":
             for image in plan():
-                if image["name"] == "craftpulse-ci":
+                if image["name"] == "craftpulse-ci" or image.get("target") == "gitleaks-default":
                     reference = f"{image['name']}:check"
                     build(image, args.sha, reference)
                     smoke_ci(reference)
+                    if image.get("target") == "gitleaks-default":
+                        run([sys.executable, str(ROOT / "scripts/check_secrets_profile.py"), "--image", reference])
         elif args.command == "install-tools":
             install_tools(args.tools.resolve())
         else:

@@ -1,6 +1,7 @@
 package ci
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,7 +70,8 @@ func matches(want, got string) bool { return want == "" || want == got }
 
 // Store keeps the state of one job between invocations: the profile, the tool runs and their reports.
 type Store struct {
-	dir string
+	dir      string
+	Scrubber Scrubber
 }
 
 func NewStore(dir string) *Store { return &Store{dir: dir} }
@@ -173,7 +175,21 @@ func (s *Store) copyIn(local, target string) error {
 	if err != nil {
 		return fmt.Errorf("create report copy: %w", err)
 	}
-	if _, err := io.Copy(out, src); err != nil {
+	var input io.Reader = src
+	if s.Scrubber != nil {
+		data, err := io.ReadAll(src)
+		if err != nil {
+			out.Close()
+			return errors.New("cannot read report for secret redaction")
+		}
+		data, err = s.Scrubber.Scrub(nil, data)
+		if err != nil {
+			out.Close()
+			return err
+		}
+		input = bytes.NewReader(data)
+	}
+	if _, err := io.Copy(out, input); err != nil {
 		out.Close()
 		return fmt.Errorf("copy report: %w", err)
 	}
@@ -181,6 +197,13 @@ func (s *Store) copyIn(local, target string) error {
 }
 
 func (s *Store) write(name string, data []byte) error {
+	if s.Scrubber != nil {
+		safe, err := s.Scrubber.Scrub(nil, data)
+		if err != nil {
+			return err
+		}
+		data = safe
+	}
 	target := filepath.Join(s.dir, filepath.FromSlash(name))
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return fmt.Errorf("create state directory: %w", err)

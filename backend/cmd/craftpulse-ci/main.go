@@ -3,13 +3,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -48,11 +51,48 @@ type app struct {
 	client         ci.ClientConfig
 	debug          bool
 	workDir        string
+	secretScan     *ci.SecretScan
 }
 
 func execute(ctx context.Context, args []string, stdout, stderr io.Writer, getenv func(string) string, cfg ci.ClientConfig) int {
 	secrets := []string{getenv(ci.TokenEnv)}
-	a := &app{stdout: logger.Redact(stdout, secrets), stderr: logger.Redact(stderr, secrets), getenv: getenv, client: cfg}
+	var secretScan *ci.SecretScan
+	var out, errs bytes.Buffer
+	originalOut, originalErr := stdout, stderr
+	if getenv("CRAFTPULSE_SECRETS") == "1" && (len(args) != 1 || (args[0] != "version" && args[0] != "secrets-info")) {
+		repo := getenv("CI_PROJECT_DIR")
+		if repo == "" {
+			repo = "."
+		}
+		base := getenv("CI_MERGE_REQUEST_DIFF_BASE_SHA")
+		if base == "" {
+			base = getenv("CI_COMMIT_BEFORE_SHA")
+		}
+		if strings.Trim(base, "0") == "" {
+			base = ""
+		}
+		scanCtx, cancel := context.WithTimeout(ctx, _defaultTimeout)
+		var err error
+		secretScan, err = ci.ScanSecrets(scanCtx, repo, base, getenv("CI_COMMIT_SHA"))
+		cancel()
+		if err != nil {
+			fmt.Fprintln(stderr, "craftpulse-ci: secrets scan failed; no output or package released")
+			return _exitFailed
+		}
+		stdout, stderr = &out, &errs
+		defer func() {
+			for _, pair := range []struct {
+				to   io.Writer
+				data []byte
+			}{{originalOut, out.Bytes()}, {originalErr, errs.Bytes()}} {
+				safe, err := secretScan.Scrubber.Scrub(nil, pair.data)
+				if err == nil {
+					_, _ = pair.to.Write(safe)
+				}
+			}
+		}()
+	}
+	a := &app{secretScan: secretScan, stdout: logger.Redact(stdout, secrets), stderr: logger.Redact(stderr, secrets), getenv: getenv, client: cfg}
 	root := a.root() //nolint:contextcheck // commands take the context from cmd.Context()
 	root.SetArgs(args)
 	root.SetOut(a.stdout)
@@ -95,7 +135,7 @@ refused the package or rejected it whole; 3 - the intake result did not arrive i
 	}
 	root.PersistentFlags().BoolVar(&a.debug, "debug", false, "print every request and answer, without the token")
 	root.PersistentFlags().StringVar(&a.workDir, "work-dir", "", "directory with the state of the job")
-	root.AddCommand(a.versionCmd(), a.profileCmd(), a.runCmd(), a.importCmd(), a.uploadCmd(), a.fixturesCmd())
+	root.AddCommand(a.versionCmd(), a.profileCmd(), a.runCmd(), a.importCmd(), a.uploadCmd(), a.fixturesCmd(), a.secretsCmd(), a.secretsInfoCmd())
 	return root
 }
 
@@ -137,10 +177,15 @@ func (a *app) session(ctx context.Context, fresh bool) (*session, error) {
 		return nil, err
 	}
 	s := &session{job: job, store: ci.NewStore(job.WorkDir), client: client}
+	if a.secretScan != nil {
+		s.store.Scrubber = a.secretScan.Scrubber
+	}
 	if !fresh {
 		var ok bool
-		if s.profile, ok, err = s.store.Profile(); err != nil || ok {
-			return s, err
+		if s.profile, ok, err = s.store.Profile(); err != nil {
+			return nil, err
+		} else if ok {
+			return s, nil
 		}
 	}
 	if s.profile, err = client.Profile(ctx); err != nil {
@@ -194,7 +239,12 @@ the run is uploaded with the package.`,
 			if t.ID == "" {
 				t.ID = t.ProfileID + "-" + t.Kind
 			}
-			r := &ci.Runner{Job: &s.job, Profile: s.profile, Store: s.store, Stdout: os.Stdout, Stderr: os.Stderr, Now: time.Now}
+			r := &ci.Runner{Job: &s.job, Profile: s.profile, Store: s.store, Stdout: a.stdout, Stderr: a.stderr, Now: time.Now}
+			// A tool may print newly generated credentials unknown to the repository scanner.
+			// The secrets image publishes summaries only, never arbitrary tool streams.
+			if a.secretScan != nil {
+				r.Stdout, r.Stderr = io.Discard, io.Discard
+			}
 			run, err := r.Run(cmd.Context(), &t)
 			if err != nil {
 				return err
@@ -271,21 +321,33 @@ produced them. A missing or empty report is recorded as failed, never as a clean
 
 func (a *app) uploadCmd() *cobra.Command {
 	var (
-		wait time.Duration
-		save string
+		wait   time.Duration
+		save   string
+		dryRun bool
 	)
 	cmd := &cobra.Command{
 		Use:   "upload",
 		Short: "pack the runs of the job, upload the package and print the intake result",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if dryRun && save == "" {
+				return errors.New("--dry-run requires --save")
+			}
 			ctx := cmd.Context()
 			s, err := a.session(ctx, false)
 			if err != nil {
 				return err
 			}
 			ci.PrintJob(a.stdout, health.CommitSHA(), &s.job, s.profile)
+			if a.secretScan != nil {
+				if err := a.secretScan.Record(&ci.Runner{Job: &s.job, Profile: s.profile, Store: s.store}, a.getenv("CRAFTPULSE_COMPONENT_ID")); err != nil {
+					return err
+				}
+			}
 			p := &ci.Packer{Job: &s.job, Store: s.store, Version: health.CommitSHA(), Now: time.Now}
+			if a.secretScan != nil {
+				p.Scrubber = a.secretScan.Scrubber
+			}
 			pkg, err := p.Build(limits(s.profile))
 			if err != nil {
 				return err
@@ -295,6 +357,9 @@ func (a *app) uploadCmd() *cobra.Command {
 				if err := os.WriteFile(save, pkg.Data, 0o600); err != nil {
 					return fmt.Errorf("save package: %w", err)
 				}
+			}
+			if dryRun {
+				return nil
 			}
 			accepted, err := s.client.Upload(ctx, pkg.Data)
 			if err != nil {
@@ -318,11 +383,15 @@ func (a *app) uploadCmd() *cobra.Command {
 	}
 	cmd.Flags().DurationVar(&wait, "wait", _defaultWait, "how long to wait for the intake result")
 	cmd.Flags().StringVar(&save, "save", "", "also write the package to this file")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "build and check the saved package without uploading")
 	return cmd
 }
 
 func (a *app) fixturesCmd() *cobra.Command {
-	fx := ci.Fixtures{Stdout: os.Stdout, Stderr: os.Stderr}
+	fx := ci.Fixtures{Stdout: a.stdout, Stderr: a.stderr}
+	if a.secretScan != nil {
+		fx.Stdout, fx.Stderr = io.Discard, io.Discard
+	}
 	cmd := &cobra.Command{
 		Use:   "fixtures DIR -- command [args...]",
 		Short: "run a profile on its rule fixtures and compare the findings",
@@ -362,4 +431,33 @@ func limits(p *ciapi.CiCheckProfile) envelope.Limits {
 		return envelope.DefaultLimits
 	}
 	return l
+}
+
+func (a *app) secretsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use: "secrets", Short: "scan head and diff with the pinned Gitleaks profile", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if a.secretScan == nil {
+				return errors.New("use the secrets profile image (CRAFTPULSE_SECRETS=1)")
+			}
+			s, err := a.session(cmd.Context(), false)
+			if err != nil {
+				return err
+			}
+			if err := a.secretScan.Record(&ci.Runner{Job: &s.job, Profile: s.profile, Store: s.store}, a.getenv("CRAFTPULSE_COMPONENT_ID")); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.stdout, "gitleaks %s: head=%d diff=%d history_truncated=%t\n", ci.GitleaksVersion, len(a.secretScan.Head), len(a.secretScan.Diff), a.secretScan.History.Truncated)
+			return nil
+		},
+	}
+}
+
+func (a *app) secretsInfoCmd() *cobra.Command {
+	return &cobra.Command{
+		Use: "secrets-info", Short: "print the pinned secrets profile identity", Args: cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			return json.NewEncoder(a.stdout).Encode(map[string]any{"profile_id": ci.SecretsProfileID, "gitleaks_version": ci.GitleaksVersion, "rules_hash": ci.SecretsRulesHash()})
+		},
+	}
 }
