@@ -85,7 +85,7 @@ func newSyncEnv(t *testing.T, scenario testadapter.Config) *syncEnv {
 	require.NoError(t, err)
 	e.reg = reg
 	e.uc = sync.New(sync.Deps{
-		Repo: syncrepo.NewRepo(e.app), Tenants: platform.NewRepo(e.app), Connect: e.connect, Ingest: intake, Normalize: e.norm,
+		Keyring: adapterKeyring(t), Repo: syncrepo.NewRepo(e.app), Tenants: platform.NewRepo(e.app), Connect: e.connect, Ingest: intake, Normalize: e.norm,
 		Queue: queue.New(jobs), Tx: persistent.NewTransactor(e.app), Metrics: e.metrics,
 		Clock: e.clock, Rand: func() float64 { return e.jitter.Load().(float64) }, PageSize: 3,
 	})
@@ -158,7 +158,7 @@ func (e *syncEnv) run(t *testing.T, q *queued, fail bool) error {
 		_, err := tx.Exec(ctx, "UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1", q.id)
 		return err
 	}
-	holder := "river-job-" + uuid.NewString()
+	holder := "river-job-" + strconv.FormatInt(q.id, 10)
 	if q.kind == entity.KindSyncHistory {
 		var job entity.SyncHistoryJob
 		require.NoError(t, json.Unmarshal(q.args, &job))
@@ -373,12 +373,17 @@ func TestSync_OneRunPerConnection(t *testing.T) {
 	}})
 	conn := e.connection(t, "10000")
 	q := e.next(t, conn)
+	e.enqueue(t, entity.SyncPageJob{OrganizationID: e.org, ConnectionID: conn, DataKind: "accounts"})
+	var other queued
+	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT id,kind,args,scheduled_at FROM river_job
+        WHERE kind='sync.page' AND args->>'connection_id'=$1 AND args->>'data_kind'='accounts'`, conn.String()).Scan(&other.id, &other.kind, &other.args, &other.scheduledAt))
+	runs := []*queued{q, &other}
 	var inflight, peak atomic.Int64
 	e.adapter.Config.Handler = countingInflight(e.adapter.Config.Handler, &inflight, &peak)
 	errs := make([]error, 2)
 	var wg gosync.WaitGroup
 	for i := range errs {
-		wg.Go(func() { errs[i] = e.run(t, q, false) })
+		wg.Go(func() { errs[i] = e.run(t, runs[i], false) })
 		time.Sleep(50 * time.Millisecond)
 	}
 	wg.Wait()

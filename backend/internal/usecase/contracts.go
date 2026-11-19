@@ -113,7 +113,14 @@ type Intake interface {
 }
 
 // Collector runs the jobs of collection; complete ends the job in the transaction of its result.
+type Webhooks interface {
+	WebhookRoute(context.Context, entity.ID) (entity.WebhookRoute, error)
+	ReceiveWebhook(context.Context, entity.WebhookRoute, entity.WebhookInput, entity.ID) error
+}
+
 type Collector interface {
+	RunWebhook(context.Context, entity.SyncWebhookJob, func(context.Context) error) error
+	RunMR(context.Context, entity.SyncMRJob, string, func(context.Context) error) error
 	RunPage(ctx context.Context, job entity.SyncPageJob, holder string, complete func(context.Context) error) error
 	RunHistory(ctx context.Context, job entity.SyncHistoryJob, holder string, complete func(context.Context) error) error
 	RunReconcile(ctx context.Context, job entity.SyncReconcileJob, holder string, complete func(context.Context) error) error

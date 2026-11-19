@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"github.com/google/uuid"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/handler"
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/middleware"
@@ -48,7 +49,7 @@ func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
 	}
 	api.Use(guard...)
 	api.Use(middleware.LimitBody(_maxBodyBytes))
-	openapi.RegisterHandlersWithOptions(api, strict, openapi.GinServerOptions{ErrorHandler: handler.ParameterError})
+	openapi.RegisterHandlersWithOptions(api, webhookServer{ServerInterface: strict, handler: d.Handler}, openapi.GinServerOptions{ErrorHandler: handler.ParameterError})
 
 	// The contract serves login from the site root; the generated routes also answer under api.
 	login := openapi.ServerInterfaceWrapper{Handler: strict, ErrorHandler: handler.ParameterError}
@@ -56,4 +57,14 @@ func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
 	site.GET("/source-links/callback", login.CompleteSourceLink)
 	site.GET("/o/:org_slug/login", login.StartLogin)
 	site.GET("/o/:org_slug/callback", login.CompleteLogin)
+}
+
+type webhookServer struct {
+	openapi.ServerInterface
+	handler *handler.Handler
+}
+
+// The source signature covers the exact bytes, before JSON binding changes their representation.
+func (s webhookServer) ReceiveWebhook(c *gin.Context, routeID uuid.UUID) {
+	s.handler.ReceiveWebhookHTTP(c, routeID)
 }

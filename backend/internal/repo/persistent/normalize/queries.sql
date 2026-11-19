@@ -384,3 +384,27 @@ SELECT v.* FROM normalize.task_version v
 JOIN normalize.source_object o ON o.organization_id=v.organization_id AND o.id=v.task_id
 WHERE v.organization_id=$1 AND v.area_id=ANY(sqlc.arg(areas)::uuid[])
  AND v.task_key=ANY(sqlc.arg(keys)::text[]) AND v.superseded_seq IS NULL AND o.deleted_at IS NULL ORDER BY v.task_id;
+
+-- name: WebhookTargets :many
+SELECT (k.key->>'object_kind')::text AS object_kind, (k.key->>'native_ns')::text AS input_ns, (k.key->>'native_id')::text AS input_id,
+    COALESCE(mr.native_ns, (k.key->>'native_ns'))::text AS native_ns, COALESCE(mr.native_id, (k.key->>'native_id'))::text AS native_id,
+    COALESCE(v.state, '')::text AS state, COALESCE(area.native_id, (k.key->>'native_ns'))::text AS scope_native_id
+FROM jsonb_array_elements(sqlc.arg(keys)::jsonb) AS k(key)
+LEFT JOIN normalize.source_object obj ON obj.organization_id = sqlc.arg(organization_id) AND obj.instance_id = sqlc.arg(instance_id)
+    AND obj.object_kind = (k.key->>'object_kind') AND obj.native_ns = (k.key->>'native_ns') AND obj.native_id = (k.key->>'native_id') AND obj.deleted_at IS NULL
+LEFT JOIN normalize.ci_run_version run ON run.organization_id = obj.organization_id AND run.run_id = obj.id AND run.superseded_seq IS NULL
+LEFT JOIN normalize.source_object mr ON mr.organization_id = obj.organization_id AND mr.instance_id = obj.instance_id
+    AND mr.id = CASE WHEN obj.object_kind = 'merge_request' THEN obj.id ELSE run.mr_id END AND mr.deleted_at IS NULL
+LEFT JOIN normalize.mr_version v ON v.organization_id = mr.organization_id AND v.mr_id = mr.id AND v.superseded_seq IS NULL
+LEFT JOIN normalize.source_object area ON area.organization_id = obj.organization_id AND area.id = COALESCE(v.area_id, obj.current_area_id);
+
+-- name: CurrentSyncVersions :many
+SELECT obj.object_kind, obj.native_ns, obj.native_id, v.source_revision, v.source_updated_at
+FROM normalize.source_object obj
+JOIN normalize.mr_version v ON v.organization_id = obj.organization_id AND v.mr_id = obj.id AND v.superseded_seq IS NULL
+WHERE obj.organization_id = $1 AND v.area_id = $2 AND obj.native_id = ANY($3::text[]) AND obj.deleted_at IS NULL
+UNION ALL
+SELECT obj.object_kind, obj.native_ns, obj.native_id, v.source_revision, v.source_updated_at
+FROM normalize.source_object obj
+JOIN normalize.ci_run_version v ON v.organization_id = obj.organization_id AND v.run_id = obj.id AND v.superseded_seq IS NULL
+WHERE obj.organization_id = $1 AND v.area_id = $2 AND obj.native_id = ANY($3::text[]) AND obj.deleted_at IS NULL;

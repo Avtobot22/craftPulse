@@ -181,3 +181,17 @@ LEFT JOIN connect.connection_scope s ON s.organization_id = c.organization_id AN
 WHERE c.organization_id = $1 AND c.status <> 'deleted'
 GROUP BY c.id, c.organization_id, i.provider
 ORDER BY c.id;
+
+-- name: GetWebhookRoute :one
+SELECT id, organization_id, connection_id FROM connect.webhook_route WHERE id = $1 AND revoked_at IS NULL;
+
+-- name: WebhookRoutes :many
+SELECT id, connection_id FROM connect.webhook_route
+WHERE organization_id = $1 AND connection_id = ANY($2::uuid[]) AND revoked_at IS NULL;
+
+-- name: EnsureWebhookRoute :exec
+INSERT INTO connect.webhook_route (organization_id, connection_id, created_at) VALUES ($1, $2, $3)
+ON CONFLICT (organization_id, connection_id) WHERE revoked_at IS NULL DO NOTHING;
+
+-- name: RevokeWebhookRoutes :exec
+UPDATE connect.webhook_route SET revoked_at = $3 WHERE organization_id = $1 AND connection_id = $2 AND revoked_at IS NULL;

@@ -96,7 +96,7 @@ func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEn
 	require.NoError(t, err)
 	normalizer, err := newNormalize(e.app, sharedStore(t), intake, orgs, rights, e.clock)
 	require.NoError(t, err)
-	collection, err := newSync(e.app, uc, intake, normalizer, e.clock, reg)
+	collection, err := newSync(e.app, e.keyring, uc, intake, normalizer, e.clock, reg)
 	require.NoError(t, err)
 	settings, err := newProcess(e.app, orgs, normalizer, e.clock)
 	require.NoError(t, err)
@@ -105,7 +105,7 @@ func newConnectionsEnv(t *testing.T, scenario testadapter.Config) *connectionsEn
 	require.NoError(t, err)
 	views := newView(e.app, viewModules{collection: collection, series: calculator, reports: calculator, instances: uc, rights: rights}, e.clock)
 	modules := apiModules{
-		orgs: orgs, access: rights, connections: uc, intake: intake, sync: collection, operations: views, reports: views,
+		orgs: orgs, access: rights, connections: uc, intake: intake, sync: collection, webhooks: collection, operations: views, reports: views,
 		process: settings, previews: calculator, targets: calculator, links: normalizer,
 	}
 	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, modules)

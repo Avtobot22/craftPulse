@@ -86,6 +86,20 @@ type SyncStatus struct {
 	PausedUntil      *time.Time
 	DataKinds        []SyncDataKindStatus
 	LastReconcile    *ReconcileRun
+	Webhooks         *WebhookStatus
+}
+
+type WebhookRoute struct {
+	ID             ID
+	OrganizationID ID
+	ConnectionID   ID
+}
+
+type WebhookStatus struct {
+	LastReceivedAt   *time.Time
+	RejectedCount    int
+	LastRejectedAt   *time.Time
+	LastRejectReason string
 }
 
 type SyncDataKindStatus struct {
@@ -93,4 +107,15 @@ type SyncDataKindStatus struct {
 	FailedPagePresent bool
 	LagSeconds        *int64
 	AffectedMetrics   []string
+}
+
+type WebhookMRTarget struct {
+	Key           ObjectKey
+	ScopeNativeID string
+	Open          bool
+}
+
+type SyncObjectVersion struct {
+	Revision  string
+	UpdatedAt *time.Time
 }

@@ -217,7 +217,7 @@ func TestConnections_OperationPollHoldsOneConnection(t *testing.T) {
 	one, err := pgxpool.NewWithConfig(t.Context(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(one.Close)
-	collection, err := newSync(one, nil, nil, nil, e.clock, prometheus.NewRegistry())
+	collection, err := newSync(one, e.keyring, nil, nil, nil, e.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
 	views := newView(one, viewModules{collection: collection, rights: e.rights}, e.clock)
 	s := entity.Subject{OrganizationID: e.orgID}
@@ -231,7 +231,7 @@ func TestConnections_OperationPollHoldsOneConnection(t *testing.T) {
 
 	conn, err := newConnect(one, e.keyring, nil, e.clock)
 	require.NoError(t, err)
-	collection, err = newSync(one, conn, nil, nil, e.clock, prometheus.NewRegistry())
+	collection, err = newSync(one, e.keyring, conn, nil, nil, e.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
 	views = newView(one, viewModules{collection: collection, rights: e.rights}, e.clock)
 	next, err := views.RequestSyncRun(ctx, s, entity.ID(id), entity.SyncRunRequest{Kind: entity.SyncReconcile, DataKind: "tasks"})

@@ -301,6 +301,13 @@ func (u *UseCase) applyActivation(ctx context.Context, s entity.Subject, c entit
 	if err := u.d.Repo.ReplaceCapabilities(ctx, org, c.ID, p.Capabilities); err != nil {
 		return err
 	}
+	if slices.ContainsFunc(p.Capabilities, func(v entity.Capability) bool { return v.Name == "webhook" && v.State != entity.CapabilityMissing }) {
+		if err := u.d.Repo.EnsureWebhookRoute(ctx, org, c.ID, now); err != nil {
+			return err
+		}
+	} else if err := u.d.Repo.RevokeWebhookRoutes(ctx, org, c.ID, now); err != nil {
+		return err
+	}
 	base := c.RowVersion
 	c.InstanceID, c.Status, c.AccessLostAt = inst.ID, entity.ConnectionActive, nil
 	c.RowVersion++

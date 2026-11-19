@@ -51,6 +51,8 @@ var _schemas = map[string][]string{
 
 // Connect is the connect module: the connection, its scopes and the one way to call its adapter.
 type Connect interface {
+	WebhookRoute(context.Context, entity.ID) (entity.WebhookRoute, error)
+	ParseWebhook(context.Context, entity.ID, entity.ID, entity.WebhookInput) (entity.WebhookResult, error)
 	State(ctx context.Context, orgID, connectionID entity.ID) (entity.ConnectionState, error)
 	Scopes(ctx context.Context, orgID, connectionID entity.ID) ([]entity.ConnectionScope, error)
 	Fetch(ctx context.Context, orgID, connectionID entity.ID, in entity.FetchInput) (io.ReadCloser, error)
@@ -68,17 +70,26 @@ type Ingest interface {
 
 // Normalize is the normalize module: the current versions a manifest of the source is compared with.
 type Normalize interface {
+	WebhookTargets(context.Context, entity.ID, entity.ID, []entity.ObjectKey) (map[entity.ObjectKey]entity.WebhookMRTarget, error)
+	CurrentSyncVersions(context.Context, entity.ID, entity.ID, []string) (map[entity.ObjectKey]entity.SyncObjectVersion, error)
 	AreaOf(ctx context.Context, orgID, instanceID entity.ID, kind entity.ObjectKind, nativeID string) (entity.ID, error)
 	CurrentTasks(ctx context.Context, orgID, areaID entity.ID, nativeIDs []string) (map[string]entity.TaskVersion, error)
 }
 
 type Metrics interface {
+	WebhookRejected(string, string)
 	CollectionFailed(class string)
 	// Freshness reports the time since the last success and the lag of a data kind; nil is not known yet.
 	Freshness(connectionID, dataKind string, sinceSuccess, lag *time.Duration)
 }
 
+type Keyring interface {
+	SealEnvelope([]byte, []byte) ([]byte, uint32, error)
+	OpenEnvelope([]byte, uint32, []byte) ([]byte, error)
+}
+
 type Deps struct {
+	Keyring   Keyring
 	Repo      repo.SyncRepo
 	Tenants   repo.TenantRepo
 	Connect   Connect
@@ -223,8 +234,18 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 		if err := u.end(ctx, org, conn, holder, complete); err != nil {
 			return err
 		}
+		pending, err := u.d.Repo.PendingRereads(ctx, org, conn)
+		if err != nil {
+			return err
+		}
 		for _, j := range next {
-			if err := u.d.Queue.Enqueue(ctx, j, entity.QueueBulk); err != nil {
+			var err error
+			if pending && j.Kind() == entity.KindSyncPage {
+				err = u.d.Queue.EnqueueAt(ctx, j, entity.QueueBulk, now.Add(_mrDelay))
+			} else {
+				err = u.d.Queue.Enqueue(ctx, j, entity.QueueBulk)
+			}
+			if err != nil {
 				return err
 			}
 		}
@@ -344,6 +365,13 @@ func (u *UseCase) fail(ctx context.Context, job entity.SyncPageJob, st entity.Sy
 		}
 		if f.stop {
 			return nil
+		}
+		pending, err := u.d.Repo.PendingRereads(ctx, org, conn)
+		if err != nil {
+			return err
+		}
+		if yieldUntil := u.d.Clock.Now().Add(_mrDelay); pending && f.at.Before(yieldUntil) {
+			f.at = yieldUntil
 		}
 		return u.d.Queue.EnqueueAt(ctx, retry, entity.QueueBulk, f.at)
 	})

@@ -245,8 +245,9 @@ type Capability struct {
 }
 
 type ConnectionState struct {
-	Connection   Connection
-	Instance     SourceInstance
-	Scopes       []ConnectionScope
-	Capabilities []Capability
+	WebhookRouteID *ID
+	Connection     Connection
+	Instance       SourceInstance
+	Scopes         []ConnectionScope
+	Capabilities   []Capability
 }

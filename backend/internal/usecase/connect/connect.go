@@ -102,6 +102,13 @@ func (u *UseCase) State(ctx context.Context, orgID, connectionID entity.ID) (ent
 		if out.Scopes, err = u.d.Repo.Scopes(ctx, orgID, connectionID); err != nil {
 			return err
 		}
+		routes, err := u.d.Repo.WebhookRoutes(ctx, orgID, []entity.ID{connectionID})
+		if err != nil {
+			return err
+		}
+		if id, ok := routes[connectionID]; ok {
+			out.WebhookRouteID = &id
+		}
 		out.Capabilities, err = u.d.Repo.Capabilities(ctx, orgID, connectionID)
 		return err
 	})
@@ -219,7 +226,7 @@ func (u *UseCase) call(ctx context.Context, orgID, connectionID entity.ID, op en
 // the adapter and are handled during a pause too. An adapter that refuses the version of the connection
 // is tried with the other supported versions.
 func (u *UseCase) invoke(ctx context.Context, c entity.Connection, op entity.AdapterOp, fn func(context.Context, entity.AdapterTarget) error) error {
-	reachesSource := op != entity.OpPutCredentials && op != entity.OpDeleteCredentials
+	reachesSource := op != entity.OpPutCredentials && op != entity.OpDeleteCredentials && op != entity.OpParseWebhook
 	if reachesSource && c.PausedUntil != nil && u.d.Clock.Now().Before(*c.PausedUntil) {
 		return &entity.AdapterError{Class: entity.CallPaused, Code: entity.SourceRateLimited, RetryAt: c.PausedUntil}
 	}
@@ -305,6 +312,10 @@ func logFailure(ctx context.Context, c entity.Connection, op entity.AdapterOp, e
 	ev := zerolog.Ctx(ctx).Warn().Str("connection_id", c.ID.String()).Str("operation", string(op))
 	if ae, ok := errors.AsType[*entity.AdapterError](err); ok {
 		ev = ev.Str("class", string(ae.Class)).Str("reason", ae.Code).Str("contract_version", c.ContractVersion)
+	}
+	if op == entity.OpParseWebhook {
+		ev.Msg("adapter call failed")
+		return
 	}
 	ev.Err(err).Msg("adapter call failed")
 }

@@ -31,6 +31,8 @@ type Deps struct {
 func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &probeWorker{runner: d.Probes})
 	river.AddWorker(w, &packageWorker{packages: d.Packages})
+	river.AddWorker(w, &webhookWorker{collector: d.Collection})
+	river.AddWorker(w, &mrWorker{collector: d.Collection})
 	river.AddWorker(w, &pageWorker{collector: d.Collection})
 	river.AddWorker(w, &historyWorker{collector: d.Collection})
 	river.AddWorker(w, &normalizeWorker{normalizer: d.Normalizer})
@@ -45,7 +47,7 @@ func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &extendWorker{calculator: d.Calculator})
 	river.AddWorker(w, &extendTickWorker{calculator: d.Calculator})
 	river.AddWorker(w, &retentionWorker{retention: d.Retention})
-	return 16
+	return 18
 }
 
 const (
@@ -255,4 +257,22 @@ func snooze(err error) error {
 		return river.JobSnooze(max(time.Until(rl.At), _minSnooze))
 	}
 	return err
+}
+
+type webhookWorker struct {
+	river.WorkerDefaults[entity.SyncWebhookJob]
+	collector usecase.Collector
+}
+
+func (w *webhookWorker) Work(ctx context.Context, job *river.Job[entity.SyncWebhookJob]) error {
+	return snooze(w.collector.RunWebhook(ctx, job.Args, completeIn(job)))
+}
+
+type mrWorker struct {
+	river.WorkerDefaults[entity.SyncMRJob]
+	collector usecase.Collector
+}
+
+func (w *mrWorker) Work(ctx context.Context, job *river.Job[entity.SyncMRJob]) error {
+	return snooze(w.collector.RunMR(ctx, job.Args, holder(job.JobRow), completeIn(job)))
 }

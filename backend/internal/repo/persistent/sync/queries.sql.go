@@ -268,6 +268,28 @@ func (q *Queries) LastReconcile(ctx context.Context, arg LastReconcileParams) (S
 	return i, err
 }
 
+const lastWebhookRejection = `-- name: LastWebhookRejection :one
+SELECT rejected_at, reject_reason FROM sync.webhook_delivery WHERE organization_id = $1 AND connection_id = $2 AND rejected_at IS NOT NULL
+ORDER BY rejected_at DESC, id DESC LIMIT 1
+`
+
+type LastWebhookRejectionParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+}
+
+type LastWebhookRejectionRow struct {
+	RejectedAt   pgtype.Timestamptz
+	RejectReason pgtype.Text
+}
+
+func (q *Queries) LastWebhookRejection(ctx context.Context, arg LastWebhookRejectionParams) (LastWebhookRejectionRow, error) {
+	row := q.db.QueryRow(ctx, lastWebhookRejection, arg.OrganizationID, arg.ConnectionID)
+	var i LastWebhookRejectionRow
+	err := row.Scan(&i.RejectedAt, &i.RejectReason)
+	return i, err
+}
+
 const leaseHeld = `-- name: LeaseHeld :one
 SELECT EXISTS (SELECT 1 FROM sync.lease WHERE organization_id = $1 AND connection_id = $2 AND lease_until >= $3::timestamptz)
 `
@@ -330,6 +352,48 @@ func (q *Queries) ListStates(ctx context.Context, arg ListStatesParams) ([]SyncS
 		return nil, err
 	}
 	return items, nil
+}
+
+const receiveWebhook = `-- name: ReceiveWebhook :one
+INSERT INTO sync.webhook_delivery (organization_id, connection_id, received_at) VALUES ($1, $2, $3) RETURNING id
+`
+
+type ReceiveWebhookParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	ReceivedAt     time.Time
+}
+
+func (q *Queries) ReceiveWebhook(ctx context.Context, arg ReceiveWebhookParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, receiveWebhook, arg.OrganizationID, arg.ConnectionID, arg.ReceivedAt)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const rejectWebhook = `-- name: RejectWebhook :execrows
+UPDATE sync.webhook_delivery SET rejected_at = $3, reject_reason = $4
+WHERE organization_id = $1 AND id = $2 AND rejected_at IS NULL
+`
+
+type RejectWebhookParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	RejectedAt     pgtype.Timestamptz
+	RejectReason   pgtype.Text
+}
+
+func (q *Queries) RejectWebhook(ctx context.Context, arg RejectWebhookParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rejectWebhook,
+		arg.OrganizationID,
+		arg.ID,
+		arg.RejectedAt,
+		arg.RejectReason,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const releaseLease = `-- name: ReleaseLease :exec
@@ -453,4 +517,30 @@ func (q *Queries) StartReconcile(ctx context.Context, arg StartReconcileParams) 
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const webhookStatus = `-- name: WebhookStatus :one
+SELECT received_at AS last_received_at,
+    (SELECT count(*) FROM sync.webhook_delivery r WHERE r.organization_id = d.organization_id AND r.connection_id = d.connection_id
+        AND r.rejected_at >= $3::timestamptz) AS rejected_count
+FROM sync.webhook_delivery d WHERE d.organization_id = $1 AND d.connection_id = $2
+ORDER BY received_at DESC, id DESC LIMIT 1
+`
+
+type WebhookStatusParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	Since          time.Time
+}
+
+type WebhookStatusRow struct {
+	LastReceivedAt time.Time
+	RejectedCount  int64
+}
+
+func (q *Queries) WebhookStatus(ctx context.Context, arg WebhookStatusParams) (WebhookStatusRow, error) {
+	row := q.db.QueryRow(ctx, webhookStatus, arg.OrganizationID, arg.ConnectionID, arg.Since)
+	var i WebhookStatusRow
+	err := row.Scan(&i.LastReceivedAt, &i.RejectedCount)
+	return i, err
 }
