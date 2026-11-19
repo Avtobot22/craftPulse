@@ -15,6 +15,7 @@ const (
 	OpFetch             AdapterOp = "fetch"
 	OpManifest          AdapterOp = "manifest"
 	OpCheckAccess       AdapterOp = "check_access"
+	OpParseWebhook      AdapterOp = "parse_webhook"
 )
 
 // CallClass separates a failure of the adapter from a failure of the source behind it (TZ 10.7).
@@ -166,6 +167,16 @@ type ObjectKey struct {
 	ObjectKind string
 	NativeNS   string
 	NativeID   string
+}
+
+type WebhookInput struct {
+	Headers map[string]string `json:"headers"`
+	Body    []byte            `json:"body"`
+}
+
+type WebhookResult struct {
+	Ignored bool
+	Keys    []ObjectKey
 }
 
 type FetchInput struct {

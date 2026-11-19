@@ -117,6 +117,10 @@ func (u *UseCase) List(ctx context.Context, s entity.Subject, f entity.Connectio
 		if err != nil {
 			return err
 		}
+		routes, err := u.d.Repo.WebhookRoutes(ctx, s.OrganizationID, ids)
+		if err != nil {
+			return err
+		}
 		out.Items = make([]entity.ConnectionState, 0, len(items))
 		for i := range items {
 			c := &items[i]
@@ -124,7 +128,11 @@ func (u *UseCase) List(ctx context.Context, s entity.Subject, f entity.Connectio
 			if err != nil {
 				return err
 			}
-			out.Items = append(out.Items, entity.ConnectionState{Connection: *c, Instance: inst, Scopes: scopes[c.ID], Capabilities: caps[c.ID]})
+			st := entity.ConnectionState{Connection: *c, Instance: inst, Scopes: scopes[c.ID], Capabilities: caps[c.ID]}
+			if id, ok := routes[c.ID]; ok {
+				st.WebhookRouteID = &id
+			}
+			out.Items = append(out.Items, st)
 		}
 		return nil
 	})
@@ -300,6 +308,9 @@ func (u *UseCase) Delete(ctx context.Context, s entity.Subject, id entity.ID) er
 		}
 		now := u.d.Clock.Now()
 		c.Status, c.DeletedAt, c.AccessLostAt = entity.ConnectionDeleted, &now, nil
+		if err := u.d.Repo.RevokeWebhookRoutes(ctx, s.OrganizationID, id, now); err != nil {
+			return err
+		}
 		if err := u.d.Repo.RemoveScopes(ctx, s.OrganizationID, id, now); err != nil {
 			return err
 		}

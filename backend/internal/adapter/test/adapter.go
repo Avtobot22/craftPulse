@@ -205,6 +205,9 @@ func (a *Adapter) Probe(ctx context.Context, call adaptersdk.Call, in adaptersdk
 		}
 		capabilities = append(capabilities, c)
 	}
+	if slices.Contains(cfg.Capabilities, "webhook") {
+		capabilities = append(capabilities, adaptersdk.Capability{Capability: adaptersdk.CapabilityCapabilityWebhook, State: adaptersdk.CapabilityStateVerified, CheckedAt: now})
+	}
 	scopes := make([]adaptersdk.ScopeCheck, 0, len(in.Scopes))
 	for _, s := range in.Scopes {
 		check := adaptersdk.ScopeCheck{Kind: adaptersdk.ScopeCheckKind(s.Kind), NativeScopeId: s.NativeScopeId, State: adaptersdk.ScopeCheckStateVerified}

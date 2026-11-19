@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	OpProbe       = "probe"
-	OpFetch       = "fetch"
-	OpManifest    = "manifest"
-	OpCheckAccess = "check_access"
+	OpProbe        = "probe"
+	OpFetch        = "fetch"
+	OpManifest     = "manifest"
+	OpCheckAccess  = "check_access"
+	OpParseWebhook = "parse_webhook"
 )
 
 // Fault kinds: answers of the source as the core sees them, plus broken streams of Fetch.
@@ -37,7 +38,7 @@ const (
 )
 
 var (
-	_operations = []string{OpProbe, OpFetch, OpManifest, OpCheckAccess}
+	_operations = []string{OpProbe, OpFetch, OpManifest, OpCheckAccess, OpParseWebhook}
 	_kinds      = []string{
 		FaultAuth, FaultPermissionMissing, FaultRateLimited, FaultUnavailable, FaultHang,
 		FaultDropConnection, FaultTruncated, FaultSchemaViolation, FaultPreparing,
@@ -133,7 +134,7 @@ func (c Config) validate() error {
 		errs = append(errs, fmt.Errorf("edition %q is not cloud or unsupported", c.Edition))
 	}
 	for _, capability := range c.Capabilities {
-		if !slices.Contains(_jiraCapabilities, capability) {
+		if !slices.Contains(_jiraCapabilities, capability) && capability != "webhook" {
 			errs = append(errs, fmt.Errorf("capability %q is not one of jiracloud", capability))
 		}
 	}

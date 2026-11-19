@@ -130,6 +130,22 @@ func (q *Queries) DeleteCapabilities(ctx context.Context, arg DeleteCapabilities
 	return err
 }
 
+const ensureWebhookRoute = `-- name: EnsureWebhookRoute :exec
+INSERT INTO connect.webhook_route (organization_id, connection_id, created_at) VALUES ($1, $2, $3)
+ON CONFLICT (organization_id, connection_id) WHERE revoked_at IS NULL DO NOTHING
+`
+
+type EnsureWebhookRouteParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	CreatedAt      time.Time
+}
+
+func (q *Queries) EnsureWebhookRoute(ctx context.Context, arg EnsureWebhookRouteParams) error {
+	_, err := q.db.Exec(ctx, ensureWebhookRoute, arg.OrganizationID, arg.ConnectionID, arg.CreatedAt)
+	return err
+}
+
 const findInstanceByKey = `-- name: FindInstanceByKey :one
 SELECT organization_id, id, provider, instance_key, base_url, edition, source_version, verified_at FROM connect.source_instance
 WHERE organization_id = $1 AND provider = $2 AND instance_key = $3
@@ -317,6 +333,23 @@ func (q *Queries) GetProbe(ctx context.Context, arg GetProbeParams) (ConnectProb
 		&i.Capabilities,
 		&i.ReasonCode,
 	)
+	return i, err
+}
+
+const getWebhookRoute = `-- name: GetWebhookRoute :one
+SELECT id, organization_id, connection_id FROM connect.webhook_route WHERE id = $1 AND revoked_at IS NULL
+`
+
+type GetWebhookRouteRow struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+}
+
+func (q *Queries) GetWebhookRoute(ctx context.Context, id uuid.UUID) (GetWebhookRouteRow, error) {
+	row := q.db.QueryRow(ctx, getWebhookRoute, id)
+	var i GetWebhookRouteRow
+	err := row.Scan(&i.ID, &i.OrganizationID, &i.ConnectionID)
 	return i, err
 }
 
@@ -917,6 +950,21 @@ func (q *Queries) RemoveScope(ctx context.Context, arg RemoveScopeParams) error 
 	return err
 }
 
+const revokeWebhookRoutes = `-- name: RevokeWebhookRoutes :exec
+UPDATE connect.webhook_route SET revoked_at = $3 WHERE organization_id = $1 AND connection_id = $2 AND revoked_at IS NULL
+`
+
+type RevokeWebhookRoutesParams struct {
+	OrganizationID uuid.UUID
+	ConnectionID   uuid.UUID
+	RevokedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) RevokeWebhookRoutes(ctx context.Context, arg RevokeWebhookRoutesParams) error {
+	_, err := q.db.Exec(ctx, revokeWebhookRoutes, arg.OrganizationID, arg.ConnectionID, arg.RevokedAt)
+	return err
+}
+
 const runningProbe = `-- name: RunningProbe :one
 SELECT organization_id, id, connection_id, configuration_version, status, started_at, finished_at, instance_key, edition, source_version, contract_version, access_mode, capabilities, reason_code FROM connect.probe
 WHERE organization_id = $1 AND connection_id = $2 AND status IN ('pending', 'running')
@@ -1191,4 +1239,39 @@ func (q *Queries) VerifyInstance(ctx context.Context, arg VerifyInstanceParams) 
 		arg.ID,
 	)
 	return err
+}
+
+const webhookRoutes = `-- name: WebhookRoutes :many
+SELECT id, connection_id FROM connect.webhook_route
+WHERE organization_id = $1 AND connection_id = ANY($2::uuid[]) AND revoked_at IS NULL
+`
+
+type WebhookRoutesParams struct {
+	OrganizationID uuid.UUID
+	Column2        []uuid.UUID
+}
+
+type WebhookRoutesRow struct {
+	ID           uuid.UUID
+	ConnectionID uuid.UUID
+}
+
+func (q *Queries) WebhookRoutes(ctx context.Context, arg WebhookRoutesParams) ([]WebhookRoutesRow, error) {
+	rows, err := q.db.Query(ctx, webhookRoutes, arg.OrganizationID, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WebhookRoutesRow
+	for rows.Next() {
+		var i WebhookRoutesRow
+		if err := rows.Scan(&i.ID, &i.ConnectionID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

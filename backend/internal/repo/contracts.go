@@ -163,6 +163,10 @@ type UploadTokenRepo interface {
 
 // ConnectRepo is the connect schema under row-level security: every call runs in an organization transaction.
 type ConnectRepo interface {
+	WebhookRoute(context.Context, entity.ID) (entity.WebhookRoute, error)
+	WebhookRoutes(context.Context, entity.ID, []entity.ID) (map[entity.ID]entity.ID, error)
+	EnsureWebhookRoute(context.Context, entity.ID, entity.ID, time.Time) error
+	RevokeWebhookRoutes(context.Context, entity.ID, entity.ID, time.Time) error
 	SourceConnections(context.Context, entity.ID) ([]entity.SourceConnection, error)
 	// PurgeProbes deletes up to limit probes finished by before, except the activated ones, and reports how many went.
 	PurgeProbes(ctx context.Context, orgID entity.ID, before time.Time, limit int) (int64, error)
@@ -206,6 +210,7 @@ type AddressChecker interface {
 
 // AdapterClient is the transport of adapter.yaml for connect; every error is *entity.AdapterError.
 type AdapterClient interface {
+	ParseWebhook(context.Context, entity.AdapterTarget, entity.WebhookInput) (entity.WebhookResult, error)
 	AuthorizeURL(context.Context, entity.AdapterTarget, entity.SourceAuthorization) (string, error)
 	PutCredentials(ctx context.Context, t entity.AdapterTarget, in entity.CredentialsInput) error
 	DeleteCredentials(ctx context.Context, t entity.AdapterTarget, f entity.CredentialsFilter) error

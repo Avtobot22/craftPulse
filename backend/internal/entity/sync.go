@@ -88,6 +88,12 @@ type SyncStatus struct {
 	LastReconcile    *ReconcileRun
 }
 
+type WebhookRoute struct {
+	ID             ID
+	OrganizationID ID
+	ConnectionID   ID
+}
+
 type SyncDataKindStatus struct {
 	SyncState
 	FailedPagePresent bool
