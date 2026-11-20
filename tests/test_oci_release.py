@@ -58,6 +58,30 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, "versions disagree"):
             release.metadata(self.root, images)
 
+    def test_go_profile_versions_match_image_recipe_and_rules_are_hashed(self):
+        directory = self.root / release.GO_PROFILE
+        directory.mkdir(parents=True)
+        tools = {"golangci-lint": "2.15.0", "lizard": "1.25.0", "jscpd": "5.4.2"}
+        release.write_json(directory / "profile.json", {"profile_id": "go-default", "tools": tools})
+        (directory / "golangci.yml").write_text('version: "2"\n')
+        (directory / "jscpd.json").write_text("{}\n")
+        (directory / "lizard-requirements.txt").write_text("lizard==1.25.0 --hash=sha256:" + "0" * 64 + "\n")
+        recipe = ("ARG GOLANGCI_LINT_VERSION=2.15.0\n"
+                  "ADD https://registry.npmjs.org/jscpd-linux-x64-musl/-/jscpd-linux-x64-musl-5.4.2.tgz /jscpd.tgz\n"
+                  "ADD https://registry.npmjs.org/jscpd-linux-arm64-musl/-/jscpd-linux-arm64-musl-5.4.2.tgz /jscpd.tgz\n")
+        (self.root / "backend/ci.Dockerfile").write_text(recipe)
+        images = release.plan(self.root)
+        self.assertIn({"name": "craftpulse-ci-go-default", "context": "backend", "dockerfile": "backend/ci.Dockerfile",
+                       "target": "go-default"}, images)
+        metadata = release.metadata(self.root, images)
+        self.assertEqual(metadata["ci_tool_versions"], tools)
+        original = metadata["rule_hashes"]["go-default"]
+        (directory / "golangci.yml").write_text('version: "2"\nlinters: {default: none}\n')
+        self.assertNotEqual(release.metadata(self.root, images)["rule_hashes"]["go-default"], original)
+        (self.root / "backend/ci.Dockerfile").write_text(recipe.replace("arm64-musl-5.4.2", "arm64-musl-5.4.1"))
+        with self.assertRaisesRegex(release.ReleaseError, "versions disagree"):
+            release.metadata(self.root, images)
+
     def test_core_and_adapter_versions_come_from_distinct_migrations(self):
         metadata = release.metadata(self.root, release.plan(self.root))
         self.assertEqual(metadata["core_schema_version"], 19)

@@ -101,6 +101,20 @@ func scanSemantics(m *ScanManifestV1) string {
 				return at + ".skipped_targets: unsafe path"
 			}
 		}
+		if r.ExcludedTargets != nil {
+			for _, target := range *r.ExcludedTargets {
+				if !safePath(target.Path) {
+					return at + ".excluded_targets: unsafe path"
+				}
+			}
+		}
+		if r.TestTargets != nil {
+			for _, target := range *r.TestTargets {
+				if !safePath(target) {
+					return at + ".test_targets: unsafe path"
+				}
+			}
+		}
 		for j := range r.Reports {
 			report := &r.Reports[j]
 			if !strings.HasPrefix(report.File.Path, FilesDir) || !safePath(report.File.Path) || paths[report.File.Path] {

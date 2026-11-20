@@ -241,6 +241,19 @@ func TestCIManifest_RejectsWholePackageAndWritesNothing(t *testing.T) {
 		{"timeout complete", "timeout", envelope.ReasonInvalidScanManifest, func(f map[string][]byte) {
 			mutateJSON(t, f, envelope.ScanManifestName, func(v map[string]any) { firstTool(v)["completeness"] = "complete" })
 		}},
+		{"unsafe excluded path", "gitlab-builtin", envelope.ReasonInvalidScanManifest, func(f map[string][]byte) {
+			mutateJSON(t, f, envelope.ScanManifestName, func(v map[string]any) {
+				firstTool(v)["excluded_targets"] = []any{map[string]any{"path": "../vendor", "reason": "vendor"}}
+			})
+		}},
+		{"unknown exclusion reason", "gitlab-builtin", envelope.ReasonInvalidScanManifest, func(f map[string][]byte) {
+			mutateJSON(t, f, envelope.ScanManifestName, func(v map[string]any) {
+				firstTool(v)["excluded_targets"] = []any{map[string]any{"path": "vendor", "reason": "slow"}}
+			})
+		}},
+		{"unsafe test path", "gitlab-builtin", envelope.ReasonInvalidScanManifest, func(f map[string][]byte) {
+			mutateJSON(t, f, envelope.ScanManifestName, func(v map[string]any) { firstTool(v)["test_targets"] = []any{"/etc/a_test.go"} })
+		}},
 		{"secret value field", "gitlab-builtin", envelope.ReasonInvalidScanManifest, func(f map[string][]byte) {
 			mutateJSON(t, f, envelope.ScanManifestName, func(v map[string]any) { firstTool(v)["secret_value"] = "SENSITIVE-TEST-VALUE" })
 		}},
@@ -466,4 +479,21 @@ func TestCIManifest_OptionalReportProvenanceAndEquivalentTimes(t *testing.T) {
 		require.Nil(t, res.Envelope)
 		require.Zero(t, res.Rejected())
 	}
+}
+
+func TestScanManifest_ExcludedScopeKeepsRunComplete(t *testing.T) {
+	t.Parallel()
+	data := ciArchive(t, "gitlab-builtin", func(f map[string][]byte) {
+		mutateJSON(t, f, envelope.ScanManifestName, func(v map[string]any) {
+			tool := firstTool(v)
+			require.Equal(t, "complete", tool["completeness"])
+			tool["excluded_targets"] = []any{
+				map[string]any{"path": "vendor", "reason": "vendor"}, map[string]any{"path": "api/api.gen.go", "reason": "generated"},
+			}
+			tool["test_targets"] = []any{"api/api_test.go"}
+		})
+	})
+	res := check(data)
+	require.Nil(t, res.Envelope)
+	require.Zero(t, res.Rejected())
 }

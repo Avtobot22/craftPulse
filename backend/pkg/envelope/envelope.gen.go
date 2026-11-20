@@ -689,8 +689,10 @@ const (
 	ReportFileV1ReportFormatGitleaksJson      ReportFileV1ReportFormat = "gitleaks_json"
 	ReportFileV1ReportFormatGolangciJson      ReportFileV1ReportFormat = "golangci_json"
 	ReportFileV1ReportFormatJacoco            ReportFileV1ReportFormat = "jacoco"
+	ReportFileV1ReportFormatJscpdJson         ReportFileV1ReportFormat = "jscpd_json"
 	ReportFileV1ReportFormatJunitXml          ReportFileV1ReportFormat = "junit_xml"
 	ReportFileV1ReportFormatLcov              ReportFileV1ReportFormat = "lcov"
+	ReportFileV1ReportFormatLizardCsv         ReportFileV1ReportFormat = "lizard_csv"
 	ReportFileV1ReportFormatSarif             ReportFileV1ReportFormat = "sarif"
 	ReportFileV1ReportFormatSpectralJson      ReportFileV1ReportFormat = "spectral_json"
 )
@@ -714,9 +716,13 @@ func (e ReportFileV1ReportFormat) Valid() bool {
 		return true
 	case ReportFileV1ReportFormatJacoco:
 		return true
+	case ReportFileV1ReportFormatJscpdJson:
+		return true
 	case ReportFileV1ReportFormatJunitXml:
 		return true
 	case ReportFileV1ReportFormatLcov:
+		return true
+	case ReportFileV1ReportFormatLizardCsv:
 		return true
 	case ReportFileV1ReportFormatSarif:
 		return true
@@ -817,6 +823,27 @@ func (e ScanCiCoordinatesProvider) Valid() bool {
 	}
 }
 
+// Defines values for ScanExcludedTargetReason.
+const (
+	ScanExcludedTargetReasonBuild     ScanExcludedTargetReason = "build"
+	ScanExcludedTargetReasonGenerated ScanExcludedTargetReason = "generated"
+	ScanExcludedTargetReasonVendor    ScanExcludedTargetReason = "vendor"
+)
+
+// Valid indicates whether the value is a known member of the ScanExcludedTargetReason enum.
+func (e ScanExcludedTargetReason) Valid() bool {
+	switch e {
+	case ScanExcludedTargetReasonBuild:
+		return true
+	case ScanExcludedTargetReasonGenerated:
+		return true
+	case ScanExcludedTargetReasonVendor:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ScanManifestV1SchemaVersion.
 const (
 	ScanManifestV1SchemaVersionN1 ScanManifestV1SchemaVersion = "1"
@@ -842,8 +869,10 @@ const (
 	ScanReportReportFormatGitleaksJson      ScanReportReportFormat = "gitleaks_json"
 	ScanReportReportFormatGolangciJson      ScanReportReportFormat = "golangci_json"
 	ScanReportReportFormatJacoco            ScanReportReportFormat = "jacoco"
+	ScanReportReportFormatJscpdJson         ScanReportReportFormat = "jscpd_json"
 	ScanReportReportFormatJunitXml          ScanReportReportFormat = "junit_xml"
 	ScanReportReportFormatLcov              ScanReportReportFormat = "lcov"
+	ScanReportReportFormatLizardCsv         ScanReportReportFormat = "lizard_csv"
 	ScanReportReportFormatSarif             ScanReportReportFormat = "sarif"
 	ScanReportReportFormatSpectralJson      ScanReportReportFormat = "spectral_json"
 )
@@ -867,9 +896,13 @@ func (e ScanReportReportFormat) Valid() bool {
 		return true
 	case ScanReportReportFormatJacoco:
 		return true
+	case ScanReportReportFormatJscpdJson:
+		return true
 	case ScanReportReportFormatJunitXml:
 		return true
 	case ScanReportReportFormatLcov:
+		return true
+	case ScanReportReportFormatLizardCsv:
 		return true
 	case ScanReportReportFormatSarif:
 		return true
@@ -1607,6 +1640,15 @@ type ScanComponent struct {
 	PathPrefix string              `json:"path_prefix"`
 }
 
+// ScanExcludedTarget defines model for ScanExcludedTarget.
+type ScanExcludedTarget struct {
+	Path   string                   `json:"path"`
+	Reason ScanExcludedTargetReason `json:"reason"`
+}
+
+// ScanExcludedTargetReason defines model for ScanExcludedTarget.Reason.
+type ScanExcludedTargetReason string
+
 // ScanHistory defines model for ScanHistory.
 type ScanHistory struct {
 	FromSha   string `json:"from_sha"`
@@ -1649,33 +1691,39 @@ type ScanSkippedTargetReason string
 
 // ScanToolRun Происхождение DR-009. null обозначает неизвестное или неприменимое поле; builtin требует profile_id и digest образа. Задан sha или artifact_digest. При failed/timeout/unknown полнота не бывает complete.
 type ScanToolRun struct {
-	ArtifactDigest     *string                 `json:"artifact_digest"`
-	Ci                 *ScanCiCoordinates      `json:"ci"`
-	Completeness       ScanToolRunCompleteness `json:"completeness"`
-	Component          *ScanComponent          `json:"component"`
-	ConfigHash         *string                 `json:"config_hash"`
-	DbPublishedAt      *time.Time              `json:"db_published_at"`
-	DbVersion          *string                 `json:"db_version"`
-	ExitClass          ScanToolRunExitClass    `json:"exit_class"`
-	FinishedAt         time.Time               `json:"finished_at"`
-	History            *ScanHistory            `json:"history"`
-	Id                 string                  `json:"id"`
-	Language           *string                 `json:"language"`
-	Mode               ScanToolRunMode         `json:"mode"`
-	ParserVersion      *string                 `json:"parser_version"`
-	Producer           string                  `json:"producer"`
-	ProducerVersion    string                  `json:"producer_version"`
-	ProfileId          *string                 `json:"profile_id"`
-	ProfileImageDigest *string                 `json:"profile_image_digest"`
-	ReportKind         ScanToolRunReportKind   `json:"report_kind"`
-	Reports            []ScanReport            `json:"reports"`
-	RulesHash          *string                 `json:"rules_hash"`
-	ScannedCount       *int                    `json:"scanned_count"`
-	ScopeHash          string                  `json:"scope_hash"`
-	Sha                *string                 `json:"sha"`
-	SkippedCount       *int                    `json:"skipped_count"`
-	SkippedTargets     []ScanSkippedTarget     `json:"skipped_targets"`
-	StartedAt          time.Time               `json:"started_at"`
+	ArtifactDigest *string                 `json:"artifact_digest"`
+	Ci             *ScanCiCoordinates      `json:"ci"`
+	Completeness   ScanToolRunCompleteness `json:"completeness"`
+	Component      *ScanComponent          `json:"component"`
+	ConfigHash     *string                 `json:"config_hash"`
+	DbPublishedAt  *time.Time              `json:"db_published_at"`
+	DbVersion      *string                 `json:"db_version"`
+
+	// ExcludedTargets Пути, которые область профиля не анализирует (vendor, сгенерированный код, каталоги сборки). Исключение задаёт границу области и не делает запуск неполным, в отличие от skipped_targets.
+	ExcludedTargets    *[]ScanExcludedTarget `json:"excluded_targets,omitempty"`
+	ExitClass          ScanToolRunExitClass  `json:"exit_class"`
+	FinishedAt         time.Time             `json:"finished_at"`
+	History            *ScanHistory          `json:"history"`
+	Id                 string                `json:"id"`
+	Language           *string               `json:"language"`
+	Mode               ScanToolRunMode       `json:"mode"`
+	ParserVersion      *string               `json:"parser_version"`
+	Producer           string                `json:"producer"`
+	ProducerVersion    string                `json:"producer_version"`
+	ProfileId          *string               `json:"profile_id"`
+	ProfileImageDigest *string               `json:"profile_image_digest"`
+	ReportKind         ScanToolRunReportKind `json:"report_kind"`
+	Reports            []ScanReport          `json:"reports"`
+	RulesHash          *string               `json:"rules_hash"`
+	ScannedCount       *int                  `json:"scanned_count"`
+	ScopeHash          string                `json:"scope_hash"`
+	Sha                *string               `json:"sha"`
+	SkippedCount       *int                  `json:"skipped_count"`
+	SkippedTargets     []ScanSkippedTarget   `json:"skipped_targets"`
+	StartedAt          time.Time             `json:"started_at"`
+
+	// TestTargets Проанализированные файлы тестового кода. Показатели production-области считаются без них.
+	TestTargets *[]string `json:"test_targets,omitempty"`
 }
 
 // ScanToolRunCompleteness defines model for ScanToolRun.Completeness.

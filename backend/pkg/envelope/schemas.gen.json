@@ -2390,7 +2390,9 @@
                 "golangci_json",
                 "gitleaks_json",
                 "spectral_json",
-                "docs_json"
+                "docs_json",
+                "lizard_csv",
+                "jscpd_json"
               ]
             }
           },
@@ -3629,6 +3631,66 @@
                 }
               },
               {
+                "name": "excluded_targets",
+                "schema": {
+                  "types": [
+                    "array"
+                  ],
+                  "max_items": 10000,
+                  "items": {
+                    "types": [
+                      "object"
+                    ],
+                    "properties": [
+                      {
+                        "name": "path",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "min_length": 1,
+                          "max_length": 4096
+                        }
+                      },
+                      {
+                        "name": "reason",
+                        "schema": {
+                          "types": [
+                            "string"
+                          ],
+                          "enum": [
+                            "vendor",
+                            "generated",
+                            "build"
+                          ]
+                        }
+                      }
+                    ],
+                    "required": [
+                      "path",
+                      "reason"
+                    ],
+                    "closed": true
+                  }
+                }
+              },
+              {
+                "name": "test_targets",
+                "schema": {
+                  "types": [
+                    "array"
+                  ],
+                  "max_items": 10000,
+                  "items": {
+                    "types": [
+                      "string"
+                    ],
+                    "min_length": 1,
+                    "max_length": 4096
+                  }
+                }
+              },
+              {
                 "name": "history",
                 "schema": {
                   "types": [
@@ -3771,7 +3833,9 @@
                             "golangci_json",
                             "gitleaks_json",
                             "spectral_json",
-                            "docs_json"
+                            "docs_json",
+                            "lizard_csv",
+                            "jscpd_json"
                           ]
                         }
                       },

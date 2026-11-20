@@ -1,0 +1,14 @@
+# vendor, build and the generated file repeat the problem of service.go and stay out of every report.
+# The hidden directory is not source. Test code is analyzed and marked.
+errcheck service.go:7
+errcheck service_test.go:9
+
+function service.go:6 Remove ccn=1 nloc=3
+function service_test.go:8 TestRemove ccn=1 nloc=4
+function testdata/sample.go:4 Sample ccn=1 nloc=3
+
+excluded vendor vendor
+excluded build build
+excluded api.gen.go generated
+test service_test.go
+test testdata/sample.go

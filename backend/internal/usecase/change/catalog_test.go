@@ -18,7 +18,7 @@ func TestParseCatalog_ReadsTheTestCatalog(t *testing.T) {
 	assert.Equal(t, "ghcr.io/avtobot22/craftpulse-ci", c.StepImage)
 	require.Len(t, c.Profiles, 7)
 	assert.Equal(t, entity.CheckModeBuiltin, c.Profiles[0].Mode)
-	assert.Equal(t, map[string]string{"golangci-lint": "2.6.1", "lizard": "1.17.31", "jscpd": "4.0.5"}, c.Profiles[0].ToolVersions)
+	assert.Equal(t, map[string]string{"golangci-lint": "2.15.0", "lizard": "1.25.0", "jscpd": "5.4.2"}, c.Profiles[0].ToolVersions)
 	assert.Len(t, c.Profiles[0].RulesHash, 32)
 	assert.Equal(t, map[string]string{}, c.Profiles[6].ToolVersions, "an import profile has no tools")
 }

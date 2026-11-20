@@ -26,10 +26,19 @@ const (
 	FixtureExpected  = "expected.txt"
 	// FixtureReportEnv names the file where the profile command writes its SARIF report.
 	FixtureReportEnv = "CRAFTPULSE_REPORT"
+	// FixtureFunctionsEnv, FixtureClonesEnv and FixtureScopeEnv name the files of a code profile: the
+	// Lizard CSV of functions, the jscpd JSON of copies and the scope of the run.
+	FixtureFunctionsEnv = "CRAFTPULSE_FUNCTIONS_REPORT"
+	FixtureClonesEnv    = "CRAFTPULSE_CLONES_REPORT"
+	FixtureScopeEnv     = "CRAFTPULSE_SCOPE_REPORT"
 )
 
 var (
-	_expectedLine = regexp.MustCompile(`^(\S+) (\S+):([1-9]\d*)$`)
+	_expectedLine     = regexp.MustCompile(`^(\S+) (\S+):([1-9]\d*)$`)
+	_expectedFunction = regexp.MustCompile(`^function (\S+):([1-9]\d*) (\S+) ccn=(\d+) nloc=(\d+)$`)
+	_expectedClone    = regexp.MustCompile(`^clone (\S+):([1-9]\d*)-([1-9]\d*) (\S+):([1-9]\d*)-([1-9]\d*)$`)
+	_expectedTest     = regexp.MustCompile(`^test (\S+)$`)
+	_expectedExcluded = regexp.MustCompile(`^excluded (\S+) (vendor|generated|build)$`)
 
 	// ErrFixturesFailed is returned when a fixture case gives other findings than it expects.
 	ErrFixturesFailed = errors.New("rule fixtures do not match")
@@ -44,18 +53,36 @@ type Finding struct {
 
 func (f Finding) String() string { return f.Rule + " " + f.File + ":" + strconv.Itoa(f.Line) }
 
-// FixtureResult compares one case: findings it expects and does not get, and findings it gets unexpectedly.
+// FixtureResult compares one case: findings and facts it expects and does not get, and those it gets
+// unexpectedly.
 type FixtureResult struct {
 	Case    string
 	Found   int
-	Missing []Finding
-	Extra   []Finding
+	Missing []string
+	Extra   []string
+}
+
+// fixtureReport is a report of a code profile that a case compares in full when the command writes it.
+type fixtureReport struct {
+	env   string
+	file  string
+	kinds []string
+	read  func(io.Reader) ([]string, error)
+}
+
+var _fixtureReports = []fixtureReport{
+	{env: FixtureFunctionsEnv, file: "functions.csv", kinds: []string{"function"}, read: functionFacts},
+	{env: FixtureClonesEnv, file: "clones.json", kinds: []string{"clone"}, read: cloneFacts},
+	{env: FixtureScopeEnv, file: "scope.json", kinds: []string{"test", "excluded"}, read: scopeFacts},
 }
 
 // Fixtures runs a profile command on the cases of a profile fixture directory. Each case is a
 // subdirectory with the checked code in src/ and expected.txt, one finding per line as
 // "<rule> <path>:<line>", with the path relative to src/ and # starting a comment. The command runs in
-// src/ and writes a SARIF report to the file named by CRAFTPULSE_REPORT.
+// src/ and writes a SARIF report to the file named by CRAFTPULSE_REPORT. A code profile also writes the
+// functions, copies and scope reports; each one written is compared in full with the expected lines
+// "function <path>:<line> <name> ccn=<n> nloc=<n>", "clone <path>:<start>-<end> <path>:<start>-<end>",
+// "test <path>" and "excluded <path> <reason>".
 type Fixtures struct {
 	Dir     string
 	Command []string
@@ -94,7 +121,7 @@ func (fx *Fixtures) Run(ctx context.Context) ([]FixtureResult, error) {
 
 func (fx *Fixtures) runCase(ctx context.Context, name string) (FixtureResult, error) {
 	dir := filepath.Join(fx.Dir, name)
-	expected, err := readExpected(filepath.Join(dir, FixtureExpected))
+	expected, facts, err := readExpected(filepath.Join(dir, FixtureExpected))
 	if err != nil {
 		return FixtureResult{}, err
 	}
@@ -112,8 +139,13 @@ func (fx *Fixtures) runCase(ctx context.Context, name string) (FixtureResult, er
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, fx.Command[0], fx.Command[1:]...) //nolint:gosec // the profile names its command
 	cmd.Dir, cmd.Stdout, cmd.Stderr = src, fx.Stdout, fx.Stderr
-	cmd.Env = toolEnv(FixtureReportEnv + "=" + report)
+	env := []string{FixtureReportEnv + "=" + report}
+	for _, r := range _fixtureReports {
+		env = append(env, r.env+"="+filepath.Join(out, r.file))
+	}
+	cmd.Env = toolEnv(env...)
 	cmd.WaitDelay = _killGrace
+	ownGroup(cmd)
 	var exit *exec.ExitError
 	if err := cmd.Run(); err != nil && !errors.As(err, &exit) {
 		return FixtureResult{}, fmt.Errorf("run profile command: %w", err)
@@ -129,8 +161,50 @@ func (fx *Fixtures) runCase(ctx context.Context, name string) (FixtureResult, er
 	if err != nil {
 		return FixtureResult{}, err
 	}
-	missing, extra := diff(expected, got)
-	return FixtureResult{Case: name, Found: len(got), Missing: missing, Extra: extra}, nil
+	missing, extra := diff(expected, got, compareFindings)
+	res := FixtureResult{Case: name, Found: len(got), Missing: strs(missing), Extra: strs(extra)}
+	for _, r := range _fixtureReports {
+		want := factsOf(facts, r.kinds)
+		got, written, err := readFacts(filepath.Join(out, r.file), r.read)
+		if err != nil {
+			return FixtureResult{}, err
+		}
+		if !written && len(want) == 0 {
+			continue
+		}
+		missing, extra := diff(want, got, strings.Compare)
+		res.Missing, res.Extra = append(res.Missing, missing...), append(res.Extra, extra...)
+	}
+	return res, nil
+}
+
+func readFacts(name string, read func(io.Reader) ([]string, error)) (facts []string, written bool, err error) {
+	f, err := os.Open(name) //nolint:gosec // the path is inside the report directory of the case
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("open %s: %w", filepath.Base(name), err)
+	}
+	defer f.Close()
+	facts, err = read(f)
+	return facts, true, err
+}
+
+func factsOf(facts map[string][]string, kinds []string) []string {
+	var out []string
+	for _, k := range kinds {
+		out = append(out, facts[k]...)
+	}
+	return out
+}
+
+func strs[T fmt.Stringer](items []T) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, item.String())
+	}
+	return out
 }
 
 // PrintFixtures prints every case and returns ErrFixturesFailed when any case differs.
@@ -144,10 +218,10 @@ func PrintFixtures(w io.Writer, results []FixtureResult) error {
 		failed = true
 		fmt.Fprintf(w, "fixture %s: differs\n", r.Case)
 		for _, f := range r.Missing {
-			fmt.Fprintln(w, "  missing "+f.String())
+			fmt.Fprintln(w, "  missing "+f)
 		}
 		for _, f := range r.Extra {
-			fmt.Fprintln(w, "  extra "+f.String())
+			fmt.Fprintln(w, "  extra "+f)
 		}
 	}
 	if failed {
@@ -156,30 +230,59 @@ func PrintFixtures(w io.Writer, results []FixtureResult) error {
 	return nil
 }
 
-func readExpected(name string) ([]Finding, error) {
+// readExpected reads the findings of a case and its facts by kind, each fact in its canonical form.
+func readExpected(name string) ([]Finding, map[string][]string, error) {
 	f, err := os.Open(name) //nolint:gosec // the path is inside the fixture directory
 	if err != nil {
-		return nil, fmt.Errorf("read expected findings: %w", err)
+		return nil, nil, fmt.Errorf("read expected findings: %w", err)
 	}
 	defer f.Close()
-	var out []Finding
+	var findings []Finding
+	facts := map[string][]string{}
 	sc := bufio.NewScanner(f)
 	for no := 1; sc.Scan(); no++ {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		kind, _, _ := strings.Cut(line, " ")
+		if fact, ok := expectedFact(kind, line); ok {
+			facts[kind] = append(facts[kind], fact)
+			continue
+		}
 		m := _expectedLine.FindStringSubmatch(line)
-		if m == nil {
-			return nil, fmt.Errorf("%s line %d: expected \"<rule> <path>:<line>\"", FixtureExpected, no)
+		if m == nil || slices.ContainsFunc(_fixtureReports, func(r fixtureReport) bool { return slices.Contains(r.kinds, kind) }) {
+			return nil, nil, fmt.Errorf("%s line %d: expected \"<rule> <path>:<line>\" or a fact of a code profile", FixtureExpected, no)
 		}
 		n, _ := strconv.Atoi(m[3]) // the pattern allows only digits
-		out = append(out, Finding{Rule: m[1], File: path.Clean(m[2]), Line: n})
+		findings = append(findings, Finding{Rule: m[1], File: path.Clean(m[2]), Line: n})
 	}
 	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("read expected findings: %w", err)
+		return nil, nil, fmt.Errorf("read expected findings: %w", err)
 	}
-	return out, nil
+	return findings, facts, nil
+}
+
+func expectedFact(kind, line string) (string, bool) {
+	switch kind {
+	case "function":
+		if m := _expectedFunction.FindStringSubmatch(line); m != nil {
+			return functionFact(path.Clean(m[1]), m[2], m[3], m[4], m[5]), true
+		}
+	case "clone":
+		if m := _expectedClone.FindStringSubmatch(line); m != nil {
+			return cloneFact(path.Clean(m[1])+":"+m[2]+"-"+m[3], path.Clean(m[4])+":"+m[5]+"-"+m[6]), true
+		}
+	case "test":
+		if m := _expectedTest.FindStringSubmatch(line); m != nil {
+			return "test " + path.Clean(m[1]), true
+		}
+	case "excluded":
+		if m := _expectedExcluded.FindStringSubmatch(line); m != nil {
+			return "excluded " + path.Clean(m[1]) + " " + m[2], true
+		}
+	}
+	return "", false
 }
 
 type sarifLog struct {
@@ -240,16 +343,16 @@ func relative(uri, root string) string {
 	return path.Clean(filepath.ToSlash(p))
 }
 
-// diff compares the findings as multisets: a finding expected twice must be found twice.
-func diff(expected, got []Finding) (missing, extra []Finding) {
-	count := map[Finding]int{}
+// diff compares two lists as multisets: an item expected twice must be found twice.
+func diff[T comparable](expected, got []T, compare func(a, b T) int) (missing, extra []T) {
+	count := map[T]int{}
 	for _, f := range expected {
 		count[f]++
 	}
 	for _, f := range got {
 		count[f]--
 	}
-	for _, f := range slices.SortedFunc(maps.Keys(count), compareFindings) {
+	for _, f := range slices.SortedFunc(maps.Keys(count), compare) {
 		for n := count[f]; n > 0; n-- {
 			missing = append(missing, f)
 		}

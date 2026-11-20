@@ -1,0 +1,14 @@
+{
+  "profile_id": "go-default",
+  "language": "go",
+  "timeout": "5m",
+  "tools": {
+    "golangci-lint": "2.15.0",
+    "lizard": "1.25.0",
+    "jscpd": "5.4.2"
+  },
+  "functions": {
+    "ccn_threshold": 10,
+    "nloc_threshold": 50
+  }
+}

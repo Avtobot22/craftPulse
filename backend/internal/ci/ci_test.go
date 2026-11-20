@@ -90,7 +90,7 @@ func TestDiff_CountsRepeatedFindings(t *testing.T) {
 	f := Finding{Rule: "G104", File: "main.go", Line: 3}
 	g := Finding{Rule: "G101", File: "config.go", Line: 5}
 
-	missing, extra := diff([]Finding{f, f, g}, []Finding{f, g, g})
+	missing, extra := diff([]Finding{f, f, g}, []Finding{f, g, g}, compareFindings)
 
 	assert.Equal(t, []Finding{f}, missing)
 	assert.Equal(t, []Finding{g}, extra)

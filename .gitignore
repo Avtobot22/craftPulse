@@ -11,6 +11,8 @@
 node_modules/
 dist/
 build/
+# Rule fixtures of code profiles keep a build directory the profile must exclude.
+!backend/internal/ci/profiles/*/fixtures/*/src/build/
 coverage/
 .turbo/
 .next/

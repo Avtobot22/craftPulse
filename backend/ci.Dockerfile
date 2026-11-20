@@ -39,5 +39,50 @@ LABEL org.opencontainers.image.title="craftpulse-ci-gitleaks-default" \
 COPY pkg/secrets/profiles/gitleaks-default/ /opt/craftpulse/profiles/gitleaks-default/
 USER 65532:65532
 
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS golangci-lint
+ENV CGO_ENABLED=0 GOFLAGS=-trimpath GOTOOLCHAIN=local
+ARG GOLANGCI_LINT_VERSION=2.15.0
+ARG TARGETOS
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION} && \
+    mkdir -p /out && cp "$(find /go/bin -name golangci-lint -type f)" /out/golangci-lint
+
+# golangci-lint type-checks the packages with the Go toolchain of the target platform.
+FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS go-toolchain
+
+FROM scratch AS jscpd-amd64
+ADD --checksum=sha256:56215dd2eeb7ce52afb9874e4ba45e3ed2dd67a1b0c98d7d5639b025ba32ae8a \
+    https://registry.npmjs.org/jscpd-linux-x64-musl/-/jscpd-linux-x64-musl-5.4.2.tgz /jscpd.tgz
+
+FROM scratch AS jscpd-arm64
+ADD --checksum=sha256:75bc3fceae4465aa867250558311e0ef55ea76ac3450b85dc25e553af7d090bb \
+    https://registry.npmjs.org/jscpd-linux-arm64-musl/-/jscpd-linux-arm64-musl-5.4.2.tgz /jscpd.tgz
+
+FROM jscpd-${TARGETARCH} AS jscpd
+
+# Code profile of Go: golangci-lint, Lizard and jscpd at the versions of profile.json. The job runs
+# "craftpulse-ci code" and "craftpulse-ci upload"; the analysis needs no network when the module
+# dependencies are in the checkout or the module cache.
+FROM ci-runtime AS go-default
+USER 0
+RUN apk add --no-cache python3
+COPY --from=go-toolchain /usr/local/go /usr/local/go
+COPY --from=golangci-lint /out/golangci-lint /usr/local/bin/golangci-lint
+COPY internal/ci/profiles/go-default/ /opt/craftpulse/profiles/go-default/
+RUN --mount=from=jscpd,target=/mnt/jscpd \
+    tar -xzf /mnt/jscpd/jscpd.tgz -C /tmp package/bin/jscpd && \
+    install -m 0755 /tmp/package/bin/jscpd /usr/local/bin/jscpd && rm -rf /tmp/package && \
+    python3 -m venv /opt/lizard && \
+    /opt/lizard/bin/pip install --no-cache-dir --no-deps --require-hashes --only-binary=:all: \
+      -r /opt/craftpulse/profiles/go-default/lizard-requirements.txt && \
+    ln -s /opt/lizard/bin/lizard /usr/local/bin/lizard
+ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local CGO_ENABLED=0 \
+    GOPATH=/tmp/go GOCACHE=/tmp/go-cache GOLANGCI_LINT_CACHE=/tmp/golangci-lint-cache \
+    CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/go-default
+LABEL org.opencontainers.image.title="craftpulse-ci-go-default" \
+      io.craftpulse.profile="go-default"
+USER 65532:65532
+
 # Keep the default target the base CLI, for existing callers.
 FROM ci-runtime AS ci

@@ -506,7 +506,7 @@ components:
       additionalProperties: false
       properties:
         report_kind: {type: string, enum: [code, sast, sca, secrets, iac, image, junit, coverage, docs, openapi, sonar]}
-        report_format: {type: string, enum: [envelope, sarif, gitlab_security, gitlab_code_quality, junit_xml, lcov, cobertura, jacoco, golangci_json, gitleaks_json, spectral_json, docs_json]}
+        report_format: {type: string, enum: [envelope, sarif, gitlab_security, gitlab_code_quality, junit_xml, lcov, cobertura, jacoco, golangci_json, gitleaks_json, spectral_json, docs_json, lizard_csv, jscpd_json]}
         sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
         artifact_digest: {type: [string, 'null'], maxLength: 255}
         run_native_id: {type: [string, 'null'], maxLength: 255}
@@ -820,6 +820,21 @@ components:
           maxItems: 10000
           items:
             $ref: "#/components/schemas/ScanSkippedTarget"
+        excluded_targets:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: "#/components/schemas/ScanExcludedTarget"
+          description: Пути, которые область профиля не анализирует (vendor, сгенерированный код, каталоги сборки).
+            Исключение задаёт границу области и не делает запуск неполным, в отличие от skipped_targets.
+        test_targets:
+          type: array
+          maxItems: 10000
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
+          description: Проанализированные файлы тестового кода. Показатели production-области считаются без них.
         history:
           oneOf:
             - $ref: "#/components/schemas/ScanHistory"
@@ -941,6 +956,24 @@ components:
             - history_truncated
             - not_applicable
 
+    ScanExcludedTarget:
+      type: object
+      required:
+        - path
+        - reason
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        reason:
+          type: string
+          enum:
+            - vendor
+            - generated
+            - build
+
     ScanHistory:
       type: object
       required:
@@ -997,6 +1030,8 @@ components:
             - gitleaks_json
             - spectral_json
             - docs_json
+            - lizard_csv
+            - jscpd_json
         format_version:
           type: string
           minLength: 1

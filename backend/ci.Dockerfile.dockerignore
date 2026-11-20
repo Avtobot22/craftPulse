@@ -6,3 +6,4 @@
 !pkg/
 **/*_test.go
 **/testdata/
+!internal/ci/profiles/**

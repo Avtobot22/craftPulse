@@ -1,0 +1,23 @@
+version: "2"
+
+run:
+  tests: true
+  relative-path-mode: wd
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  exclusions:
+    generated: strict
+    paths:
+      - (^|/)vendor/
+      - (^|/)build/
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
