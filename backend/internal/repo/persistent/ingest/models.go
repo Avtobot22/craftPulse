@@ -26,29 +26,31 @@ type IngestConflict struct {
 }
 
 type IngestReceipt struct {
-	OrganizationID   uuid.UUID
-	ID               uuid.UUID
-	Channel          string
-	ConnectionID     uuid.NullUUID
-	ScopeID          uuid.NullUUID
-	ProjectID        uuid.NullUUID
-	UploadTokenID    uuid.NullUUID
-	RequestedBy      uuid.NullUUID
-	SourceInstanceID uuid.NullUUID
-	ReceivedAt       time.Time
-	Status           string
-	DuplicateOf      uuid.NullUUID
-	SchemaID         pgtype.Text
-	SchemaVersion    pgtype.Text
-	PackageHash      []byte
-	ObjectKey        pgtype.Text
-	QuarantineKey    pgtype.Text
-	RecordCount      int32
-	AcceptedCount    int32
-	RejectedCount    int32
-	ReasonCode       pgtype.Text
-	RepackedAt       pgtype.Timestamptz
-	Manifest         []byte
+	OrganizationID     uuid.UUID
+	ID                 uuid.UUID
+	Channel            string
+	ConnectionID       uuid.NullUUID
+	ScopeID            uuid.NullUUID
+	ProjectID          uuid.NullUUID
+	UploadTokenID      uuid.NullUUID
+	RequestedBy        uuid.NullUUID
+	SourceInstanceID   uuid.NullUUID
+	ReceivedAt         time.Time
+	Status             string
+	DuplicateOf        uuid.NullUUID
+	SchemaID           pgtype.Text
+	SchemaVersion      pgtype.Text
+	PackageHash        []byte
+	ObjectKey          pgtype.Text
+	QuarantineKey      pgtype.Text
+	RecordCount        int32
+	AcceptedCount      int32
+	RejectedCount      int32
+	ReasonCode         pgtype.Text
+	RepackedAt         pgtype.Timestamptz
+	Manifest           []byte
+	RedactionCount     int64
+	RedactionRulesHash string
 }
 
 type IngestRecord struct {

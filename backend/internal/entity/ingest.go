@@ -72,9 +72,11 @@ type Receipt struct {
 	AcceptedCount    int
 	RejectedCount    int
 	// ReplayCount and ConflictCount are counted from the records when a receipt is read.
-	ReplayCount   int
-	ConflictCount int
-	ReasonCode    string
+	ReplayCount        int
+	ConflictCount      int
+	ReasonCode         string
+	RedactionCount     int64
+	RedactionRulesHash string
 	// Manifest is the manifest of the package as JSON; nil when the package has none that reads.
 	Manifest []byte
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
+	"github.com/Avtobot22/craftPulse/backend/pkg/secrets"
 )
 
 const _classSnapshot = "snapshot"
@@ -41,11 +42,12 @@ func (u *UseCase) RecordPage(ctx context.Context, p *entity.PreparedPackage) (en
 
 func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, r io.Reader) (*entity.PreparedPackage, error) {
 	var cleaned bytes.Buffer
-	res, err := envelope.Clean(r, u.d.Limits, &cleaned)
+	res, err := u.clean(ctx, r, &cleaned)
 	if err != nil {
 		return nil, err
 	}
 	p := &entity.PreparedPackage{Receipt: rc}
+	p.Receipt.RedactionCount, p.Receipt.RedactionRulesHash = res.Redactions, secrets.RulesHash()
 	p.Receipt.RecordCount = len(res.Records)
 	if err := describe(&p.Receipt, res.Manifest); err != nil {
 		return nil, err
@@ -227,6 +229,7 @@ func (u *UseCase) record(ctx context.Context, p *entity.PreparedPackage) (entity
 			return entity.Receipt{}, err
 		}
 	}
+	u.d.Metrics.SecretsRedacted(rc.Channel, rc.RedactionCount)
 	return rc, nil
 }
 

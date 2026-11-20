@@ -24,6 +24,7 @@ import (
 
 	"github.com/Avtobot22/craftPulse/backend/internal/ci/ciapi"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
+	"github.com/Avtobot22/craftPulse/backend/pkg/secrets"
 )
 
 func fixtureMarker() string {
@@ -89,7 +90,7 @@ func TestSecrets_HeadDiffCleanRemovedAndFingerprint(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, history.Head)
 	require.NotEmpty(t, history.Diff)
-	safe, err := history.Scrubber.Scrub(nil, []byte(fixtureMarker()))
+	safe, err := history.Scrubber.Redact([]byte(fixtureMarker()))
 	require.NoError(t, err)
 	assert.NotContains(t, string(safe), fixtureMarker())
 }
@@ -117,7 +118,7 @@ func TestSecrets_ScrubEscapedReportsAndAllPackageEntries(t *testing.T) {
 		escaped.WriteString("&#" + strconv.Itoa(int(c)) + ";")
 	}
 	junit := []byte(`<testsuite name="` + marker + `"><testcase><failure>` + escaped.String() + ` fragment ` + marker[7:15] + `</failure></testcase></testsuite>`)
-	safe, err := s.Scrubber.Scrub(nil, junit)
+	safe, err := s.Scrubber.Redact(junit)
 	require.NoError(t, err)
 	var document any
 	assert.NoError(t, xml.Unmarshal(safe, &document))
@@ -126,7 +127,7 @@ func TestSecrets_ScrubEscapedReportsAndAllPackageEntries(t *testing.T) {
 	for _, c := range marker {
 		fmt.Fprintf(&escapedJSON, "\\u00%02x", c)
 	}
-	safe, err = s.Scrubber.Scrub(nil, []byte(`{"evidence":"`+escapedJSON.String()+`"}`))
+	safe, err = s.Scrubber.Redact([]byte(`{"evidence":"` + escapedJSON.String() + `"}`))
 	require.NoError(t, err)
 	assert.True(t, json.Valid(safe))
 	assertNoFragments(t, safe, marker)
@@ -210,7 +211,7 @@ func TestSecrets_DiffCannotHideAdditionsAsBinary(t *testing.T) {
 			require.Len(t, scan.Diff, 1)
 			assert.Equal(t, added, scan.Diff[0].Commit)
 			assert.Equal(t, 2, scan.Diff[0].StartLine)
-			safe, err := scan.Scrubber.Scrub(nil, []byte(fixtureMarker()))
+			safe, err := scan.Scrubber.Redact([]byte(fixtureMarker()))
 			require.NoError(t, err)
 			assertNoFragments(t, safe, fixtureMarker())
 		})
@@ -242,11 +243,11 @@ func TestSecrets_RecordRejectsAChangedRange(t *testing.T) {
 }
 
 func TestSecretScrubber_PreservesXMLNamespaces(t *testing.T) {
-	s := NewSecretScrubber(8)
-	s.add(fixtureMarker())
+	s := secrets.NewScrubber(8)
+	s.Add(fixtureMarker())
 	content := []byte(`<testsuite xmlns="urn:fixture" xmlns:x="urn:other"><x:testcase name="` + fixtureMarker() + `"/></testsuite>`)
 	for range 2 {
-		safe, err := s.Scrub(nil, content)
+		safe, err := s.Redact(content)
 		require.NoError(t, err)
 		assertNoFragments(t, safe, fixtureMarker())
 		decoder := xml.NewDecoder(bytes.NewReader(safe))
@@ -269,8 +270,8 @@ func TestSecretScrubber_PreservesXMLNamespaces(t *testing.T) {
 }
 
 func TestSecretScrubber_DecodesUTF8BOMReports(t *testing.T) {
-	s := NewSecretScrubber(8)
-	s.add(fixtureMarker())
+	s := secrets.NewScrubber(8)
+	s.Add(fixtureMarker())
 	var entities, unicode strings.Builder
 	for _, c := range fixtureMarker() {
 		fmt.Fprintf(&entities, "&#%d;", c)
@@ -284,7 +285,7 @@ func TestSecretScrubber_DecodesUTF8BOMReports(t *testing.T) {
 			} else {
 				content = `<failure>` + entities.String() + `</failure>`
 			}
-			safe, err := s.Scrub(nil, append([]byte{0xef, 0xbb, 0xbf}, []byte(content)...))
+			safe, err := s.Redact(append([]byte{0xef, 0xbb, 0xbf}, []byte(content)...))
 			require.NoError(t, err)
 			if format == "json" {
 				var value map[string]string

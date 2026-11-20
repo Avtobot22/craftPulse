@@ -3,9 +3,6 @@ package ci
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	_ "embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,51 +15,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog"
-	"github.com/spf13/viper"
-	"github.com/zricethezav/gitleaks/v8/config"
-	"github.com/zricethezav/gitleaks/v8/detect"
-	"github.com/zricethezav/gitleaks/v8/logging"
-	"github.com/zricethezav/gitleaks/v8/report"
-
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
+	"github.com/Avtobot22/craftPulse/backend/pkg/secrets"
 )
 
 const (
-	SecretsProfileID = "gitleaks-default"
-	GitleaksVersion  = "8.30.1"
+	SecretsProfileID = secrets.ProfileID
+	GitleaksVersion  = secrets.GitleaksVersion
 	_gitOutputLimit  = 32 << 20
 	_scanByteLimit   = 256 << 20
 )
 
-var (
-	//go:embed profiles/gitleaks-default/rules.toml
-	_secretRules string
-	//go:embed profiles/gitleaks-default/profile.json
-	_secretProfile []byte
-	_addedHunk     = regexp.MustCompile(`(?m)^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
-)
-
-func init() {
-	// Gitleaks trace messages can contain rejected secret matches. Never enable its logger.
-	logging.Logger = zerolog.Nop()
-}
-
-// SecretFinding is the entire public finding. Evidence and values never leave the scanner.
-// Field names keep the Gitleaks JSON report format; fingerprint excludes line and commit.
-type SecretFinding struct {
-	RuleID      string `json:"RuleID"`      //nolint:tagliatelle // Gitleaks format
-	File        string `json:"File"`        //nolint:tagliatelle // Gitleaks format
-	StartLine   int    `json:"StartLine"`   //nolint:tagliatelle // Gitleaks format
-	Commit      string `json:"Commit"`      //nolint:tagliatelle // Gitleaks format
-	Fingerprint string `json:"Fingerprint"` //nolint:tagliatelle // Gitleaks format
-}
+var _addedHunk = regexp.MustCompile(`(?m)^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
 
 // SecretScan holds safe findings and an ephemeral scrubber; it must never be serialized.
 type SecretScan struct {
-	Head, Diff            []SecretFinding
+	Head, Diff            []secrets.Finding
 	History               envelope.ScanHistory
-	Scrubber              *SecretScrubber
+	Scrubber              *secrets.Scrubber
 	RulesHash             string
 	Files                 int
 	StartedAt, FinishedAt time.Time
@@ -75,16 +45,14 @@ func ScanSecrets(ctx context.Context, repo, base, head string) (*SecretScan, err
 		return nil, errors.New("secrets scan requires full lowercase commit SHAs")
 	}
 	startedAt := time.Now().UTC()
-	cfg, minFragment, err := secretConfig()
+	detector, err := secrets.New(ctx)
 	if err != nil {
 		return nil, err
 	}
-	d := detect.NewDetectorContext(ctx, cfg)
-	d.IgnoreGitleaksAllow = true
-	s := &SecretScan{Head: []SecretFinding{}, Diff: []SecretFinding{}, Scrubber: NewSecretScrubber(minFragment)}
-	s.RulesHash, s.StartedAt = SecretsRulesHash(), startedAt
+	s := &SecretScan{Head: []secrets.Finding{}, Diff: []secrets.Finding{}, Scrubber: detector.Scrubber}
+	s.RulesHash, s.StartedAt = secrets.RulesHash(), startedAt
 	var total int
-	scan := func(commit, path string) ([]report.Finding, error) {
+	scan := func(commit, path string) ([]secrets.Finding, error) {
 		content, err := secretGit(ctx, repo, "cat-file", "blob", commit+":"+path)
 		if err != nil {
 			return nil, err
@@ -93,11 +61,7 @@ func ScanSecrets(ctx context.Context, repo, base, head string) (*SecretScan, err
 		if total > _scanByteLimit {
 			return nil, errors.New("secrets scan exceeds byte limit")
 		}
-		found := d.DetectContext(ctx, detect.Fragment{Raw: string(content), FilePath: path, CommitSHA: commit, StartLine: 1}) //nolint:staticcheck // pinned v8 API still requires detect.Fragment; sources.Fragment is a distinct type
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		return found, nil
+		return detector.Scan(ctx, content, path, commit)
 	}
 	tree, err := secretGit(ctx, repo, "ls-tree", "-rz", "--full-tree", head)
 	if err != nil {
@@ -119,7 +83,7 @@ func ScanSecrets(ctx context.Context, repo, base, head string) (*SecretScan, err
 			return nil, err
 		}
 		s.Files++
-		s.Head = append(s.Head, s.collect(found)...)
+		s.Head = append(s.Head, found...)
 	}
 	s.History = envelope.ScanHistory{FromSha: head, ToSha: head, Truncated: true}
 	rangeSpec := head
@@ -162,7 +126,7 @@ func ScanSecrets(ctx context.Context, repo, base, head string) (*SecretScan, err
 			if err != nil {
 				return nil, err
 			}
-			var added []report.Finding
+			var added []secrets.Finding
 			for i := range found {
 				f := &found[i]
 				for _, h := range _addedHunk.FindAllSubmatch(patch, -1) {
@@ -177,54 +141,21 @@ func ScanSecrets(ctx context.Context, repo, base, head string) (*SecretScan, err
 					}
 				}
 			}
-			s.Diff = append(s.Diff, s.collect(added)...)
+			s.Diff = append(s.Diff, added...)
 		}
 	}
 	// Paths can themselves contain a detected value; scrub every public string too.
-	for _, findings := range [][]SecretFinding{s.Head, s.Diff} {
+	for _, findings := range [][]secrets.Finding{s.Head, s.Diff} {
 		for i := range findings {
-			findings[i].File = string(s.Scrubber.clean([]byte(findings[i].File)))
+			safe, err := s.Scrubber.Redact([]byte(findings[i].File))
+			if err != nil {
+				return nil, err
+			}
+			findings[i].File = string(safe)
 		}
 	}
 	s.FinishedAt = time.Now().UTC()
 	return s, nil
-}
-
-func secretConfig() (config.Config, int, error) {
-	var policy struct {
-		MinFragmentLength int `json:"min_fragment_length"`
-	}
-	if err := json.Unmarshal(_secretProfile, &policy); err != nil || policy.MinFragmentLength != 8 {
-		return config.Config{}, 0, errors.New("invalid secrets policy")
-	}
-	v := viper.New()
-	v.SetConfigType("toml")
-	if err := v.ReadConfig(strings.NewReader(config.DefaultConfig + "\n" + _secretRules)); err != nil {
-		return config.Config{}, 0, errors.New("invalid secrets rules")
-	}
-	var vc config.ViperConfig
-	if err := v.Unmarshal(&vc); err != nil {
-		return config.Config{}, 0, errors.New("invalid secrets rules")
-	}
-	cfg, err := vc.Translate()
-	if err != nil {
-		return config.Config{}, 0, errors.New("invalid secrets rules")
-	}
-	return cfg, policy.MinFragmentLength, nil
-}
-
-func (s *SecretScan) collect(found []report.Finding) []SecretFinding {
-	out := make([]SecretFinding, 0, len(found))
-	for i := range found {
-		f := &found[i]
-		s.Scrubber.add(f.Secret)
-		secretHash := sha256.Sum256([]byte(f.Secret))
-		// Hash components independently to avoid delimiter ambiguity; no plaintext is in the identity.
-		identity, _ := json.Marshal([]string{f.RuleID, f.File, hex.EncodeToString(secretHash[:])})
-		fingerprint := sha256.Sum256(identity)
-		out = append(out, SecretFinding{f.RuleID, f.File, f.StartLine, f.Commit, hex.EncodeToString(fingerprint[:])})
-	}
-	return out
 }
 
 type cappedBuffer struct{ bytes.Buffer }
@@ -257,7 +188,7 @@ func (s *SecretScan) Record(r *Runner, component string) error {
 	r.Store.Scrubber = s.Scrubber
 	for _, scope := range []struct {
 		name     string
-		findings []SecretFinding
+		findings []secrets.Finding
 		history  envelope.ScanHistory
 	}{
 		{"head", s.Head, envelope.ScanHistory{FromSha: r.Job.SHA, ToSha: r.Job.SHA}}, {"diff", s.Diff, s.History},
@@ -321,10 +252,4 @@ func (s *SecretScan) Record(r *Runner, component string) error {
 		}
 	}
 	return nil
-}
-
-// SecretsRulesHash identifies pinned upstream defaults, local rules and the scrubbing policy.
-func SecretsRulesHash() string {
-	sum := sha256.Sum256([]byte(GitleaksVersion + "\n" + _secretRules + string(_secretProfile)))
-	return hex.EncodeToString(sum[:])
 }

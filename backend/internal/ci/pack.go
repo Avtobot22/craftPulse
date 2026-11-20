@@ -19,13 +19,13 @@ var ErrNoRuns = errors.New("no tool runs recorded in this job: run a tool or imp
 
 // Scrubber removes the values of secrets from a report before it is packed (BR-017).
 type Scrubber interface {
-	Scrub(report *envelope.ScanReport, content []byte) ([]byte, error)
+	Redact(content []byte) ([]byte, error)
 }
 
 // KeepContent passes reports unchanged when the secrets profile is not active.
 type KeepContent struct{}
 
-func (KeepContent) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, error) { return content, nil }
+func (KeepContent) Redact(content []byte) ([]byte, error) { return content, nil }
 
 // Package is a checked package of the job ready for upload.
 type Package struct {
@@ -132,7 +132,7 @@ func (p *Packer) prepare(report *envelope.ScanReport) (packedFile, error) {
 	if scrubber == nil {
 		scrubber = KeepContent{}
 	}
-	content, err = scrubber.Scrub(report, content)
+	content, err = scrubber.Redact(content)
 	if err != nil {
 		return packedFile{}, fmt.Errorf("remove secret values from %s: %w", report.File.Path, err)
 	}
@@ -219,7 +219,7 @@ func scrubMetadata(scrubber Scrubber, value any) error {
 	if err != nil {
 		return err
 	}
-	data, err = scrubber.Scrub(nil, data)
+	data, err = scrubber.Redact(data)
 	if err != nil {
 		return err
 	}

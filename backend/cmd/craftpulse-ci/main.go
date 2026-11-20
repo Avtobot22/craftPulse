@@ -23,6 +23,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
+	"github.com/Avtobot22/craftPulse/backend/pkg/secrets"
 )
 
 // Exit codes. Findings in an accepted package are not a failure of the step.
@@ -55,7 +56,7 @@ type app struct {
 }
 
 func execute(ctx context.Context, args []string, stdout, stderr io.Writer, getenv func(string) string, cfg ci.ClientConfig) int {
-	secrets := []string{getenv(ci.TokenEnv)}
+	redactedValues := []string{getenv(ci.TokenEnv)}
 	var secretScan *ci.SecretScan
 	var out, errs bytes.Buffer
 	originalOut, originalErr := stdout, stderr
@@ -85,14 +86,14 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer, geten
 				to   io.Writer
 				data []byte
 			}{{originalOut, out.Bytes()}, {originalErr, errs.Bytes()}} {
-				safe, err := secretScan.Scrubber.Scrub(nil, pair.data)
+				safe, err := secretScan.Scrubber.Redact(pair.data)
 				if err == nil {
 					_, _ = pair.to.Write(safe)
 				}
 			}
 		}()
 	}
-	a := &app{secretScan: secretScan, stdout: logger.Redact(stdout, secrets), stderr: logger.Redact(stderr, secrets), getenv: getenv, client: cfg}
+	a := &app{secretScan: secretScan, stdout: logger.Redact(stdout, redactedValues), stderr: logger.Redact(stderr, redactedValues), getenv: getenv, client: cfg}
 	root := a.root() //nolint:contextcheck // commands take the context from cmd.Context()
 	root.SetArgs(args)
 	root.SetOut(a.stdout)
@@ -457,7 +458,7 @@ func (a *app) secretsInfoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "secrets-info", Short: "print the pinned secrets profile identity", Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			return json.NewEncoder(a.stdout).Encode(map[string]any{"profile_id": ci.SecretsProfileID, "gitleaks_version": ci.GitleaksVersion, "rules_hash": ci.SecretsRulesHash()})
+			return json.NewEncoder(a.stdout).Encode(map[string]any{"profile_id": ci.SecretsProfileID, "gitleaks_version": ci.GitleaksVersion, "rules_hash": secrets.RulesHash()})
 		},
 	}
 }

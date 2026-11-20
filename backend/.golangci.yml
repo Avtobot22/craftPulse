@@ -150,9 +150,7 @@ linters:
             - "github.com/google/uuid$"
             - "github.com/oapi-codegen/runtime"
             - "github.com/stretchr/testify/"
-            - "github.com/rs/zerolog$"
-            - "github.com/spf13/viper$"
-            - "github.com/zricethezav/gitleaks/v8/"
+            - "github.com/Avtobot22/craftPulse/backend/pkg/secrets$"
         usecase-unknown-module:
           files: ["**/internal/usecase/**", "!**/internal/usecase/{org,install,auth,access,audit,connect,sync,ingest,normalize,link,process,calc,change,decision,docs,outbound,view,survey}/**"]
           deny:

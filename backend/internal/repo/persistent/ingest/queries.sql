@@ -1,17 +1,18 @@
 -- name: SaveReceipt :exec
 INSERT INTO ingest.receipt (organization_id, id, channel, connection_id, scope_id, project_id, upload_token_id, requested_by,
     source_instance_id, received_at, status, duplicate_of, schema_id, schema_version, package_hash, object_key, quarantine_key,
-    record_count, accepted_count, rejected_count, reason_code, manifest)
+    record_count, accepted_count, rejected_count, reason_code, manifest, redaction_count, redaction_rules_hash)
 VALUES (sqlc.arg(organization_id), sqlc.arg(id), sqlc.arg(channel), sqlc.narg(connection_id), sqlc.narg(scope_id),
     sqlc.narg(project_id), sqlc.narg(upload_token_id), sqlc.narg(requested_by), sqlc.narg(source_instance_id),
     sqlc.arg(received_at), sqlc.arg(status), sqlc.narg(duplicate_of), sqlc.narg(schema_id), sqlc.narg(schema_version),
     sqlc.narg(package_hash), sqlc.narg(object_key), sqlc.narg(quarantine_key), sqlc.arg(record_count),
-    sqlc.arg(accepted_count), sqlc.arg(rejected_count), sqlc.narg(reason_code), sqlc.narg(manifest))
+    sqlc.arg(accepted_count), sqlc.arg(rejected_count), sqlc.narg(reason_code), sqlc.narg(manifest), sqlc.arg(redaction_count),sqlc.arg(redaction_rules_hash))
 ON CONFLICT (organization_id, id) DO UPDATE SET
     source_instance_id = EXCLUDED.source_instance_id, status = EXCLUDED.status, duplicate_of = EXCLUDED.duplicate_of,
     schema_id = EXCLUDED.schema_id, schema_version = EXCLUDED.schema_version, package_hash = EXCLUDED.package_hash,
     object_key = EXCLUDED.object_key, record_count = EXCLUDED.record_count, accepted_count = EXCLUDED.accepted_count,
-    rejected_count = EXCLUDED.rejected_count, reason_code = EXCLUDED.reason_code, manifest = EXCLUDED.manifest;
+    rejected_count = EXCLUDED.rejected_count, reason_code = EXCLUDED.reason_code, manifest = EXCLUDED.manifest,
+    redaction_count=EXCLUDED.redaction_count,redaction_rules_hash=EXCLUDED.redaction_rules_hash;
 
 -- name: GetReceipt :one
 SELECT * FROM ingest.receipt WHERE organization_id = $1 AND id = $2;

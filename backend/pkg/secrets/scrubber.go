@@ -1,4 +1,4 @@
-package ci
+package secrets
 
 import (
 	"archive/tar"
@@ -9,24 +9,25 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"maps"
+	"slices"
 	"strings"
-
-	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 )
 
-// SecretScrubber keeps secret fragments only in memory for the duration of one command.
+// Scrubber keeps secret fragments only in memory for the duration of one command.
 // Every eight-byte window is removed, including occurrences in other tools' reports.
-type SecretScrubber struct {
-	min     int
-	windows map[uint64]struct{}
-	short   []string
+type Scrubber struct {
+	min          int
+	windows      map[uint64]struct{}
+	short        []string
+	replacements int64
 }
 
-func NewSecretScrubber(minLength int) *SecretScrubber {
-	return &SecretScrubber{min: minLength, windows: map[uint64]struct{}{}}
+func NewScrubber(minLength int) *Scrubber {
+	return &Scrubber{min: minLength, windows: map[uint64]struct{}{}}
 }
 
-func (s *SecretScrubber) add(value string) {
+func (s *Scrubber) Add(value string) {
 	if value == "" {
 		return
 	}
@@ -39,7 +40,7 @@ func (s *SecretScrubber) add(value string) {
 	}
 }
 
-func (s *SecretScrubber) clean(data []byte) []byte {
+func (s *Scrubber) replace(data []byte) (sanitized []byte, replacements int64) {
 	mask := make([]bool, len(data))
 	for i := 0; i+8 <= len(data); i++ {
 		if _, ok := s.windows[binary.LittleEndian.Uint64(data[i:i+8])]; ok {
@@ -62,6 +63,7 @@ func (s *SecretScrubber) clean(data []byte) []byte {
 		}
 	}
 	var out bytes.Buffer
+	var count int64
 	for i := 0; i < len(data); {
 		if !mask[i] {
 			out.WriteByte(data[i])
@@ -69,20 +71,36 @@ func (s *SecretScrubber) clean(data []byte) []byte {
 			continue
 		}
 		out.WriteString("[!]")
+		count++
 		for i < len(data) && mask[i] {
 			i++
 		}
 	}
-	return out.Bytes()
+	return out.Bytes(), count
 }
-func (s *SecretScrubber) contains(data []byte) bool { return !bytes.Equal(data, s.clean(data)) }
+
+func (s *Scrubber) clean(data []byte) []byte {
+	out, count := s.replace(data)
+	s.replacements += count
+	return out
+}
+
+func (s *Scrubber) contains(data []byte) bool {
+	out, _ := s.replace(data)
+	return !bytes.Equal(data, out)
+}
+func (s *Scrubber) Replacements() int64 { return s.replacements }
+func (s *Scrubber) HasValues() bool     { return len(s.windows) > 0 || len(s.short) > 0 }
 
 // Scrub decodes text strings before redaction so JSON/XML escaping cannot preserve a value.
 // It preserves the report syntax, then checks the serialized text again.
-func (s *SecretScrubber) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, error) {
+func (s *Scrubber) Redact(content []byte) ([]byte, error) {
 	// UTF-8 BOMs are common in JUnit from Windows runners; do not let them bypass parsing.
 	content = bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
 	data := content
+	if !s.HasValues() {
+		return data, nil
+	}
 	if json.Valid(content) {
 		var value any
 		decoder := json.NewDecoder(bytes.NewReader(content))
@@ -95,6 +113,15 @@ func (s *SecretScrubber) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, 
 		decoder := xml.NewDecoder(bytes.NewReader(content))
 		var out bytes.Buffer
 		encoder := xml.NewEncoder(&out)
+		var text bytes.Buffer
+		flush := func() error {
+			if text.Len() == 0 {
+				return nil
+			}
+			err := encoder.EncodeToken(xml.CharData(s.clean(text.Bytes())))
+			text.Reset()
+			return err
+		}
 		for {
 			token, err := decoder.RawToken()
 			if errors.Is(err, io.EOF) {
@@ -103,9 +130,16 @@ func (s *SecretScrubber) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, 
 			if err != nil {
 				return nil, errors.New("cannot decode XML for secret redaction")
 			}
+			if value, ok := token.(xml.CharData); ok {
+				text.Write(value)
+				continue
+			}
+			if _, isComment := token.(xml.Comment); !isComment {
+				if err := flush(); err != nil {
+					return nil, errors.New("cannot encode redacted XML text")
+				}
+			}
 			switch v := token.(type) {
-			case xml.CharData:
-				token = xml.CharData(s.clean(v))
 			case xml.Comment:
 				token = xml.Comment(s.clean(v))
 			case xml.Directive:
@@ -129,6 +163,9 @@ func (s *SecretScrubber) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, 
 				return nil, errors.New("cannot encode redacted XML")
 			}
 		}
+		if err := flush(); err != nil {
+			return nil, errors.New("cannot finish redacted XML text")
+		}
 		if err := encoder.Close(); err != nil {
 			return nil, errors.New("cannot finish redacted XML")
 		}
@@ -143,7 +180,7 @@ func (s *SecretScrubber) Scrub(_ *envelope.ScanReport, content []byte) ([]byte, 
 	return data, nil
 }
 
-func (s *SecretScrubber) xmlName(n xml.Name) xml.Name {
+func (s *Scrubber) xmlName(n xml.Name) xml.Name {
 	n.Space = string(s.clean([]byte(n.Space)))
 	n.Local = string(s.clean([]byte(n.Local)))
 	// RawToken preserves namespace prefixes, including declarations and QName attribute values.
@@ -155,7 +192,7 @@ func (s *SecretScrubber) xmlName(n xml.Name) xml.Name {
 	return n
 }
 
-func (s *SecretScrubber) jsonValue(v any) any {
+func (s *Scrubber) jsonValue(v any) any {
 	switch x := v.(type) {
 	case string:
 		return string(s.clean([]byte(x)))
@@ -165,8 +202,8 @@ func (s *SecretScrubber) jsonValue(v any) any {
 		}
 	case map[string]any:
 		out := make(map[string]any, len(x))
-		for k, v := range x {
-			out[string(s.clean([]byte(k)))] = s.jsonValue(v)
+		for _, k := range slices.Sorted(maps.Keys(x)) {
+			out[string(s.clean([]byte(k)))] = s.jsonValue(x[k])
 		}
 		return out
 	}
@@ -174,7 +211,7 @@ func (s *SecretScrubber) jsonValue(v any) any {
 }
 
 // VerifyPackage checks every uncompressed entry, including metadata and archive paths, before upload.
-func (s *SecretScrubber) VerifyPackage(data []byte) error {
+func (s *Scrubber) VerifyPackage(data []byte) error {
 	gz, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return err
@@ -196,9 +233,13 @@ func (s *SecretScrubber) VerifyPackage(data []byte) error {
 		if s.contains([]byte(header.Name)) || s.contains(content) {
 			return errors.New("package contains secret fragments")
 		}
-		safe, err := s.Scrub(nil, content)
+		before := s.Replacements()
+		safe, err := s.Redact(content)
 		if err != nil {
 			return err
+		}
+		if s.Replacements() != before {
+			return errors.New("package contains escaped secret fragments")
 		}
 		// Escaped representations must be safe too; serialization alone need not be byte identical.
 		if json.Valid(content) {
