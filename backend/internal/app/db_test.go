@@ -58,8 +58,9 @@ func runWithPostgres(m *testing.M) int {
 		postgres.WithInitScripts("../../../deploy/postgres/init.sh"),
 		testcontainers.WithFiles(files...),
 		testcontainers.WithEnv(env),
-		// Parallel tests hold pools of their own databases at once.
-		testcontainers.WithCmdArgs("-c", "max_connections=500"),
+		// Parallel tests hold pools of their own databases at once. A test database is thrown away, so
+		// commits do not wait for the disk.
+		testcontainers.WithCmdArgs("-c", "max_connections=500", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"),
 		postgres.BasicWaitStrategies(),
 	)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -76,10 +77,25 @@ func sharedStore(t *testing.T) *objstore.Store {
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
+		if err == nil {
+			err = waitWritable(ctx, admin, _seaweedCfg.Bucket, time.Now().Add(time.Minute))
+		}
 		_seaweedErr = err
 	})
 	require.NoError(t, _seaweedErr)
 	return objstore.New(_seaweedCfg)
+}
+
+// waitWritable puts one object until it succeeds. SeaweedFS takes writes only once its lock ring forms,
+// seconds after the bucket; until then a put waits and may fail with 500, which parallel tests would meet.
+func waitWritable(ctx context.Context, client *s3.Client, bucket string, deadline time.Time) error {
+	for {
+		_, err := client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucket), Key: aws.String("ready"), Body: strings.NewReader("ready")})
+		if err == nil || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 type ingestEnv struct {

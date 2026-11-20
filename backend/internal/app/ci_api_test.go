@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -18,11 +19,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
@@ -32,8 +29,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	httpctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/http"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -366,25 +361,13 @@ func TestCIUpload_LimitsAndInvalidManifest(t *testing.T) {
 }
 
 func TestCIUpload_ObjectStoreUnavailable(t *testing.T) {
-	// Stop a dedicated SeaweedFS so parallel intake tests keep their own store.
-	c, err := testcontainers.Run(t.Context(), "chrislusf/seaweedfs:4.53",
-		testcontainers.WithCmd("server", "-s3", "-dir=/data"), testcontainers.WithExposedPorts("8333/tcp"),
-		testcontainers.WithWaitStrategy(wait.ForListeningPort("8333/tcp").WithStartupTimeout(time.Minute)))
+	// A store at a port nobody listens on is unavailable; parallel intake tests keep their own store.
+	l, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, c.Terminate(context.Background())) })
-	endpoint, err := c.PortEndpoint(t.Context(), "8333/tcp", "http")
-	require.NoError(t, err)
-	client := s3.New(s3.Options{
-		BaseEndpoint: aws.String(endpoint), Region: "us-east-1", UsePathStyle: true,
-		Credentials: credentials.NewStaticCredentialsProvider("test", "test", ""),
-	})
-	require.Eventually(t, func() bool {
-		_, err := client.CreateBucket(t.Context(), &s3.CreateBucketInput{Bucket: aws.String("ci-packages")})
-		return err == nil
-	}, 30*time.Second, 200*time.Millisecond)
+	endpoint := "http://" + l.Addr().String()
+	require.NoError(t, l.Close())
 	store := objstore.New(objstore.Config{Endpoint: endpoint, Region: "us-east-1", Bucket: "ci-packages", AccessKeyID: "test", SecretAccessKey: "test"})
 	e := newCIEnvWithStore(t, store)
-	require.NoError(t, c.Stop(t.Context(), nil))
 	out := e.uploadCI(t, e.token.Value, ciPackage(t, nil))
 	require.Equal(t, http.StatusServiceUnavailable, out.Code, out.Body.String())
 	assert.NotEmpty(t, out.Header().Get("Retry-After"))
