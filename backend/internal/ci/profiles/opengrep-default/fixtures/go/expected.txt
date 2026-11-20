@@ -1,0 +1,4 @@
+# Each Go rule has a problem example and a safe one next to it; only the problem gives a finding.
+go-sql-format-string sql.go:9
+go-shell-command shell.go:6
+go-tls-skip-verify tls.go:6

@@ -86,11 +86,12 @@ func (r *Runner) Run(ctx context.Context, t *Tool) (*envelope.ScanToolRun, error
 	return run, nil
 }
 
-// record sets the outcome of the run, attaches the report of a complete run and saves the run.
+// record sets the outcome of the run, attaches the report of a finished run, complete or with skipped targets,
+// and saves the run.
 func (r *Runner) record(run *envelope.ScanToolRun, t *Tool, o toolOutcome) error {
 	run.ExitClass, run.Completeness = o.exit, o.completeness
 	var reports []string
-	if run.Completeness == envelope.ScanToolRunCompletenessComplete {
+	if o.finished() {
 		reports = []string{t.Report}
 		run.Reports = []envelope.ScanReport{{
 			ReportKind: envelope.ScanReportReportKind(t.Kind), ReportFormat: envelope.ScanReportReportFormat(t.Format),
@@ -103,6 +104,16 @@ func (r *Runner) record(run *envelope.ScanToolRun, t *Tool, o toolOutcome) error
 type toolOutcome struct {
 	exit         envelope.ScanToolRunExitClass
 	completeness envelope.ScanToolRunCompleteness
+}
+
+// finished tells whether the tool wrote its report: a run that ran out of time or failed has none.
+func (o toolOutcome) finished() bool {
+	switch o.exit {
+	case envelope.ScanToolRunExitClassSuccess, envelope.ScanToolRunExitClassFindings, envelope.ScanToolRunExitClassPartial:
+		return true
+	case envelope.ScanToolRunExitClassFailed, envelope.ScanToolRunExitClassTimeout, envelope.ScanToolRunExitClassUnknown:
+	}
+	return false
 }
 
 // outcome classifies a tool run: out of time is timeout and partial, a crash or a missing report is

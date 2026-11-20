@@ -1,0 +1,42 @@
+rules:
+  - id: js-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: eval runs code built at run time.
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: new Function(..., $X)
+      - pattern-not: eval("...")
+      - pattern-not: new Function(..., "...")
+    metadata:
+      cwe: ["CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code ('Eval Injection')"]
+      security-severity: "8.8"
+      confidence: MEDIUM
+  - id: js-child-process-shell
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: A shell runs a command built at run time; use execFile with separate arguments.
+    patterns:
+      - pattern-either:
+          - pattern: require("child_process").$F($CMD, ...)
+          - pattern: child_process.$F($CMD, ...)
+      - metavariable-regex:
+          metavariable: $F
+          regex: ^(exec|execSync)$
+      - pattern-not: $X.$F("...", ...)
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"]
+      security-severity: "8.8"
+      confidence: MEDIUM
+  - id: js-inner-html
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: HTML built at run time is assigned to innerHTML; use textContent or sanitize the value.
+    patterns:
+      - pattern: $EL.innerHTML = $X
+      - pattern-not: $EL.innerHTML = "..."
+    metadata:
+      cwe: ["CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"]
+      security-severity: "6.1"
+      confidence: MEDIUM

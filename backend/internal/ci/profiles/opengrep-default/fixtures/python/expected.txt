@@ -1,0 +1,4 @@
+# Each Python rule has a problem example and a safe one next to it; only the problem gives a finding.
+python-subprocess-shell shell.py:5
+python-yaml-unsafe-load config.py:5
+python-eval calc.py:5

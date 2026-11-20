@@ -82,6 +82,28 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, "versions disagree"):
             release.metadata(self.root, images)
 
+    def test_sast_profile_version_rule_hash_and_sources_reach_the_manifest(self):
+        directory = self.root / release.SAST_PROFILE
+        (directory / "rules").mkdir(parents=True)
+        release.write_json(directory / "profile.json", {"profile_id": "opengrep-default", "tools": {"opengrep": "1.33.1"}})
+        sources = [{"id": "go-eval", "file": "rules/go.yaml", "source": "craftPulse", "source_version": "1", "license": "LicenseRef-craftPulse"}]
+        release.write_json(directory / "sources.json", {"rules": sources})
+        (directory / "rules/go.yaml").write_text("rules: []\n")
+        recipe = ("ADD https://github.com/opengrep/opengrep/releases/download/v1.33.1/opengrep_musllinux_x86 /opengrep\n"
+                  "ADD https://github.com/opengrep/opengrep/releases/download/v1.33.1/opengrep_musllinux_aarch64 /opengrep\n")
+        (self.root / "backend/ci.Dockerfile").write_text(recipe)
+        images = release.plan(self.root)
+        self.assertIn("craftpulse-ci-opengrep-default", [image["name"] for image in images])
+        metadata = release.metadata(self.root, images)
+        self.assertEqual(metadata["ci_tool_versions"]["opengrep"], "1.33.1")
+        self.assertEqual(metadata["rule_sources"], {"opengrep-default": sources})
+        original = metadata["rule_hashes"]["opengrep-default"]
+        (directory / "rules/go.yaml").write_text("rules: [{id: go-eval}]\n")
+        self.assertNotEqual(release.metadata(self.root, images)["rule_hashes"]["opengrep-default"], original)
+        (self.root / "backend/ci.Dockerfile").write_text(recipe.replace("v1.33.1/opengrep_musllinux_aarch64", "v1.33.0/opengrep_musllinux_aarch64"))
+        with self.assertRaisesRegex(release.ReleaseError, "Opengrep versions disagree"):
+            release.metadata(self.root, images)
+
     def test_core_and_adapter_versions_come_from_distinct_migrations(self):
         metadata = release.metadata(self.root, release.plan(self.root))
         self.assertEqual(metadata["core_schema_version"], 19)

@@ -1,0 +1,4 @@
+# Each JS/TS rule has a problem example and a safe one next to it; RegExp.exec is not a shell.
+js-eval expr.js:2
+js-child-process-shell archive.ts:4
+js-inner-html render.js:2
