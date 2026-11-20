@@ -24,6 +24,8 @@ LOCAL_DIRS = {
     ".idea", "node_modules", "__pycache__",
 }
 RECORDINGS = {".m4a", ".mp3", ".wav", ".mp4", ".webm", ".flac", ".ogg"}
+# Rule fixtures of CI profiles are the checked input of a profile and keep broken links on purpose.
+FIXTURE_SOURCES = re.compile(r"backend/internal/ci/profiles/[^/]+/fixtures/[^/]+/src/")
 LINK = re.compile(r"!?\[[^\]\n]*\]\(\s*(<[^>]+>|[^\s)]+)(?:\s+[^)]*)?\)")
 
 
@@ -146,7 +148,8 @@ def main():
             except UnicodeError:
                 errors.append(name + ": ожидается UTF-8")
                 continue
-            errors.extend(name + ": " + error for error in link_errors(ROOT, path, content, names))
+            if not FIXTURE_SOURCES.match(name):
+                errors.extend(name + ": " + error for error in link_errors(ROOT, path, content, names))
     if args.event:
         event = json.loads(args.event.read_text(encoding="utf-8"))
         if "pull_request" in event:

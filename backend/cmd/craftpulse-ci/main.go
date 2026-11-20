@@ -129,7 +129,7 @@ refused the package or rejected it whole; 3 - the intake result did not arrive i
 	}
 	root.PersistentFlags().BoolVar(&a.debug, "debug", false, "print every request and answer, without the token")
 	root.PersistentFlags().StringVar(&a.workDir, "work-dir", "", "directory with the state of the job")
-	root.AddCommand(a.versionCmd(), a.profileCmd(), a.runCmd(), a.importCmd(), a.uploadCmd(), a.fixturesCmd(), a.codeCmd(), a.sastCmd(), a.trivyCmd(), a.trivyDBCmd(), a.secretsCmd(), a.secretsInfoCmd())
+	root.AddCommand(a.versionCmd(), a.profileCmd(), a.runCmd(), a.importCmd(), a.uploadCmd(), a.fixturesCmd(), a.codeCmd(), a.sastCmd(), a.trivyCmd(), a.trivyDBCmd(), a.docsCmd(), a.secretsCmd(), a.secretsInfoCmd())
 	return root
 }
 
@@ -452,6 +452,72 @@ CRAFTPULSE_FACTS_REPORT: the command of "craftpulse-ci fixtures".`,
 	fl.StringVar(&cacheDir, "cache-dir", "", "Trivy cache directory with the vulnerability database")
 	fl.StringVar(&component, "component", "", "component ID; all sca and iac rows of the profile by default")
 	fl.DurationVar(&timeout, "timeout", 0, "time limit of the profile on all rows (default from the profile)")
+	fl.BoolVar(&fixture, "fixture", false, "check the current directory for the fixtures command")
+	return cmd
+}
+
+func (a *app) docsCmd() *cobra.Command {
+	var (
+		dir     string
+		timeout time.Duration
+		fixture bool
+	)
+	cmd := &cobra.Command{
+		Use:   "docs",
+		Short: "check the documentation roots of the job with the docs profile of the image",
+		Long: `docs checks every documentation root of the project profile whose kind has a builtin row of the
+profile and records one tool run per root and kind with a SARIF report and a docs_json inventory.
+docs: Markdown is parsed with goldmark; a local link to a file that does not exist with exactly that
+name, or to an anchor no heading of the target makes, is a finding at the line of the link; external
+links are not checked. The inventory lists every Markdown and OpenAPI document of the root with its
+path, the SHA of the job, the content hash, the title and the owner from front matter. openapi:
+Spectral checks the specifications with the ruleset of the profile; a parse or schema error makes a
+specification invalid, other results break a rule. The profile directory defaults to
+CRAFTPULSE_DOCS_PROFILE of the image and the repository to CI_PROJECT_DIR.
+
+With --fixture the profile checks the current directory and writes the files named by CRAFTPULSE_REPORT
+and CRAFTPULSE_FACTS_REPORT: the command of "craftpulse-ci fixtures".`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if dir == "" {
+				dir = a.getenv("CRAFTPULSE_DOCS_PROFILE")
+			}
+			if dir == "" {
+				return errors.New("pass --profile-dir or set CRAFTPULSE_DOCS_PROFILE")
+			}
+			p, err := ci.LoadDocsProfile(dir)
+			if err != nil {
+				return err
+			}
+			if fixture {
+				report, facts := a.getenv(ci.FixtureReportEnv), a.getenv(ci.FixtureFactsEnv)
+				if report == "" || facts == "" {
+					return errors.New("--fixture runs under the fixtures command, which names the report files")
+				}
+				return p.Fixture(cmd.Context(), a.stdout, a.stderr, report, facts)
+			}
+			s, err := a.session(cmd.Context(), false)
+			if err != nil {
+				return err
+			}
+			root := a.getenv("CI_PROJECT_DIR")
+			if root == "" {
+				root = "."
+			}
+			r := &ci.DocsRunner{
+				Runner: &ci.Runner{Job: &s.job, Profile: s.profile, Store: s.store, Stdout: a.stdout, Stderr: a.stderr, Now: time.Now},
+				Docs:   p, Root: root, Timeout: timeout,
+			}
+			runs, err := r.Run(cmd.Context(), ci.DocsRows(s.profile, p.ID), ci.DocsRoots(s.profile))
+			for i := range runs {
+				ci.PrintRun(a.stdout, &runs[i])
+			}
+			return err
+		},
+	}
+	fl := cmd.Flags()
+	fl.StringVar(&dir, "profile-dir", "", "directory of the docs profile")
+	fl.DurationVar(&timeout, "timeout", 0, "time limit of the profile on all roots (default from the profile)")
 	fl.BoolVar(&fixture, "fixture", false, "check the current directory for the fixtures command")
 	return cmd
 }

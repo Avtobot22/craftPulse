@@ -484,6 +484,59 @@ SARIF записывает факты в файл `CRAFTPULSE_FACTS_REPORT`, и 
 craftpulse-ci fixtures /opt/craftpulse/profiles/trivy-default/fixtures -- craftpulse-ci trivy --fixture
 ```
 
+## Профиль Git-документации
+
+`git-markdown-openapi` проверяет корни документации проекта. Job профиля выполняет
+`craftpulse-ci docs`, затем `craftpulse-ci upload`. Корни берутся из `documentation_roots` профиля
+проекта: на каждый корень вида `docs` или `openapi`, для которого у профиля есть строка матрицы,
+пишется запуск `<вид>-<root_id>` с двумя отчётами - SARIF 2.1.0 с находками и `docs_json` с
+инвентарём. Компонент запуска - путь корня. Лимит профиля 5 минут на все корни.
+
+Вид `docs` разбирает Markdown (`.md`, `.markdown`) библиотекой goldmark 1.8.7 внутри
+`craftpulse-ci`, запуск называет её в `parser_version`. Локальная ссылка или картинка, файл
+которой не существует с точно таким именем, даёт находку `missing-file` на строке ссылки. Ссылка,
+отличающаяся от файла только регистром, тоже битая. Находку `missing-file` даёт и путь за пределы
+репозитория. Якорь, которого нет среди заголовков Markdown-цели, даёт `missing-anchor`. Якоря
+строятся по правилу GitHub и GitLab (`anchor_rule: github`): строчные буквы, знаки препинания
+удаляются, пробелы становятся дефисами, повтор заголовка получает `-1`, `-2`. Путь от `/`
+считается от корня репозитория. Внешние ссылки не проверяются и только считаются.
+
+Инвентарь `docs_json` перечисляет каждый Markdown и OpenAPI-документ корня записью `DocumentV1`:
+путь, `version_ref` - SHA коммита job, ID проекта, формат, заголовок (первый `#` или `info.title`)
+и SHA-256 содержимого. Владелец берётся из front matter `owner:` (`owner_front_matter_key`
+профиля), у документа без него `owner` пуст. В инвентаре также записаны счётчики проверенных,
+битых и внешних ссылок, в scan manifest - число проверенных и пропущенных документов. Каталоги
+на `.` не входят в корень, файл больше 5 МиБ пропускается с причиной `limit`. OpenAPI-документ
+распознаётся по ключу `openapi:` или `swagger:` в YAML или JSON.
+
+Вид `openapi` проверяет спецификации корня Spectral 6.17.1 с `spectral.yaml` профиля
+(`extends: ["spectral:oas"]`). Результат с кодом из `spec_errors` (`parser`,
+`unrecognized-format`, `oas2-schema`, `oas3-schema`) делает спецификацию невалидной:
+`spec_valid: false` в `docs_json`. Остальные результаты - нарушения правил валидной спецификации.
+Все результаты попадают в SARIF с кодом Spectral. `rules_hash` - SHA-256 `profile.json` и
+`spectral.yaml`, `config_hash` - SHA-256 `profile.json` для `docs` и `spectral.yaml` для
+`openapi`.
+
+```sh
+docker build --platform linux/amd64 --target git-markdown-openapi -f backend/ci.Dockerfile -t craftpulse-docs:local backend
+python3 scripts/check_docs_profile.py --image craftpulse-docs:local
+```
+
+Spectral ставится `npm ci` по `package-lock.json` профиля без install-скриптов, Node.js берётся из
+Alpine. Выпуск сверяет версию Spectral с lock-файлом, а goldmark - с `backend/go.mod`. Проверка
+образа генерирует набор показа в контейнере Go, клонирует `demo/orders-service` и прогоняет
+профиль на его корне `docs` из 25 документов. Инвентарь сверяется с файлами, их SHA-256 и
+владельцами, находки - с двумя битыми ссылками и невалидной спецификацией набора. Затем проверка
+исправляет якорь в копии и убеждается, что его находка исчезла.
+
+Rule fixtures лежат в `fixtures/` профиля. В `expected.txt` кроме находок `<rule> <path>:<line>`
+перечислены факты инвентаря: `document <path> <формат> owner=<владелец или ->` и
+`spec <path> valid|invalid`.
+
+```sh
+craftpulse-ci fixtures /opt/craftpulse/profiles/git-markdown-openapi/fixtures -- craftpulse-ci docs --fixture
+```
+
 ## Очистка секретов при приёме
 
 Сервер повторно проверяет пакет правилами Gitleaks 8.30.1 из

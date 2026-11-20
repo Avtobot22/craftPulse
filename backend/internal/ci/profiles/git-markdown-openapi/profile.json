@@ -1,0 +1,13 @@
+{
+  "profile_id": "git-markdown-openapi",
+  "timeout": "5m",
+  "tools": {
+    "craftpulse-docs": "1",
+    "goldmark": "1.8.7",
+    "spectral": "6.17.1"
+  },
+  "markdown_extensions": [".md", ".markdown"],
+  "anchor_rule": "github",
+  "owner_front_matter_key": "owner",
+  "spec_errors": ["parser", "unrecognized-format", "oas2-schema", "oas3-schema"]
+}

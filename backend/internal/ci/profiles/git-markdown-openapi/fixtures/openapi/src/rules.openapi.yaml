@@ -1,0 +1,23 @@
+openapi: 3.1.0
+info:
+  title: Rules API
+  version: 1.0.0
+  description: Orders of the shop.
+  contact:
+    name: Orders team
+    email: orders@example.com
+servers:
+  - url: https://api.example.com
+tags:
+  - name: orders
+    description: Orders.
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      summary: List orders
+
+      tags: [orders]
+      responses:
+        '200':
+          description: Orders.
