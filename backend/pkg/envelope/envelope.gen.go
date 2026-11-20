@@ -695,6 +695,7 @@ const (
 	ReportFileV1ReportFormatLizardCsv         ReportFileV1ReportFormat = "lizard_csv"
 	ReportFileV1ReportFormatSarif             ReportFileV1ReportFormat = "sarif"
 	ReportFileV1ReportFormatSpectralJson      ReportFileV1ReportFormat = "spectral_json"
+	ReportFileV1ReportFormatTrivyJson         ReportFileV1ReportFormat = "trivy_json"
 )
 
 // Valid indicates whether the value is a known member of the ReportFileV1ReportFormat enum.
@@ -727,6 +728,8 @@ func (e ReportFileV1ReportFormat) Valid() bool {
 	case ReportFileV1ReportFormatSarif:
 		return true
 	case ReportFileV1ReportFormatSpectralJson:
+		return true
+	case ReportFileV1ReportFormatTrivyJson:
 		return true
 	default:
 		return false
@@ -875,6 +878,7 @@ const (
 	ScanReportReportFormatLizardCsv         ScanReportReportFormat = "lizard_csv"
 	ScanReportReportFormatSarif             ScanReportReportFormat = "sarif"
 	ScanReportReportFormatSpectralJson      ScanReportReportFormat = "spectral_json"
+	ScanReportReportFormatTrivyJson         ScanReportReportFormat = "trivy_json"
 )
 
 // Valid indicates whether the value is a known member of the ScanReportReportFormat enum.
@@ -907,6 +911,8 @@ func (e ScanReportReportFormat) Valid() bool {
 	case ScanReportReportFormatSarif:
 		return true
 	case ScanReportReportFormatSpectralJson:
+		return true
+	case ScanReportReportFormatTrivyJson:
 		return true
 	default:
 		return false

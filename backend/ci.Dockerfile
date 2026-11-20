@@ -150,5 +150,36 @@ LABEL org.opencontainers.image.title="craftpulse-ci-opengrep-default" \
       io.craftpulse.profile="opengrep-default"
 USER 65532:65532
 
+FROM scratch AS trivy-amd64
+ADD --checksum=sha256:bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf \
+    https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz /trivy.tgz
+
+FROM scratch AS trivy-arm64
+ADD --checksum=sha256:ab9d51f86e6a5fb936f605faff6b593ac51bc378fff4d3e8b9d58358b9c367c3 \
+    https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-ARM64.tar.gz /trivy.tgz
+
+FROM trivy-${TARGETARCH} AS trivy-archive
+
+FROM ci-runtime AS trivy-tool
+USER 0
+RUN apk add --no-cache git
+RUN --mount=from=trivy-archive,target=/mnt/trivy tar -xzf /mnt/trivy/trivy.tgz -C /usr/local/bin trivy
+COPY internal/ci/profiles/trivy-default/ /opt/craftpulse/profiles/trivy-default/
+
+# The vulnerability database snapshot of the image, pinned by the digest of its OCI artifact.
+FROM trivy-tool AS trivy-db
+ARG TRIVY_DB_REPOSITORY=ghcr.io/aquasecurity/trivy-db@sha256:5622a5d226f954dec2919250bc79cd1725e339a1c453587c3a6aa3d6daab4a78
+RUN craftpulse-ci trivy-db --cache-dir /opt/craftpulse/trivy --repository "$TRIVY_DB_REPOSITORY"
+
+# SCA and IaC profile: Trivy at the version of profile.json with the database snapshot of the image; the job
+# runs "craftpulse-ci trivy" and "craftpulse-ci upload" without a network. The job user owns the database, so
+# "craftpulse-ci trivy-db" can replace it from an internal mirror.
+FROM trivy-tool AS trivy-default
+COPY --from=trivy-db --chown=65532:65532 /opt/craftpulse/trivy/ /opt/craftpulse/trivy/
+ENV CRAFTPULSE_TRIVY_PROFILE=/opt/craftpulse/profiles/trivy-default CRAFTPULSE_TRIVY_CACHE=/opt/craftpulse/trivy HOME=/tmp
+LABEL org.opencontainers.image.title="craftpulse-ci-trivy-default" \
+      io.craftpulse.profile="trivy-default"
+USER 65532:65532
+
 # Keep the default target the base CLI, for existing callers.
 FROM ci-runtime AS ci

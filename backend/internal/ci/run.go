@@ -236,7 +236,7 @@ func mediaType(format string) string {
 		return "text/csv"
 	case envelope.ScanReportReportFormatEnvelope, envelope.ScanReportReportFormatGitlabSecurity, envelope.ScanReportReportFormatGitlabCodeQuality,
 		envelope.ScanReportReportFormatGolangciJson, envelope.ScanReportReportFormatGitleaksJson, envelope.ScanReportReportFormatSpectralJson,
-		envelope.ScanReportReportFormatDocsJson, envelope.ScanReportReportFormatJscpdJson:
+		envelope.ScanReportReportFormatDocsJson, envelope.ScanReportReportFormatJscpdJson, envelope.ScanReportReportFormatTrivyJson:
 		return "application/json"
 	}
 	return "application/octet-stream"

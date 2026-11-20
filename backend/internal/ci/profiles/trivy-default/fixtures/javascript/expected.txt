@@ -1,0 +1,1 @@
+vulnerability CVE-2021-44906 minimist@1.2.5 package-lock.json

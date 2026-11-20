@@ -1,0 +1,14 @@
+{
+  "profile_id": "trivy-default",
+  "timeout": "5m",
+  "tools": {
+    "trivy": "0.76.2"
+  },
+  "iac_types": ["dockerfile", "kubernetes"],
+  "excluded_dirs": {
+    "vendor": "vendor",
+    "node_modules": "vendor",
+    "build": "build",
+    "dist": "build"
+  }
+}

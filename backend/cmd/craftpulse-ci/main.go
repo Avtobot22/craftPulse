@@ -65,16 +65,9 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer, geten
 		if repo == "" {
 			repo = "."
 		}
-		base := getenv("CI_MERGE_REQUEST_DIFF_BASE_SHA")
-		if base == "" {
-			base = getenv("CI_COMMIT_BEFORE_SHA")
-		}
-		if strings.Trim(base, "0") == "" {
-			base = ""
-		}
 		scanCtx, cancel := context.WithTimeout(ctx, _defaultTimeout)
 		var err error
-		secretScan, err = ci.ScanSecrets(scanCtx, repo, base, getenv("CI_COMMIT_SHA"))
+		secretScan, err = ci.ScanSecrets(scanCtx, repo, baseSHA(getenv), getenv("CI_COMMIT_SHA"))
 		cancel()
 		if err != nil {
 			fmt.Fprintln(stderr, "craftpulse-ci: secrets scan failed; no output or package released")
@@ -136,7 +129,7 @@ refused the package or rejected it whole; 3 - the intake result did not arrive i
 	}
 	root.PersistentFlags().BoolVar(&a.debug, "debug", false, "print every request and answer, without the token")
 	root.PersistentFlags().StringVar(&a.workDir, "work-dir", "", "directory with the state of the job")
-	root.AddCommand(a.versionCmd(), a.profileCmd(), a.runCmd(), a.importCmd(), a.uploadCmd(), a.fixturesCmd(), a.codeCmd(), a.sastCmd(), a.secretsCmd(), a.secretsInfoCmd())
+	root.AddCommand(a.versionCmd(), a.profileCmd(), a.runCmd(), a.importCmd(), a.uploadCmd(), a.fixturesCmd(), a.codeCmd(), a.sastCmd(), a.trivyCmd(), a.trivyDBCmd(), a.secretsCmd(), a.secretsInfoCmd())
 	return root
 }
 
@@ -399,6 +392,129 @@ the command of "craftpulse-ci fixtures".`,
 	fl.DurationVar(&timeout, "timeout", 0, "time limit of the profile on all components (default from the profile)")
 	fl.BoolVar(&fixture, "fixture", false, "check the current directory for the fixtures command")
 	return cmd
+}
+
+func (a *app) trivyCmd() *cobra.Command {
+	var (
+		dir, cacheDir, component string
+		timeout                  time.Duration
+		fixture                  bool
+	)
+	cmd := &cobra.Command{
+		Use:   "trivy",
+		Short: "run the Trivy profile of the image on the sca and iac rows of the job",
+		Long: `trivy runs Trivy with the vulnerability database and checks of the image, without a network, on every
+builtin sca and iac row of its profile and records one tool run per row with the JSON report of Trivy.
+SCA reads the lockfiles of Go, Python and JS/TS and marks the package instances that the lockfiles of
+the base commit (CI_MERGE_REQUEST_DIFF_BASE_SHA or CI_COMMIT_BEFORE_SHA) do not have. The sca run
+records the version of the database and the time it was published; without a database it fails.
+IaC checks the configuration kinds of the profile; the lines of configuration are dropped from the
+report and every misconfiguration names its resource. Trivy reads the configuration and ignore file of
+the profile, never those of the repository. The profile directory defaults to CRAFTPULSE_TRIVY_PROFILE,
+the database to CRAFTPULSE_TRIVY_CACHE of the image and the repository to CI_PROJECT_DIR.
+
+With --fixture the profile checks the current directory and writes its facts to the file named by
+CRAFTPULSE_FACTS_REPORT: the command of "craftpulse-ci fixtures".`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, cache, err := a.trivyProfile(dir, cacheDir)
+			if err != nil {
+				return err
+			}
+			if fixture {
+				facts := a.getenv(ci.FixtureFactsEnv)
+				if facts == "" {
+					return errors.New("--fixture runs under the fixtures command, which names the facts file")
+				}
+				return p.Fixture(cmd.Context(), a.stdout, a.stderr, cache, facts)
+			}
+			s, err := a.session(cmd.Context(), false)
+			if err != nil {
+				return err
+			}
+			root := a.getenv("CI_PROJECT_DIR")
+			if root == "" {
+				root = "."
+			}
+			r := &ci.TrivyRunner{
+				Runner: &ci.Runner{Job: &s.job, Profile: s.profile, Store: s.store, Stdout: a.stdout, Stderr: a.stderr, Now: time.Now},
+				Trivy:  p, Root: root, CacheDir: cache, BaseSHA: baseSHA(a.getenv), Timeout: timeout,
+			}
+			runs, err := r.Run(cmd.Context(), ci.TrivyRows(s.profile, p.ID, component))
+			for i := range runs {
+				ci.PrintRun(a.stdout, &runs[i])
+			}
+			return err
+		},
+	}
+	fl := cmd.Flags()
+	fl.StringVar(&dir, "profile-dir", "", "directory of the Trivy profile")
+	fl.StringVar(&cacheDir, "cache-dir", "", "Trivy cache directory with the vulnerability database")
+	fl.StringVar(&component, "component", "", "component ID; all sca and iac rows of the profile by default")
+	fl.DurationVar(&timeout, "timeout", 0, "time limit of the profile on all rows (default from the profile)")
+	fl.BoolVar(&fixture, "fixture", false, "check the current directory for the fixtures command")
+	return cmd
+}
+
+func (a *app) trivyDBCmd() *cobra.Command {
+	var cacheDir, repository string
+	cmd := &cobra.Command{
+		Use:   "trivy-db",
+		Short: "replace the vulnerability database of the Trivy profile from an OCI repository",
+		Long: `trivy-db downloads the Trivy vulnerability database from the repository (--repository or
+CRAFTPULSE_TRIVY_DB_REPOSITORY): the public ghcr.io/aquasecurity/trivy-db:2 or an internal mirror,
+by tag or digest. The new database replaces the current one only after it is downloaded and checked;
+a failed update keeps the current database and its date and fails the command.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if cacheDir == "" {
+				cacheDir = a.getenv("CRAFTPULSE_TRIVY_CACHE")
+			}
+			if repository == "" {
+				repository = a.getenv("CRAFTPULSE_TRIVY_DB_REPOSITORY")
+			}
+			if cacheDir == "" {
+				return errors.New("pass --cache-dir or set CRAFTPULSE_TRIVY_CACHE")
+			}
+			r := &ci.Runner{Stdout: a.stdout, Stderr: a.stderr, Now: time.Now}
+			db, err := r.UpdateTrivyDB(cmd.Context(), cacheDir, repository)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(a.stdout, "trivy-db %s published %s from %s\n", db.Version, db.PublishedAt.Format(time.RFC3339), db.Repository)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "Trivy cache directory (default CRAFTPULSE_TRIVY_CACHE)")
+	cmd.Flags().StringVar(&repository, "repository", "", "OCI repository of the database (default CRAFTPULSE_TRIVY_DB_REPOSITORY)")
+	return cmd
+}
+
+func (a *app) trivyProfile(dir, cacheDir string) (*ci.TrivyProfile, string, error) {
+	if dir == "" {
+		dir = a.getenv("CRAFTPULSE_TRIVY_PROFILE")
+	}
+	if cacheDir == "" {
+		cacheDir = a.getenv("CRAFTPULSE_TRIVY_CACHE")
+	}
+	if dir == "" || cacheDir == "" {
+		return nil, "", errors.New("pass --profile-dir and --cache-dir or set CRAFTPULSE_TRIVY_PROFILE and CRAFTPULSE_TRIVY_CACHE")
+	}
+	p, err := ci.LoadTrivyProfile(dir)
+	return p, cacheDir, err
+}
+
+// baseSHA is the commit the job compares head with: the merge request base or the previous push, none for a
+// new branch.
+func baseSHA(getenv func(string) string) string {
+	base := getenv("CI_MERGE_REQUEST_DIFF_BASE_SHA")
+	if base == "" {
+		base = getenv("CI_COMMIT_BEFORE_SHA")
+	}
+	if strings.Trim(base, "0") == "" {
+		return ""
+	}
+	return base
 }
 
 func (a *app) codeFixture(ctx context.Context, p *ci.CodeProfile) error {

@@ -419,6 +419,71 @@ Rule fixtures лежат в `fixtures/<язык>/` профиля: для каж
 craftpulse-ci fixtures /opt/craftpulse/profiles/opengrep-default/fixtures -- craftpulse-ci sast --fixture
 ```
 
+## Профиль SCA и IaC Trivy
+
+`trivy-default` проверяет зависимости и конфигурацию Trivy 0.76.2 без сети. Job профиля выполняет
+`craftpulse-ci trivy`, затем `craftpulse-ci upload`. Команда берёт строки `sca` и `iac` профиля
+`trivy-default` и на каждую записывает запуск с нативным JSON Trivy (`trivy_json`, версия схемы 2):
+`trivy-default-sca` и `trivy-default-iac`. Лимит профиля 5 минут на все строки.
+
+SCA читает lockfile Go (`go.mod`), Python (`requirements.txt`, `poetry.lock`, `Pipfile.lock`, `uv.lock`)
+и JS/TS (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`). Отчёт сохраняет пакет, установленную и
+исправленную версии, путь lockfile, advisory и его aliases (`VendorIDs`) и полный список пакетов.
+Запуск SCA пишет в scan manifest `db_version` - версию схемы базы и SHA-256 её содержимого, например
+`2@sha256:5389...`, и `db_published_at` - время публикации снимка из `metadata.json` Trivy. Без базы
+или с несогласованной базой запуск SCA получает `failed` без отчёта, а не пустой результат.
+
+Новые зависимости изменения (S16) отмечаются на runner. Base берётся из
+`CI_MERGE_REQUEST_DIFF_BASE_SHA` или `CI_COMMIT_BEFORE_SHA`: шаг достаёт lockfile отчёта из base-коммита
+через `git show` и сканирует их той же базой. Пакет и его уязвимость получают `"CraftPulseDelta":
+"added"`, если в lockfile base такого пакета не было, и `"changed"`, если была другая версия. Поле
+`CraftPulse` в корне отчёта называет `BaseSHA` и состояние сравнения: `computed`, `no_base` без
+base-коммита или `unavailable`, если base нет в checkout. В последнем случае отчёт SCA остаётся полным,
+отметок нет.
+
+IaC проверяет Dockerfile и манифесты Kubernetes встроенными проверками Trivy этой версии. Виды
+конфигураций записаны в `iac_types` профиля. Terraform не включён: его проверки в Trivy написаны для
+AWS, Azure и GCP. Helm без рендеринга шаблонов не проверяется. `trivyignore` профиля исключает
+KSV-0125: эта проверка доверяет только реестрам публичных облаков и отмечает каждый образ из
+внутреннего реестра. Строки конфигурации (`CauseMetadata.Code`) удаляются из отчёта. Каждая находка
+получает `CauseMetadata.Resource`: Trivy называет ресурс Terraform сам, для Kubernetes записывается
+`<kind>/<name>` объекта, для Dockerfile - `stage <имя или образ>`, для находки о файле целиком - `file`.
+
+Trivy получает `--config` и `--ignorefile` профиля, поэтому `trivy.yaml` и `.trivyignore`
+репозитория не действуют. Обновление базы и проверок отключено. Каталоги `vendor`, `node_modules`,
+`build`, `dist` и каталоги на `.` исключаются и, кроме последних, попадают в `excluded_targets`.
+`rules_hash` - SHA-256 `profile.json`, `trivy.yaml` и `trivyignore`, `config_hash` - SHA-256 `profile.json`.
+
+```sh
+docker build --platform linux/amd64 --target trivy-default -f backend/ci.Dockerfile -t craftpulse-trivy:local backend
+python3 scripts/check_trivy_profile.py --image craftpulse-trivy:local
+```
+
+Бинарники Trivy для amd64 и arm64 скачиваются по SHA-256. Стадия `trivy-db` загружает снимок базы
+командой `craftpulse-ci trivy-db` из `ARG TRIVY_DB_REPOSITORY` -
+`ghcr.io/aquasecurity/trivy-db`, закреплённый digest. База без сжатия занимает около 1,7 ГБ, поэтому
+образ весит около 2 ГБ. Каталог базы `/opt/craftpulse/trivy` принадлежит пользователю job.
+Базу можно заменить из внутреннего источника:
+
+```sh
+craftpulse-ci trivy-db --repository registry.example.ru/mirror/trivy-db:2
+```
+
+Источник задаётся `--repository` или `CRAFTPULSE_TRIVY_DB_REPOSITORY`, каталог -
+`--cache-dir` или `CRAFTPULSE_TRIVY_CACHE`. Новая база скачивается во временный каталог рядом с
+текущей, проверяется и только потом заменяет её. Неудачная загрузка оставляет прежнюю базу и её дату и
+завершает команду с ошибкой.
+
+Rule fixtures лежат в `fixtures/` профиля: lockfile с ожидаемым advisory для Go, Python и JS/TS,
+lockfile без уязвимостей, проблемная и безопасная конфигурация Dockerfile и Kubernetes. Профиль без
+SARIF записывает факты в файл `CRAFTPULSE_FACTS_REPORT`, и `expected.txt` сравнивается с ними целиком:
+`vulnerability <advisory> <пакет>@<версия> <lockfile>` и
+`misconfiguration <проверка> <путь>:<строка> <ресурс>`.
+
+```sh
+craftpulse-ci fixtures /opt/craftpulse/profiles/trivy-default/fixtures -- craftpulse-ci trivy --fixture
+```
+
 ## Очистка секретов при приёме
 
 Сервер повторно проверяет пакет правилами Gitleaks 8.30.1 из

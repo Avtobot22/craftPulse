@@ -2392,7 +2392,8 @@
                 "spectral_json",
                 "docs_json",
                 "lizard_csv",
-                "jscpd_json"
+                "jscpd_json",
+                "trivy_json"
               ]
             }
           },
@@ -3835,7 +3836,8 @@
                             "spectral_json",
                             "docs_json",
                             "lizard_csv",
-                            "jscpd_json"
+                            "jscpd_json",
+                            "trivy_json"
                           ]
                         }
                       },

@@ -1,0 +1,4 @@
+# golang.org/x/text v0.3.7 has three advisories in the database snapshot of the image.
+vulnerability CVE-2022-32149 golang.org/x/text@v0.3.7 go.mod
+vulnerability CVE-2026-56851 golang.org/x/text@v0.3.7 go.mod
+vulnerability CVE-2026-56852 golang.org/x/text@v0.3.7 go.mod

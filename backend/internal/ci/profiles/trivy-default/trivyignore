@@ -1,0 +1,3 @@
+# Checks the profile leaves out. KSV-0125 trusts only public cloud registries and flags every image of an
+# internal registry.
+KSV-0125
