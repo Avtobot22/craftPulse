@@ -362,6 +362,7 @@ type NormalizeRepo interface {
 	InsertDictionaryEntries(ctx context.Context, orgID entity.ID, entries []entity.DictionaryEntry) error
 	Dictionary(ctx context.Context, orgID, areaID entity.ID, kind entity.DictionaryKind) ([]entity.DictionaryEntry, error)
 	AreaInstances(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) (map[entity.ID]entity.ID, error)
+	AreaProvider(ctx context.Context, orgID, areaID entity.ID) (entity.Provider, error)
 	Dictionaries(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.DictionaryEntry, error)
 }
 
