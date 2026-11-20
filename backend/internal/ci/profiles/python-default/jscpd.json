@@ -1,0 +1,6 @@
+{
+  "minLines": 10,
+  "minTokens": 100,
+  "mode": "mild",
+  "format": ["python"]
+}

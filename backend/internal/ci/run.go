@@ -37,6 +37,7 @@ type Tool struct {
 	ConfigFile      string
 	RulesHash       string
 	DBVersion       string
+	ParserVersion   string
 	Command         []string
 	// Dir is the working directory of the command; empty means the directory of the step.
 	Dir string
@@ -149,7 +150,7 @@ func (r *Runner) toolRun(t *Tool, e Entry) (*envelope.ScanToolRun, error) {
 		Id: t.ID, Producer: t.Producer, ProducerVersion: t.ProducerVersion, Mode: envelope.ScanToolRunModeBuiltin,
 		ProfileId: &e.ProfileID, ProfileImageDigest: e.ImageDigest, ReportKind: envelope.ScanToolRunReportKind(t.Kind),
 		Component: &envelope.ScanComponent{Id: &e.ComponentID, PathPrefix: e.PathPrefix}, Language: optional(e.Language),
-		RulesHash: optional(t.RulesHash), DbVersion: optional(t.DBVersion), Sha: &r.Job.SHA, Ci: r.Job.ci(r.Job.JobID),
+		RulesHash: optional(t.RulesHash), DbVersion: optional(t.DBVersion), ParserVersion: optional(t.ParserVersion), Sha: &r.Job.SHA, Ci: r.Job.ci(r.Job.JobID),
 		SkippedTargets: []envelope.ScanSkippedTarget{}, Reports: []envelope.ScanReport{},
 	}
 	if t.ConfigFile != "" {

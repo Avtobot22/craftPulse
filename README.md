@@ -284,60 +284,96 @@ namespace-префиксы XML сохраняются.
 заранее получен командой `profile` или сохранён в состоянии job. Это тот же пакет
 и те же проверки, что при обычной загрузке; HTTP upload и ожидание receipt пропускаются.
 
-## Профиль кода Go
+## Профили кода Go, Python и JS/TS
 
-`go-default` проверяет Go-компоненты тремя инструментами: golangci-lint 2.15.0 даёт
-lint-находки в SARIF 2.1.0, Lizard 1.25.0 - функции с CC и NLOC в CSV, jscpd 5.4.2 -
-пары копий в JSON. Версии, лимит времени 5 минут и пороги C05 и C06 (CC выше 10,
-NLOC выше 50) записаны в `backend/internal/ci/profiles/go-default/profile.json`.
-Рядом лежат `golangci.yml` с линтерами errcheck, govet, ineffassign, staticcheck и unused
-и `jscpd.json` с минимальной копией 10 строк и 100 токенов. `rules_hash` - SHA-256 этих
-трёх файлов подряд, `config_hash` запуска - SHA-256 конфигурации его инструмента.
+Профиль кода проверяет компоненты одного языка тремя инструментами: линтер языка даёт
+lint-находки в SARIF 2.1.0, Lizard 1.26.0 - функции с CC и NLOC в CSV, jscpd 5.4.2 - пары копий
+в JSON. Профили лежат в `backend/internal/ci/profiles/<профиль>/`:
 
-Образ строится целью `go-default` того же Dockerfile поверх базового CLI:
+| Профиль | Язык | Линтер и конфигурация |
+|---|---|---|
+| `go-default` | `go` | golangci-lint 2.15.0, `golangci.yml`: errcheck, govet, ineffassign, staticcheck, unused |
+| `python-default` | `python` | Ruff 0.17.4, `ruff.toml`: F401, F632, F811, F821, F841, B006, B011, B015, B023 |
+| `js-default` | `javascript`, включая TypeScript | ESLint 10.14.0 с typescript-eslint 8.72.2 и TypeScript 6.0.3, `eslint.config.mjs` |
+
+Набор ESLint для `.js`, `.jsx`, `.mjs` и `.cjs`: no-undef, no-unused-vars, no-unreachable,
+no-dupe-keys, no-self-assign, use-isnan, valid-typeof, no-cond-assign. Для `.ts`, `.tsx`, `.mts`
+и `.cts` те же правила ядра без no-undef и no-unused-vars, а также `@typescript-eslint/`
+no-unused-vars, no-duplicate-enum-values, no-misused-new, no-non-null-asserted-optional-chain
+и no-unsafe-declaration-merging. Все правила работают без информации о типах, поэтому tsconfig
+и зависимости проекта не нужны. Версии, лимит времени 5 минут и пороги C05 и C06 (CC выше 10,
+NLOC выше 50) записаны в `profile.json` профиля. `jscpd.json` задаёт минимальную копию
+10 строк и 100 токенов и форматы языка. `rules_hash` - SHA-256 `profile.json`, конфигурации
+линтера и `jscpd.json` подряд, `config_hash` запуска - SHA-256 конфигурации его инструмента.
+У запуска ESLint в `parser_version` записаны версии typescript-eslint и TypeScript.
+
+Образ строится целью с именем профиля поверх базового CLI:
 
 ```sh
-docker build --platform linux/amd64 --target go-default -f backend/ci.Dockerfile -t craftpulse-go-default:local backend
-python3 scripts/check_go_profile.py --image craftpulse-go-default:local
+docker build --platform linux/amd64 --target python-default -f backend/ci.Dockerfile -t craftpulse-python-default:local backend
+python3 scripts/check_code_profile.py --profile python-default --image craftpulse-python-default:local
 ```
 
-golangci-lint собирается из исходников закреплённой версии, Lizard ставится из
-`lizard-requirements.txt` по хэшам, бинарник jscpd скачивается по SHA-256. Выпуск
-сверяет версии `profile.json` с Dockerfile и requirements. Проверка образа идёт без сети:
-версии инструментов, rule fixtures, запуск job на репозитории с vendor, сгенерированным
-файлом и копией кода и запуск с лимитом 1 с.
+golangci-lint собирается из исходников закреплённой версии. Lizard и Ruff ставятся по хэшам из
+requirements профиля, бинарник jscpd скачивается по SHA-256. ESLint и плагины ставятся `npm ci`
+по `package-lock.json` профиля без install-скриптов, Node.js берётся из Alpine. Выпуск сверяет
+версии `profile.json` с Dockerfile, requirements и lock-файлом. Проверка образа идёт без сети:
+версии инструментов, rule fixtures, запуск job на репозитории с каталогами зависимостей и
+сборки, сгенерированным файлом, копией кода и файлом с синтаксической ошибкой, запуск с лимитом
+1 мс. Для Python и JS/TS проверка ещё собирает из
+`backend/internal/ci/testdata/code-projects/<язык>/` репозиторий из двух коммитов, base и head,
+прогоняет профиль на каждом и сверяет SHA в scan manifest и находки с `expected.json`.
 
 Job профиля выполняет `craftpulse-ci code`, затем `craftpulse-ci upload`. Команда берёт
-строки `code` профиля `go-default` из профиля проекта и на каждый компонент записывает
-три запуска с общим лимитом времени: `go-default-golangci-lint`, `go-default-lizard` и
-`go-default-jscpd`. Репозиторий берётся из `CI_PROJECT_DIR`, профиль - из
+строки `code` профиля образа из профиля проекта и на каждый компонент записывает три запуска
+с общим лимитом времени, например `python-default-ruff`, `python-default-lizard` и
+`python-default-jscpd`. Репозиторий берётся из `CI_PROJECT_DIR`, профиль - из
 `CRAFTPULSE_CODE_PROFILE` образа; `--timeout` заменяет лимит профиля, `--component`
 выбирает один компонент. Инструмент, не уложившийся в лимит, даёт `timeout` и `partial`,
 следующие инструменты после истечения лимита не запускаются. Все пути в отчётах
 указаны от корня репозитория.
 
-Каталоги `vendor` и `build`, сгенерированные файлы с отметкой
-`// Code generated ... DO NOT EDIT.` и каталоги на `.` и `_`, которые пропускает go tool,
-не анализируются. Первые три
-попадают в `excluded_targets` запуска с причиной; исключение задаёт границу области и
-не делает запуск неполным. Файлы `_test.go` и каталоги `testdata` анализируются и
-перечислены в `test_targets`, чтобы показатели production-области считались без них.
-golangci-lint запускается в каждом Go-модуле компонента, а для компонента внутри
-модуля - в ближайшем модуле выше с шаблоном пакетов компонента. Отчёт jscpd сохраняет
-файлы, строки и токены копий без фрагмента кода.
+Линтеры получают только конфигурацию профиля. Ruff не читает `pyproject.toml` и `ruff.toml`
+репозитория, не пишет кэш в checkout и ничего не исправляет. ESLint не ищет
+`eslint.config.*` репозитория и загружает только плагины образа, поэтому код и плагины клиента
+не исполняются. Отметки подавления в коде (`# noqa`, `eslint-disable`, `//nolint`) действуют.
+Файл, который линтер не разобрал, перечисляется в `skipped_targets` запуска линтера с
+причиной `unsupported`, его находки не передаются, а запуск получает `partial`. Lizard и
+jscpd разбирают такой файл как обычно. Из вывода Ruff и ESLint в SARIF переносятся правило,
+уровень, сообщение и координаты; исправления, подсказки и исходный текст файла не попадают в отчёт.
 
-Анализу не нужна сеть, если зависимости модуля есть в checkout или кэше модулей. Иначе
+Область анализа задаётся языком. Каталоги на `.` не анализируются и не перечисляются.
+Остальные исключения попадают в `excluded_targets` с причиной: исключение задаёт границу
+области и не делает запуск неполным. Тестовый код анализируется и перечислен в `test_targets`,
+чтобы показатели production-области считались без него.
+
+| Язык | Исключается | Тестовый код |
+|---|---|---|
+| Go | `vendor`, `build`, файлы с отметкой `// Code generated ... DO NOT EDIT.`; каталоги на `_` не анализируются | `_test.go`, каталоги `testdata` |
+| Python | виртуальные окружения (каталог с `pyvenv.cfg`), `site-packages`, `__pypackages__`, `node_modules`, `build`, `dist`, сгенерированные файлы; `__pycache__` не анализируется | `test_*.py`, `*_test.py`, `conftest.py`, каталоги `tests` и `test` |
+| JS/TS | `node_modules`, `bower_components`, `build`, `dist`, `coverage`, `*.min.js`, сгенерированные файлы | `*.test.*`, `*.spec.*`, каталоги `__tests__`, `__mocks__`, `tests` и `test` |
+
+Сгенерированный файл Python и JS/TS отмечен в начальных комментариях словами `DO NOT EDIT`
+или `@generated`. golangci-lint запускается в каждом Go-модуле компонента, а для компонента
+внутри модуля - в ближайшем модуле выше с шаблоном пакетов компонента. Ruff и ESLint получают
+список файлов области от корня репозитория. Отчёт jscpd сохраняет файлы, строки и токены копий
+без фрагмента кода; копии ищутся внутри одного формата, `.js` и `.ts` между собой не сравниваются.
+
+Анализу Go не нужна сеть, если зависимости модуля есть в checkout или кэше модулей. Иначе
 golangci-lint не загрузит пакеты, и запуск получит `failed`. `GOTOOLCHAIN=local`:
-модуль, которому нужна версия Go новее 1.27.4, тоже даёт `failed`.
+модуль, которому нужна версия Go новее 1.27.4, тоже даёт `failed`. Ruff и ESLint
+зависимости проекта не загружают.
 
-Rule fixtures профиля лежат в `backend/internal/ci/profiles/go-default/fixtures/`, каждый
-случай - отдельный Go-модуль. В `expected.txt` кроме находок `<rule> <path>:<line>`
-перечислены функции `function <path>:<line> <name> ccn=<n> nloc=<n>`, копии
-`clone <path>:<start>-<end> <path>:<start>-<end>`, тестовые файлы `test <path>` и
-исключения `excluded <path> <reason>`. Записанный отчёт сравнивается со списком целиком:
+Rule fixtures профиля лежат в `fixtures/` его каталога: на каждое правило линтера проблемный и
+безопасный пример, функция выше порога сложности, длинная функция, копия, область анализа и
+для Python и JS/TS файл с синтаксической ошибкой. В `expected.txt` кроме находок
+`<rule> <path>:<line>` перечислены функции `function <path>:<line> <name> ccn=<n> nloc=<n>`,
+копии `clone <path>:<start>-<end> <path>:<start>-<end>`, тестовые файлы `test <path>`,
+исключения `excluded <path> <reason>` и пропущенные файлы `skipped <path> <reason>`.
+Записанный отчёт сравнивается со списком целиком:
 
 ```sh
-craftpulse-ci fixtures /opt/craftpulse/profiles/go-default/fixtures -- craftpulse-ci code --fixture
+craftpulse-ci fixtures /opt/craftpulse/profiles/python-default/fixtures -- craftpulse-ci code --fixture
 ```
 
 ## Профиль SAST Opengrep

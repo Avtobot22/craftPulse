@@ -1,0 +1,11 @@
+# orders.ts and invoices.ts repeat one function body; unique.ts has no copies.
+
+clone invoices.ts:3-25 orders.ts:3-25
+function invoices.ts:16 (anonymous) ccn=1 nloc=1
+function invoices.ts:16 (anonymous) ccn=1 nloc=1
+function invoices.ts:3 overLimitInvoices ccn=7 nloc=23
+function orders.ts:16 (anonymous) ccn=1 nloc=1
+function orders.ts:16 (anonymous) ccn=1 nloc=1
+function orders.ts:3 overLimitOrders ccn=7 nloc=23
+function unique.ts:1 title ccn=2 nloc=9
+function unique.ts:7 (anonymous) ccn=1 nloc=1

@@ -1,0 +1,12 @@
+{
+  "name": "craftpulse-js-default",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2"
+  }
+}

@@ -59,13 +59,13 @@ class ReleaseTests(unittest.TestCase):
             release.metadata(self.root, images)
 
     def test_go_profile_versions_match_image_recipe_and_rules_are_hashed(self):
-        directory = self.root / release.GO_PROFILE
+        directory = self.root / release.PROFILES / "go-default"
         directory.mkdir(parents=True)
-        tools = {"golangci-lint": "2.15.0", "lizard": "1.25.0", "jscpd": "5.4.2"}
+        tools = {"golangci-lint": "2.15.0", "lizard": "1.26.0", "jscpd": "5.4.2"}
         release.write_json(directory / "profile.json", {"profile_id": "go-default", "tools": tools})
         (directory / "golangci.yml").write_text('version: "2"\n')
         (directory / "jscpd.json").write_text("{}\n")
-        (directory / "lizard-requirements.txt").write_text("lizard==1.25.0 --hash=sha256:" + "0" * 64 + "\n")
+        (directory / "lizard-requirements.txt").write_text("lizard==1.26.0 --hash=sha256:" + "0" * 64 + "\n")
         recipe = ("ARG GOLANGCI_LINT_VERSION=2.15.0\n"
                   "ADD https://registry.npmjs.org/jscpd-linux-x64-musl/-/jscpd-linux-x64-musl-5.4.2.tgz /jscpd.tgz\n"
                   "ADD https://registry.npmjs.org/jscpd-linux-arm64-musl/-/jscpd-linux-arm64-musl-5.4.2.tgz /jscpd.tgz\n")
@@ -80,6 +80,47 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotEqual(release.metadata(self.root, images)["rule_hashes"]["go-default"], original)
         (self.root / "backend/ci.Dockerfile").write_text(recipe.replace("arm64-musl-5.4.2", "arm64-musl-5.4.1"))
         with self.assertRaisesRegex(release.ReleaseError, "versions disagree"):
+            release.metadata(self.root, images)
+
+    def test_python_and_js_profiles_pin_tools_in_requirements_and_lockfile(self):
+        recipe = ("ADD https://registry.npmjs.org/jscpd-linux-x64-musl/-/jscpd-linux-x64-musl-5.4.2.tgz /jscpd.tgz\n"
+                  "ADD https://registry.npmjs.org/jscpd-linux-arm64-musl/-/jscpd-linux-arm64-musl-5.4.2.tgz /jscpd.tgz\n")
+        (self.root / "backend/ci.Dockerfile").write_text(recipe)
+        python = self.root / release.PROFILES / "python-default"
+        python.mkdir(parents=True)
+        release.write_json(python / "profile.json", {"tools": {"ruff": "0.17.4", "lizard": "1.26.0", "jscpd": "5.4.2"}})
+        (python / "ruff.toml").write_text("[lint]\n")
+        (python / "jscpd.json").write_text("{}\n")
+        (python / "requirements.txt").write_text("lizard==1.26.0 --hash=sha256:" + "0" * 64 + "\n"
+                                                 "ruff==0.17.4 --hash=sha256:" + "1" * 64 + " --hash=sha256:" + "2" * 64 + "\n")
+        js = self.root / release.PROFILES / "js-default"
+        js.mkdir(parents=True)
+        js_tools = {"eslint": "10.14.0", "typescript-eslint": "8.72.2", "typescript": "6.0.3", "lizard": "1.26.0", "jscpd": "5.4.2"}
+        release.write_json(js / "profile.json", {"tools": js_tools})
+        (js / "eslint.config.mjs").write_text("export default [];\n")
+        (js / "jscpd.json").write_text("{}\n")
+        (js / "lizard-requirements.txt").write_text("lizard==1.26.0 --hash=sha256:" + "0" * 64 + "\n")
+        lock = {"packages": {"": {"name": "craftpulse-js-default"}, "node_modules/eslint": {"version": "10.14.0"},
+                             "node_modules/typescript-eslint": {"version": "8.72.2"}, "node_modules/typescript": {"version": "6.0.3"},
+                             "node_modules/eslint/node_modules/typescript": {"version": "5.0.0"}}}
+        release.write_json(js / "package-lock.json", lock)
+        images = release.plan(self.root)
+        self.assertEqual([i["name"] for i in images if i.get("target")], ["craftpulse-ci-python-default", "craftpulse-ci-js-default"])
+        metadata = release.metadata(self.root, images)
+        self.assertEqual(metadata["ci_tool_versions"], {**js_tools, "ruff": "0.17.4"})
+        self.assertEqual(release.PROFILE_CHECKS["js-default"], ["scripts/check_code_profile.py", "--profile", "js-default"])
+        original = metadata["rule_hashes"]["js-default"]
+        (js / "eslint.config.mjs").write_text('export default [{ rules: { "no-undef": "error" } }];\n')
+        self.assertNotEqual(release.metadata(self.root, images)["rule_hashes"]["js-default"], original)
+        lock["packages"]["node_modules/typescript"]["version"] = "6.0.2"
+        release.write_json(js / "package-lock.json", lock)
+        with self.assertRaisesRegex(release.ReleaseError, "js-default profile and image tool versions disagree"):
+            release.metadata(self.root, images)
+        lock["packages"]["node_modules/typescript"]["version"] = "6.0.3"
+        release.write_json(js / "package-lock.json", lock)
+        (js / "lizard-requirements.txt").write_text("lizard==1.25.0 --hash=sha256:" + "0" * 64 + "\n")
+        release.write_json(js / "profile.json", {"tools": {**js_tools, "lizard": "1.25.0"}})
+        with self.assertRaisesRegex(release.ReleaseError, "pin lizard at different versions"):
             release.metadata(self.root, images)
 
     def test_sast_profile_version_rule_hash_and_sources_reach_the_manifest(self):

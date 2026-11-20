@@ -4,7 +4,7 @@
   "timeout": "5m",
   "tools": {
     "golangci-lint": "2.15.0",
-    "lizard": "1.25.0",
+    "lizard": "1.26.0",
     "jscpd": "5.4.2"
   },
   "functions": {

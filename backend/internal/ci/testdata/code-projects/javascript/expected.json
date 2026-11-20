@@ -1,0 +1,4 @@
+{
+  "base": [],
+  "head": [["@typescript-eslint/no-unused-vars", "src/orders.ts"], ["use-isnan", "src/orders.ts"]]
+}

@@ -39,6 +39,7 @@ var (
 	_expectedClone    = regexp.MustCompile(`^clone (\S+):([1-9]\d*)-([1-9]\d*) (\S+):([1-9]\d*)-([1-9]\d*)$`)
 	_expectedTest     = regexp.MustCompile(`^test (\S+)$`)
 	_expectedExcluded = regexp.MustCompile(`^excluded (\S+) (vendor|generated|build)$`)
+	_expectedSkipped  = regexp.MustCompile(`^skipped (\S+) (unsupported|timeout)$`)
 
 	// ErrFixturesFailed is returned when a fixture case gives other findings than it expects.
 	ErrFixturesFailed = errors.New("rule fixtures do not match")
@@ -73,7 +74,7 @@ type fixtureReport struct {
 var _fixtureReports = []fixtureReport{
 	{env: FixtureFunctionsEnv, file: "functions.csv", kinds: []string{"function"}, read: functionFacts},
 	{env: FixtureClonesEnv, file: "clones.json", kinds: []string{"clone"}, read: cloneFacts},
-	{env: FixtureScopeEnv, file: "scope.json", kinds: []string{"test", "excluded"}, read: scopeFacts},
+	{env: FixtureScopeEnv, file: "scope.json", kinds: []string{"test", "excluded", "skipped"}, read: scopeFacts},
 }
 
 // Fixtures runs a profile command on the cases of a profile fixture directory. Each case is a
@@ -82,7 +83,8 @@ var _fixtureReports = []fixtureReport{
 // src/ and writes a SARIF report to the file named by CRAFTPULSE_REPORT. A code profile also writes the
 // functions, copies and scope reports; each one written is compared in full with the expected lines
 // "function <path>:<line> <name> ccn=<n> nloc=<n>", "clone <path>:<start>-<end> <path>:<start>-<end>",
-// "test <path>" and "excluded <path> <reason>".
+// "test <path>", "excluded <path> <reason>" and "skipped <path> <reason>" for a file the linter could not
+// parse.
 type Fixtures struct {
 	Dir     string
 	Command []string
@@ -280,6 +282,10 @@ func expectedFact(kind, line string) (string, bool) {
 	case "excluded":
 		if m := _expectedExcluded.FindStringSubmatch(line); m != nil {
 			return "excluded " + path.Clean(m[1]) + " " + m[2], true
+		}
+	case "skipped":
+		if m := _expectedSkipped.FindStringSubmatch(line); m != nil {
+			return "skipped " + path.Clean(m[1]) + " " + m[2], true
 		}
 	}
 	return "", false

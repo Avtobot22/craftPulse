@@ -84,6 +84,51 @@ LABEL org.opencontainers.image.title="craftpulse-ci-go-default" \
       io.craftpulse.profile="go-default"
 USER 65532:65532
 
+# Code profile of Python: Ruff, Lizard and jscpd at the versions of profile.json; Ruff and Lizard come from
+# requirements.txt by hash.
+FROM ci-runtime AS python-default
+USER 0
+RUN apk add --no-cache python3
+COPY internal/ci/profiles/python-default/ /opt/craftpulse/profiles/python-default/
+RUN --mount=from=jscpd,target=/mnt/jscpd \
+    tar -xzf /mnt/jscpd/jscpd.tgz -C /tmp package/bin/jscpd && \
+    install -m 0755 /tmp/package/bin/jscpd /usr/local/bin/jscpd && rm -rf /tmp/package && \
+    python3 -m venv /opt/code-tools && \
+    /opt/code-tools/bin/pip install --no-cache-dir --no-deps --require-hashes --only-binary=:all: \
+      -r /opt/craftpulse/profiles/python-default/requirements.txt && \
+    ln -s /opt/code-tools/bin/lizard /usr/local/bin/lizard && ln -s /opt/code-tools/bin/ruff /usr/local/bin/ruff
+ENV CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/python-default HOME=/tmp
+LABEL org.opencontainers.image.title="craftpulse-ci-python-default" \
+      io.craftpulse.profile="python-default"
+USER 65532:65532
+
+# ESLint, typescript-eslint and their dependencies come from package-lock.json; the packages are plain
+# JavaScript, so the build stage needs no Node version of its own.
+FROM node:26.3.0-alpine@sha256:9c0e1e52125d6b67d505cf75b4880fcf1290ccea5c480849910e1d57b2cf72b5 AS eslint
+WORKDIR /opt/craftpulse/profiles/js-default
+COPY internal/ci/profiles/js-default/package.json internal/ci/profiles/js-default/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no-fund
+
+# Code profile of JavaScript and TypeScript: ESLint with typescript-eslint, Lizard and jscpd at the
+# versions of profile.json. ESLint loads only the configuration and plugins of the profile.
+FROM ci-runtime AS js-default
+USER 0
+RUN apk add --no-cache nodejs python3
+COPY internal/ci/profiles/js-default/ /opt/craftpulse/profiles/js-default/
+COPY --from=eslint /opt/craftpulse/profiles/js-default/node_modules/ /opt/craftpulse/profiles/js-default/node_modules/
+RUN --mount=from=jscpd,target=/mnt/jscpd \
+    tar -xzf /mnt/jscpd/jscpd.tgz -C /tmp package/bin/jscpd && \
+    install -m 0755 /tmp/package/bin/jscpd /usr/local/bin/jscpd && rm -rf /tmp/package && \
+    python3 -m venv /opt/code-tools && \
+    /opt/code-tools/bin/pip install --no-cache-dir --no-deps --require-hashes --only-binary=:all: \
+      -r /opt/craftpulse/profiles/js-default/lizard-requirements.txt && \
+    ln -s /opt/code-tools/bin/lizard /usr/local/bin/lizard && \
+    ln -s /opt/craftpulse/profiles/js-default/node_modules/eslint/bin/eslint.js /usr/local/bin/eslint
+ENV CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/js-default HOME=/tmp
+LABEL org.opencontainers.image.title="craftpulse-ci-js-default" \
+      io.craftpulse.profile="js-default"
+USER 65532:65532
+
 FROM scratch AS opengrep-amd64
 ADD --checksum=sha256:aa03c3bfff105dc122cbbe6e239dc39a5cae486f1837bba3af7a16bca173f8d6 \
     https://github.com/opengrep/opengrep/releases/download/v1.33.1/opengrep_musllinux_x86 /opengrep

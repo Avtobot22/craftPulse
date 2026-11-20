@@ -130,18 +130,22 @@ func cloneFact(a, b string) string {
 	return "clone " + a + " " + b
 }
 
-// scopeFacts reads the scope of a fixture run: the test files and the excluded paths with their reason.
+// scopeFacts reads the scope of a fixture run: the test files, the excluded paths and the skipped files with
+// their reason.
 func scopeFacts(r io.Reader) ([]string, error) {
 	var s FixtureScope
 	if err := json.NewDecoder(r).Decode(&s); err != nil {
 		return nil, fmt.Errorf("scope report is not JSON: %w", err)
 	}
-	out := make([]string, 0, len(s.Tests)+len(s.Excluded))
+	out := make([]string, 0, len(s.Tests)+len(s.Excluded)+len(s.Skipped))
 	for _, t := range s.Tests {
 		out = append(out, "test "+t)
 	}
 	for _, e := range s.Excluded {
 		out = append(out, "excluded "+e.Path+" "+string(e.Reason))
+	}
+	for _, e := range s.Skipped {
+		out = append(out, "skipped "+e.Path+" "+string(e.Reason))
 	}
 	return out, nil
 }

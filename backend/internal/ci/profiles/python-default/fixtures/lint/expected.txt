@@ -1,0 +1,30 @@
+# Each enabled rule has a problem example and a safe one; only the problem gives a finding.
+# ruff.toml of the checked code ignores F401, F841 and B006, and the profile does not read it.
+F401 f401.py:2
+F632 f632.py:2
+F811 f811.py:8
+F821 f821.py:2
+F841 f841.py:2
+B006 b006.py:1
+B011 b011.py:2
+B015 b015.py:2
+B023 b023.py:4
+
+function f401.py:5 dump ccn=1 nloc=2
+function f632.py:1 is_empty ccn=1 nloc=2
+function f632.py:5 is_missing ccn=1 nloc=2
+function f811.py:4 parse ccn=1 nloc=2
+function f811.py:8 parse ccn=1 nloc=2
+function f811.py:12 render ccn=1 nloc=2
+function f821.py:1 greet ccn=1 nloc=2
+function f821.py:5 welcome ccn=1 nloc=2
+function f841.py:1 area ccn=1 nloc=3
+function f841.py:6 perimeter ccn=1 nloc=3
+function b006.py:1 append_to ccn=1 nloc=3
+function b006.py:6 append_safe ccn=2 nloc=5
+function b011.py:1 check_unreachable ccn=1 nloc=2
+function b011.py:5 check_positive ccn=1 nloc=2
+function b015.py:1 compare ccn=1 nloc=3
+function b015.py:6 compare_safe ccn=1 nloc=2
+function b023.py:1 callbacks ccn=2 nloc=5
+function b023.py:8 callbacks_safe ccn=2 nloc=5
