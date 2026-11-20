@@ -218,6 +218,7 @@ func (u *UseCase) refuse(ctx context.Context, s entity.Subject, rc entity.Receip
 		return entity.Receipt{}, err
 	}
 	u.d.Metrics.PackageRejected(rc.Channel, reason)
+	u.d.Metrics.SecretsRedacted(rc.Channel, rc.RedactionCount)
 	return rc, nil
 }
 

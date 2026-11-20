@@ -209,6 +209,12 @@ func TestIngestRedaction_CIArtifactsFindingAndReplay(t *testing.T) {
 		require.Equal(t, entity.ReceiptDuplicate, repeat.Status)
 		assert.Equal(t, rc.PackageHash, repeat.PackageHash)
 	}
+	e.assertRedactionMetric(t, rc.RedactionCount)
+	assertRedacted(t, e.logs.Bytes())
+}
+
+func (e *ingestEnv) assertRedactionMetric(t *testing.T, count int64) {
+	t.Helper()
 	families, err := e.reg.Gather()
 	require.NoError(t, err)
 	var replacements float64
@@ -219,8 +225,7 @@ func TestIngestRedaction_CIArtifactsFindingAndReplay(t *testing.T) {
 			}
 		}
 	}
-	assert.Equal(t, float64(rc.RedactionCount), replacements)
-	assertRedacted(t, e.logs.Bytes())
+	assert.Equal(t, float64(count), replacements)
 }
 
 func TestIngestRedaction_ImportAndSync(t *testing.T) {
@@ -277,7 +282,8 @@ func TestIngestRedaction_RejectedManifestHasNoSecret(t *testing.T) {
 	}
 	require.NoError(t, tw.Close())
 	require.NoError(t, gz.Close())
-	receipt, err := e.uc.SubmitImport(t.Context(), e.admin, e.project, &out)
+	input := out.Bytes()
+	receipt, err := e.uc.SubmitImport(t.Context(), e.admin, e.project, bytes.NewReader(input))
 	require.NoError(t, err)
 	require.Equal(t, entity.ReceiptRejected, receipt.Status)
 	assert.Positive(t, receipt.RedactionCount)
@@ -287,4 +293,12 @@ func TestIngestRedaction_RejectedManifestHasNoSecret(t *testing.T) {
 	assert.Empty(t, e.keys(t, "quarantine/"))
 	assert.Empty(t, e.keys(t, "packages/"))
 	assertRedacted(t, e.logs.Bytes())
+	e.assertRedactionMetric(t, receipt.RedactionCount)
+
+	// The synchronous page path journals refusals independently of SubmitImport.
+	conn, scope := e.scope(t, "10000")
+	page := e.page(t, conn, scope, input)
+	require.Equal(t, entity.ReceiptRejected, page.Status)
+	assert.Positive(t, page.RedactionCount)
+	e.assertRedactionMetric(t, receipt.RedactionCount+page.RedactionCount)
 }

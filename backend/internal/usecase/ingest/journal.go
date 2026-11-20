@@ -177,6 +177,7 @@ func (u *UseCase) record(ctx context.Context, p *entity.PreparedPackage) (entity
 			return entity.Receipt{}, err
 		}
 		u.d.Metrics.PackageRejected(rc.Channel, rc.ReasonCode)
+		u.d.Metrics.SecretsRedacted(rc.Channel, rc.RedactionCount)
 		return rc, nil
 	}
 	if err := u.d.Repo.LockPackageHash(ctx, org, rc.PackageHash); err != nil {
