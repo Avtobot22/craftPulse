@@ -42,7 +42,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn("craftpulse-adapter-test", names)
 
     def test_profile_discovery_pins_dependency_and_hashes_policy(self):
-        directory = self.root / "backend/internal/ci/profiles/gitleaks-default"
+        directory = self.root / "backend/pkg/secrets/profiles/gitleaks-default"
         directory.mkdir(parents=True)
         release.write_json(directory / "profile.json", {"gitleaks_version": "8.30.1", "min_fragment_length": 8})
         (directory / "rules.toml").write_text("# rules\n")

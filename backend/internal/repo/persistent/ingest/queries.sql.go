@@ -96,7 +96,7 @@ func (q *Queries) FirstReceiptOfHash(ctx context.Context, arg FirstReceiptOfHash
 }
 
 const getReceipt = `-- name: GetReceipt :one
-SELECT organization_id, id, channel, connection_id, scope_id, project_id, upload_token_id, requested_by, source_instance_id, received_at, status, duplicate_of, schema_id, schema_version, package_hash, object_key, quarantine_key, record_count, accepted_count, rejected_count, reason_code, repacked_at, manifest FROM ingest.receipt WHERE organization_id = $1 AND id = $2
+SELECT organization_id, id, channel, connection_id, scope_id, project_id, upload_token_id, requested_by, source_instance_id, received_at, status, duplicate_of, schema_id, schema_version, package_hash, object_key, quarantine_key, record_count, accepted_count, rejected_count, reason_code, repacked_at, manifest, redaction_count, redaction_rules_hash FROM ingest.receipt WHERE organization_id = $1 AND id = $2
 `
 
 type GetReceiptParams struct {
@@ -131,6 +131,8 @@ func (q *Queries) GetReceipt(ctx context.Context, arg GetReceiptParams) (IngestR
 		&i.ReasonCode,
 		&i.RepackedAt,
 		&i.Manifest,
+		&i.RedactionCount,
+		&i.RedactionRulesHash,
 	)
 	return i, err
 }
@@ -258,7 +260,7 @@ func (q *Queries) LockPackageHash(ctx context.Context, arg LockPackageHashParams
 }
 
 const lockReceipt = `-- name: LockReceipt :one
-SELECT organization_id, id, channel, connection_id, scope_id, project_id, upload_token_id, requested_by, source_instance_id, received_at, status, duplicate_of, schema_id, schema_version, package_hash, object_key, quarantine_key, record_count, accepted_count, rejected_count, reason_code, repacked_at, manifest FROM ingest.receipt WHERE organization_id = $1 AND id = $2 FOR UPDATE
+SELECT organization_id, id, channel, connection_id, scope_id, project_id, upload_token_id, requested_by, source_instance_id, received_at, status, duplicate_of, schema_id, schema_version, package_hash, object_key, quarantine_key, record_count, accepted_count, rejected_count, reason_code, repacked_at, manifest, redaction_count, redaction_rules_hash FROM ingest.receipt WHERE organization_id = $1 AND id = $2 FOR UPDATE
 `
 
 type LockReceiptParams struct {
@@ -293,6 +295,8 @@ func (q *Queries) LockReceipt(ctx context.Context, arg LockReceiptParams) (Inges
 		&i.ReasonCode,
 		&i.RepackedAt,
 		&i.Manifest,
+		&i.RedactionCount,
+		&i.RedactionRulesHash,
 	)
 	return i, err
 }
@@ -354,7 +358,7 @@ func (q *Queries) PageConflicts(ctx context.Context, arg PageConflictsParams) ([
 }
 
 const pageReceipts = `-- name: PageReceipts :many
-SELECT organization_id, id, channel, connection_id, scope_id, project_id, upload_token_id, requested_by, source_instance_id, received_at, status, duplicate_of, schema_id, schema_version, package_hash, object_key, quarantine_key, record_count, accepted_count, rejected_count, reason_code, repacked_at, manifest FROM ingest.receipt
+SELECT organization_id, id, channel, connection_id, scope_id, project_id, upload_token_id, requested_by, source_instance_id, received_at, status, duplicate_of, schema_id, schema_version, package_hash, object_key, quarantine_key, record_count, accepted_count, rejected_count, reason_code, repacked_at, manifest, redaction_count, redaction_rules_hash FROM ingest.receipt
 WHERE organization_id = $1
     AND ($2::text = '' OR channel = $2::text)
     AND ($3::text = '' OR status = $3::text)
@@ -420,6 +424,8 @@ func (q *Queries) PageReceipts(ctx context.Context, arg PageReceiptsParams) ([]I
 			&i.ReasonCode,
 			&i.RepackedAt,
 			&i.Manifest,
+			&i.RedactionCount,
+			&i.RedactionRulesHash,
 		); err != nil {
 			return nil, err
 		}
@@ -519,42 +525,45 @@ func (q *Queries) ResolveConflict(ctx context.Context, arg ResolveConflictParams
 const saveReceipt = `-- name: SaveReceipt :exec
 INSERT INTO ingest.receipt (organization_id, id, channel, connection_id, scope_id, project_id, upload_token_id, requested_by,
     source_instance_id, received_at, status, duplicate_of, schema_id, schema_version, package_hash, object_key, quarantine_key,
-    record_count, accepted_count, rejected_count, reason_code, manifest)
+    record_count, accepted_count, rejected_count, reason_code, manifest, redaction_count, redaction_rules_hash)
 VALUES ($1, $2, $3, $4, $5,
     $6, $7, $8, $9,
     $10, $11, $12, $13, $14,
     $15, $16, $17, $18,
-    $19, $20, $21, $22)
+    $19, $20, $21, $22, $23,$24)
 ON CONFLICT (organization_id, id) DO UPDATE SET
     source_instance_id = EXCLUDED.source_instance_id, status = EXCLUDED.status, duplicate_of = EXCLUDED.duplicate_of,
     schema_id = EXCLUDED.schema_id, schema_version = EXCLUDED.schema_version, package_hash = EXCLUDED.package_hash,
     object_key = EXCLUDED.object_key, record_count = EXCLUDED.record_count, accepted_count = EXCLUDED.accepted_count,
-    rejected_count = EXCLUDED.rejected_count, reason_code = EXCLUDED.reason_code, manifest = EXCLUDED.manifest
+    rejected_count = EXCLUDED.rejected_count, reason_code = EXCLUDED.reason_code, manifest = EXCLUDED.manifest,
+    redaction_count=EXCLUDED.redaction_count,redaction_rules_hash=EXCLUDED.redaction_rules_hash
 `
 
 type SaveReceiptParams struct {
-	OrganizationID   uuid.UUID
-	ID               uuid.UUID
-	Channel          string
-	ConnectionID     uuid.NullUUID
-	ScopeID          uuid.NullUUID
-	ProjectID        uuid.NullUUID
-	UploadTokenID    uuid.NullUUID
-	RequestedBy      uuid.NullUUID
-	SourceInstanceID uuid.NullUUID
-	ReceivedAt       time.Time
-	Status           string
-	DuplicateOf      uuid.NullUUID
-	SchemaID         pgtype.Text
-	SchemaVersion    pgtype.Text
-	PackageHash      []byte
-	ObjectKey        pgtype.Text
-	QuarantineKey    pgtype.Text
-	RecordCount      int32
-	AcceptedCount    int32
-	RejectedCount    int32
-	ReasonCode       pgtype.Text
-	Manifest         []byte
+	OrganizationID     uuid.UUID
+	ID                 uuid.UUID
+	Channel            string
+	ConnectionID       uuid.NullUUID
+	ScopeID            uuid.NullUUID
+	ProjectID          uuid.NullUUID
+	UploadTokenID      uuid.NullUUID
+	RequestedBy        uuid.NullUUID
+	SourceInstanceID   uuid.NullUUID
+	ReceivedAt         time.Time
+	Status             string
+	DuplicateOf        uuid.NullUUID
+	SchemaID           pgtype.Text
+	SchemaVersion      pgtype.Text
+	PackageHash        []byte
+	ObjectKey          pgtype.Text
+	QuarantineKey      pgtype.Text
+	RecordCount        int32
+	AcceptedCount      int32
+	RejectedCount      int32
+	ReasonCode         pgtype.Text
+	Manifest           []byte
+	RedactionCount     int64
+	RedactionRulesHash string
 }
 
 func (q *Queries) SaveReceipt(ctx context.Context, arg SaveReceiptParams) error {
@@ -581,6 +590,8 @@ func (q *Queries) SaveReceipt(ctx context.Context, arg SaveReceiptParams) error 
 		arg.RejectedCount,
 		arg.ReasonCode,
 		arg.Manifest,
+		arg.RedactionCount,
+		arg.RedactionRulesHash,
 	)
 	return err
 }

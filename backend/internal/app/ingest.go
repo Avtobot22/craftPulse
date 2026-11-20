@@ -31,6 +31,7 @@ func newObjectStore(cfg config.ObjectStore) *objstore.Store {
 type ingestMetrics struct {
 	rejected *prometheus.CounterVec
 	ci       *prometheus.CounterVec
+	redacted *prometheus.CounterVec
 }
 
 func (m ingestMetrics) PackageRejected(channel entity.ReceiptChannel, reason string) {
@@ -39,6 +40,12 @@ func (m ingestMetrics) PackageRejected(channel entity.ReceiptChannel, reason str
 
 func (m ingestMetrics) CIPackage(outcome, reason string) {
 	m.ci.WithLabelValues(outcome, reason).Inc()
+}
+
+func (m ingestMetrics) SecretsRedacted(channel entity.ReceiptChannel, count int64) {
+	if m.redacted != nil {
+		m.redacted.WithLabelValues(string(channel)).Add(float64(count))
+	}
 }
 
 func newIngest(pool *pgxpool.Pool, store repo.ObjectStore, connect ingest.Connect, rights ingest.Authorizer, projects ingest.Projects, c clock.Clock,
@@ -55,13 +62,17 @@ func newIngest(pool *pgxpool.Pool, store repo.ObjectStore, connect ingest.Connec
 	if err := reg.Register(ci); err != nil {
 		return nil, fmt.Errorf("app: register CI ingest metric: %w", err)
 	}
+	redacted := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "craftpulse_ingest_secret_replacements_total", Help: "Secret replacements in journaled package-processing attempts by channel."}, []string{"channel"})
+	if err := reg.Register(redacted); err != nil {
+		return nil, fmt.Errorf("app: register redaction metric: %w", err)
+	}
 	jobs, err := riverInsertClient(pool)
 	if err != nil {
 		return nil, err
 	}
 	return ingest.New(ingest.Deps{
 		Repo: ingestrepo.NewRepo(pool), Objects: store, Queue: queue.New(jobs), Tx: persistent.NewTransactor(pool),
-		Connect: connect, Access: rights, Projects: projects, Metrics: ingestMetrics{rejected: rejected, ci: ci}, Clock: c, NewID: newID,
+		Connect: connect, Access: rights, Projects: projects, Metrics: ingestMetrics{rejected: rejected, ci: ci, redacted: redacted}, Clock: c, NewID: newID,
 		Auditor: audit.New(auditrepo.NewRepo(pool), persistent.NewTransactor(pool), c),
 	}), nil
 }

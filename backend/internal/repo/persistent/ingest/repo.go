@@ -37,6 +37,7 @@ func (r *Repo) SaveReceipt(ctx context.Context, rc entity.Receipt) error {
 		PackageHash: rc.PackageHash, ObjectKey: text(rc.ObjectKey), QuarantineKey: text(rc.QuarantineKey),
 		RecordCount: int32(rc.RecordCount), AcceptedCount: int32(rc.AcceptedCount), RejectedCount: int32(rc.RejectedCount), //nolint:gosec // bounded by the check above
 		ReasonCode: text(rc.ReasonCode), Manifest: rc.Manifest,
+		RedactionCount: rc.RedactionCount, RedactionRulesHash: rc.RedactionRulesHash,
 	})
 	if err != nil {
 		return fmt.Errorf("ingest: save receipt: %w", err)
@@ -226,6 +227,7 @@ func receipt(row IngestReceipt, err error) (entity.Receipt, error) {
 		SchemaVersion: row.SchemaVersion.String, PackageHash: row.PackageHash, ObjectKey: row.ObjectKey.String,
 		QuarantineKey: row.QuarantineKey.String, RecordCount: int(row.RecordCount), AcceptedCount: int(row.AcceptedCount),
 		RejectedCount: int(row.RejectedCount), ReasonCode: row.ReasonCode.String, Manifest: row.Manifest,
+		RedactionCount: row.RedactionCount, RedactionRulesHash: row.RedactionRulesHash,
 	}, nil
 }
 

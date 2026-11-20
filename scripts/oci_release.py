@@ -51,7 +51,7 @@ def plan(root=ROOT):
         {"name": "craftpulse-frontend", "context": "frontend", "dockerfile": "frontend/Dockerfile"},
         {"name": "craftpulse-ci", "context": "backend", "dockerfile": "backend/ci.Dockerfile"},
     ]
-    if (root / "backend/internal/ci/profiles/gitleaks-default/profile.json").is_file():
+    if (root / "backend/pkg/secrets/profiles/gitleaks-default/profile.json").is_file():
         images.append({"name": "craftpulse-ci-gitleaks-default", "context": "backend",
                        "dockerfile": "backend/ci.Dockerfile", "target": "gitleaks-default"})
     for directory in sorted((root / "backend/cmd").glob("adapter-*")):
@@ -85,7 +85,7 @@ def metadata(root, images):
         raise ReleaseError("adapter contract version not found")
     ci_versions, rule_hashes = {}, {}
     if any(image.get("target") == "gitleaks-default" for image in images):
-        directory = root / "backend/internal/ci/profiles/gitleaks-default"
+        directory = root / "backend/pkg/secrets/profiles/gitleaks-default"
         policy = read_json(directory / "profile.json")
         version = policy["gitleaks_version"]
         if not re.search(r"github.com/zricethezav/gitleaks/v8 v" + re.escape(version) + r"\s", (root / "backend/go.mod").read_text()):

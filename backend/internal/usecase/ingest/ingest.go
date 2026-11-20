@@ -15,6 +15,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
+	"github.com/Avtobot22/craftPulse/backend/pkg/secrets"
 )
 
 // Connect is the connect module: the instance of a package and the scopes a connection collects.
@@ -39,6 +40,7 @@ type Auditor interface {
 type Metrics interface {
 	PackageRejected(channel entity.ReceiptChannel, reason string)
 	CIPackage(outcome, reason string)
+	SecretsRedacted(channel entity.ReceiptChannel, count int64)
 }
 
 type Deps struct {
@@ -135,7 +137,7 @@ func (u *UseCase) submit(ctx context.Context, s entity.Subject, rc entity.Receip
 		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, err)
 	}
 	verified := &countingReader{r: body}
-	res, err := envelope.Clean(verified, u.d.Limits, io.Discard)
+	res, err := u.clean(ctx, verified, io.Discard)
 	_ = body.Close()
 	if verified.err != nil {
 		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, verified.err)
@@ -143,6 +145,7 @@ func (u *UseCase) submit(ctx context.Context, s entity.Subject, rc entity.Receip
 	if err != nil {
 		return entity.Receipt{}, err
 	}
+	rc.RedactionCount, rc.RedactionRulesHash = res.Redactions, secrets.RulesHash()
 	if res.Envelope != nil {
 		return u.refuse(ctx, s, rc, res.Manifest, packageReason(res.Envelope.Code))
 	}
@@ -215,6 +218,7 @@ func (u *UseCase) refuse(ctx context.Context, s entity.Subject, rc entity.Receip
 		return entity.Receipt{}, err
 	}
 	u.d.Metrics.PackageRejected(rc.Channel, reason)
+	u.d.Metrics.SecretsRedacted(rc.Channel, rc.RedactionCount)
 	return rc, nil
 }
 

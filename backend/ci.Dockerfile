@@ -36,7 +36,7 @@ RUN apk add --no-cache git
 ENV CRAFTPULSE_SECRETS=1
 LABEL org.opencontainers.image.title="craftpulse-ci-gitleaks-default" \
       io.craftpulse.profile="gitleaks-default"
-COPY internal/ci/profiles/gitleaks-default/ /opt/craftpulse/profiles/gitleaks-default/
+COPY pkg/secrets/profiles/gitleaks-default/ /opt/craftpulse/profiles/gitleaks-default/
 USER 65532:65532
 
 # Keep the default target the base CLI, for existing callers.

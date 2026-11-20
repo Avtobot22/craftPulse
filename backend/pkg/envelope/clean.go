@@ -18,6 +18,10 @@ import (
 // records. The same input always gives the same bytes. Nothing is written when the whole package is
 // rejected; a stream that breaks while it is read is rejected as an invalid archive.
 func Clean(r io.Reader, limits Limits, w io.Writer) (*Result, error) {
+	return cleanPackage(r, limits, w, nil)
+}
+
+func cleanPackage(r io.Reader, limits Limits, w io.Writer, redactor Redactor) (*Result, error) {
 	data, err := io.ReadAll(io.LimitReader(r, limits.MaxPackageBytes+1))
 	switch {
 	case err != nil:
@@ -27,11 +31,14 @@ func Clean(r io.Reader, limits Limits, w io.Writer) (*Result, error) {
 	}
 	c := &checker{limits: limits, files: map[string]fileEntry{}, entries: map[string]bool{}, lines: map[int][]byte{}}
 	if rejection := c.read(bytes.NewReader(data)); rejection != nil {
-		return &Result{Manifest: c.result.Manifest, Envelope: rejection}, nil //nolint:nilerr // the rejection is the outcome of the check
+		return redactRejected(&Result{Manifest: c.result.Manifest, Envelope: rejection}, redactor)
 	}
 	c.checkFiles()
 	if rejection := c.checkCIManifests(); rejection != nil {
-		return &Result{Manifest: c.result.Manifest, Envelope: rejection}, nil //nolint:nilerr // invalid input is a rejected package, not an I/O failure
+		return redactRejected(&Result{Manifest: c.result.Manifest, Envelope: rejection}, redactor)
+	}
+	if redactor != nil {
+		return c.redact(data, w, redactor)
 	}
 	if err := c.write(data, c.result.Manifest, w); err != nil {
 		return nil, err

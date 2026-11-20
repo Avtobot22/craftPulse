@@ -182,7 +182,7 @@ func (s *Store) copyIn(local, target string) error {
 			out.Close()
 			return errors.New("cannot read report for secret redaction")
 		}
-		data, err = s.Scrubber.Scrub(nil, data)
+		data, err = s.Scrubber.Redact(data)
 		if err != nil {
 			out.Close()
 			return err
@@ -198,7 +198,7 @@ func (s *Store) copyIn(local, target string) error {
 
 func (s *Store) write(name string, data []byte) error {
 	if s.Scrubber != nil {
-		safe, err := s.Scrubber.Scrub(nil, data)
+		safe, err := s.Scrubber.Redact(data)
 		if err != nil {
 			return err
 		}
