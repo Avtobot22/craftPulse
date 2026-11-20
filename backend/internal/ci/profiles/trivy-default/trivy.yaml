@@ -1,0 +1,2 @@
+# Trivy reads this file instead of a trivy.yaml of the repository; the profile passes its settings as flags.
+{}

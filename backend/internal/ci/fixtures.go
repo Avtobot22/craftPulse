@@ -31,6 +31,8 @@ const (
 	FixtureFunctionsEnv = "CRAFTPULSE_FUNCTIONS_REPORT"
 	FixtureClonesEnv    = "CRAFTPULSE_CLONES_REPORT"
 	FixtureScopeEnv     = "CRAFTPULSE_SCOPE_REPORT"
+	// FixtureFactsEnv names the file where a profile without a SARIF report writes its facts, one per line.
+	FixtureFactsEnv = "CRAFTPULSE_FACTS_REPORT"
 )
 
 var (
@@ -40,6 +42,8 @@ var (
 	_expectedTest     = regexp.MustCompile(`^test (\S+)$`)
 	_expectedExcluded = regexp.MustCompile(`^excluded (\S+) (vendor|generated|build)$`)
 	_expectedSkipped  = regexp.MustCompile(`^skipped (\S+) (unsupported|timeout)$`)
+	_expectedVuln     = regexp.MustCompile(`^vulnerability (\S+) (\S+)@(\S+) (\S+)$`)
+	_expectedMisconf  = regexp.MustCompile(`^misconfiguration (\S+) (\S+):([1-9]\d*) (.+)$`)
 
 	// ErrFixturesFailed is returned when a fixture case gives other findings than it expects.
 	ErrFixturesFailed = errors.New("rule fixtures do not match")
@@ -75,6 +79,7 @@ var _fixtureReports = []fixtureReport{
 	{env: FixtureFunctionsEnv, file: "functions.csv", kinds: []string{"function"}, read: functionFacts},
 	{env: FixtureClonesEnv, file: "clones.json", kinds: []string{"clone"}, read: cloneFacts},
 	{env: FixtureScopeEnv, file: "scope.json", kinds: []string{"test", "excluded", "skipped"}, read: scopeFacts},
+	{env: FixtureFactsEnv, file: "facts.txt", kinds: []string{"vulnerability", "misconfiguration"}, read: lineFacts},
 }
 
 // Fixtures runs a profile command on the cases of a profile fixture directory. Each case is a
@@ -84,7 +89,8 @@ var _fixtureReports = []fixtureReport{
 // functions, copies and scope reports; each one written is compared in full with the expected lines
 // "function <path>:<line> <name> ccn=<n> nloc=<n>", "clone <path>:<start>-<end> <path>:<start>-<end>",
 // "test <path>", "excluded <path> <reason>" and "skipped <path> <reason>" for a file the linter could not
-// parse.
+// parse. A profile without a SARIF report writes its facts instead, such as "vulnerability <id>
+// <package>@<version> <lockfile>" and "misconfiguration <id> <path>:<line> <resource>".
 type Fixtures struct {
 	Dir     string
 	Command []string
@@ -155,13 +161,15 @@ func (fx *Fixtures) runCase(ctx context.Context, name string) (FixtureResult, er
 	if runCtx.Err() != nil {
 		return FixtureResult{}, errors.New("profile command ran out of time")
 	}
+	var got []Finding
 	data, err := os.ReadFile(report)
-	if err != nil {
+	switch {
+	case err == nil:
+		if got, err = SARIFFindings(data, src); err != nil {
+			return FixtureResult{}, err
+		}
+	case !fileExists(filepath.Join(out, "facts.txt")):
 		return FixtureResult{}, fmt.Errorf("profile command wrote no report: %w", err)
-	}
-	got, err := SARIFFindings(data, src)
-	if err != nil {
-		return FixtureResult{}, err
 	}
 	missing, extra := diff(expected, got, compareFindings)
 	res := FixtureResult{Case: name, Found: len(got), Missing: strs(missing), Extra: strs(extra)}
@@ -176,6 +184,9 @@ func (fx *Fixtures) runCase(ctx context.Context, name string) (FixtureResult, er
 		}
 		missing, extra := diff(want, got, strings.Compare)
 		res.Missing, res.Extra = append(res.Missing, missing...), append(res.Extra, extra...)
+		if r.env == FixtureFactsEnv {
+			res.Found += len(got)
+		}
 	}
 	return res, nil
 }
@@ -287,6 +298,14 @@ func expectedFact(kind, line string) (string, bool) {
 		if m := _expectedSkipped.FindStringSubmatch(line); m != nil {
 			return "skipped " + path.Clean(m[1]) + " " + m[2], true
 		}
+	case "vulnerability":
+		if m := _expectedVuln.FindStringSubmatch(line); m != nil {
+			return "vulnerability " + m[1] + " " + m[2] + "@" + m[3] + " " + path.Clean(m[4]), true
+		}
+	case "misconfiguration":
+		if m := _expectedMisconf.FindStringSubmatch(line); m != nil {
+			return "misconfiguration " + m[1] + " " + path.Clean(m[2]) + ":" + m[3] + " " + m[4], true
+		}
 	}
 	return "", false
 }
@@ -371,4 +390,21 @@ func diff[T comparable](expected, got []T, compare func(a, b T) int) (missing, e
 
 func compareFindings(a, b Finding) int {
 	return cmp.Or(strings.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), strings.Compare(a.Rule, b.Rule))
+}
+
+// lineFacts reads a facts file of a profile: one fact per non-empty line.
+func lineFacts(r io.Reader) ([]string, error) {
+	var out []string
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		if line := strings.TrimSpace(sc.Text()); line != "" {
+			out = append(out, line)
+		}
+	}
+	return out, sc.Err()
+}
+
+func fileExists(name string) bool {
+	info, err := os.Stat(name)
+	return err == nil && info.Mode().IsRegular()
 }

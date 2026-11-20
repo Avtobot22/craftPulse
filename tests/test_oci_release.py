@@ -82,6 +82,31 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, "versions disagree"):
             release.metadata(self.root, images)
 
+    def test_trivy_profile_pins_version_and_database_digest(self):
+        directory = self.root / release.TRIVY_PROFILE
+        directory.mkdir(parents=True)
+        release.write_json(directory / "profile.json", {"profile_id": "trivy-default", "tools": {"trivy": "0.76.2"}})
+        (directory / "trivy.yaml").write_text("{}\n")
+        (directory / "trivyignore").write_text("KSV-0125\n")
+        database = "ghcr.io/aquasecurity/trivy-db@sha256:" + "5" * 64
+        recipe = ("ADD https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz /trivy.tgz\n"
+                  "ADD https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-ARM64.tar.gz /trivy.tgz\n"
+                  f"ARG TRIVY_DB_REPOSITORY={database}\n")
+        (self.root / "backend/ci.Dockerfile").write_text(recipe)
+        images = release.plan(self.root)
+        self.assertEqual([i["name"] for i in images if i.get("target")], ["craftpulse-ci-trivy-default"])
+        metadata = release.metadata(self.root, images)
+        self.assertEqual(metadata["ci_tool_versions"], {"trivy": "0.76.2", "trivy-db": database})
+        original = metadata["rule_hashes"]["trivy-default"]
+        (directory / "trivyignore").write_text("")
+        self.assertNotEqual(release.metadata(self.root, images)["rule_hashes"]["trivy-default"], original)
+        (self.root / "backend/ci.Dockerfile").write_text(recipe.replace("@sha256:" + "5" * 64, ":2"))
+        with self.assertRaisesRegex(release.ReleaseError, "not pinned by digest"):
+            release.metadata(self.root, images)
+        (self.root / "backend/ci.Dockerfile").write_text(recipe.replace("v0.76.2/trivy_0.76.2_Linux-ARM64", "v0.76.1/trivy_0.76.1_Linux-ARM64"))
+        with self.assertRaisesRegex(release.ReleaseError, "Trivy versions disagree"):
+            release.metadata(self.root, images)
+
     def test_python_and_js_profiles_pin_tools_in_requirements_and_lockfile(self):
         recipe = ("ADD https://registry.npmjs.org/jscpd-linux-x64-musl/-/jscpd-linux-x64-musl-5.4.2.tgz /jscpd.tgz\n"
                   "ADD https://registry.npmjs.org/jscpd-linux-arm64-musl/-/jscpd-linux-arm64-musl-5.4.2.tgz /jscpd.tgz\n")

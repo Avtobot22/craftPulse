@@ -506,7 +506,7 @@ components:
       additionalProperties: false
       properties:
         report_kind: {type: string, enum: [code, sast, sca, secrets, iac, image, junit, coverage, docs, openapi, sonar]}
-        report_format: {type: string, enum: [envelope, sarif, gitlab_security, gitlab_code_quality, junit_xml, lcov, cobertura, jacoco, golangci_json, gitleaks_json, spectral_json, docs_json, lizard_csv, jscpd_json]}
+        report_format: {type: string, enum: [envelope, sarif, gitlab_security, gitlab_code_quality, junit_xml, lcov, cobertura, jacoco, golangci_json, gitleaks_json, spectral_json, docs_json, lizard_csv, jscpd_json, trivy_json]}
         sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
         artifact_digest: {type: [string, 'null'], maxLength: 255}
         run_native_id: {type: [string, 'null'], maxLength: 255}
@@ -1032,6 +1032,7 @@ components:
             - docs_json
             - lizard_csv
             - jscpd_json
+            - trivy_json
         format_version:
           type: string
           minLength: 1

@@ -63,6 +63,7 @@ jobs:
               - 'scripts/oci_release.py'
               - 'scripts/check_code_profile.py'
               - 'scripts/check_sast_profile.py'
+              - 'scripts/check_trivy_profile.py'
               - 'tests/test_oci_release.py'
               - '.github/release-tools.json'
               - '.github/workflows/oci-release.yml'

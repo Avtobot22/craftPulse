@@ -1,0 +1,6 @@
+# Dockerfile uses the latest tag, runs as root, installs with a cache and has no health check; safe/Dockerfile
+# fixes all four.
+misconfiguration DS-0001 Dockerfile:1 stage alpine:latest
+misconfiguration DS-0002 Dockerfile:1 file
+misconfiguration DS-0025 Dockerfile:2 stage alpine:latest
+misconfiguration DS-0026 Dockerfile:1 file

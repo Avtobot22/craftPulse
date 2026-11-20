@@ -1,0 +1,1 @@
+# Lockfiles of Go, Python and JS/TS whose packages have no advisories give no findings.

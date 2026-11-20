@@ -47,10 +47,12 @@ def run(args, *, cwd=ROOT, capture=False, input_text=None, extra_env=None):
 
 PROFILES = "backend/internal/ci/profiles"
 SAST_PROFILE = PROFILES + "/opengrep-default"
+TRIVY_PROFILE = PROFILES + "/trivy-default"
 # Code profiles and the linter configuration each one hashes with profile.json and jscpd.json.
 CODE_PROFILES = {"go-default": "golangci.yml", "python-default": "ruff.toml", "js-default": "eslint.config.mjs"}
 # Each profile image is exercised by its check script without a network.
 PROFILE_CHECKS = {"gitleaks-default": ["scripts/check_secrets_profile.py"], "opengrep-default": ["scripts/check_sast_profile.py"],
+                  "trivy-default": ["scripts/check_trivy_profile.py"],
                   **{name: ["scripts/check_code_profile.py", "--profile", name] for name in CODE_PROFILES}}
 
 
@@ -70,6 +72,9 @@ def plan(root=ROOT):
     if (root / SAST_PROFILE / "profile.json").is_file():
         images.append({"name": "craftpulse-ci-opengrep-default", "context": "backend",
                        "dockerfile": "backend/ci.Dockerfile", "target": "opengrep-default"})
+    if (root / TRIVY_PROFILE / "profile.json").is_file():
+        images.append({"name": "craftpulse-ci-trivy-default", "context": "backend",
+                       "dockerfile": "backend/ci.Dockerfile", "target": "trivy-default"})
     for directory in sorted((root / "backend/cmd").glob("adapter-*")):
         # The recorded-answer server explicitly excludes itself from release images.
         if directory.name == "adapter-test":
@@ -123,6 +128,10 @@ def metadata(root, images):
         ci_versions["opengrep"] = version
         rule_hashes["opengrep-default"] = rule_hash
         rule_sources["opengrep-default"] = sources
+    if any(image.get("target") == "trivy-default" for image in images):
+        version, database, rule_hash = trivy_profile(root)
+        ci_versions["trivy"], ci_versions["trivy-db"] = version, database
+        rule_hashes["trivy-default"] = rule_hash
     return {"core_schema_version": schema_version(root, "core"),
             "adapter_schema_versions": {name: schema_version(root, "adapter") for name in adapters},
             "adapter_contract_version": contract[1] if adapters else None,
@@ -166,6 +175,23 @@ def sast_profile(root):
     sources = (directory / "sources.json").read_bytes()
     content = profile + sources + b"".join(path.read_bytes() for path in sorted((directory / "rules").glob("*.yaml")))
     return version, hashlib.sha256(content).hexdigest(), json.loads(sources)["rules"]
+
+
+def trivy_profile(root):
+    """Trivy version of the SCA and IaC profile, checked against the image recipe, the pinned database and the
+    rules hash of profile.json, trivy.yaml and trivyignore."""
+    directory = root / TRIVY_PROFILE
+    profile = (directory / "profile.json").read_bytes()
+    version = json.loads(profile)["tools"]["trivy"]
+    dockerfile = (root / "backend/ci.Dockerfile").read_text()
+    pinned = set(re.findall(r"/trivy/releases/download/v([0-9][^/]*)/trivy_", dockerfile))
+    if pinned != {version}:
+        raise ReleaseError("Trivy profile and image Trivy versions disagree")
+    database = re.findall(r"^ARG TRIVY_DB_REPOSITORY=(\S+@sha256:[0-9a-f]{64})$", dockerfile, re.M)
+    if len(database) != 1:
+        raise ReleaseError("Trivy database is not pinned by digest")
+    content = profile + (directory / "trivy.yaml").read_bytes() + (directory / "trivyignore").read_bytes()
+    return version, database[0], hashlib.sha256(content).hexdigest()
 
 
 def install_tools(destination, root=ROOT):

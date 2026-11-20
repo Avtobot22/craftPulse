@@ -204,6 +204,12 @@ type sastScan struct {
 // excludedDirs walks the target for the excluded directories of the profile and the directories starting with
 // "."; Opengrep gets them as exclusions instead of its own default list.
 func (p *SASTProfile) excludedDirs(root, target string) ([]envelope.ScanExcludedTarget, []string, error) {
+	return excludedDirsOf(root, target, p.ExcludedDirs)
+}
+
+// excludedDirsOf walks the target for the directories with a name of dirs and the directories starting with ".";
+// paths are relative to the root.
+func excludedDirsOf(root, target string, dirs map[string]string) ([]envelope.ScanExcludedTarget, []string, error) {
 	var excluded []envelope.ScanExcludedTarget
 	var hidden []string
 	base := filepath.Join(root, filepath.FromSlash(target))
@@ -223,7 +229,7 @@ func (p *SASTProfile) excludedDirs(root, target string) ([]envelope.ScanExcluded
 			hidden = append(hidden, rel)
 			return filepath.SkipDir
 		}
-		if reason, ok := p.ExcludedDirs[d.Name()]; ok {
+		if reason, ok := dirs[d.Name()]; ok {
 			excluded = append(excluded, envelope.ScanExcludedTarget{Path: rel, Reason: envelope.ScanExcludedTargetReason(reason)})
 			return filepath.SkipDir
 		}

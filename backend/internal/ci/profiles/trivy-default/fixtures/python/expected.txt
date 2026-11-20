@@ -1,0 +1,2 @@
+# .trivyignore and trivy.yaml of the checked code would hide the advisory; the profile reads neither.
+vulnerability CVE-2020-14343 pyyaml@5.3.1 requirements.txt

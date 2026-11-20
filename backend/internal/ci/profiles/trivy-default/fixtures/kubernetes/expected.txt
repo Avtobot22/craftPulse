@@ -1,0 +1,19 @@
+# A privileged pod without a security context fails the checks below; safe/deployment.yaml passes them all.
+# KSV-0125 (trusted registries) is left out by the profile: the safe image comes from an internal registry.
+misconfiguration KSV-0001 pod.yaml:7 Pod/web
+misconfiguration KSV-0003 pod.yaml:7 Pod/web
+misconfiguration KSV-0004 pod.yaml:7 Pod/web
+misconfiguration KSV-0011 pod.yaml:7 Pod/web
+misconfiguration KSV-0012 pod.yaml:7 Pod/web
+misconfiguration KSV-0014 pod.yaml:7 Pod/web
+misconfiguration KSV-0015 pod.yaml:7 Pod/web
+misconfiguration KSV-0016 pod.yaml:7 Pod/web
+misconfiguration KSV-0017 pod.yaml:7 Pod/web
+misconfiguration KSV-0018 pod.yaml:7 Pod/web
+misconfiguration KSV-0020 pod.yaml:7 Pod/web
+misconfiguration KSV-0021 pod.yaml:7 Pod/web
+misconfiguration KSV-0030 pod.yaml:7 Pod/web
+misconfiguration KSV-0104 pod.yaml:7 Pod/web
+misconfiguration KSV-0106 pod.yaml:7 Pod/web
+misconfiguration KSV-0110 pod.yaml:3 Pod/web
+misconfiguration KSV-0118 pod.yaml:5 Pod/web
