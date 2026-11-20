@@ -119,7 +119,7 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		mapped  bool
 		targets []entity.TargetVersion
 	)
-	if !team.IsZero() {
+	if !team.IsZero() && u.d.Settings != nil {
 		if mapping, mapped, err = u.d.Settings.MappingAt(ctx, org, team, seq); err != nil {
 			return err
 		}
@@ -160,7 +160,7 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 	if err != nil {
 		return err
 	}
-	sources, err := u.collectionOf(ctx, org, areas)
+	sources, err := u.seriesCollection(ctx, org, areas, series.MetricSet)
 	if err != nil {
 		return err
 	}
@@ -277,7 +277,7 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 		if areas, err = u.scopeAreas(ctx, org, scope); err != nil {
 			return err
 		}
-		if collection, err = u.collectionOf(ctx, org, areas); err != nil {
+		if collection, err = u.seriesCollection(ctx, org, areas, series.MetricSet); err != nil {
 			return err
 		}
 	}
@@ -353,7 +353,7 @@ func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entit
 		return err
 	}
 	var settings int64
-	if !team.IsZero() {
+	if !team.IsZero() && u.d.Settings != nil {
 		if settings, err = u.d.Settings.LastSettingsSeq(ctx, job.OrganizationID, team); err != nil {
 			return err
 		}
@@ -475,7 +475,7 @@ func revisionHash(s *entity.CalcSeries, r *entity.CalcRevision, inputs []entity.
 func sameCollection(a, b []entity.AreaCollection) bool {
 	return slices.EqualFunc(a, b, func(x, y entity.AreaCollection) bool {
 		return x.AreaID == y.AreaID && x.ConnectionID == y.ConnectionID && x.Completeness == y.Completeness && x.Phase == y.Phase &&
-			sameTime(x.Watermark, y.Watermark) && sameTime(x.LastSuccessAt, y.LastSuccessAt) && sameRun(x.Reconcile, y.Reconcile)
+			sameTime(x.Watermark, y.Watermark) && sameTime(x.LastSuccessAt, y.LastSuccessAt) && sameTime(x.HistoryFrom, y.HistoryFrom) && sameRun(x.Reconcile, y.Reconcile)
 	})
 }
 
@@ -498,6 +498,13 @@ func (u *UseCase) collectionOf(ctx context.Context, org entity.ID, areas []entit
 		return nil, nil
 	}
 	return u.d.Collection.AreaCollection(ctx, org, areas)
+}
+
+func (u *UseCase) seriesCollection(ctx context.Context, org entity.ID, areas []entity.ID, set string) ([]entity.AreaCollection, error) {
+	if set == entity.MetricSetCI && u.d.Collection != nil && len(areas) > 0 {
+		return u.d.Collection.CICollection(ctx, org, areas)
+	}
+	return u.collectionOf(ctx, org, areas)
 }
 
 // teamAreas are the source areas of the projects of the team by the current structure.

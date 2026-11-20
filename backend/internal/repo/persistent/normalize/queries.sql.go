@@ -135,6 +135,24 @@ func (q *Queries) AreaOf(ctx context.Context, arg AreaOfParams) (uuid.UUID, erro
 	return area_id, err
 }
 
+const areaProvider = `-- name: AreaProvider :one
+SELECT i.provider FROM normalize.source_object o
+JOIN connect.source_instance i ON i.organization_id = o.organization_id AND i.id = o.instance_id
+WHERE o.organization_id = $1 AND o.id = $2
+`
+
+type AreaProviderParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+}
+
+func (q *Queries) AreaProvider(ctx context.Context, arg AreaProviderParams) (string, error) {
+	row := q.db.QueryRow(ctx, areaProvider, arg.OrganizationID, arg.AreaID)
+	var provider string
+	err := row.Scan(&provider)
+	return provider, err
+}
+
 const currentCIAttemptVersions = `-- name: CurrentCIAttemptVersions :many
 SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, attempt_id, run_id, job_key, config_fingerprint, attempt_no, native_status, outcome, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_s FROM normalize.ci_attempt_version WHERE organization_id = $1 AND attempt_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
 `

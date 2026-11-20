@@ -94,6 +94,7 @@ type Contribution struct {
 	Role       ContributionRole
 	Value      *float64
 	ReasonCode string
+	Evidence   []byte
 }
 
 // Point is a value of a series over [Start, End); a metric of a state at a date is taken at End.
@@ -476,5 +477,6 @@ type AreaCollection struct {
 	LastSuccessAt *time.Time
 	Reconcile     *ReconcileRun
 	// Phase is the phase of the collection of tasks; empty before the first page.
-	Phase SyncPhase
+	Phase       SyncPhase
+	HistoryFrom *time.Time
 }

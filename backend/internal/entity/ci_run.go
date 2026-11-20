@@ -5,7 +5,18 @@ import "time"
 const (
 	ObjectCIRun     ObjectKind = "ci_run"
 	ObjectCIAttempt ObjectKind = "ci_attempt"
+	ObjectCIJob     ObjectKind = "ci_job"
 )
+
+const MetricSetCI = "ci"
+
+// CIFacts is the canonical CI history of an area at a knowledge cutoff.
+type CIFacts struct {
+	AreaID   ID
+	Provider Provider
+	Runs     []CIRunVersion
+	Attempts []CIAttemptVersion
+}
 
 // CIOutcome is the normalized result of a run or an attempt; the native status is kept beside it.
 type CIOutcome string

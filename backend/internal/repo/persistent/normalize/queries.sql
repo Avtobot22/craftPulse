@@ -172,6 +172,11 @@ WHERE o.organization_id = sqlc.arg(organization_id) AND o.instance_id = sqlc.arg
 SELECT id, instance_id FROM normalize.source_object
 WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(area_ids)::uuid[]);
 
+-- name: AreaProvider :one
+SELECT i.provider FROM normalize.source_object o
+JOIN connect.source_instance i ON i.organization_id = o.organization_id AND i.id = o.instance_id
+WHERE o.organization_id = sqlc.arg(organization_id) AND o.id = sqlc.arg(area_id);
+
 -- name: DictionariesOfAreas :many
 SELECT area_id, entry_kind, native_id, name, attributes FROM normalize.dictionary_entry
 WHERE organization_id = sqlc.arg(organization_id) AND area_id = ANY (sqlc.arg(area_ids)::uuid[]) AND superseded_seq IS NULL

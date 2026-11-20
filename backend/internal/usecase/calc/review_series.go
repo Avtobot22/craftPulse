@@ -48,8 +48,15 @@ func scopeOf(raw []byte) (seriesScope, bool, error) {
 // a repository and creates it on the first request: the review and the links take weeks or months, the events take
 // days. The coverage of links reads the mapping of a team, so it has no series of a repository.
 func (u *UseCase) ReviewSeries(ctx context.Context, orgID entity.ID, scope entity.ReviewScope, set string, step entity.Step) (entity.CalcSeries, error) {
-	if !validReviewStep(set, step) || scope.TeamID.IsZero() == scope.RepositoryID.IsZero() || (set == entity.MetricSetLinks && scope.TeamID.IsZero()) {
+	if !validReviewStep(set, step) || (set == entity.MetricSetLinks && scope.TeamID.IsZero()) {
 		return entity.CalcSeries{}, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/step", Code: entity.FieldNotAllowedValue}}}
+	}
+	return u.scopedSeries(ctx, orgID, scope, set, step)
+}
+
+func (u *UseCase) scopedSeries(ctx context.Context, orgID entity.ID, scope entity.ReviewScope, set string, step entity.Step) (entity.CalcSeries, error) {
+	if scope.TeamID.IsZero() == scope.RepositoryID.IsZero() {
+		return entity.CalcSeries{}, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/scope", Code: entity.FieldNotAllowedValue}}}
 	}
 	var (
 		raw []byte
@@ -200,6 +207,10 @@ func (u *UseCase) source(ctx context.Context, job entity.CalcSliceJob, rev *enti
 	areas, err := u.scopeAreas(ctx, job.OrganizationID, scope)
 	if err != nil {
 		return nil, scope, err
+	}
+	if series.MetricSet == entity.MetricSetCI {
+		src, err := u.ciSource(ctx, job, rev, series, areas, loc)
+		return src, scope, err
 	}
 	facts := make([]entity.ReviewFacts, 0, len(areas))
 	for _, area := range areas {

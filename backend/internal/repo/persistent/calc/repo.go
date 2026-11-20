@@ -310,7 +310,7 @@ func (r *Repo) PointContributions(ctx context.Context, orgID, revisionID entity.
 		row := &rows[i]
 		out[i] = entity.Contribution{
 			ObjectID: entity.ID(row.ObjectID), ItemNo: int(row.ItemNo), ObjectKind: entity.ObjectKind(row.ObjectKind),
-			Role: entity.ContributionRole(row.Role), Value: optional(row.Value, row.HasValue), ReasonCode: row.ReasonCode.String,
+			Role: entity.ContributionRole(row.Role), Value: optional(row.Value, row.HasValue), ReasonCode: row.ReasonCode.String, Evidence: row.Evidence,
 		}
 	}
 	return out, nil
@@ -366,7 +366,7 @@ func (r *Repo) RevisionCohort(ctx context.Context, orgID, revisionID entity.ID) 
 			MetricID: row.MetricID, Estimator: row.Estimator, PointStart: row.PointStart.UTC(),
 			Contribution: entity.Contribution{
 				ObjectID: entity.ID(row.ObjectID), ItemNo: int(row.ItemNo), ObjectKind: entity.ObjectKind(row.ObjectKind),
-				Role: entity.ContributionRole(row.Role), Value: optional(row.Value, row.HasValue), ReasonCode: row.ReasonCode.String,
+				Role: entity.ContributionRole(row.Role), Value: optional(row.Value, row.HasValue), ReasonCode: row.ReasonCode.String, Evidence: row.Evidence,
 			},
 		}
 		if row.ProjectID.Valid {
@@ -499,6 +499,7 @@ func pointParams(org, part uuid.UUID, points []entity.SeriesPoint) (InsertPoints
 			c.ObjectIds, c.ItemNos = append(c.ObjectIds, uuid.UUID(k.ObjectID)), append(c.ItemNos, int16(k.ItemNo))
 			c.Kinds, c.Roles = append(c.Kinds, string(k.ObjectKind)), append(c.Roles, string(k.Role))
 			c.ContributionValues, c.HasValues, c.Reasons = append(c.ContributionValues, cv), append(c.HasValues, hcv), append(c.Reasons, k.ReasonCode)
+			c.Evidence = append(c.Evidence, string(k.Evidence))
 		}
 	}
 	return p, c, nil
