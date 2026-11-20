@@ -45,6 +45,8 @@ type rules struct {
 	flags      map[string]map[string]bool
 	teamField  string
 	teams      map[string]string
+	// codeRequired are the IDs of the types whose tasks need a confirmed MR (A20, T28).
+	codeRequired map[string]bool
 }
 
 func rulesOf(m *entity.MappingVersion) map[entity.ID]*rules {
@@ -54,7 +56,7 @@ func rulesOf(m *entity.MappingVersion) map[entity.ID]*rules {
 		if !ok {
 			rs = &rules{
 				status: map[string]string{}, resolution: map[string]string{}, types: map[string]string{}, sizes: map[string]string{},
-				flags: map[string]map[string]bool{}, teams: map[string]string{},
+				flags: map[string]map[string]bool{}, teams: map[string]string{}, codeRequired: map[string]bool{},
 			}
 			out[r.InstanceID] = rs
 		}
@@ -78,7 +80,9 @@ func rulesOf(m *entity.MappingVersion) map[entity.ID]*rules {
 			rs.teamField = r.NativeRef
 		case entity.RuleTeamValue:
 			rs.teams[r.NativeValue] = r.Meaning
-		case entity.RuleCodeRequiredType, entity.RuleAcceptanceGate, entity.RuleEpicField, entity.RuleBusinessEpicValue:
+		case entity.RuleCodeRequiredType:
+			rs.codeRequired[r.NativeRef] = r.Meaning == entity.MeaningCodeRequired
+		case entity.RuleAcceptanceGate, entity.RuleEpicField, entity.RuleBusinessEpicValue:
 		}
 	}
 	return out

@@ -145,7 +145,7 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 	if mapped {
 		rev.Timezone = mapping.Timezone
 	}
-	if mapped && flow {
+	if mapped && (flow || series.MetricSet == entity.MetricSetLinks) {
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindMapping, ID: mapping.ID.String(), Version: strconv.Itoa(mapping.VersionNo)})
 	}
 	for i := range targets {

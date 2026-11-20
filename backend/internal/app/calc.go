@@ -9,9 +9,11 @@ import (
 
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	calcrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/calc"
+	linkrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/link"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
+	linkuc "github.com/Avtobot22/craftPulse/backend/internal/usecase/link"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 )
 
@@ -78,9 +80,12 @@ func newCalc(pool *pgxpool.Pool, m calcModules, c clock.Clock, reg prometheus.Re
 	if err != nil {
 		return nil, err
 	}
+	tx := persistent.NewTransactor(pool)
+	// calc only reads links; their decisions stay with normalize (TZ 10.3).
+	links := linkuc.New(linkuc.Deps{Repo: linkrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Clock: c, NewID: newID})
 	return calc.New(calc.Deps{
-		Structure: m.structure, Facts: m.facts, Settings: m.settings, Collection: m.collection, Rights: m.rights,
-		Repo: calcrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Queue: queue.New(jobs), Tx: persistent.NewTransactor(pool),
+		Structure: m.structure, Facts: m.facts, Settings: m.settings, Collection: m.collection, Rights: m.rights, Links: links,
+		Repo: calcrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Queue: queue.New(jobs), Tx: tx,
 		Metrics: metrics, Clock: c, NewID: newID,
 	}), nil
 }
