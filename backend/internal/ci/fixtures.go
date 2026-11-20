@@ -44,6 +44,8 @@ var (
 	_expectedSkipped  = regexp.MustCompile(`^skipped (\S+) (unsupported|timeout)$`)
 	_expectedVuln     = regexp.MustCompile(`^vulnerability (\S+) (\S+)@(\S+) (\S+)$`)
 	_expectedMisconf  = regexp.MustCompile(`^misconfiguration (\S+) (\S+):([1-9]\d*) (.+)$`)
+	_expectedDocument = regexp.MustCompile(`^document (\S+) (markdown|openapi) owner=(\S+)$`)
+	_expectedSpec     = regexp.MustCompile(`^spec (\S+) (valid|invalid)$`)
 
 	// ErrFixturesFailed is returned when a fixture case gives other findings than it expects.
 	ErrFixturesFailed = errors.New("rule fixtures do not match")
@@ -79,7 +81,7 @@ var _fixtureReports = []fixtureReport{
 	{env: FixtureFunctionsEnv, file: "functions.csv", kinds: []string{"function"}, read: functionFacts},
 	{env: FixtureClonesEnv, file: "clones.json", kinds: []string{"clone"}, read: cloneFacts},
 	{env: FixtureScopeEnv, file: "scope.json", kinds: []string{"test", "excluded", "skipped"}, read: scopeFacts},
-	{env: FixtureFactsEnv, file: "facts.txt", kinds: []string{"vulnerability", "misconfiguration"}, read: lineFacts},
+	{env: FixtureFactsEnv, file: "facts.txt", kinds: []string{"vulnerability", "misconfiguration", "document", "spec"}, read: lineFacts},
 }
 
 // Fixtures runs a profile command on the cases of a profile fixture directory. Each case is a
@@ -184,8 +186,10 @@ func (fx *Fixtures) runCase(ctx context.Context, name string) (FixtureResult, er
 		}
 		missing, extra := diff(want, got, strings.Compare)
 		res.Missing, res.Extra = append(res.Missing, missing...), append(res.Extra, extra...)
-		if r.env == FixtureFactsEnv {
-			res.Found += len(got)
+		for _, f := range got {
+			if r.env == FixtureFactsEnv && (strings.HasPrefix(f, "vulnerability ") || strings.HasPrefix(f, "misconfiguration ")) {
+				res.Found++
+			}
 		}
 	}
 	return res, nil
@@ -305,6 +309,14 @@ func expectedFact(kind, line string) (string, bool) {
 	case "misconfiguration":
 		if m := _expectedMisconf.FindStringSubmatch(line); m != nil {
 			return "misconfiguration " + m[1] + " " + path.Clean(m[2]) + ":" + m[3] + " " + m[4], true
+		}
+	case "document":
+		if m := _expectedDocument.FindStringSubmatch(line); m != nil {
+			return "document " + path.Clean(m[1]) + " " + m[2] + " owner=" + m[3], true
+		}
+	case "spec":
+		if m := _expectedSpec.FindStringSubmatch(line); m != nil {
+			return "spec " + path.Clean(m[1]) + " " + m[2], true
 		}
 	}
 	return "", false

@@ -151,6 +151,7 @@ linters:
             - "github.com/oapi-codegen/runtime"
             - "github.com/stretchr/testify/"
             - "github.com/Avtobot22/craftPulse/backend/pkg/secrets$"
+            - "github.com/yuin/goldmark"
         usecase-unknown-module:
           files: ["**/internal/usecase/**", "!**/internal/usecase/{org,install,auth,access,audit,connect,sync,ingest,normalize,link,process,calc,change,decision,docs,outbound,view,survey}/**"]
           deny:

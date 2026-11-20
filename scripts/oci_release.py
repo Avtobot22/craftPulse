@@ -48,11 +48,12 @@ def run(args, *, cwd=ROOT, capture=False, input_text=None, extra_env=None):
 PROFILES = "backend/internal/ci/profiles"
 SAST_PROFILE = PROFILES + "/opengrep-default"
 TRIVY_PROFILE = PROFILES + "/trivy-default"
+DOCS_PROFILE = PROFILES + "/git-markdown-openapi"
 # Code profiles and the linter configuration each one hashes with profile.json and jscpd.json.
 CODE_PROFILES = {"go-default": "golangci.yml", "python-default": "ruff.toml", "js-default": "eslint.config.mjs"}
 # Each profile image is exercised by its check script without a network.
 PROFILE_CHECKS = {"gitleaks-default": ["scripts/check_secrets_profile.py"], "opengrep-default": ["scripts/check_sast_profile.py"],
-                  "trivy-default": ["scripts/check_trivy_profile.py"],
+                  "trivy-default": ["scripts/check_trivy_profile.py"], "git-markdown-openapi": ["scripts/check_docs_profile.py"],
                   **{name: ["scripts/check_code_profile.py", "--profile", name] for name in CODE_PROFILES}}
 
 
@@ -75,6 +76,9 @@ def plan(root=ROOT):
     if (root / TRIVY_PROFILE / "profile.json").is_file():
         images.append({"name": "craftpulse-ci-trivy-default", "context": "backend",
                        "dockerfile": "backend/ci.Dockerfile", "target": "trivy-default"})
+    if (root / DOCS_PROFILE / "profile.json").is_file():
+        images.append({"name": "craftpulse-ci-git-markdown-openapi", "context": "backend",
+                       "dockerfile": "backend/ci.Dockerfile", "target": "git-markdown-openapi"})
     for directory in sorted((root / "backend/cmd").glob("adapter-*")):
         # The recorded-answer server explicitly excludes itself from release images.
         if directory.name == "adapter-test":
@@ -132,6 +136,10 @@ def metadata(root, images):
         version, database, rule_hash = trivy_profile(root)
         ci_versions["trivy"], ci_versions["trivy-db"] = version, database
         rule_hashes["trivy-default"] = rule_hash
+    if any(image.get("target") == "git-markdown-openapi" for image in images):
+        tools, rule_hash = docs_profile(root)
+        ci_versions.update(tools)
+        rule_hashes["git-markdown-openapi"] = rule_hash
     return {"core_schema_version": schema_version(root, "core"),
             "adapter_schema_versions": {name: schema_version(root, "adapter") for name in adapters},
             "adapter_contract_version": contract[1] if adapters else None,
@@ -192,6 +200,20 @@ def trivy_profile(root):
         raise ReleaseError("Trivy database is not pinned by digest")
     content = profile + (directory / "trivy.yaml").read_bytes() + (directory / "trivyignore").read_bytes()
     return version, database[0], hashlib.sha256(content).hexdigest()
+
+
+def docs_profile(root):
+    """Spectral and goldmark versions of the Git documentation profile, checked against its lockfile and
+    backend/go.mod, and the rules hash of profile.json and spectral.yaml."""
+    directory = root / DOCS_PROFILE
+    profile = (directory / "profile.json").read_bytes()
+    tools = json.loads(profile)["tools"]
+    lock = read_json(directory / "package-lock.json")["packages"].get("node_modules/@stoplight/spectral-cli", {})
+    goldmark = re.findall(r"^\s*github.com/yuin/goldmark v(\S+)$", (root / "backend/go.mod").read_text(), re.M)
+    if lock.get("version") != tools.get("spectral") or goldmark != [tools.get("goldmark")]:
+        raise ReleaseError("docs profile and image tool versions disagree")
+    content = profile + (directory / "spectral.yaml").read_bytes()
+    return {"spectral": tools["spectral"], "goldmark": tools["goldmark"]}, hashlib.sha256(content).hexdigest()
 
 
 def install_tools(destination, root=ROOT):

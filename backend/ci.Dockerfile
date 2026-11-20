@@ -181,5 +181,24 @@ LABEL org.opencontainers.image.title="craftpulse-ci-trivy-default" \
       io.craftpulse.profile="trivy-default"
 USER 65532:65532
 
+FROM node:26.3.0-alpine@sha256:9c0e1e52125d6b67d505cf75b4880fcf1290ccea5c480849910e1d57b2cf72b5 AS spectral
+WORKDIR /opt/craftpulse/profiles/git-markdown-openapi
+COPY internal/ci/profiles/git-markdown-openapi/package.json internal/ci/profiles/git-markdown-openapi/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no-fund
+
+# Git documentation profile: Markdown links, anchors and the inventory by craftpulse-ci with goldmark, OpenAPI
+# by Spectral at the version of profile.json with the ruleset of the profile. The job runs "craftpulse-ci docs"
+# and "craftpulse-ci upload".
+FROM ci-runtime AS git-markdown-openapi
+USER 0
+RUN apk add --no-cache nodejs
+COPY internal/ci/profiles/git-markdown-openapi/ /opt/craftpulse/profiles/git-markdown-openapi/
+COPY --from=spectral /opt/craftpulse/profiles/git-markdown-openapi/node_modules/ /opt/craftpulse/profiles/git-markdown-openapi/node_modules/
+RUN ln -s /opt/craftpulse/profiles/git-markdown-openapi/node_modules/@stoplight/spectral-cli/dist/index.js /usr/local/bin/spectral
+ENV CRAFTPULSE_DOCS_PROFILE=/opt/craftpulse/profiles/git-markdown-openapi HOME=/tmp
+LABEL org.opencontainers.image.title="craftpulse-ci-git-markdown-openapi" \
+      io.craftpulse.profile="git-markdown-openapi"
+USER 65532:65532
+
 # Keep the default target the base CLI, for existing callers.
 FROM ci-runtime AS ci

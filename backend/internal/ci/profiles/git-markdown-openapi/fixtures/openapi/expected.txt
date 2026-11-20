@@ -1,0 +1,12 @@
+# invalid.openapi.yaml lacks the required description of a response: a schema error makes it invalid.
+# rules.openapi.yaml lacks the description of an operation: a rule finding of a valid specification.
+# settings.yaml is not an OpenAPI document and stays out of the inventory.
+oas3-schema invalid.openapi.yaml:22
+operation-description rules.openapi.yaml:16
+
+document invalid.openapi.yaml openapi owner=-
+document rules.openapi.yaml openapi owner=-
+document valid.openapi.yaml openapi owner=-
+spec invalid.openapi.yaml invalid
+spec rules.openapi.yaml valid
+spec valid.openapi.yaml valid

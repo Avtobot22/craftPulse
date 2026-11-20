@@ -1,0 +1,7 @@
+{
+  "name": "craftpulse-git-markdown-openapi",
+  "private": true,
+  "dependencies": {
+    "@stoplight/spectral-cli": "6.17.1"
+  }
+}

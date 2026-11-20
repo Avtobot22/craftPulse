@@ -107,6 +107,26 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, "Trivy versions disagree"):
             release.metadata(self.root, images)
 
+    def test_docs_profile_pins_spectral_in_lockfile_and_goldmark_in_go_mod(self):
+        directory = self.root / release.DOCS_PROFILE
+        directory.mkdir(parents=True)
+        release.write_json(directory / "profile.json", {"tools": {"craftpulse-docs": "1", "goldmark": "1.8.7", "spectral": "6.17.1"}})
+        (directory / "spectral.yaml").write_text('extends: ["spectral:oas"]\n')
+        lock = {"packages": {"": {}, "node_modules/@stoplight/spectral-cli": {"version": "6.17.1"}}}
+        release.write_json(directory / "package-lock.json", lock)
+        (self.root / "backend/go.mod").write_text("require (\n\tgithub.com/yuin/goldmark v1.8.7\n)\n")
+        images = release.plan(self.root)
+        self.assertEqual([i["name"] for i in images if i.get("target")], ["craftpulse-ci-git-markdown-openapi"])
+        self.assertEqual(release.PROFILE_CHECKS["git-markdown-openapi"], ["scripts/check_docs_profile.py"])
+        metadata = release.metadata(self.root, images)
+        self.assertEqual(metadata["ci_tool_versions"], {"spectral": "6.17.1", "goldmark": "1.8.7"})
+        original = metadata["rule_hashes"]["git-markdown-openapi"]
+        (directory / "spectral.yaml").write_text('extends: ["spectral:oas", "spectral:asyncapi"]\n')
+        self.assertNotEqual(release.metadata(self.root, images)["rule_hashes"]["git-markdown-openapi"], original)
+        (self.root / "backend/go.mod").write_text("require github.com/yuin/goldmark v1.8.6\n")
+        with self.assertRaisesRegex(release.ReleaseError, "docs profile and image tool versions disagree"):
+            release.metadata(self.root, images)
+
     def test_python_and_js_profiles_pin_tools_in_requirements_and_lockfile(self):
         recipe = ("ADD https://registry.npmjs.org/jscpd-linux-x64-musl/-/jscpd-linux-x64-musl-5.4.2.tgz /jscpd.tgz\n"
                   "ADD https://registry.npmjs.org/jscpd-linux-arm64-musl/-/jscpd-linux-arm64-musl-5.4.2.tgz /jscpd.tgz\n")

@@ -1,0 +1,13 @@
+# Broken: a missing file, a missing anchor, a name that differs only in case and a path outside the repository.
+# Working links give no finding: a file, an anchor, the anchor of a repeated heading, an anchor of the same
+# document, a directory, a path from the repository root and an image. External links are not checked.
+missing-file README.md:12
+missing-anchor README.md:13
+missing-file README.md:14
+missing-file README.md:15
+
+# The owner comes from front matter; a document without it has none.
+document README.md markdown owner=team-lead
+document guide.md markdown owner=-
+document sub/diagram.md markdown owner=-
+document sub/notes.md markdown owner=developer

@@ -89,6 +89,11 @@ class RepositoryChecksTest(unittest.TestCase):
             errors = checks.link_errors(root, root / "README.md", "[x](local.md) [y](absent.md)", set())
             self.assertEqual(2, len(errors))
 
+    def test_rule_fixture_sources_are_not_link_checked(self):
+        self.assertTrue(checks.FIXTURE_SOURCES.match("backend/internal/ci/profiles/git-markdown-openapi/fixtures/links/src/README.md"))
+        self.assertFalse(checks.FIXTURE_SOURCES.match("backend/internal/ci/profiles/git-markdown-openapi/README.md"))
+        self.assertFalse(checks.FIXTURE_SOURCES.match("docs/fixtures/case/src/README.md"))
+
     def test_links_cannot_escape_repository(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
