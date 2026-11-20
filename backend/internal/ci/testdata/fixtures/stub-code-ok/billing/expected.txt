@@ -1,0 +1,6 @@
+G104 main.go:3
+unused pkg/util.go:7
+function main.go:3 Run ccn=2 nloc=5
+clone a.go:4-15 b.go:1-12
+test main_test.go
+excluded vendor vendor

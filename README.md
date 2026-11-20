@@ -284,6 +284,62 @@ namespace-префиксы XML сохраняются.
 заранее получен командой `profile` или сохранён в состоянии job. Это тот же пакет
 и те же проверки, что при обычной загрузке; HTTP upload и ожидание receipt пропускаются.
 
+## Профиль кода Go
+
+`go-default` проверяет Go-компоненты тремя инструментами: golangci-lint 2.15.0 даёт
+lint-находки в SARIF 2.1.0, Lizard 1.25.0 - функции с CC и NLOC в CSV, jscpd 5.4.2 -
+пары копий в JSON. Версии, лимит времени 5 минут и пороги C05 и C06 (CC выше 10,
+NLOC выше 50) записаны в `backend/internal/ci/profiles/go-default/profile.json`.
+Рядом лежат `golangci.yml` с линтерами errcheck, govet, ineffassign, staticcheck и unused
+и `jscpd.json` с минимальной копией 10 строк и 100 токенов. `rules_hash` - SHA-256 этих
+трёх файлов подряд, `config_hash` запуска - SHA-256 конфигурации его инструмента.
+
+Образ строится целью `go-default` того же Dockerfile поверх базового CLI:
+
+```sh
+docker build --platform linux/amd64 --target go-default -f backend/ci.Dockerfile -t craftpulse-go-default:local backend
+python3 scripts/check_go_profile.py --image craftpulse-go-default:local
+```
+
+golangci-lint собирается из исходников закреплённой версии, Lizard ставится из
+`lizard-requirements.txt` по хэшам, бинарник jscpd скачивается по SHA-256. Выпуск
+сверяет версии `profile.json` с Dockerfile и requirements. Проверка образа идёт без сети:
+версии инструментов, rule fixtures, запуск job на репозитории с vendor, сгенерированным
+файлом и копией кода и запуск с лимитом 1 с.
+
+Job профиля выполняет `craftpulse-ci code`, затем `craftpulse-ci upload`. Команда берёт
+строки `code` профиля `go-default` из профиля проекта и на каждый компонент записывает
+три запуска с общим лимитом времени: `go-default-golangci-lint`, `go-default-lizard` и
+`go-default-jscpd`. Репозиторий берётся из `CI_PROJECT_DIR`, профиль - из
+`CRAFTPULSE_CODE_PROFILE` образа; `--timeout` заменяет лимит профиля, `--component`
+выбирает один компонент. Инструмент, не уложившийся в лимит, даёт `timeout` и `partial`,
+следующие инструменты после истечения лимита не запускаются. Все пути в отчётах
+указаны от корня репозитория.
+
+Каталоги `vendor` и `build`, сгенерированные файлы с отметкой
+`// Code generated ... DO NOT EDIT.` и каталоги на `.` и `_`, которые пропускает go tool,
+не анализируются. Первые три
+попадают в `excluded_targets` запуска с причиной; исключение задаёт границу области и
+не делает запуск неполным. Файлы `_test.go` и каталоги `testdata` анализируются и
+перечислены в `test_targets`, чтобы показатели production-области считались без них.
+golangci-lint запускается в каждом Go-модуле компонента, а для компонента внутри
+модуля - в ближайшем модуле выше с шаблоном пакетов компонента. Отчёт jscpd сохраняет
+файлы, строки и токены копий без фрагмента кода.
+
+Анализу не нужна сеть, если зависимости модуля есть в checkout или кэше модулей. Иначе
+golangci-lint не загрузит пакеты, и запуск получит `failed`. `GOTOOLCHAIN=local`:
+модуль, которому нужна версия Go новее 1.27.4, тоже даёт `failed`.
+
+Rule fixtures профиля лежат в `backend/internal/ci/profiles/go-default/fixtures/`, каждый
+случай - отдельный Go-модуль. В `expected.txt` кроме находок `<rule> <path>:<line>`
+перечислены функции `function <path>:<line> <name> ccn=<n> nloc=<n>`, копии
+`clone <path>:<start>-<end> <path>:<start>-<end>`, тестовые файлы `test <path>` и
+исключения `excluded <path> <reason>`. Записанный отчёт сравнивается со списком целиком:
+
+```sh
+craftpulse-ci fixtures /opt/craftpulse/profiles/go-default/fixtures -- craftpulse-ci code --fixture
+```
+
 ## Очистка секретов при приёме
 
 Сервер повторно проверяет пакет правилами Gitleaks 8.30.1 из

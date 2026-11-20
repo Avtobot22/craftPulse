@@ -1,0 +1,4 @@
+{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"stub"}},"results":[
+{"ruleId":"unused","locations":[{"physicalLocation":{"artifactLocation":{"uri":"./pkg/util.go"},"region":{"startLine":7}}}]},
+{"ruleId":"G104","locations":[{"physicalLocation":{"artifactLocation":{"uri":"main.go"},"region":{"startLine":3}}}]}
+]}]}

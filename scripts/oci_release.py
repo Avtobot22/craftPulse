@@ -45,6 +45,11 @@ def run(args, *, cwd=ROOT, capture=False, input_text=None, extra_env=None):
     return result.stdout.strip() if capture else None
 
 
+GO_PROFILE = "backend/internal/ci/profiles/go-default"
+# Each profile image is exercised by its own check script without a network.
+PROFILE_CHECKS = {"gitleaks-default": "scripts/check_secrets_profile.py", "go-default": "scripts/check_go_profile.py"}
+
+
 def plan(root=ROOT):
     images = [
         {"name": "craftpulse-server", "context": "backend", "dockerfile": "backend/Dockerfile"},
@@ -54,6 +59,9 @@ def plan(root=ROOT):
     if (root / "backend/pkg/secrets/profiles/gitleaks-default/profile.json").is_file():
         images.append({"name": "craftpulse-ci-gitleaks-default", "context": "backend",
                        "dockerfile": "backend/ci.Dockerfile", "target": "gitleaks-default"})
+    if (root / GO_PROFILE / "profile.json").is_file():
+        images.append({"name": "craftpulse-ci-go-default", "context": "backend",
+                       "dockerfile": "backend/ci.Dockerfile", "target": "go-default"})
     for directory in sorted((root / "backend/cmd").glob("adapter-*")):
         # The recorded-answer server explicitly excludes itself from release images.
         if directory.name == "adapter-test":
@@ -93,10 +101,30 @@ def metadata(root, images):
         ci_versions["gitleaks"] = version
         rule_hashes["gitleaks-default"] = hashlib.sha256(version.encode() + b"\n" +
             (directory / "rules.toml").read_bytes() + (directory / "profile.json").read_bytes()).hexdigest()
+    if any(image.get("target") == "go-default" for image in images):
+        tools, rule_hash = go_profile(root)
+        ci_versions.update(tools)
+        rule_hashes["go-default"] = rule_hash
     return {"core_schema_version": schema_version(root, "core"),
             "adapter_schema_versions": {name: schema_version(root, "adapter") for name in adapters},
             "adapter_contract_version": contract[1] if adapters else None,
             "ci_tool_versions": ci_versions, "rule_hashes": rule_hashes}
+
+
+def go_profile(root):
+    """Tool versions of the Go code profile, checked against the image recipe, and its rules hash."""
+    directory = root / GO_PROFILE
+    tools = read_json(directory / "profile.json")["tools"]
+    dockerfile = (root / "backend/ci.Dockerfile").read_text()
+    pinned = {
+        "golangci-lint": set(re.findall(r"^ARG GOLANGCI_LINT_VERSION=(\S+)$", dockerfile, re.M)),
+        "lizard": set(re.findall(r"^lizard==(\S+) ", (directory / "lizard-requirements.txt").read_text(), re.M)),
+        "jscpd": set(re.findall(r"/jscpd-linux-(?:x64|arm64)-musl-([0-9][^/]*)\.tgz", dockerfile)),
+    }
+    if sorted(tools) != sorted(pinned) or any(versions != {tools[name]} for name, versions in pinned.items()):
+        raise ReleaseError("Go profile and image tool versions disagree")
+    content = b"".join((directory / name).read_bytes() for name in ["profile.json", "golangci.yml", "jscpd.json"])
+    return {name: tools[name] for name in sorted(tools)}, hashlib.sha256(content).hexdigest()
 
 
 def install_tools(destination, root=ROOT):
@@ -278,8 +306,8 @@ def release(sha, output, tools, root=ROOT):
             smoke_adapter(reference)
         if name == "craftpulse-ci":
             smoke_ci(reference)
-        if image.get("target") == "gitleaks-default":
-            run([sys.executable, str(root / "scripts/check_secrets_profile.py"), "--image", reference], cwd=root)
+        if image.get("target") in PROFILE_CHECKS:
+            run([sys.executable, str(root / PROFILE_CHECKS[image["target"]]), "--image", reference], cwd=root)
         references[name] = reference
     licenses = scan(images, references, output, tools)
     publish_images(images, sha, references, resolved, registry)
@@ -321,12 +349,12 @@ def main():
                     smoke_adapter(reference)
         elif args.command == "build-ci":
             for image in plan():
-                if image["name"] == "craftpulse-ci" or image.get("target") == "gitleaks-default":
+                if image["name"] == "craftpulse-ci" or image.get("target") in PROFILE_CHECKS:
                     reference = f"{image['name']}:check"
                     build(image, args.sha, reference)
                     smoke_ci(reference)
-                    if image.get("target") == "gitleaks-default":
-                        run([sys.executable, str(ROOT / "scripts/check_secrets_profile.py"), "--image", reference])
+                    if image.get("target") in PROFILE_CHECKS:
+                        run([sys.executable, str(ROOT / PROFILE_CHECKS[image["target"]]), "--image", reference])
         elif args.command == "install-tools":
             install_tools(args.tools.resolve())
         else:

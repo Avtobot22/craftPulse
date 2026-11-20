@@ -38,6 +38,8 @@ type Tool struct {
 	RulesHash       string
 	DBVersion       string
 	Command         []string
+	// Dir is the working directory of the command; empty means the directory of the step.
+	Dir string
 }
 
 // Runner runs tools of the profile and records their runs in the job state.
@@ -77,18 +79,17 @@ func (r *Runner) Run(ctx context.Context, t *Tool) (*envelope.ScanToolRun, error
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	var reports []string
 	finished := err == nil && reportReady(t.Report)
-	switch {
-	case timedOut:
-		run.ExitClass, run.Completeness = envelope.ScanToolRunExitClassTimeout, envelope.ScanToolRunCompletenessPartial
-	case finished && code == 0:
-		run.ExitClass, run.Completeness = envelope.ScanToolRunExitClassSuccess, envelope.ScanToolRunCompletenessComplete
-	case finished && slices.Contains(t.FindingsCodes, code):
-		run.ExitClass, run.Completeness = envelope.ScanToolRunExitClassFindings, envelope.ScanToolRunCompletenessComplete
-	default:
-		run.ExitClass, run.Completeness = envelope.ScanToolRunExitClassFailed, envelope.ScanToolRunCompletenessUnknown
+	if err := r.record(run, t, outcome(timedOut, finished, code, t.FindingsCodes)); err != nil {
+		return nil, err
 	}
+	return run, nil
+}
+
+// record sets the outcome of the run, attaches the report of a complete run and saves the run.
+func (r *Runner) record(run *envelope.ScanToolRun, t *Tool, o toolOutcome) error {
+	run.ExitClass, run.Completeness = o.exit, o.completeness
+	var reports []string
 	if run.Completeness == envelope.ScanToolRunCompletenessComplete {
 		reports = []string{t.Report}
 		run.Reports = []envelope.ScanReport{{
@@ -96,10 +97,26 @@ func (r *Runner) Run(ctx context.Context, t *Tool) (*envelope.ScanToolRun, error
 			FormatVersion: t.FormatVersion, File: envelope.FileRef{MediaType: mediaType(t.Format)},
 		}}
 	}
-	if err := r.Store.AddRun(run, reports); err != nil {
-		return nil, err
+	return r.Store.AddRun(run, reports)
+}
+
+type toolOutcome struct {
+	exit         envelope.ScanToolRunExitClass
+	completeness envelope.ScanToolRunCompleteness
+}
+
+// outcome classifies a tool run: out of time is timeout and partial, a crash or a missing report is
+// failed; only a finished report is success or findings and complete (NFR-03).
+func outcome(timedOut, finished bool, code int, findingsCodes []int) toolOutcome {
+	switch {
+	case timedOut:
+		return toolOutcome{envelope.ScanToolRunExitClassTimeout, envelope.ScanToolRunCompletenessPartial}
+	case finished && code == 0:
+		return toolOutcome{envelope.ScanToolRunExitClassSuccess, envelope.ScanToolRunCompletenessComplete}
+	case finished && slices.Contains(findingsCodes, code):
+		return toolOutcome{envelope.ScanToolRunExitClassFindings, envelope.ScanToolRunCompletenessComplete}
 	}
-	return run, nil
+	return toolOutcome{envelope.ScanToolRunExitClassFailed, envelope.ScanToolRunCompletenessUnknown}
 }
 
 // entry finds the builtin row of the profile that the tool serves: its image digest and component.
@@ -142,8 +159,9 @@ func (r *Runner) exec(ctx context.Context, t *Tool) (code int, timedOut bool, er
 	runCtx, cancel := context.WithTimeout(ctx, t.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, t.Command[0], t.Command[1:]...) //nolint:gosec // the CI configuration names the tool
-	cmd.Stdout, cmd.Stderr, cmd.Env = r.Stdout, r.Stderr, toolEnv()
+	cmd.Stdout, cmd.Stderr, cmd.Env, cmd.Dir = r.Stdout, r.Stderr, toolEnv(), t.Dir
 	cmd.WaitDelay = _killGrace
+	ownGroup(cmd)
 	err = cmd.Run()
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 		return -1, true, nil
@@ -202,9 +220,11 @@ func mediaType(format string) string {
 		return "application/xml"
 	case envelope.ScanReportReportFormatLcov:
 		return "text/plain"
+	case envelope.ScanReportReportFormatLizardCsv:
+		return "text/csv"
 	case envelope.ScanReportReportFormatEnvelope, envelope.ScanReportReportFormatGitlabSecurity, envelope.ScanReportReportFormatGitlabCodeQuality,
 		envelope.ScanReportReportFormatGolangciJson, envelope.ScanReportReportFormatGitleaksJson, envelope.ScanReportReportFormatSpectralJson,
-		envelope.ScanReportReportFormatDocsJson:
+		envelope.ScanReportReportFormatDocsJson, envelope.ScanReportReportFormatJscpdJson:
 		return "application/json"
 	}
 	return "application/octet-stream"

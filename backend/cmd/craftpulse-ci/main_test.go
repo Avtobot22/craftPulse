@@ -470,6 +470,23 @@ func TestFixtures_MarksMissingAndExtraFindings(t *testing.T) {
 	assert.Contains(t, out, "fixture sql-injection: differs\n  missing G201 db/query.go:12\n  extra G104 main.go:3\n")
 }
 
+func TestFixtures_ComparesFunctionsClonesAndScopeOfCodeProfile(t *testing.T) {
+	c := newCLI(t, newFakeAPI(t))
+	command := []string{"--", "sh", "-c", `cp findings.sarif "$CRAFTPULSE_REPORT" && cp functions.csv "$CRAFTPULSE_FUNCTIONS_REPORT" &&
+		cp clones.json "$CRAFTPULSE_CLONES_REPORT" && cp scope.json "$CRAFTPULSE_SCOPE_REPORT"`}
+
+	out := c.mustRun(append([]string{"fixtures", "../../internal/ci/testdata/fixtures/stub-code-ok"}, command...)...)
+	assert.Contains(t, out, "fixture billing: ok, 2 finding(s)")
+
+	code, out := c.run(append([]string{"fixtures", "../../internal/ci/testdata/fixtures/stub-code-broken"}, command...)...)
+	assert.Equal(t, _exitFailed, code, out)
+	assert.Contains(t, out, "fixture billing: differs\n")
+	assert.Contains(t, out, "  missing function main.go:3 Run ccn=3 nloc=5\n")
+	assert.Contains(t, out, "  extra function main.go:3 Run ccn=2 nloc=5\n")
+	assert.Contains(t, out, "  extra clone a.go:4-15 b.go:1-12\n")
+	assert.Contains(t, out, "  missing excluded gen.go generated\n")
+}
+
 func ptr[T any](v T) *T { return &v }
 
 func TestSecretsProfile_RedactsLogsStateAndUpload(t *testing.T) {

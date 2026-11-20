@@ -1,0 +1,19 @@
+# Each enabled linter has a problem example and a safe one; only the problem gives a finding.
+errcheck errcheck.go:7
+govet govet.go:6
+ineffassign ineffassign.go:4
+staticcheck staticcheck.go:6
+unused unused.go:3
+
+function errcheck.go:5 decodeUnchecked ccn=1 nloc=5
+function errcheck.go:11 decodeChecked ccn=2 nloc=7
+function govet.go:5 printWrongVerb ccn=1 nloc=3
+function govet.go:9 printRightVerb ccn=1 nloc=3
+function ineffassign.go:3 overwritten ccn=1 nloc=5
+function ineffassign.go:9 accumulated ccn=1 nloc=5
+function staticcheck.go:5 waitTooLittle ccn=1 nloc=3
+function staticcheck.go:9 waitMilliseconds ccn=1 nloc=3
+function unused.go:3 forgotten ccn=1 nloc=3
+function unused.go:7 called ccn=1 nloc=3
+function unused.go:12 Exported ccn=1 nloc=3
+function unused.go:17 Use ccn=1 nloc=10

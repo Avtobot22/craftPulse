@@ -7,12 +7,12 @@ profiles:
     mode: builtin
     languages: [go]
     analysis_kinds: [code]
-    image: ghcr.io/avtobot22/craftpulse-profile-go
+    image: ghcr.io/avtobot22/craftpulse-ci-go-default
     digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
-    tool_versions: {golangci-lint: 2.6.1, lizard: 1.17.31, jscpd: 4.0.5}
+    tool_versions: {golangci-lint: 2.15.0, lizard: 1.25.0, jscpd: 5.4.2}
     rules_hash: 3333333333333333333333333333333333333333333333333333333333333333
     script:
-      - craftpulse-ci run --profile-id go-default --kind code --format golangci_json --producer golangci-lint --producer-version 2.6.1 --report golangci.json -- golangci-lint run --output.json.path=golangci.json ./...
+      - craftpulse-ci code
   - id: gitleaks-default
     mode: builtin
     analysis_kinds: [secrets]

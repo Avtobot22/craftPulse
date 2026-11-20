@@ -1,0 +1,4 @@
+# StatusText is above the complexity threshold 10, Accumulate above the length threshold 50 NLOC.
+function complex.go:4 StatusText ccn=13 nloc=29
+function long.go:4 Accumulate ccn=1 nloc=58
+function simple.go:4 Double ccn=1 nloc=3

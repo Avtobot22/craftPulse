@@ -1,0 +1,6 @@
+# orders.go and invoices.go repeat one function body; unique.go has no copies.
+clone orders.go:4-31 invoices.go:4-31
+
+function orders.go:4 OverLimitOrders ccn=9 nloc=28
+function invoices.go:4 OverLimitInvoices ccn=9 nloc=28
+function unique.go:6 Title ccn=2 nloc=7

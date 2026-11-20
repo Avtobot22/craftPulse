@@ -136,7 +136,7 @@ refused the package or rejected it whole; 3 - the intake result did not arrive i
 	}
 	root.PersistentFlags().BoolVar(&a.debug, "debug", false, "print every request and answer, without the token")
 	root.PersistentFlags().StringVar(&a.workDir, "work-dir", "", "directory with the state of the job")
-	root.AddCommand(a.versionCmd(), a.profileCmd(), a.runCmd(), a.importCmd(), a.uploadCmd(), a.fixturesCmd(), a.secretsCmd(), a.secretsInfoCmd())
+	root.AddCommand(a.versionCmd(), a.profileCmd(), a.runCmd(), a.importCmd(), a.uploadCmd(), a.fixturesCmd(), a.codeCmd(), a.secretsCmd(), a.secretsInfoCmd())
 	return root
 }
 
@@ -273,6 +273,75 @@ the run is uploaded with the package.`,
 		_ = cmd.MarkFlagRequired(name) // the flags are declared just above
 	}
 	return cmd
+}
+
+func (a *app) codeCmd() *cobra.Command {
+	var (
+		dir, component string
+		timeout        time.Duration
+		fixture        bool
+	)
+	cmd := &cobra.Command{
+		Use:   "code",
+		Short: "run the code profile of the image on the components of the job",
+		Long: `code runs the code profile of the image on every component of its builtin code rows: golangci-lint
+gives findings in SARIF, Lizard the functions in CSV and jscpd the copies in JSON, three tool runs per
+component within one time limit. Vendor and build directories and generated files are excluded, test
+code is marked separately. The profile directory defaults to CRAFTPULSE_CODE_PROFILE of the image and
+the repository to CI_PROJECT_DIR.
+
+With --fixture the profile checks the current directory and writes the reports named by
+CRAFTPULSE_REPORT, CRAFTPULSE_FUNCTIONS_REPORT, CRAFTPULSE_CLONES_REPORT and CRAFTPULSE_SCOPE_REPORT:
+the command of "craftpulse-ci fixtures".`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if dir == "" {
+				dir = a.getenv("CRAFTPULSE_CODE_PROFILE")
+			}
+			if dir == "" {
+				return errors.New("pass --profile-dir or set CRAFTPULSE_CODE_PROFILE")
+			}
+			p, err := ci.LoadCodeProfile(dir)
+			if err != nil {
+				return err
+			}
+			if fixture {
+				return a.codeFixture(cmd.Context(), p)
+			}
+			s, err := a.session(cmd.Context(), false)
+			if err != nil {
+				return err
+			}
+			root := a.getenv("CI_PROJECT_DIR")
+			if root == "" {
+				root = "."
+			}
+			r := &ci.CodeRunner{
+				Runner: &ci.Runner{Job: &s.job, Profile: s.profile, Store: s.store, Stdout: a.stdout, Stderr: a.stderr, Now: time.Now},
+				Code:   p, Root: root, Timeout: timeout,
+			}
+			runs, err := r.Run(cmd.Context(), ci.CodeRows(s.profile, p.ID, component))
+			for i := range runs {
+				ci.PrintRun(a.stdout, &runs[i])
+			}
+			return err
+		},
+	}
+	fl := cmd.Flags()
+	fl.StringVar(&dir, "profile-dir", "", "directory of the code profile")
+	fl.StringVar(&component, "component", "", "component ID; all code rows of the profile by default")
+	fl.DurationVar(&timeout, "timeout", 0, "time limit of the profile on all components (default from the profile)")
+	fl.BoolVar(&fixture, "fixture", false, "check the current directory for the fixtures command")
+	return cmd
+}
+
+func (a *app) codeFixture(ctx context.Context, p *ci.CodeProfile) error {
+	out := ci.CodeReports{Lint: a.getenv(ci.FixtureReportEnv), Functions: a.getenv(ci.FixtureFunctionsEnv), Clones: a.getenv(ci.FixtureClonesEnv)}
+	scope := a.getenv(ci.FixtureScopeEnv)
+	if out.Lint == "" || out.Functions == "" || out.Clones == "" || scope == "" {
+		return errors.New("--fixture runs under the fixtures command, which names the report files")
+	}
+	return p.Fixture(ctx, a.stdout, a.stderr, out, scope)
 }
 
 func (a *app) importCmd() *cobra.Command {

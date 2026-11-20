@@ -61,6 +61,7 @@ jobs:
               - 'frontend/Dockerfile'
               - 'frontend/package-lock.json'
               - 'scripts/oci_release.py'
+              - 'scripts/check_go_profile.py'
               - 'tests/test_oci_release.py'
               - '.github/release-tools.json'
               - '.github/workflows/oci-release.yml'
