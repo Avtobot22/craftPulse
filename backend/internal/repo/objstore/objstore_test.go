@@ -30,7 +30,8 @@ func startSeaweed(t *testing.T) objstore.Config {
 		testcontainers.WithExposedPorts("8333/tcp"),
 		testcontainers.WithWaitStrategy(wait.ForListeningPort("8333/tcp").WithStartupTimeout(time.Minute)),
 	)
-	testcontainers.CleanupContainer(t, c)
+	// The data is thrown away: the container stops at once, without the grace period of SeaweedFS.
+	testcontainers.CleanupContainer(t, c, testcontainers.StopTimeout(0))
 	require.NoError(t, err)
 	endpoint, err := c.PortEndpoint(t.Context(), "8333/tcp", "http")
 	require.NoError(t, err)
