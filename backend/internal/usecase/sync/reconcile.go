@@ -257,7 +257,7 @@ func (u *UseCase) closeRun(ctx context.Context, job entity.SyncReconcileJob, run
 // reconciledAreas are the areas whose completeness of tasks a finished reconciliation decides: calc recounts their
 // series, since the completeness of a collection is an input of T39-T42 (TZ 10.3, rule 6).
 func (u *UseCase) reconciledAreas(ctx context.Context, org, conn entity.ID, dataKind string) ([]entity.ID, error) {
-	if dataKind != _dataTasks {
+	if dataKind != _dataTasks && dataKind != "ci" {
 		return nil, nil
 	}
 	scopes, err := u.d.Connect.Scopes(ctx, org, conn)

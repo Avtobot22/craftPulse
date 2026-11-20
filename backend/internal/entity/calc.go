@@ -476,5 +476,6 @@ type AreaCollection struct {
 	LastSuccessAt *time.Time
 	Reconcile     *ReconcileRun
 	// Phase is the phase of the collection of tasks; empty before the first page.
-	Phase SyncPhase
+	Phase       SyncPhase
+	HistoryFrom *time.Time
 }
