@@ -114,12 +114,12 @@ FROM generate_subscripts(sqlc.arg(metric_ids)::text[], 1) AS i;
 
 -- name: InsertContributions :exec
 INSERT INTO calc.contribution (organization_id, part_id, metric_id, estimator, point_start, object_id, item_no, object_kind, role, value,
-    reason_code)
+    reason_code, evidence)
 SELECT sqlc.arg(organization_id), sqlc.arg(part_id), (sqlc.arg(metric_ids)::text[])[i], (sqlc.arg(estimators)::text[])[i],
     (sqlc.arg(starts)::timestamptz[])[i], (sqlc.arg(object_ids)::uuid[])[i], (sqlc.arg(item_nos)::smallint[])[i],
     (sqlc.arg(kinds)::text[])[i], (sqlc.arg(roles)::text[])[i],
     CASE WHEN (sqlc.arg(has_values)::boolean[])[i] THEN (sqlc.arg(contribution_values)::text[])[i]::numeric END,
-    NULLIF((sqlc.arg(reasons)::text[])[i], '')
+    NULLIF((sqlc.arg(reasons)::text[])[i], ''), NULLIF((sqlc.arg(evidence)::text[])[i], '')::jsonb
 FROM generate_subscripts(sqlc.arg(metric_ids)::text[], 1) AS i;
 
 -- name: InsertIntervals :exec
@@ -148,7 +148,7 @@ ORDER BY p.metric_id, p.estimator, p.point_start;
 
 -- name: PointContributions :many
 SELECT c.object_id, c.item_no, c.object_kind, c.role, COALESCE(c.value, 0)::float8 AS value, (c.value IS NOT NULL)::boolean AS has_value,
-    c.reason_code
+    c.reason_code, c.evidence
 FROM calc.revision_part rp
 JOIN calc.contribution c ON c.organization_id = rp.organization_id AND c.part_id = rp.part_id
 WHERE rp.organization_id = sqlc.arg(organization_id) AND rp.revision_id = sqlc.arg(revision_id) AND c.metric_id = sqlc.arg(metric_id)
@@ -159,7 +159,7 @@ LIMIT sqlc.arg(row_limit);
 
 -- name: RevisionCohort :many
 SELECT c.metric_id, c.estimator, c.point_start, c.object_id, c.item_no, c.object_kind, c.role,
-    COALESCE(c.value, 0)::float8 AS value, (c.value IS NOT NULL)::boolean AS has_value, c.reason_code,
+    COALESCE(c.value, 0)::float8 AS value, (c.value IS NOT NULL)::boolean AS has_value, c.reason_code, c.evidence,
     s.project_id, s.task_type, s.size_label
 FROM calc.revision_part rp
 JOIN calc.contribution c ON c.organization_id = rp.organization_id AND c.part_id = rp.part_id

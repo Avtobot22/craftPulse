@@ -94,6 +94,7 @@ type Contribution struct {
 	Role       ContributionRole
 	Value      *float64
 	ReasonCode string
+	Evidence   []byte
 }
 
 // Point is a value of a series over [Start, End); a metric of a state at a date is taken at End.

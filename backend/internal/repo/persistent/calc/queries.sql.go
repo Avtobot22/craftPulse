@@ -316,12 +316,12 @@ func (q *Queries) GetSavedView(ctx context.Context, arg GetSavedViewParams) (Cal
 
 const insertContributions = `-- name: InsertContributions :exec
 INSERT INTO calc.contribution (organization_id, part_id, metric_id, estimator, point_start, object_id, item_no, object_kind, role, value,
-    reason_code)
+    reason_code, evidence)
 SELECT $1, $2, ($3::text[])[i], ($4::text[])[i],
     ($5::timestamptz[])[i], ($6::uuid[])[i], ($7::smallint[])[i],
     ($8::text[])[i], ($9::text[])[i],
     CASE WHEN ($10::boolean[])[i] THEN ($11::text[])[i]::numeric END,
-    NULLIF(($12::text[])[i], '')
+    NULLIF(($12::text[])[i], ''), NULLIF(($13::text[])[i], '')::jsonb
 FROM generate_subscripts($3::text[], 1) AS i
 `
 
@@ -338,6 +338,7 @@ type InsertContributionsParams struct {
 	HasValues          []bool
 	ContributionValues []string
 	Reasons            []string
+	Evidence           []string
 }
 
 func (q *Queries) InsertContributions(ctx context.Context, arg InsertContributionsParams) error {
@@ -354,6 +355,7 @@ func (q *Queries) InsertContributions(ctx context.Context, arg InsertContributio
 		arg.HasValues,
 		arg.ContributionValues,
 		arg.Reasons,
+		arg.Evidence,
 	)
 	return err
 }
@@ -847,7 +849,7 @@ func (q *Queries) PinSavedRevision(ctx context.Context, arg PinSavedRevisionPara
 
 const pointContributions = `-- name: PointContributions :many
 SELECT c.object_id, c.item_no, c.object_kind, c.role, COALESCE(c.value, 0)::float8 AS value, (c.value IS NOT NULL)::boolean AS has_value,
-    c.reason_code
+    c.reason_code, c.evidence
 FROM calc.revision_part rp
 JOIN calc.contribution c ON c.organization_id = rp.organization_id AND c.part_id = rp.part_id
 WHERE rp.organization_id = $1 AND rp.revision_id = $2 AND c.metric_id = $3
@@ -876,6 +878,7 @@ type PointContributionsRow struct {
 	Value      float64
 	HasValue   bool
 	ReasonCode pgtype.Text
+	Evidence   []byte
 }
 
 func (q *Queries) PointContributions(ctx context.Context, arg PointContributionsParams) ([]PointContributionsRow, error) {
@@ -904,6 +907,7 @@ func (q *Queries) PointContributions(ctx context.Context, arg PointContributions
 			&i.Value,
 			&i.HasValue,
 			&i.ReasonCode,
+			&i.Evidence,
 		); err != nil {
 			return nil, err
 		}
@@ -1003,7 +1007,7 @@ func (q *Queries) PublishRevision(ctx context.Context, arg PublishRevisionParams
 
 const revisionCohort = `-- name: RevisionCohort :many
 SELECT c.metric_id, c.estimator, c.point_start, c.object_id, c.item_no, c.object_kind, c.role,
-    COALESCE(c.value, 0)::float8 AS value, (c.value IS NOT NULL)::boolean AS has_value, c.reason_code,
+    COALESCE(c.value, 0)::float8 AS value, (c.value IS NOT NULL)::boolean AS has_value, c.reason_code, c.evidence,
     s.project_id, s.task_type, s.size_label
 FROM calc.revision_part rp
 JOIN calc.contribution c ON c.organization_id = rp.organization_id AND c.part_id = rp.part_id
@@ -1028,6 +1032,7 @@ type RevisionCohortRow struct {
 	Value      float64
 	HasValue   bool
 	ReasonCode pgtype.Text
+	Evidence   []byte
 	ProjectID  uuid.NullUUID
 	TaskType   pgtype.Text
 	SizeLabel  pgtype.Text
@@ -1053,6 +1058,7 @@ func (q *Queries) RevisionCohort(ctx context.Context, arg RevisionCohortParams) 
 			&i.Value,
 			&i.HasValue,
 			&i.ReasonCode,
+			&i.Evidence,
 			&i.ProjectID,
 			&i.TaskType,
 			&i.SizeLabel,

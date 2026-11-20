@@ -5,7 +5,10 @@ import "time"
 const (
 	ObjectCIRun     ObjectKind = "ci_run"
 	ObjectCIAttempt ObjectKind = "ci_attempt"
+	ObjectCIJob     ObjectKind = "ci_job"
 )
+
+const MetricSetCI = "ci"
 
 // CIFacts is the canonical CI history of an area at a knowledge cutoff.
 type CIFacts struct {

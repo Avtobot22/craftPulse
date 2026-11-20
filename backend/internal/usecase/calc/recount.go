@@ -235,7 +235,7 @@ func (u *UseCase) plan(ctx context.Context, org entity.ID, s *entity.CalcSeries,
 	if err != nil {
 		return due{}, err
 	}
-	sources, err := u.collectionOf(ctx, org, areas)
+	sources, err := u.seriesCollection(ctx, org, areas, s.MetricSet)
 	if err != nil {
 		return due{}, err
 	}
@@ -279,7 +279,7 @@ func (u *UseCase) location(ctx context.Context, org, team entity.ID, cur *entity
 	name := "UTC"
 	if cur != nil {
 		name = cur.Timezone
-	} else if !team.IsZero() {
+	} else if !team.IsZero() && u.d.Settings != nil {
 		mapping, ok, err := u.d.Settings.MappingAt(ctx, org, team, math.MaxInt64)
 		if err != nil {
 			return nil, err
@@ -350,7 +350,7 @@ func (u *UseCase) revisions(ctx context.Context, org entity.ID, s *entity.CalcSe
 func (u *UseCase) orgSeries(ctx context.Context, org entity.ID) ([]entity.CalcSeries, error) {
 	var out []entity.CalcSeries
 	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
-		for _, set := range []string{entity.MetricSetFlow, entity.MetricSetReview, entity.MetricSetEvents, entity.MetricSetLinks} {
+		for _, set := range []string{entity.MetricSetFlow, entity.MetricSetReview, entity.MetricSetEvents, entity.MetricSetLinks, entity.MetricSetCI} {
 			series, err := u.d.Repo.OrgSeries(ctx, org, set)
 			if err != nil {
 				return err
