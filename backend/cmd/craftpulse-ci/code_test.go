@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,7 +83,7 @@ func TestCode_RecordsThreeToolsWithVersionsScopeAndNoCode(t *testing.T) {
 	c.mustRun("upload", "--dry-run", "--save", c.path("package.tar.gz"))
 
 	assert.Contains(t, out, "tool run go-default-golangci-lint: code builtin by golangci-lint 2.15.0, findings, complete, 1 report(s)")
-	assert.Contains(t, out, "tool run go-default-lizard: code builtin by lizard 1.25.0, success, complete, 1 report(s)")
+	assert.Contains(t, out, "tool run go-default-lizard: code builtin by lizard 1.26.0, success, complete, 1 report(s)")
 	assert.Contains(t, out, "tool run go-default-jscpd: code builtin by jscpd 5.4.2, success, complete, 1 report(s)")
 	lint, err := os.ReadFile(filepath.Join(logs, "lint.log"))
 	require.NoError(t, err)
@@ -162,4 +163,98 @@ func TestCode_ProfileWithoutCodeRowsFails(t *testing.T) {
 
 	assert.Equal(t, _exitFailed, code)
 	assert.True(t, strings.Contains(out, "profile has no builtin code check of profile go-default"), out)
+}
+
+// The fake linters log their arguments and write native JSON with one finding and one file they cannot parse.
+var _fakeLinters = map[string]string{
+	"ruff": `echo "$PWD $*" >> "$FAKE_LOG/ruff.log"
+while [ $# -gt 0 ]; do [ "$1" = --output-file ] && out=$2; shift; done
+printf '[{"code":"F401","message":"unused","filename":"%s/app/service.py","location":{"row":1,"column":8},"end_location":{"row":1,"column":10},"fix":{"edits":[{"content":"FIXTURE_CODE_FRAGMENT"}]}},{"code":"invalid-syntax","message":"bad","filename":"%s/app/broken.py","location":{"row":1,"column":1},"end_location":{"row":1,"column":2}}]' "$PWD" "$PWD" > "$out"
+exit 1`,
+	"eslint": `echo "$PWD $*" >> "$FAKE_LOG/eslint.log"
+while [ $# -gt 0 ]; do [ "$1" = --output-file ] && out=$2; shift; done
+printf '[{"filePath":"%s/app/service.ts","source":"FIXTURE_CODE_FRAGMENT","messages":[{"ruleId":"no-undef","severity":2,"message":"x","line":2,"column":1}]},{"filePath":"%s/app/broken.ts","messages":[{"ruleId":null,"fatal":true,"severity":2,"message":"Parsing error","line":1,"column":1}]}]' "$PWD" "$PWD" > "$out"
+exit 1`,
+}
+
+func TestCode_PythonAndJavaScriptProfilesSkipFilesTheLinterCannotParse(t *testing.T) {
+	tests := []struct {
+		profile, language, linter string
+		files                     []string
+		wantParser                *string
+	}{
+		{profile: "python-default", language: "python", linter: "ruff", files: []string{"app/service.py", "app/broken.py", "app/.venv/lib/x.py", "app/env/pyvenv.cfg", "app/env/lib/y.py"}},
+		{
+			profile: "js-default", language: "javascript", linter: "eslint", files: []string{"app/service.ts", "app/broken.ts", "app/node_modules/lib/index.js"},
+			wantParser: ptr("typescript-eslint 8.72.2, typescript 6.0.3"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.profile, func(t *testing.T) {
+			logs := fakeCodeTools(t)
+			bin := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(bin, tt.linter), []byte("#!/bin/sh\n"+_fakeLinters[tt.linter]+"\n"), 0o700)) //nolint:gosec // a test tool must be executable
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			c := newCLI(t, newFakeAPI(t))
+			repo := c.path("repo")
+			for _, name := range tt.files {
+				p := filepath.Join(repo, filepath.FromSlash(name))
+				require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o750))
+				require.NoError(t, os.WriteFile(p, []byte("x = 1\n"), 0o600))
+			}
+			c.env["CI_PROJECT_DIR"] = repo
+			saveProfile(t, c, map[string]any{
+				"component_id": "0193a5b0-7777-7000-8000-000000000001", "path_prefix": "app", "language": tt.language, "analysis_kind": "code",
+				"mode": "builtin", "profile_id": tt.profile, "image_digest": "sha256:" + strings.Repeat("b", 64),
+			})
+			dir := "../../internal/ci/profiles/" + tt.profile
+
+			out := c.mustRun("code", "--profile-dir", dir)
+			c.mustRun("upload", "--dry-run", "--save", c.path("package.tar.gz"))
+
+			assert.Contains(t, out, "tool run "+tt.profile+"-"+tt.linter+": code builtin by "+tt.linter)
+			assert.Contains(t, out, ", partial, partial, 1 report(s)")
+			log, err := os.ReadFile(filepath.Join(logs, tt.linter+".log"))
+			require.NoError(t, err)
+			assert.Contains(t, string(log), repo+" ")
+			assert.Contains(t, string(log), "--config "+filepath.Join(mustAbs(t, dir), map[string]string{"ruff": "ruff.toml", "eslint": "eslint.config.mjs"}[tt.linter]))
+			assert.NotContains(t, string(log), "node_modules")
+			assert.NotContains(t, string(log), "/env/")
+			data, err := os.ReadFile(c.path("package.tar.gz"))
+			require.NoError(t, err)
+			assert.NotContains(t, string(data), "FIXTURE_CODE_FRAGMENT")
+			for _, run := range checkPackage(t, data).ScanManifest.Tools {
+				if run.Producer != tt.linter {
+					assert.Equal(t, envelope.ScanToolRunCompletenessComplete, run.Completeness, run.Id)
+					assert.Equal(t, 2, *run.ScannedCount, run.Id)
+					continue
+				}
+				assert.Equal(t, envelope.ScanToolRunExitClassPartial, run.ExitClass)
+				assert.Equal(t, envelope.ScanToolRunCompletenessPartial, run.Completeness)
+				assert.Equal(t, 1, *run.ScannedCount)
+				assert.Equal(t, 1, *run.SkippedCount)
+				assert.Equal(t, []envelope.ScanSkippedTarget{{Path: "app/broken." + strings.TrimPrefix(filepath.Ext(tt.files[0]), "."), Reason: envelope.ScanSkippedTargetReasonUnsupported}}, run.SkippedTargets)
+				assert.Equal(t, tt.wantParser, run.ParserVersion)
+				assert.Equal(t, tt.profile, *run.ProfileId)
+				require.Len(t, run.Reports, 1)
+				assert.Equal(t, envelope.ScanReportReportFormatSarif, run.Reports[0].ReportFormat)
+			}
+		})
+	}
+}
+
+func saveProfile(t *testing.T, c *cli, entries ...map[string]any) {
+	t.Helper()
+	state := c.env["CRAFTPULSE_WORK_DIR"]
+	require.NoError(t, os.MkdirAll(state, 0o700))
+	data, err := json.Marshal(map[string]any{"entries": entries})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(state, "profile.json"), data, 0o600))
+}
+
+func mustAbs(t *testing.T, name string) string {
+	t.Helper()
+	abs, err := filepath.Abs(name)
+	require.NoError(t, err)
+	return abs
 }

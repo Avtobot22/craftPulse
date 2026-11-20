@@ -1,0 +1,16 @@
+{
+  "profile_id": "js-default",
+  "language": "javascript",
+  "timeout": "5m",
+  "tools": {
+    "eslint": "10.14.0",
+    "typescript-eslint": "8.72.2",
+    "typescript": "6.0.3",
+    "lizard": "1.26.0",
+    "jscpd": "5.4.2"
+  },
+  "functions": {
+    "ccn_threshold": 10,
+    "nloc_threshold": 50
+  }
+}

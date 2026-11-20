@@ -1,0 +1,6 @@
+# orders.py and invoices.py repeat one function body; unique.py has no copies.
+clone orders.py:1-25 invoices.py:1-25
+
+function unique.py:1 title ccn=3 nloc=5
+function orders.py:1 over_limit_orders ccn=8 nloc=25
+function invoices.py:1 over_limit_invoices ccn=8 nloc=25

@@ -284,11 +284,13 @@ func (a *app) codeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "code",
 		Short: "run the code profile of the image on the components of the job",
-		Long: `code runs the code profile of the image on every component of its builtin code rows: golangci-lint
+		Long: `code runs the code profile of the image on every component of its builtin code rows: the linter of
+the profile language (golangci-lint for Go, Ruff for Python, ESLint with typescript-eslint for JS/TS)
 gives findings in SARIF, Lizard the functions in CSV and jscpd the copies in JSON, three tool runs per
-component within one time limit. Vendor and build directories and generated files are excluded, test
-code is marked separately. The profile directory defaults to CRAFTPULSE_CODE_PROFILE of the image and
-the repository to CI_PROJECT_DIR.
+component within one time limit. Dependency and build directories and generated files are excluded,
+test code is marked separately, and a file the linter cannot parse is a skipped target of a partial
+run. The linters use the configuration of the profile only. The profile directory defaults to
+CRAFTPULSE_CODE_PROFILE of the image and the repository to CI_PROJECT_DIR.
 
 With --fixture the profile checks the current directory and writes the reports named by
 CRAFTPULSE_REPORT, CRAFTPULSE_FUNCTIONS_REPORT, CRAFTPULSE_CLONES_REPORT and CRAFTPULSE_SCOPE_REPORT:

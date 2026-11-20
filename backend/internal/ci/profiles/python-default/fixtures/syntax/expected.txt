@@ -1,0 +1,6 @@
+# broken.py does not parse: it is skipped, and its unused import is not reported.
+# modern.py uses the syntax of Python 3.12 and later and is analyzed.
+F401 modern.py:1
+skipped broken.py unsupported
+
+function modern.py:6 describe ccn=4 nloc=8

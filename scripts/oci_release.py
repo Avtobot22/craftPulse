@@ -45,11 +45,13 @@ def run(args, *, cwd=ROOT, capture=False, input_text=None, extra_env=None):
     return result.stdout.strip() if capture else None
 
 
-GO_PROFILE = "backend/internal/ci/profiles/go-default"
-SAST_PROFILE = "backend/internal/ci/profiles/opengrep-default"
-# Each profile image is exercised by its own check script without a network.
-PROFILE_CHECKS = {"gitleaks-default": "scripts/check_secrets_profile.py", "go-default": "scripts/check_go_profile.py",
-                  "opengrep-default": "scripts/check_sast_profile.py"}
+PROFILES = "backend/internal/ci/profiles"
+SAST_PROFILE = PROFILES + "/opengrep-default"
+# Code profiles and the linter configuration each one hashes with profile.json and jscpd.json.
+CODE_PROFILES = {"go-default": "golangci.yml", "python-default": "ruff.toml", "js-default": "eslint.config.mjs"}
+# Each profile image is exercised by its check script without a network.
+PROFILE_CHECKS = {"gitleaks-default": ["scripts/check_secrets_profile.py"], "opengrep-default": ["scripts/check_sast_profile.py"],
+                  **{name: ["scripts/check_code_profile.py", "--profile", name] for name in CODE_PROFILES}}
 
 
 def plan(root=ROOT):
@@ -61,9 +63,10 @@ def plan(root=ROOT):
     if (root / "backend/pkg/secrets/profiles/gitleaks-default/profile.json").is_file():
         images.append({"name": "craftpulse-ci-gitleaks-default", "context": "backend",
                        "dockerfile": "backend/ci.Dockerfile", "target": "gitleaks-default"})
-    if (root / GO_PROFILE / "profile.json").is_file():
-        images.append({"name": "craftpulse-ci-go-default", "context": "backend",
-                       "dockerfile": "backend/ci.Dockerfile", "target": "go-default"})
+    for name in CODE_PROFILES:
+        if (root / PROFILES / name / "profile.json").is_file():
+            images.append({"name": f"craftpulse-ci-{name}", "context": "backend",
+                           "dockerfile": "backend/ci.Dockerfile", "target": name})
     if (root / SAST_PROFILE / "profile.json").is_file():
         images.append({"name": "craftpulse-ci-opengrep-default", "context": "backend",
                        "dockerfile": "backend/ci.Dockerfile", "target": "opengrep-default"})
@@ -106,10 +109,14 @@ def metadata(root, images):
         ci_versions["gitleaks"] = version
         rule_hashes["gitleaks-default"] = hashlib.sha256(version.encode() + b"\n" +
             (directory / "rules.toml").read_bytes() + (directory / "profile.json").read_bytes()).hexdigest()
-    if any(image.get("target") == "go-default" for image in images):
-        tools, rule_hash = go_profile(root)
-        ci_versions.update(tools)
-        rule_hashes["go-default"] = rule_hash
+    for name in CODE_PROFILES:
+        if not any(image.get("target") == name for image in images):
+            continue
+        tools, rule_hash = code_profile(root, name)
+        for tool, version in tools.items():
+            if ci_versions.setdefault(tool, version) != version:
+                raise ReleaseError(f"code profiles pin {tool} at different versions")
+        rule_hashes[name] = rule_hash
     rule_sources = {}
     if any(image.get("target") == "opengrep-default" for image in images):
         version, rule_hash, sources = sast_profile(root)
@@ -122,20 +129,30 @@ def metadata(root, images):
             "ci_tool_versions": ci_versions, "rule_hashes": rule_hashes, "rule_sources": rule_sources}
 
 
-def go_profile(root):
-    """Tool versions of the Go code profile, checked against the image recipe, and its rules hash."""
-    directory = root / GO_PROFILE
+def code_profile(root, name):
+    """Tool versions of a code profile, checked against the image recipe, and its rules hash.
+
+    golangci-lint and jscpd are pinned in the Dockerfile, Python packages by hash in the requirements of the
+    profile, npm packages in its package-lock.json."""
+    directory = root / PROFILES / name
     tools = read_json(directory / "profile.json")["tools"]
     dockerfile = (root / "backend/ci.Dockerfile").read_text()
     pinned = {
         "golangci-lint": set(re.findall(r"^ARG GOLANGCI_LINT_VERSION=(\S+)$", dockerfile, re.M)),
-        "lizard": set(re.findall(r"^lizard==(\S+) ", (directory / "lizard-requirements.txt").read_text(), re.M)),
         "jscpd": set(re.findall(r"/jscpd-linux-(?:x64|arm64)-musl-([0-9][^/]*)\.tgz", dockerfile)),
     }
-    if sorted(tools) != sorted(pinned) or any(versions != {tools[name]} for name, versions in pinned.items()):
-        raise ReleaseError("Go profile and image tool versions disagree")
-    content = b"".join((directory / name).read_bytes() for name in ["profile.json", "golangci.yml", "jscpd.json"])
-    return {name: tools[name] for name in sorted(tools)}, hashlib.sha256(content).hexdigest()
+    for requirements in sorted(directory.glob("*requirements.txt")):
+        for package, version in re.findall(r"^([a-z0-9-]+)==(\S+) ", requirements.read_text(), re.M):
+            pinned.setdefault(package, set()).add(version)
+    lock = directory / "package-lock.json"
+    if lock.is_file():
+        for path, package in read_json(lock)["packages"].items():
+            if path.count("node_modules/") == 1 and path.startswith("node_modules/"):
+                pinned.setdefault(path.removeprefix("node_modules/"), set()).add(package["version"])
+    if any(pinned.get(tool) != {version} for tool, version in tools.items()):
+        raise ReleaseError(f"{name} profile and image tool versions disagree")
+    content = b"".join((directory / file).read_bytes() for file in ["profile.json", CODE_PROFILES[name], "jscpd.json"])
+    return {tool: tools[tool] for tool in sorted(tools)}, hashlib.sha256(content).hexdigest()
 
 
 def sast_profile(root):
@@ -331,7 +348,8 @@ def release(sha, output, tools, root=ROOT):
         if name == "craftpulse-ci":
             smoke_ci(reference)
         if image.get("target") in PROFILE_CHECKS:
-            run([sys.executable, str(root / PROFILE_CHECKS[image["target"]]), "--image", reference], cwd=root)
+            script, *options = PROFILE_CHECKS[image["target"]]
+            run([sys.executable, str(root / script), *options, "--image", reference], cwd=root)
         references[name] = reference
     licenses = scan(images, references, output, tools)
     publish_images(images, sha, references, resolved, registry)
@@ -378,7 +396,8 @@ def main():
                     build(image, args.sha, reference)
                     smoke_ci(reference)
                     if image.get("target") in PROFILE_CHECKS:
-                        run([sys.executable, str(ROOT / PROFILE_CHECKS[image["target"]]), "--image", reference])
+                        script, *options = PROFILE_CHECKS[image["target"]]
+                        run([sys.executable, str(ROOT / script), *options, "--image", reference])
         elif args.command == "install-tools":
             install_tools(args.tools.resolve())
         else:

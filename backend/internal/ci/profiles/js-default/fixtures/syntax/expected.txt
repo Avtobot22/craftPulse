@@ -1,0 +1,6 @@
+# broken.ts does not parse: it is skipped, and its unused variable is not reported.
+use-isnan valid.ts:2
+skipped broken.ts unsupported
+
+function broken.ts:1 broken ccn=2 nloc=4
+function valid.ts:1 check ccn=1 nloc=3

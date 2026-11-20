@@ -1,0 +1,46 @@
+# Each enabled rule has a problem example and a safe one; only the problem gives a finding.
+# The core rules check TS too. eslint.config.js of the checked code turns rules off, and the profile does
+# not load it. TSX, JSX and CommonJS files parse without findings.
+no-undef undef.js:2
+no-unused-vars unused.js:2
+no-unreachable unreachable.js:3
+no-dupe-keys dupekeys.js:4
+no-self-assign selfassign.js:2
+use-isnan isnan.js:2
+valid-typeof typeof.js:2
+no-cond-assign condassign.js:2
+@typescript-eslint/no-unused-vars unused.ts:4
+@typescript-eslint/no-duplicate-enum-values enum.ts:3
+@typescript-eslint/no-misused-new misusednew.ts:2
+@typescript-eslint/no-non-null-asserted-optional-chain nonnull.ts:2
+@typescript-eslint/no-unsafe-declaration-merging merging.ts:1
+@typescript-eslint/no-unsafe-declaration-merging merging.ts:5
+use-isnan typed.ts:22
+
+function condassign.js:1 matches ccn=2 nloc=6
+function condassign.js:8 matchesSafe ccn=2 nloc=6
+function isnan.js:1 invalid ccn=1 nloc=3
+function isnan.js:5 invalidSafe ccn=1 nloc=3
+function merging.ts:14 constructor ccn=1 nloc=1
+function merging.ts:6 constructor ccn=1 nloc=1
+function module.cjs:3 resolve ccn=1 nloc=3
+function nonnull.ts:1 first ccn=1 nloc=3
+function nonnull.ts:5 firstSafe ccn=1 nloc=3
+function selfassign.js:1 reset ccn=1 nloc=4
+function selfassign.js:6 resetSafe ccn=1 nloc=4
+function typed.ts:13 on ccn=1 nloc=4
+function typed.ts:21 rejected ccn=1 nloc=3
+function typeof.js:1 isText ccn=1 nloc=3
+function typeof.js:5 isTextSafe ccn=1 nloc=3
+function undef.js:1 total ccn=1 nloc=3
+function undef.js:2 (anonymous) ccn=1 nloc=1
+function undef.js:5 totalSafe ccn=1 nloc=3
+function undef.js:6 (anonymous) ccn=1 nloc=1
+function unreachable.js:1 stop ccn=1 nloc=4
+function unreachable.js:6 stopSafe ccn=1 nloc=4
+function unused.js:1 label ccn=1 nloc=4
+function unused.js:6 labelSafe ccn=1 nloc=4
+function unused.ts:3 size ccn=1 nloc=4
+function unused.ts:8 sizeSafe ccn=1 nloc=3
+function view.tsx:3 Badge ccn=3 nloc=3
+function widget.jsx:1 Widget ccn=1 nloc=3

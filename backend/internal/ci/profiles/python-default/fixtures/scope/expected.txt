@@ -1,0 +1,15 @@
+# The virtual environment, build and dist and the generated file repeat the problem of service.py and stay
+# out of every report. The hidden directory is not source. Test code is analyzed and marked.
+F401 service.py:1
+F401 test_service.py:1
+
+excluded env vendor
+excluded build build
+excluded dist build
+excluded api_pb2.py generated
+test test_service.py
+test tests/helpers.py
+
+function service.py:4 remove ccn=1 nloc=2
+function test_service.py:6 test_remove ccn=1 nloc=2
+function tests/helpers.py:1 sample ccn=1 nloc=2

@@ -11,9 +11,11 @@
 node_modules/
 dist/
 build/
-# Rule fixtures of code profiles keep a build directory the profile must exclude.
+# Rule fixtures of code profiles keep build and coverage directories the profile must exclude.
 !backend/internal/ci/profiles/*/fixtures/*/src/build/
+!backend/internal/ci/profiles/*/fixtures/*/src/dist/
 coverage/
+!backend/internal/ci/profiles/*/fixtures/*/src/coverage/
 .turbo/
 .next/
 .cache/

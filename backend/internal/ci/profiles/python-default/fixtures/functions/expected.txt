@@ -1,0 +1,4 @@
+# status_text is above the complexity threshold 10, accumulate above the length threshold 50 NLOC.
+function complex.py:1 status_text ccn=14 nloc=26
+function long.py:1 accumulate ccn=1 nloc=59
+function simple.py:1 double ccn=1 nloc=2

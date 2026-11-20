@@ -1,0 +1,5 @@
+# statusText is above the complexity threshold 10, accumulate above the length threshold 50 NLOC.
+
+function complex.ts:1 statusText ccn=14 nloc=28
+function long.mjs:1 accumulate ccn=1 nloc=60
+function simple.ts:1 double ccn=1 nloc=3

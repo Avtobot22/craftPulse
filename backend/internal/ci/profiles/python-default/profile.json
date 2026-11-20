@@ -1,0 +1,14 @@
+{
+  "profile_id": "python-default",
+  "language": "python",
+  "timeout": "5m",
+  "tools": {
+    "ruff": "0.17.4",
+    "lizard": "1.26.0",
+    "jscpd": "5.4.2"
+  },
+  "functions": {
+    "ccn_threshold": 10,
+    "nloc_threshold": 50
+  }
+}

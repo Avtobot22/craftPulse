@@ -1,0 +1,18 @@
+# Dependency, build and coverage directories, the minified and the generated file repeat the problem of
+# service.ts and stay out of every report. The hidden directory is not source. Test code is analyzed and
+# marked.
+@typescript-eslint/no-unused-vars service.ts:2
+@typescript-eslint/no-unused-vars service.test.ts:4
+
+excluded bower_components vendor
+excluded build build
+excluded coverage build
+excluded dist build
+excluded app.min.js generated
+excluded api.gen.ts generated
+test service.test.ts
+test __tests__/helper.js
+
+function __tests__/helper.js:1 sample ccn=1 nloc=3
+function service.test.ts:3 testRemove ccn=1 nloc=4
+function service.ts:1 remove ccn=1 nloc=4
