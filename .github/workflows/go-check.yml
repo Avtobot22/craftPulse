@@ -76,4 +76,7 @@ jobs:
         if: inputs.image == 'craftpulse-server'
         env:
           COMMIT_SHA: ${{ github.sha }}
-        run: python3 ../scripts/check_release_server.py --image "craftpulse-server:$COMMIT_SHA" --sha "$COMMIT_SHA"
+        # The step image is not built here; the server only checks that the catalog names it by digest.
+        run: >-
+          python3 ../scripts/check_release_server.py --image "craftpulse-server:$COMMIT_SHA" --sha "$COMMIT_SHA"
+          --ci-image "craftpulse-ci@sha256:$(printf '%064d' 0)"
