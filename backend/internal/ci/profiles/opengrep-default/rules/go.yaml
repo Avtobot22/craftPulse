@@ -1,0 +1,44 @@
+rules:
+  - id: go-sql-format-string
+    languages: [go]
+    severity: ERROR
+    message: SQL query is built from a formatted string; pass the values as query arguments.
+    patterns:
+      - pattern-either:
+          - pattern: $DB.$M(fmt.Sprintf(...), ...)
+          - pattern: $DB.$M($CTX, fmt.Sprintf(...), ...)
+          - pattern: $DB.$M("..." + $X, ...)
+          - pattern: $DB.$M($CTX, "..." + $X, ...)
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(Query|QueryRow|Exec|QueryContext|QueryRowContext|ExecContext)$
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')"]
+      security-severity: "8.8"
+      confidence: MEDIUM
+  - id: go-shell-command
+    languages: [go]
+    severity: ERROR
+    message: A shell runs a command built at run time; call the program with separate arguments.
+    patterns:
+      - pattern-either:
+          - pattern: exec.Command("sh", "-c", $CMD)
+          - pattern: exec.Command("bash", "-c", $CMD)
+          - pattern: exec.CommandContext($CTX, "sh", "-c", $CMD)
+          - pattern: exec.CommandContext($CTX, "bash", "-c", $CMD)
+      - pattern-not: exec.Command($SH, "-c", "...")
+      - pattern-not: exec.CommandContext($CTX, $SH, "-c", "...")
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"]
+      security-severity: "8.8"
+      confidence: MEDIUM
+  - id: go-tls-skip-verify
+    languages: [go]
+    severity: WARNING
+    message: TLS certificate verification is disabled.
+    pattern: |
+      tls.Config{..., InsecureSkipVerify: true, ...}
+    metadata:
+      cwe: ["CWE-295: Improper Certificate Validation"]
+      security-severity: "7.4"
+      confidence: HIGH

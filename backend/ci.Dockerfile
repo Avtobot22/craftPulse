@@ -84,5 +84,26 @@ LABEL org.opencontainers.image.title="craftpulse-ci-go-default" \
       io.craftpulse.profile="go-default"
 USER 65532:65532
 
+FROM scratch AS opengrep-amd64
+ADD --checksum=sha256:aa03c3bfff105dc122cbbe6e239dc39a5cae486f1837bba3af7a16bca173f8d6 \
+    https://github.com/opengrep/opengrep/releases/download/v1.33.1/opengrep_musllinux_x86 /opengrep
+
+FROM scratch AS opengrep-arm64
+ADD --checksum=sha256:17c6917b53d8f8af794d8effb13c1a068018c602435d33fefc105aaa23d96f4b \
+    https://github.com/opengrep/opengrep/releases/download/v1.33.1/opengrep_musllinux_aarch64 /opengrep
+
+FROM opengrep-${TARGETARCH} AS opengrep
+
+# SAST profile: Opengrep at the version of profile.json with the rule set of the profile. The job runs
+# "craftpulse-ci sast" and "craftpulse-ci upload".
+FROM ci-runtime AS opengrep-default
+USER 0
+COPY --from=opengrep --chmod=0755 /opengrep /usr/local/bin/opengrep
+COPY internal/ci/profiles/opengrep-default/ /opt/craftpulse/profiles/opengrep-default/
+ENV CRAFTPULSE_SAST_PROFILE=/opt/craftpulse/profiles/opengrep-default HOME=/tmp
+LABEL org.opencontainers.image.title="craftpulse-ci-opengrep-default" \
+      io.craftpulse.profile="opengrep-default"
+USER 65532:65532
+
 # Keep the default target the base CLI, for existing callers.
 FROM ci-runtime AS ci

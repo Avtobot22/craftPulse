@@ -1,0 +1,36 @@
+rules:
+  - id: python-subprocess-shell
+    languages: [python]
+    severity: ERROR
+    message: A subprocess runs through the shell with a command built at run time; pass a list of arguments.
+    patterns:
+      - pattern: subprocess.$F($CMD, ..., shell=True, ...)
+      - pattern-not: subprocess.$F("...", ..., shell=True, ...)
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"]
+      security-severity: "8.8"
+      confidence: MEDIUM
+  - id: python-yaml-unsafe-load
+    languages: [python]
+    severity: ERROR
+    message: yaml.load without a safe loader can construct arbitrary objects; use yaml.safe_load.
+    patterns:
+      - pattern: yaml.load(...)
+      - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=yaml.CSafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=SafeLoader, ...)
+    metadata:
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      security-severity: "8.1"
+      confidence: HIGH
+  - id: python-eval
+    languages: [python]
+    severity: ERROR
+    message: eval runs code built at run time.
+    patterns:
+      - pattern: eval($X, ...)
+      - pattern-not: eval("...", ...)
+    metadata:
+      cwe: ["CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code ('Eval Injection')"]
+      security-severity: "8.8"
+      confidence: MEDIUM

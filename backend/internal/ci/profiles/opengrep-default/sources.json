@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {"id": "go-sql-format-string", "file": "rules/go.yaml", "source": "craftPulse", "source_version": "1", "license": "LicenseRef-craftPulse"},
+    {"id": "go-shell-command", "file": "rules/go.yaml", "source": "craftPulse", "source_version": "1", "license": "LicenseRef-craftPulse"},
+    {"id": "go-tls-skip-verify", "file": "rules/go.yaml", "source": "craftPulse", "source_version": "1", "license": "LicenseRef-craftPulse"},
+    {"id": "python-subprocess-shell", "file": "rules/python.yaml", "source": "craftPulse", "source_version": "1", "license": "LicenseRef-craftPulse"},
+    {"id": "python-yaml-unsafe-load", "file": "rules/python.yaml", "source": "craftPulse", "source_version": "1", "license": "LicenseRef-craftPulse"},
+    {"id": "python-eval", "file": "rules/python.yaml", "source": "craftPulse", "source_version": "1", "license": "LicenseRef-craftPulse"},
+    {"id": "js-eval", "file": "rules/javascript.yaml", "source": "craftPulse", "source_version": "1", "license": "LicenseRef-craftPulse"},
+    {"id": "js-child-process-shell", "file": "rules/javascript.yaml", "source": "craftPulse", "source_version": "1", "license": "LicenseRef-craftPulse"},
+    {"id": "js-inner-html", "file": "rules/javascript.yaml", "source": "craftPulse", "source_version": "1", "license": "LicenseRef-craftPulse"}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "profile_id": "opengrep-default",
+  "timeout": "5m",
+  "file_timeout_seconds": 30,
+  "tools": {
+    "opengrep": "1.33.1"
+  },
+  "excluded_dirs": {
+    "vendor": "vendor",
+    "node_modules": "vendor",
+    "build": "build",
+    "dist": "build"
+  }
+}

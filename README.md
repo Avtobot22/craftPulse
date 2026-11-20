@@ -340,6 +340,49 @@ Rule fixtures профиля лежат в `backend/internal/ci/profiles/go-defa
 craftpulse-ci fixtures /opt/craftpulse/profiles/go-default/fixtures -- craftpulse-ci code --fixture
 ```
 
+## Профиль SAST Opengrep
+
+`opengrep-default` проверяет Go, Python и JS/TS Opengrep 1.33.1 по набору из девяти
+правил в `backend/internal/ci/profiles/opengrep-default/rules/`. На каждый язык три правила:
+
+- Go: SQL из `fmt.Sprintf` или конкатенации, команда через `sh -c`, `InsecureSkipVerify`;
+- Python: `subprocess` с `shell=True`, `yaml.load` без безопасного загрузчика, `eval`;
+- JS/TS: `eval` и `new Function`, `exec`/`execSync` из `child_process`, присваивание в `innerHTML`.
+
+Правила написаны в проекте. В `sources.json` для каждого правила записаны файл, источник, версия
+источника и лицензия. Профиль не загружается, если у правила нет записи, запись ссылается на
+отсутствующее правило или лицензия не из списка распространяемых: `LicenseRef-craftPulse`, MIT,
+Apache-2.0, BSD-2-Clause, BSD-3-Clause. Правила semgrep-rules и opengrep-rules
+не используются: их лицензия не SPDX и ограничивает распространение. `rules_hash` - SHA-256
+`profile.json`, `sources.json` и файлов правил по имени. Выпуск переносит перечень источников
+в поле `rule_sources` release manifest.
+
+```sh
+docker build --platform linux/amd64 --target opengrep-default -f backend/ci.Dockerfile -t craftpulse-sast:local backend
+python3 scripts/check_sast_profile.py --image craftpulse-sast:local
+```
+
+Job профиля выполняет `craftpulse-ci sast`, затем `craftpulse-ci upload`. Команда запускает
+Opengrep на каждом компоненте строк `sast` профиля `opengrep-default` из корня `CI_PROJECT_DIR` и
+записывает один запуск на компонент с SARIF 2.1.0. Лимит профиля 5 минут на все компоненты, лимит
+одного файла 30 с. В отчёте остаются ID правил без префикса пути, CWE в `tags`, `security-severity`
+и уровень правила. Строки кода (`snippet`) удаляются.
+
+Встроенный список исключений Opengrep отключён: он молча пропускает и `tests/`. Вместо него
+каталоги `vendor`, `node_modules`, `build`, `dist` и каталоги на `.` исключаются явно, первые
+четыре попадают в `excluded_targets`. Файл, который Opengrep разобрал не полностью или не уложился
+в лимит, перечисляется в `skipped_targets` с причиной `unsupported` или `timeout`. Запуск тогда
+получает `partial` и сохраняет отчёт. Ограничения размера файла нет, чтобы файлы не пропускались
+без отметки. Бинарник Opengrep распаковывается во временный каталог и запускается оттуда,
+поэтому `/tmp` job не должен быть смонтирован с `noexec`.
+
+Rule fixtures лежат в `fixtures/<язык>/` профиля: для каждого правила проблемный и безопасный
+пример в одном файле.
+
+```sh
+craftpulse-ci fixtures /opt/craftpulse/profiles/opengrep-default/fixtures -- craftpulse-ci sast --fixture
+```
+
 ## Очистка секретов при приёме
 
 Сервер повторно проверяет пакет правилами Gitleaks 8.30.1 из

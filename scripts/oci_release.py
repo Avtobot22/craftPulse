@@ -46,8 +46,10 @@ def run(args, *, cwd=ROOT, capture=False, input_text=None, extra_env=None):
 
 
 GO_PROFILE = "backend/internal/ci/profiles/go-default"
+SAST_PROFILE = "backend/internal/ci/profiles/opengrep-default"
 # Each profile image is exercised by its own check script without a network.
-PROFILE_CHECKS = {"gitleaks-default": "scripts/check_secrets_profile.py", "go-default": "scripts/check_go_profile.py"}
+PROFILE_CHECKS = {"gitleaks-default": "scripts/check_secrets_profile.py", "go-default": "scripts/check_go_profile.py",
+                  "opengrep-default": "scripts/check_sast_profile.py"}
 
 
 def plan(root=ROOT):
@@ -62,6 +64,9 @@ def plan(root=ROOT):
     if (root / GO_PROFILE / "profile.json").is_file():
         images.append({"name": "craftpulse-ci-go-default", "context": "backend",
                        "dockerfile": "backend/ci.Dockerfile", "target": "go-default"})
+    if (root / SAST_PROFILE / "profile.json").is_file():
+        images.append({"name": "craftpulse-ci-opengrep-default", "context": "backend",
+                       "dockerfile": "backend/ci.Dockerfile", "target": "opengrep-default"})
     for directory in sorted((root / "backend/cmd").glob("adapter-*")):
         # The recorded-answer server explicitly excludes itself from release images.
         if directory.name == "adapter-test":
@@ -105,10 +110,16 @@ def metadata(root, images):
         tools, rule_hash = go_profile(root)
         ci_versions.update(tools)
         rule_hashes["go-default"] = rule_hash
+    rule_sources = {}
+    if any(image.get("target") == "opengrep-default" for image in images):
+        version, rule_hash, sources = sast_profile(root)
+        ci_versions["opengrep"] = version
+        rule_hashes["opengrep-default"] = rule_hash
+        rule_sources["opengrep-default"] = sources
     return {"core_schema_version": schema_version(root, "core"),
             "adapter_schema_versions": {name: schema_version(root, "adapter") for name in adapters},
             "adapter_contract_version": contract[1] if adapters else None,
-            "ci_tool_versions": ci_versions, "rule_hashes": rule_hashes}
+            "ci_tool_versions": ci_versions, "rule_hashes": rule_hashes, "rule_sources": rule_sources}
 
 
 def go_profile(root):
@@ -125,6 +136,19 @@ def go_profile(root):
         raise ReleaseError("Go profile and image tool versions disagree")
     content = b"".join((directory / name).read_bytes() for name in ["profile.json", "golangci.yml", "jscpd.json"])
     return {name: tools[name] for name in sorted(tools)}, hashlib.sha256(content).hexdigest()
+
+
+def sast_profile(root):
+    """Opengrep version of the SAST profile, checked against the image recipe, its rules hash and rule sources."""
+    directory = root / SAST_PROFILE
+    profile = (directory / "profile.json").read_bytes()
+    version = json.loads(profile)["tools"]["opengrep"]
+    pinned = set(re.findall(r"/opengrep/releases/download/v([0-9][^/]*)/opengrep_", (root / "backend/ci.Dockerfile").read_text()))
+    if pinned != {version}:
+        raise ReleaseError("SAST profile and image Opengrep versions disagree")
+    sources = (directory / "sources.json").read_bytes()
+    content = profile + sources + b"".join(path.read_bytes() for path in sorted((directory / "rules").glob("*.yaml")))
+    return version, hashlib.sha256(content).hexdigest(), json.loads(sources)["rules"]
 
 
 def install_tools(destination, root=ROOT):
