@@ -27,6 +27,7 @@ import (
 	httpctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/http"
 	workerctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/worker"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/oidc"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/change"
 	"github.com/Avtobot22/craftPulse/backend/migrations"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
@@ -53,9 +54,14 @@ var (
 	}
 )
 
-func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log zerolog.Logger) error {
+func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, checks config.Checks, log zerolog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	catalog, err := change.ReadCatalog(checks.CatalogFile)
+	if err != nil {
+		return fmt.Errorf("app: CHECK_PROFILES_FILE: %w", err)
+	}
 
 	keys, err := cfg.MasterKeys.Decode()
 	if err != nil {
@@ -117,6 +123,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, log z
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection, webhooks: collection,
 		operations: views, reports: views, process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
+		catalog: catalog,
 	}
 	api := newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules)
 	api.RunnerNetwork, api.TrustedProxies = cfg.RunnerNetwork, cfg.TrustedProxies

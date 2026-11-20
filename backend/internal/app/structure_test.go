@@ -67,6 +67,11 @@ func (s structureBody) input() structureBody {
 			m["valid_from"], m["valid_to"] = nil, nil
 		}
 	}
+	for _, c := range in.Components {
+		if m, ok := c.(map[string]any); ok {
+			delete(m, "origin")
+		}
+	}
 	return in
 }
 

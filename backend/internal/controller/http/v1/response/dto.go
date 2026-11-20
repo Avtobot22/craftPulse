@@ -77,10 +77,17 @@ func Structure(st entity.Structure) openapi.OrganizationStructure {
 		Teams:        Areas(st.Teams),
 		Projects:     Areas(st.Projects),
 		Services:     Areas(st.Services),
-		Components:   []openapi.Component{},
+		Components:   make([]openapi.Component, len(st.Components)),
 		ProjectAreas: make([]openapi.ProjectAreaLink, len(st.ProjectAreas)),
 		TeamProjects: make([]openapi.TeamProjectLink, len(st.TeamProjects)),
 		TeamMembers:  make([]openapi.TeamMemberLink, len(st.TeamMembers)),
+	}
+	for i := range st.Components {
+		c := &st.Components[i]
+		out.Components[i] = openapi.Component{
+			Id: openapi_types.UUID(c.ID), ServiceId: openapi_types.UUID(c.ServiceID), RepositoryAreaId: openapi_types.UUID(c.RepositoryAreaID),
+			PathPrefix: c.PathPrefix, Status: openapi.ComponentStatus(c.Status), Origin: openapi.ComponentOrigin(c.Origin),
+		}
 	}
 	for i, l := range st.TeamProjects {
 		out.TeamProjects[i] = openapi.TeamProjectLink{

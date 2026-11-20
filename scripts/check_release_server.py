@@ -25,17 +25,22 @@ def main():
     source.add_argument("--manifest", type=Path)
     source.add_argument("--image")
     parser.add_argument("--sha")
+    parser.add_argument("--ci-image", help="craftpulse-ci image by digest for the catalog of check profiles")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.manifest:
         manifest = json.loads(args.manifest.read_text())
         args.image = manifest["images"]["craftpulse-server"]
+        args.ci_image = manifest["images"]["craftpulse-ci"]
         args.sha = manifest["commit_sha"]
         expected_schema = manifest["core_schema_version"]
     else:
-        if not args.sha:
-            parser.error("--sha is required with --image")
+        if not args.sha or not args.ci_image:
+            parser.error("--sha and --ci-image are required with --image")
         expected_schema = schema_version(ROOT, "core")
+    step_image, _, step_digest = args.ci_image.partition("@")
+    if not step_digest.startswith("sha256:"):
+        parser.error("the craftpulse-ci image must be given by digest")
     prefix = "craftpulse-83-" + uuid.uuid4().hex[:10]
     db, api = prefix + "-db", prefix + "-api"
     try:
@@ -44,6 +49,8 @@ def main():
             directory.chmod(0o755)
             (directory / "password").write_text(secrets.token_urlsafe(24))
             (directory / "master").write_text(base64.b64encode(os.urandom(32)).decode())
+            (directory / "check-profiles.yaml").write_text(json.dumps(
+                {"version": 1, "step": {"image": step_image, "digest": step_digest}, "profiles": []}) + "\n")
             for path in directory.iterdir():
                 path.chmod(0o444)
             docker("network", "create", prefix)
@@ -69,7 +76,8 @@ def main():
                       "-e", "OBJECT_STORE_BUCKET=smoke",
                       "-e", "OBJECT_STORE_ACCESS_KEY_ID=smoke",
                       "-e", "OBJECT_STORE_SECRET_ACCESS_KEY_FILE=/smoke/password",
-                      "-e", "SITE_URL=http://127.0.0.1"]
+                      "-e", "SITE_URL=http://127.0.0.1",
+                      "-e", "CHECK_PROFILES_FILE=/smoke/check-profiles.yaml"]
             migration = docker("run", "--rm", *common,
                                "-e", "DATABASE_URL=postgres://craftpulse_owner@" + db + ":5432/craftpulse?sslmode=disable",
                                args.image, "/usr/local/bin/api", "migrate", check=False)

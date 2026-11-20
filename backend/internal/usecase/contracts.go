@@ -188,6 +188,16 @@ type Process interface {
 	ListTargetVersions(ctx context.Context, s entity.Subject, teamID entity.ID, f entity.TargetVersionFilter) (entity.TargetVersionPage, error)
 }
 
+// CheckProfiles is the change module: the matrix of checks of a project, the profile the step of CI reads by its
+// upload token and the snippet of the CI configuration (UC-25, FR-035).
+type CheckProfiles interface {
+	CheckProfile(ctx context.Context, s entity.Subject, projectID entity.ID) (entity.CheckProfileVersion, error)
+	CreateCheckProfileVersion(ctx context.Context, s entity.Subject, projectID entity.ID, baseVersion int, key entity.ID,
+		d entity.CheckProfileDraft) (v entity.CheckProfileVersion, created bool, err error)
+	CICheckProfile(ctx context.Context, s entity.Subject) (entity.CICheckProfile, error)
+	CIConfiguration(ctx context.Context, s entity.Subject, projectID entity.ID, system string) (entity.CIConfiguration, error)
+}
+
 // Targets is the calc module for process owners: the historical p85 of a group as a baseline and the
 // confirmation of a target, which process keeps as a version (UC-09, FR-019). created tells a new or repeated
 // version from the version in force a form equal to it returns.

@@ -30,3 +30,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
 -- name: RememberRootConfirmation :exec
 INSERT INTO docs.root_confirmation (organization_id, confirmation_id, service_id, version_no, actor_user_id, created_at)
 VALUES ($1, $2, $3, $4, $5, $6);
+
+-- name: CurrentAreaRoots :many
+SELECT * FROM docs.root WHERE organization_id = sqlc.arg(organization_id) AND area_id = ANY(sqlc.arg(area_ids)::uuid[]) AND superseded_seq IS NULL
+ORDER BY area_id, path_prefix, id;

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	pathpkg "path"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,10 +25,18 @@ type structurePlan struct {
 	updated map[entity.AreaKind][]entity.Area
 	closed  map[entity.LinkKind][]entity.Link
 	opened  map[entity.LinkKind][]entity.Link
+	// components are the new versions of components; replaced tells which of them supersede a current one.
+	components []entity.Component
+	replaced   map[entity.ID]bool
+}
+
+// areaRefs are the areas of the body known from connections and the repositories among them.
+type areaRefs struct {
+	known, repositories map[entity.ID]bool
 }
 
 func (p structurePlan) empty() bool {
-	for _, m := range []int{len(p.created), len(p.updated), len(p.closed), len(p.opened)} {
+	for _, m := range []int{len(p.created), len(p.updated), len(p.closed), len(p.opened), len(p.components)} {
 		if m > 0 {
 			return false
 		}
@@ -66,7 +75,7 @@ func (u *UseCase) StructureVersion(ctx context.Context, orgID entity.ID) (int64,
 // to the current structure changes nothing.
 func (u *UseCase) ReplaceStructure(ctx context.Context, s entity.Subject, baseVersion int64, in entity.StructureInput) (entity.Structure, error) {
 	orgID := s.OrganizationID
-	known, err := u.knownAreas(ctx, orgID, in.ProjectAreas)
+	known, repositories, err := u.knownAreas(ctx, orgID, in)
 	if err != nil {
 		return entity.Structure{}, err
 	}
@@ -84,7 +93,7 @@ func (u *UseCase) ReplaceStructure(ctx context.Context, s entity.Subject, baseVe
 		if err != nil {
 			return err
 		}
-		plan, err := u.plan(ctx, orgID, current, in, known)
+		plan, err := u.plan(ctx, orgID, current, in, areaRefs{known: known, repositories: repositories}, entity.Confirmation{ConfirmedBy: s.UserID, ConfirmedAt: now})
 		if err != nil {
 			return err
 		}
@@ -164,7 +173,22 @@ func (u *UseCase) read(ctx context.Context, orgID entity.ID, version int64, at t
 	if out.TeamMembers, err = u.orgs.CurrentLinks(ctx, orgID, entity.LinkTeamMember, at); err != nil {
 		return out, err
 	}
-	out.ProjectAreas, err = u.orgs.CurrentLinks(ctx, orgID, entity.LinkProjectArea, at)
+	if out.ProjectAreas, err = u.orgs.CurrentLinks(ctx, orgID, entity.LinkProjectArea, at); err != nil {
+		return out, err
+	}
+	out.Components, err = u.orgs.CurrentComponents(ctx, orgID)
+	return out, err
+}
+
+// ProjectComponents are the confirmed components in force in the repositories of a project at the moment, for
+// the matrix of checks of change (TZ 10.3).
+func (u *UseCase) ProjectComponents(ctx context.Context, orgID, projectID entity.ID, at time.Time) ([]entity.Component, error) {
+	var out []entity.Component
+	err := u.tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.orgs.ProjectComponents(ctx, orgID, projectID, at)
+		return err
+	})
 	return out, err
 }
 
@@ -214,31 +238,38 @@ func (u *UseCase) TeamProjectAreas(ctx context.Context, orgID, teamID entity.ID,
 	return out, err
 }
 
-// knownAreas are the areas of the body some connection of the organization collected; a link may name only
-// such an area (FR-012).
-func (u *UseCase) knownAreas(ctx context.Context, orgID entity.ID, links []entity.LinkInput) (map[entity.ID]bool, error) {
-	if len(links) == 0 {
-		return nil, nil
+// knownAreas are the areas of the body some connection of the organization collected, and the repositories among
+// them; a link and a component may name only such an area (FR-012).
+func (u *UseCase) knownAreas(ctx context.Context, orgID entity.ID, in entity.StructureInput) (known, repositories map[entity.ID]bool, err error) {
+	ids := make([]entity.ID, 0, len(in.ProjectAreas)+len(in.Components))
+	for _, l := range in.ProjectAreas {
+		ids = append(ids, l.To)
 	}
-	ids := make([]entity.ID, len(links))
-	for i, l := range links {
-		ids[i] = l.To
+	for i := range in.Components {
+		ids = append(ids, in.Components[i].RepositoryAreaID)
+	}
+	if len(ids) == 0 {
+		return nil, nil, nil
 	}
 	sources, err := u.sources.AreaSources(ctx, orgID, ids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	known := make(map[entity.ID]bool, len(sources))
+	known, repositories = make(map[entity.ID]bool, len(sources)), map[entity.ID]bool{}
 	for _, src := range sources {
 		known[src.AreaID] = true
+		if src.Kind == entity.ScopeRepository {
+			repositories[src.AreaID] = true
+		}
 	}
-	return known, nil
+	return known, repositories, nil
 }
 
 // plan checks the whole body against the current structure and reports every field error at once.
-func (u *UseCase) plan(ctx context.Context, orgID entity.ID, cur entity.Structure, in entity.StructureInput,
-	knownAreas map[entity.ID]bool,
+func (u *UseCase) plan(ctx context.Context, orgID entity.ID, cur entity.Structure, in entity.StructureInput, refs areaRefs,
+	by entity.Confirmation,
 ) (structurePlan, error) {
+	knownAreas := refs.known
 	p := structurePlan{
 		created: map[entity.AreaKind][]entity.Area{},
 		updated: map[entity.AreaKind][]entity.Area{},
@@ -262,8 +293,8 @@ func (u *UseCase) plan(ctx context.Context, orgID entity.ID, cur entity.Structur
 	planLinks(p, verr, entity.LinkTeamProject, cur.TeamProjects, in.TeamProjects, given[entity.AreaTeam], given[entity.AreaProject])
 	planLinks(p, verr, entity.LinkTeamMember, cur.TeamMembers, in.TeamMembers, given[entity.AreaTeam], persons)
 	planLinks(p, verr, entity.LinkProjectArea, cur.ProjectAreas, in.ProjectAreas, given[entity.AreaProject], knownAreas)
-	for i := range in.Components {
-		verr.Add(fmt.Sprintf("/components/%d/repository_area_id", i), entity.FieldUnknownReference, "repository is not known from connections")
+	if err := u.planComponents(&p, verr, cur.Components, in, given[entity.AreaService], refs.repositories, by); err != nil {
+		return p, err
 	}
 	if len(verr.Fields) > 0 {
 		return p, verr
@@ -395,6 +426,22 @@ func (u *UseCase) apply(ctx context.Context, orgID entity.ID, p structurePlan, n
 	if err != nil {
 		return err
 	}
+	for i := range p.components {
+		c := &p.components[i]
+		if p.replaced[c.ID] {
+			if err := u.orgs.SupersedeComponent(ctx, orgID, c.ID, seq, now); err != nil {
+				return err
+			}
+		}
+	}
+	for i := range p.components {
+		if err := u.orgs.InsertComponent(ctx, orgID, p.components[i], seq); err != nil {
+			if errors.Is(err, entity.ErrComponentPath) {
+				return &entity.ValidationError{Fields: []entity.FieldError{{Field: "/components", Code: entity.FieldDuplicate, Detail: "two components take one path"}}}
+			}
+			return err
+		}
+	}
 	for _, kind := range []entity.LinkKind{entity.LinkTeamProject, entity.LinkTeamMember, entity.LinkProjectArea} {
 		for _, l := range p.closed[kind] {
 			if err := u.closeLink(ctx, orgID, kind, l, seq, now); err != nil {
@@ -509,4 +556,94 @@ func (u *UseCase) CheckDocumentationReferences(ctx context.Context, orgID, servi
 		}
 	}
 	return nil
+}
+
+// planComponents checks the components of the body: a confirmed or rejected path of a known repository inside a
+// service of the body. A current component may change only by a new version; one missing from the body is an
+// error, as an area is, so a matrix of checks does not lose its component silently.
+func (u *UseCase) planComponents(p *structurePlan, verr *entity.ValidationError, cur []entity.Component, in entity.StructureInput,
+	services, repositories map[entity.ID]bool, by entity.Confirmation,
+) error {
+	if len(in.Components) > entity.MaxLinks {
+		verr.Add("/components", entity.FieldOutOfRange, fmt.Sprintf("at most %d items", entity.MaxLinks))
+	}
+	existing := make(map[entity.ID]entity.Component, len(cur))
+	for i := range cur {
+		existing[cur[i].ID] = cur[i]
+	}
+	type path struct {
+		service, area entity.ID
+		prefix        string
+	}
+	paths := map[path]bool{}
+	kept := map[entity.ID]bool{}
+	p.replaced = map[entity.ID]bool{}
+	for i := range in.Components {
+		c := &in.Components[i]
+		at := fmt.Sprintf("/components/%d", i)
+		if !repositories[c.RepositoryAreaID] {
+			verr.Add(at+"/repository_area_id", entity.FieldUnknownReference, "repository is not known from connections")
+		}
+		if !services[c.ServiceID] {
+			verr.Add(at+"/service_id", entity.FieldUnknownReference, "the service is not in the structure")
+		}
+		if !validPathPrefix(c.PathPrefix) {
+			verr.Add(at+"/path_prefix", entity.FieldInvalidFormat, "a relative clean path inside the repository")
+		}
+		if c.Status != entity.ComponentConfirmed && c.Status != entity.ComponentRejected {
+			verr.Add(at+"/status", entity.FieldNotAllowedValue, "status is confirmed or rejected")
+		}
+		k := path{c.ServiceID, c.RepositoryAreaID, c.PathPrefix}
+		if paths[k] {
+			verr.Add(at+"/path_prefix", entity.FieldDuplicate, "another component takes this path")
+		}
+		paths[k] = true
+		next := entity.Component{
+			ID: c.ID, ServiceID: c.ServiceID, RepositoryAreaID: c.RepositoryAreaID, PathPrefix: c.PathPrefix, Status: c.Status,
+			Origin: entity.ComponentManual,
+		}
+		if c.ID.IsZero() {
+			id, err := u.newID()
+			if err != nil {
+				return fmt.Errorf("org: new component ID: %w", err)
+			}
+			next.ID = id
+		} else {
+			old, ok := existing[c.ID]
+			switch {
+			case !ok:
+				verr.Add(at+"/id", entity.FieldUnknownReference, "component is not found")
+				continue
+			case kept[c.ID]:
+				verr.Add(at+"/id", entity.FieldDuplicate, "component is listed twice")
+				continue
+			}
+			kept[c.ID] = true
+			if old.ServiceID == next.ServiceID && old.RepositoryAreaID == next.RepositoryAreaID && old.PathPrefix == next.PathPrefix && old.Status == next.Status {
+				continue
+			}
+			next.Origin = old.Origin
+			p.replaced[c.ID] = true
+		}
+		if next.Status == entity.ComponentConfirmed {
+			user, at := by.ConfirmedBy, by.ConfirmedAt
+			next.ConfirmedBy, next.ConfirmedAt = &user, &at
+		}
+		p.components = append(p.components, next)
+	}
+	for i := range cur {
+		if !kept[cur[i].ID] {
+			verr.Add("/components", entity.FieldRequired, fmt.Sprintf("component %s is missing; reject it with status rejected", cur[i].ID))
+		}
+	}
+	return nil
+}
+
+// validPathPrefix accepts an empty prefix, the whole repository, or a clean relative path.
+func validPathPrefix(prefix string) bool {
+	if prefix == "" {
+		return true
+	}
+	return len(prefix) <= 1024 && !strings.ContainsAny(prefix, "\\\x00") && pathpkg.Clean(prefix) == prefix && !pathpkg.IsAbs(prefix) &&
+		prefix != "." && prefix != ".." && !strings.HasPrefix(prefix, "../")
 }
