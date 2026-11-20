@@ -350,7 +350,7 @@ func (u *UseCase) revisions(ctx context.Context, org entity.ID, s *entity.CalcSe
 func (u *UseCase) orgSeries(ctx context.Context, org entity.ID) ([]entity.CalcSeries, error) {
 	var out []entity.CalcSeries
 	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
-		for _, set := range []string{entity.MetricSetFlow, entity.MetricSetReview, entity.MetricSetEvents} {
+		for _, set := range []string{entity.MetricSetFlow, entity.MetricSetReview, entity.MetricSetEvents, entity.MetricSetLinks} {
 			series, err := u.d.Repo.OrgSeries(ctx, org, set)
 			if err != nil {
 				return err

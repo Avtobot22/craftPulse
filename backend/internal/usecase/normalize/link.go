@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
 )
 
 // Links is the link module, which owns links and decisions on candidates (TZ 10.3). normalize keeps the objects
@@ -47,7 +48,15 @@ func (u *UseCase) DecideLink(ctx context.Context, s entity.Subject, scope entity
 	err = u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		var err error
 		out, err = u.d.Links.Decide(ctx, org, s.UserID, linkID, d, key)
-		return err
+		if err != nil || out.ID == e.ID {
+			return err
+		}
+		// A new version of the link changes the coverage of links of the areas of its ends (A18, A20, T28).
+		areas := []entity.ID{ends[out.From].AreaID}
+		if to := ends[out.To].AreaID; to != areas[0] {
+			areas = append(areas, to)
+		}
+		return u.recount(ctx, org, areas, entity.ID(logger.CorrelationID(ctx)))
 	})
 	if err != nil {
 		return entity.LinkResult{}, err

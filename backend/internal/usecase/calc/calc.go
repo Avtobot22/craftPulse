@@ -53,6 +53,11 @@ type Collection interface {
 	AreaCollection(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaCollection, error)
 }
 
+// Links is the link module: the links of tasks to MRs with an end among the objects that hold at a knowledge number.
+type Links interface {
+	TaskMREdgesAt(ctx context.Context, orgID entity.ID, objectIDs []entity.ID, seq int64) ([]entity.LinkEdge, error)
+}
+
 // Rights is the access module: what the sources allow the subject to read now (TZ 13.4, 13.5).
 type Rights interface {
 	Decide(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.SourceQuery) (entity.Scope, error)
@@ -74,13 +79,15 @@ type Deps struct {
 	// Collection is nil where no source is collected; then only the history of the facts tells completeness.
 	Collection Collection
 	Rights     Rights
-	Repo       repo.CalcRepo
-	Tenants    repo.TenantRepo
-	Queue      repo.JobQueue
-	Tx         repo.Transactor
-	Metrics    Metrics
-	Clock      clock.Clock
-	NewID      func() (entity.ID, error)
+	// Links is nil where the coverage of links is not computed; its series then get no links.
+	Links   Links
+	Repo    repo.CalcRepo
+	Tenants repo.TenantRepo
+	Queue   repo.JobQueue
+	Tx      repo.Transactor
+	Metrics Metrics
+	Clock   clock.Clock
+	NewID   func() (entity.ID, error)
 	// PartPoints is the points of one part of a window; _partPoints when zero.
 	PartPoints int
 	// GCBatch is the parts one portion of the collection deletes; _gcBatch when zero.

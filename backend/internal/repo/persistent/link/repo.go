@@ -81,6 +81,23 @@ func (r *Repo) EdgesAt(ctx context.Context, orgID, objectID entity.ID, dir entit
 	return out, nil
 }
 
+// TaskMREdgesAt reads the links of tasks to MRs that hold for the slice seq with an end among the objects.
+func (r *Repo) TaskMREdgesAt(ctx context.Context, orgID entity.ID, objectIDs []entity.ID, seq int64) ([]entity.LinkEdge, error) {
+	ids := make([]uuid.UUID, len(objectIDs))
+	for i, id := range objectIDs {
+		ids[i] = uuid.UUID(id)
+	}
+	rows, err := r.q(ctx).TaskMREdgesAt(ctx, TaskMREdgesAtParams{OrganizationID: uuid.UUID(orgID), ObjectIds: ids, Seq: seq})
+	if err != nil {
+		return nil, fmt.Errorf("link: read task MR edges: %w", err)
+	}
+	out := make([]entity.LinkEdge, len(rows))
+	for i := range rows {
+		out[i] = toEdge(&rows[i])
+	}
+	return out, nil
+}
+
 func (r *Repo) InsertEdge(ctx context.Context, orgID entity.ID, e *entity.LinkEdge) error {
 	in := InsertEdgeParams{
 		OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(e.ID), LinkType: string(e.Type), FromObjectID: uuid.UUID(e.From),

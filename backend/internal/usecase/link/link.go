@@ -102,6 +102,21 @@ func (u *UseCase) EdgesAt(ctx context.Context, orgID, objectID entity.ID, dir en
 	return out, err
 }
 
+// TaskMREdgesAt reads the links of tasks to MRs, candidates and decisions included, that hold for the slice seq
+// with an end among the objects.
+func (u *UseCase) TaskMREdgesAt(ctx context.Context, orgID entity.ID, objectIDs []entity.ID, seq int64) ([]entity.LinkEdge, error) {
+	if len(objectIDs) == 0 {
+		return nil, nil
+	}
+	var out []entity.LinkEdge
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.TaskMREdgesAt(ctx, orgID, objectIDs, seq)
+		return err
+	})
+	return out, err
+}
+
 // Decide confirms or rejects a candidate in the caller's organization transaction; the caller has checked that
 // the user sees both ends. A repeat with the same key returns the saved link, and a confirmation of a pair that
 // is already confirmed returns the existing link instead of a second one.

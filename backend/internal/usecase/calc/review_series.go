@@ -44,10 +44,11 @@ func scopeOf(raw []byte) (seriesScope, bool, error) {
 	return s, s.Kind == _scopeTeam || s.Kind == _scopeRepository, nil
 }
 
-// ReviewSeries finds the series of a set of the review of MRs or of the events of a team or a repository and creates
-// it on the first request: the review takes weeks or months, the events take days.
+// ReviewSeries finds the series of a set of the review of MRs, of the events or of the coverage of links of a team or
+// a repository and creates it on the first request: the review and the links take weeks or months, the events take
+// days. The coverage of links reads the mapping of a team, so it has no series of a repository.
 func (u *UseCase) ReviewSeries(ctx context.Context, orgID entity.ID, scope entity.ReviewScope, set string, step entity.Step) (entity.CalcSeries, error) {
-	if !validReviewStep(set, step) || scope.TeamID.IsZero() == scope.RepositoryID.IsZero() {
+	if !validReviewStep(set, step) || scope.TeamID.IsZero() == scope.RepositoryID.IsZero() || (set == entity.MetricSetLinks && scope.TeamID.IsZero()) {
 		return entity.CalcSeries{}, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/step", Code: entity.FieldNotAllowedValue}}}
 	}
 	var (
@@ -77,7 +78,7 @@ func (u *UseCase) ReviewSeries(ctx context.Context, orgID entity.ID, scope entit
 
 func validReviewStep(set string, step entity.Step) bool {
 	switch set {
-	case entity.MetricSetReview:
+	case entity.MetricSetReview, entity.MetricSetLinks:
 		return step == entity.StepWeek || step == entity.StepMonth
 	case entity.MetricSetEvents:
 		return step == entity.StepDay
@@ -187,6 +188,10 @@ func (u *UseCase) source(ctx context.Context, job entity.CalcSliceJob, rev *enti
 			OrganizationID: job.OrganizationID, TeamID: scope.TeamID, KnowledgeSeq: rev.KnowledgeSeq, Window: w, AsOf: rev.AsOf, Sources: job.Sources,
 		})
 		return &flowSource{in: in, series: series}, scope, err
+	}
+	if series.MetricSet == entity.MetricSetLinks {
+		src, err := u.linkSourceOf(ctx, job, rev, series, scope)
+		return src, scope, err
 	}
 	loc, err := time.LoadLocation(rev.Timezone)
 	if err != nil {
