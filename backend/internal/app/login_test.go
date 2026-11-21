@@ -324,7 +324,7 @@ func TestLogin_FirstAdministrator(t *testing.T) {
 	assert.Equal(t, "Same Name", cu.User.DisplayName)
 	require.Len(t, cu.Roles, 1)
 	assert.Equal(t, "administrator", cu.Roles[0].Role)
-	assert.Equal(t, []string{"accounts.manage", "audit.read", "connections.manage", "docs.read", "installation.read", "org.manage", "org.read", "profile.manage", "receipts.read", "report.read", "session.manage", "session.read", "sync.read", "users.manage"}, cu.Actions)
+	assert.Equal(t, []string{"accounts.manage", "audit.read", "ci.read", "connections.manage", "docs.read", "installation.read", "mr.read", "org.manage", "org.read", "profile.manage", "receipts.read", "report.read", "session.manage", "session.read", "sync.read", "users.manage"}, cu.Actions)
 	assert.Equal(t, _now.Add(12*time.Hour), cu.Session.ExpiresAt)
 	assert.Equal(t, _now.Add(time.Hour), cu.Session.IdleExpiresAt)
 

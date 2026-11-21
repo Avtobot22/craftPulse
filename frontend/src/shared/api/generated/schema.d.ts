@@ -4581,6 +4581,11 @@ export interface components {
             area: components["schemas"]["AreaRef"];
             author: components["schemas"]["ActorRef"];
             head_sha: components["schemas"]["GitSha"];
+            /** @description Базовая ревизия MR; null, если источник её не передал. */
+            base_sha?: string | null;
+            /** @description Часть связанных задач скрыта правами; число и имена не раскрываются. */
+            access_limited?: boolean;
+            access_notes?: components["schemas"]["AccessNote"][];
             /** Format: date-time */
             opened_at: string;
             /** Format: date-time */
@@ -4588,7 +4593,7 @@ export interface components {
             review_wait: components["schemas"]["ReviewWait"];
             /** Format: uri */
             source_url: string | null;
-            /** @description Связи MR с задачами, подтверждённые и кандидаты. Передаются в `getMergeRequest`; задача без доступа у пользователя не включается. */
+            /** @description Связи MR с задачами, подтверждённые и кандидаты. В `getMergeRequest` from_object_id содержит MR, to - связанную задачу; задача без доступа у пользователя не включается. ID, тип, метод и статус связи сохраняются независимо от направления показа. */
             links?: components["schemas"]["Link"][];
         };
         GitSha: string;

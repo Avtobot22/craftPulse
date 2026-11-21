@@ -213,12 +213,16 @@ func (c *ciSource) logical(metric string, p period) entity.Point {
 }
 
 func (c *ciSource) overhead(est string, p period) entity.Point {
+	return c.overheadOf(est, p, false)
+}
+
+func (c *ciSource) overheadOf(est string, p period, all bool) entity.Point {
 	t := ciTally(p)
 	var sum float64
 	n := 0
 	for i := range c.runs {
 		r := &c.runs[i]
-		if !r.in(p) {
+		if !all && !r.in(p) {
 			continue
 		}
 		if !r.complete {

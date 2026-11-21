@@ -1,0 +1,198 @@
+package view
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"math"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+)
+
+type CodeFacts interface {
+	CurrentObjects(context.Context, entity.ID, []entity.ID) ([]entity.LinkEnd, error)
+	CurrentMR(context.Context, entity.Scope, entity.ID, entity.ID) (entity.MRVersion, error)
+	Repository(context.Context, entity.Scope, entity.ID, entity.ID) (entity.RepositoryVersion, error)
+	RunAt(context.Context, entity.Scope, entity.ID, entity.ID, int64) (entity.CIRun, error)
+}
+
+type SourceRights interface {
+	Decide(context.Context, entity.Subject, entity.Scope, entity.SourceQuery) (entity.Scope, error)
+}
+
+type CodeLinks interface {
+	TaskMREdgesAt(context.Context, entity.ID, []entity.ID, int64) ([]entity.LinkEdge, error)
+}
+
+type ActorAccounts interface {
+	AssignmentAt(context.Context, entity.ID, entity.ID, int64) (entity.AccountAssignment, bool, error)
+}
+
+type RunCalculator interface {
+	SummarizeRun(entity.CIRun, entity.Provider) entity.RunSummary
+}
+
+// codeScope resolves only the authorization metadata before consulting the source. Facts are read afterwards.
+func (u *UseCase) codeScope(ctx context.Context, s entity.Subject, scope entity.Scope, op string, ids []entity.ID) (entity.Scope, map[entity.ID]entity.LinkEnd, error) {
+	ends, err := u.d.Code.CurrentObjects(ctx, s.OrganizationID, ids)
+	if err != nil {
+		return entity.Scope{}, nil, err
+	}
+	var areas []entity.ID
+	var objects []entity.RestrictedObject
+	for _, end := range ends {
+		areas = append(areas, end.AreaID)
+		if end.Restricted {
+			objects = append(objects, entity.RestrictedObject{ID: end.ID, AreaID: end.AreaID, Kind: end.Kind, NativeNS: end.NativeNS, NativeID: end.NativeID})
+		}
+	}
+	scope, err = u.d.SourceRights.Decide(ctx, s, scope, entity.SourceQuery{Operation: op, Areas: areas})
+	if err != nil {
+		return entity.Scope{}, nil, err
+	}
+	if len(objects) > 0 {
+		scope, err = u.d.SourceRights.Decide(ctx, s, scope, entity.SourceQuery{Operation: op, Objects: objects})
+		if err != nil {
+			return entity.Scope{}, nil, err
+		}
+	}
+	visible := make(map[entity.ID]entity.LinkEnd, len(ends))
+	for _, end := range ends {
+		if scope.Area(end.AreaID) && (!end.Restricted || slices.Contains(scope.Objects(), end.ID)) {
+			visible[end.ID] = end
+		}
+	}
+	return scope, visible, nil
+}
+
+func (u *UseCase) MergeRequest(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID) (entity.MRDetail, error) {
+	scope, ends, err := u.codeScope(ctx, s, scope, "getMergeRequest", []entity.ID{id})
+	if err != nil {
+		return entity.MRDetail{}, err
+	}
+	if end, ok := ends[id]; !ok || end.Kind != entity.ObjectMergeRequest {
+		return entity.MRDetail{}, entity.ErrNotFound
+	}
+	v, err := u.d.Code.CurrentMR(ctx, scope, s.OrganizationID, id)
+	if err != nil {
+		return entity.MRDetail{}, err
+	}
+	repository, err := u.d.Code.Repository(ctx, scope, s.OrganizationID, v.AreaID)
+	if err != nil && !errors.Is(err, entity.ErrNotFound) {
+		return entity.MRDetail{}, err
+	}
+	out := entity.MRDetail{Version: v, Repository: repository, AuthorKind: entity.PersonUnknown, Links: []entity.LinkResult{}}
+	if repository.WebURL != "" && v.IID != nil {
+		url := strings.TrimRight(repository.WebURL, "/") + "/-/merge_requests/" + strconv.Itoa(*v.IID)
+		out.SourceURL = &url
+	}
+	if v.AuthorAccountID != nil {
+		assignment, found, err := u.d.Actors.AssignmentAt(ctx, s.OrganizationID, *v.AuthorAccountID, math.MaxInt64)
+		if err != nil {
+			return entity.MRDetail{}, err
+		}
+		if found {
+			out.AuthorKind = assignment.ActorKind
+		}
+	}
+	edges, err := u.d.CodeLinks.TaskMREdgesAt(ctx, s.OrganizationID, []entity.ID{id}, math.MaxInt64)
+	if err != nil {
+		return entity.MRDetail{}, err
+	}
+	var tasks []entity.ID
+	for i := range edges {
+		edge := &edges[i]
+		if edge.Type == entity.LinkTaskMR && edge.To == id && edge.Status != entity.LinkRejected {
+			tasks = append(tasks, edge.From)
+		}
+	}
+	if len(tasks) > 0 {
+		_, visible, err := u.codeScope(ctx, s, scope, "getMergeRequest", tasks)
+		if err != nil {
+			return entity.MRDetail{}, err
+		}
+		for i := range edges {
+			edge := &edges[i]
+			if edge.Type != entity.LinkTaskMR || edge.To != id || edge.Status == entity.LinkRejected {
+				continue
+			}
+			end, ok := visible[edge.From]
+			if !ok || end.Kind != entity.ObjectTask {
+				out.Notes = []entity.AccessNote{{Code: entity.NoteRestricted}}
+				continue
+			}
+			out.Links = append(out.Links, entity.LinkResult{Edge: *edge, To: end})
+		}
+	}
+	return out, nil
+}
+
+func (u *UseCase) Pipeline(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID) (entity.PipelineDetail, error) {
+	return u.readPipeline(ctx, s, scope, id, "getPipeline")
+}
+
+func (u *UseCase) readPipeline(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID, op string) (entity.PipelineDetail, error) {
+	scope, ends, err := u.codeScope(ctx, s, scope, op, []entity.ID{id})
+	if err != nil {
+		return entity.PipelineDetail{}, err
+	}
+	end, ok := ends[id]
+	if !ok || end.Kind != entity.ObjectCIRun {
+		return entity.PipelineDetail{}, entity.ErrNotFound
+	}
+	run, err := u.d.Code.RunAt(ctx, scope, s.OrganizationID, id, math.MaxInt64)
+	if err != nil {
+		return entity.PipelineDetail{}, err
+	}
+	if run.Run.MRID != nil {
+		_, visible, err := u.codeScope(ctx, s, scope, op, []entity.ID{*run.Run.MRID})
+		if err != nil {
+			return entity.PipelineDetail{}, err
+		}
+		if _, allowed := visible[*run.Run.MRID]; !allowed {
+			run.Run.MRID = nil
+		}
+	}
+	instance, err := u.d.Instances.Instance(ctx, s.OrganizationID, end.InstanceID)
+	if err != nil {
+		return entity.PipelineDetail{}, err
+	}
+	return entity.PipelineDetail{Run: run, Summary: u.d.RunCalculator.SummarizeRun(run, instance.Provider)}, nil
+}
+
+func (u *UseCase) PipelineAttempts(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID, q entity.AttemptQuery) (entity.AttemptList, error) {
+	if q.Limit < 1 || q.Limit > 200 {
+		return entity.AttemptList{}, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/limit", Code: entity.FieldOutOfRange}}}
+	}
+	issued := u.d.Clock.Now()
+	if q.IssuedAt != nil {
+		issued = *q.IssuedAt
+		if issued.After(u.d.Clock.Now()) || u.d.Clock.Now().Sub(issued) > 24*time.Hour {
+			return entity.AttemptList{}, entity.ErrInvalidCursor
+		}
+	}
+	detail, err := u.readPipeline(ctx, s, scope, id, "listPipelineAttempts")
+	if err != nil {
+		return entity.AttemptList{}, err
+	}
+	attempts := slices.Clone(detail.Run.Attempts)
+	slices.SortFunc(attempts, func(a, b entity.CIAttemptVersion) int { return bytes.Compare(a.AttemptID[:], b.AttemptID[:]) })
+	out := entity.AttemptList{IssuedAt: issued, Items: []entity.CIAttemptVersion{}, UsageSeconds: detail.Summary.UsageSeconds}
+	for i := range attempts {
+		attempt := &attempts[i]
+		if q.Outcome != "" && attempt.Outcome != q.Outcome || q.After != nil && bytes.Compare(attempt.AttemptID[:], q.After[:]) <= 0 {
+			continue
+		}
+		if len(out.Items) == q.Limit {
+			last := out.Items[len(out.Items)-1].AttemptID
+			out.Next = &last
+			break
+		}
+		out.Items = append(out.Items, *attempt)
+	}
+	return out, nil
+}
