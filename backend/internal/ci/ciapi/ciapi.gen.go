@@ -294,7 +294,7 @@ type Receipt struct {
 	DuplicateOf     *openapi_types.UUID `json:"duplicate_of"`
 	Id              openapi_types.UUID  `json:"id"`
 
-	// ReasonCode Причина отказа пакета целиком: `schema_unsupported`, `envelope_invalid`, `path_unsafe`, `limit_exceeded`.
+	// ReasonCode Причина отказа пакета целиком. Возможные значения: `schema_unsupported`, `envelope_invalid`, `path_unsafe`, `limit_exceeded`, `outside_scope`.
 	ReasonCode    *string   `json:"reason_code"`
 	ReceivedAt    time.Time `json:"received_at"`
 	RecordCount   int       `json:"record_count"`

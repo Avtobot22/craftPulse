@@ -1513,7 +1513,7 @@ paths:
           multipart/form-data:
             schema: {$ref: '#/components/schemas/ImportUpload'}
             encoding:
-              file: {contentType: 'application/json, text/csv, application/xml, text/plain'}
+              file: {contentType: 'application/json, application/sarif+json, text/csv, application/xml, text/xml, text/plain, application/octet-stream'}
       responses:
         '202':
           description: Пакет принят к разбору.
@@ -6358,10 +6358,38 @@ components:
     ImportUpload:
       type: object
       required: [file, schema_id, schema_version, source_provider, source_instance_key, project_id]
+      if:
+        properties:
+          schema_id: {enum: [findings, junit, coverage]}
+        required: [schema_id]
+      then:
+        properties:
+          commit_sha: {type: string}
+          report_format: {type: string}
+        required: [commit_sha, report_format]
       properties:
-        file: {type: string, contentMediaType: application/octet-stream, description: 'Файл по схеме импорта: JSON или CSV для фактов, отчёт поддержанного формата для `findings`, `junit` и `coverage`. JSON - массив записей `Record` канонического пакета (`envelope.yaml`), CSV - снимок текущих задач по `TaskCsvRow`.'}
+        file: {type: string, contentMediaType: application/octet-stream, description: 'Отчёт передаётся как JSON, XML или текст LCOV. Для других схем JSON содержит массив записей `Record` из `envelope.yaml`, а CSV содержит снимок текущих задач по `TaskCsvRow`.'}
         schema_id: {type: string, enum: [tasks, task_events, relations, merge_requests, ci_runs, findings, junit, coverage, documents], description: '`merge_requests` и `ci_runs` несут те же факты MR, запусков, jobs и попыток, что отдают адаптеры Git и CI.'}
-        report_format: {type: string, enum: [envelope, sarif, gitlab_security, gitlab_code_quality, junit_xml, lcov, cobertura, jacoco], description: 'Формат файла для `findings`, `junit` и `coverage`; для остальных схем не передаётся. `envelope` - находки в формате универсального импорта.'}
+        report_format:
+          type: string
+          enum: [envelope, sarif, gitlab_security, gitlab_code_quality, junit_xml, lcov, cobertura, jacoco]
+          description: |
+            Для `findings` укажите `envelope`, `sarif`, `gitlab_security` или `gitlab_code_quality`.
+            Файл `envelope` содержит JSON-массив записей `Record` со схемой `finding/1` и ревизией `commit_sha`.
+            Для `junit` укажите `junit_xml`. Для `coverage` доступны `lcov`, `cobertura` и `jacoco`.
+            Остальные схемы это поле не используют.
+        report_kind:
+          type: string
+          enum: [code, sast, sca, secrets, iac, image, docs, openapi]
+          description: 'Вид проверки для SARIF. Если поле пропущено, используется `code`. Для GitLab Security вид определяется по `scan.type`.'
+        source_root:
+          type: string
+          maxLength: 4096
+          description: 'Абсолютный путь корня репозитория на машине, где получен отчёт покрытия. Нужен для сопоставления абсолютных путей отчёта.'
+        source_dir:
+          type: string
+          maxLength: 4096
+          description: 'Каталог от корня репозитория, относительно которого указаны пути в отчёте покрытия. По умолчанию используется корень.'
         commit_sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$', description: 'Ревизия, к которой относится отчёт; обязательна для `findings`, `junit` и `coverage`. Без неё отчёт отклоняется: результат не привязывается к head по догадке.'}
         schema_version: {type: string, maxLength: 16}
         source_provider: {$ref: '#/components/schemas/Provider'}
@@ -6383,7 +6411,7 @@ components:
         rejected_count: {type: integer, minimum: 0}
         replay_count: {type: integer, minimum: 0}
         conflict_count: {type: integer, minimum: 0}
-        reason_code: {type: [string, 'null'], description: 'Причина отказа пакета целиком: `schema_unsupported`, `envelope_invalid`, `path_unsafe`, `limit_exceeded`.'}
+        reason_code: {type: [string, 'null'], description: 'Причина отказа пакета целиком. Возможные значения: `schema_unsupported`, `envelope_invalid`, `path_unsafe`, `limit_exceeded`, `outside_scope`.'}
         duplicate_of: {type: [string, 'null'], format: uuid}
         affected_metrics: {type: array, items: {type: string}}
         retry_after_seconds: {type: [integer, 'null'], minimum: 1}

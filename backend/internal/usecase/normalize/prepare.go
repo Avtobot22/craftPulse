@@ -26,23 +26,24 @@ var _dictionaries = map[envelope.RecordRecordKind]entity.DictionaryKind{
 // input is a part of a receipt parsed and canonized before the transaction (TZ 12.6): only the decisions
 // against the current versions are left for the time the knowledge counter is locked.
 type input struct {
-	receipt      entity.ID
-	instance     entity.ID
-	provider     string
-	area         entity.SourceKey
-	truncated    map[string]bool
-	accounts     map[string]entity.SourceAccount
-	tasks        []*taskCandidate
-	events       []*eventCandidate
-	entries      []*entryCandidate
-	repositories []*repositoryCandidate
-	mrs          []*mrCandidate
-	mrEvents     []*mrEventCandidate
-	mrRevisions  []*mrRevisionCandidate
-	ciRuns       []*ciRunCandidate
-	ciAttempts   []*ciAttemptCandidate
-	reports      []*reportCandidate
-	manifests    []*manifestCandidate
+	receipt       entity.ID
+	instance      entity.ID
+	provider      string
+	area          entity.SourceKey
+	truncated     map[string]bool
+	accounts      map[string]entity.SourceAccount
+	tasks         []*taskCandidate
+	events        []*eventCandidate
+	entries       []*entryCandidate
+	repositories  []*repositoryCandidate
+	mrs           []*mrCandidate
+	mrEvents      []*mrEventCandidate
+	mrRevisions   []*mrRevisionCandidate
+	ciRuns        []*ciRunCandidate
+	ciAttempts    []*ciAttemptCandidate
+	reports       []*reportCandidate
+	importProject *entity.ID
+	manifests     []*manifestCandidate
 	// buildAttempts are the attempts that stand for a whole Jenkins build of the part without its manifest.
 	buildAttempts map[entity.SourceKey]*ciAttemptCandidate
 }
@@ -78,6 +79,10 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 		area:      entity.SourceKey{InstanceID: *rc.SourceInstanceID, Kind: entity.ObjectKind(m.Area.Kind), NativeID: m.Area.NativeId},
 		truncated: truncatedRuns(m.Selection),
 		accounts:  map[string]entity.SourceAccount{},
+	}
+	if rc.Channel == entity.ChannelImport && rc.ProjectID != nil &&
+		m.Area.Kind == envelope.AreaRefKindAnalysisProject && m.Area.NativeId == rc.ProjectID.String() {
+		in.importProject = rc.ProjectID
 	}
 	taskNS := ""
 	if m.Source.Provider == _providerUniversal {
@@ -197,6 +202,12 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 		return nil, err
 	}
 	return in, nil
+}
+
+func (in *input) hasImportedReport() bool {
+	return in.importProject != nil && slices.ContainsFunc(in.reports, func(c *reportCandidate) bool {
+		return c.parser != nil && c.rejected == ""
+	})
 }
 
 type baseFact struct {

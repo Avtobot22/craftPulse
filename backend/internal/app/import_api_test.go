@@ -27,6 +27,7 @@ const _secretTitle = "title-not-for-the-receipt-5b1e"
 
 type receiptBody struct {
 	ID              uuid.UUID  `json:"id"`
+	Channel         string     `json:"channel"`
 	Status          string     `json:"status"`
 	RecordCount     int        `json:"record_count"`
 	AcceptedCount   int        `json:"accepted_count"`
@@ -70,7 +71,7 @@ func newImportsEnv(t *testing.T) *importsEnv {
 	return &importsEnv{loginEnv: e, uc: uc, admin: e.admin(t, "demo"), project: e.tokenProject(t, e.orgID)}
 }
 
-func (e *importsEnv) upload(t *testing.T, b *browser, fields map[string]string, contentType string, file []byte) *httptest.ResponseRecorder {
+func (e *loginEnv) upload(t *testing.T, b *browser, fields map[string]string, contentType string, file []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
