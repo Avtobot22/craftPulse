@@ -46,7 +46,7 @@ func (u *UseCase) RunDirty(ctx context.Context, job entity.SyncDirtyJob, holder 
 	}
 	var pages []*entity.PreparedPackage
 	for _, g := range groups(keys, scopes) {
-		read, f, err := u.readGroup(ctx, org, conn, g)
+		read, f, err := u.readGroup(ctx, job, holder, g)
 		if err != nil {
 			return err
 		}
@@ -99,7 +99,8 @@ func groups(keys []entity.DirtyKey, scopes []entity.ConnectionScope) []dirtyGrou
 	return out
 }
 
-func (u *UseCase) readGroup(ctx context.Context, org, conn entity.ID, g dirtyGroup) ([]*entity.PreparedPackage, *failure, error) {
+func (u *UseCase) readGroup(ctx context.Context, job entity.SyncDirtyJob, holder string, g dirtyGroup) ([]*entity.PreparedPackage, *failure, error) {
+	org, conn := job.OrganizationID, job.ConnectionID
 	var pages []*entity.PreparedPackage
 	for _, schema := range _schemas[g.dataKind] {
 		for start := 0; start < len(g.keys); start += u.d.PageSize {
@@ -112,12 +113,31 @@ func (u *UseCase) readGroup(ctx context.Context, org, conn entity.ID, g dirtyGro
 				SchemaID: schema, Scope: entity.ScopeRef{Kind: g.scope.Kind, NativeScopeID: g.scope.NativeScopeID},
 				Limit: u.d.PageSize, ObjectKeys: objects,
 			}
-			page, _, f, err := u.fetch(ctx, org, conn, g.scope.ID, in)
-			if err != nil || f != nil {
-				return nil, f, err
+			seen := make(map[entity.SourceCursor]struct{})
+			for {
+				if err := u.lease(ctx, org, conn, holder); err != nil {
+					return nil, nil, err
+				}
+				page, selection, f, err := u.fetch(ctx, org, conn, g.scope.ID, in)
+				if err != nil || f != nil {
+					return nil, f, err
+				}
+				page.ObservedVia = entity.ViaReconcile
+				pages = append(pages, page)
+				if selection.End {
+					break
+				}
+				next := sourceCursor(selection.NextCursor)
+				if next == nil {
+					return nil, &failure{code: "invalid_response", class: "invalid_response", backoff: true}, nil
+				}
+				key := entity.SourceCursor{NativeID: next.NativeID, ModifiedAt: next.ModifiedAt.UTC()}
+				if _, repeated := seen[key]; repeated {
+					return nil, &failure{code: "invalid_response", class: "invalid_response", backoff: true}, nil
+				}
+				seen[key] = struct{}{}
+				in.Cursor = next
 			}
-			page.ObservedVia = entity.ViaReconcile
-			pages = append(pages, page)
 		}
 	}
 	return pages, nil, nil

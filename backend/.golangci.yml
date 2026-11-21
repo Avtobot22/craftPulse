@@ -474,6 +474,9 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      # Jira Cloud REST v3 defines camelCase wire fields.
+      - path: internal/adapter/jiracloud/
+        linters: [tagliatelle]
       # тесты могут быть менее строгие
       - path: _test\.go
         linters:

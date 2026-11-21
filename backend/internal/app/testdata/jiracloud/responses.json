@@ -1,0 +1,166 @@
+{
+  "server": {
+    "deploymentType": "Cloud",
+    "version": "1001.0.0-SNAPSHOT",
+    "buildNumber": 100296
+  },
+  "tenant": {
+    "cloudId": "a71a171a-0000-4000-8000-000000000001"
+  },
+  "actor": {
+    "accountId": "account-fixture-1",
+    "accountType": "atlassian",
+    "active": true,
+    "displayName": "Demo user"
+  },
+  "project": {
+    "id": "10000",
+    "key": "DEMO",
+    "name": "Demo project"
+  },
+  "permissions": {
+    "permissions": {
+      "BROWSE_PROJECTS": {
+        "havePermission": true
+      },
+      "CREATE_ISSUES": {
+        "havePermission": false
+      }
+    }
+  },
+  "status": [
+    {
+      "id": "10001",
+      "name": "Task",
+      "subtask": false,
+      "statuses": [
+        {
+          "id": "3",
+          "name": "In Progress",
+          "statusCategory": {
+            "key": "indeterminate"
+          }
+        }
+      ]
+    }
+  ],
+  "resolution": {
+    "startAt": 0,
+    "isLast": true,
+    "values": [
+      {
+        "id": "10000",
+        "name": "Done"
+      }
+    ]
+  },
+  "fields": [
+    {
+      "id": "customfield_10020",
+      "name": "Demo option",
+      "custom": true,
+      "schema": {
+        "type": "option"
+      }
+    }
+  ],
+  "search1": {
+    "isLast": false,
+    "nextPageToken": "fixture-next",
+    "issues": [
+      {
+        "id": "10002",
+        "key": "DEMO-2",
+        "fields": {
+          "created": "2026-11-20T09:00:00.000+0700",
+          "updated": "2026-11-21T10:00:00.123+0700",
+          "project": {
+            "id": "10000"
+          },
+          "issuetype": {
+            "id": "10001"
+          },
+          "status": {
+            "id": "3"
+          },
+          "summary": "Demo DEMO-2",
+          "assignee": {
+            "accountId": "account-fixture-1",
+            "accountType": "atlassian",
+            "active": true,
+            "displayName": "Demo user"
+          },
+          "issuelinks": [],
+          "security": null
+        }
+      }
+    ]
+  },
+  "search2": {
+    "isLast": true,
+    "issues": [
+      {
+        "id": "10010",
+        "key": "DEMO-10",
+        "fields": {
+          "created": "2026-11-20T09:00:00.000+0700",
+          "updated": "2026-11-21T10:00:00.123+0700",
+          "project": {
+            "id": "10000"
+          },
+          "issuetype": {
+            "id": "10001"
+          },
+          "status": {
+            "id": "3"
+          },
+          "summary": "Demo DEMO-10",
+          "assignee": {
+            "accountId": "account-fixture-1",
+            "accountType": "atlassian",
+            "active": true,
+            "displayName": "Demo user"
+          },
+          "issuelinks": [
+            {
+              "id": "10011",
+              "type": {
+                "id": "10000"
+              },
+              "outwardIssue": {
+                "id": "10002"
+              }
+            }
+          ],
+          "security": {
+            "id": "10100"
+          },
+          "customfield_10020": {
+            "id": "10021",
+            "value": "Option"
+          }
+        }
+      }
+    ]
+  },
+  "account": [
+    {
+      "accountId": "account-fixture-1",
+      "accountType": "atlassian",
+      "active": true,
+      "displayName": "Demo user"
+    }
+  ],
+  "emptyHistory": {
+    "startAt": 0,
+    "total": 0,
+    "isLast": true,
+    "values": []
+  },
+  "error": {
+    "errorMessages": [
+      "Request refused"
+    ],
+    "errors": {}
+  }
+}
