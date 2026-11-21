@@ -239,3 +239,10 @@ type SourceLinks interface {
 	CompleteSourceLink(context.Context, entity.Subject, entity.SourceLinkCallback) string
 	DeleteSourceLink(context.Context, entity.Subject, entity.ID) error
 }
+
+// CodeDetails serves MR, pipelines and their attempts after source access checks.
+type CodeDetails interface {
+	MergeRequest(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.MRDetail, error)
+	Pipeline(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.PipelineDetail, error)
+	PipelineAttempts(context.Context, entity.Subject, entity.Scope, entity.ID, entity.AttemptQuery) (entity.AttemptList, error)
+}

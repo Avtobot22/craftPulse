@@ -36,6 +36,12 @@ func (u *UseCase) RunAt(ctx context.Context, scope entity.Scope, orgID, runID en
 			}
 		}
 		out.History = entity.AttemptHistoryComplete
+		unknown := func(r entity.CIRunVersion) bool {
+			return r.AttemptHistory != entity.AttemptHistoryComplete && r.AttemptHistory != entity.AttemptHistoryTruncated
+		}
+		if unknown(out.Run) || slices.ContainsFunc(out.Children, unknown) {
+			out.History = entity.AttemptHistoryUnknown
+		}
 		truncated := func(r entity.CIRunVersion) bool { return r.AttemptHistory == entity.AttemptHistoryTruncated }
 		if truncated(out.Run) || slices.ContainsFunc(out.Children, truncated) {
 			out.History = entity.AttemptHistoryTruncated

@@ -7136,13 +7136,16 @@ components:
         area: {$ref: '#/components/schemas/AreaRef'}
         author: {$ref: '#/components/schemas/ActorRef'}
         head_sha: {$ref: '#/components/schemas/GitSha'}
+        base_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$', description: "Базовая ревизия MR; null, если источник её не передал."}
+        access_limited: {type: boolean, description: Часть связанных задач скрыта правами; число и имена не раскрываются.}
+        access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}
         opened_at: {type: string, format: date-time}
         ready_at: {type: [string, 'null'], format: date-time}
         review_wait: {$ref: '#/components/schemas/ReviewWait'}
         source_url: {type: [string, 'null'], format: uri}
         links:
           type: array
-          description: Связи MR с задачами, подтверждённые и кандидаты. Передаются в `getMergeRequest`; задача без доступа у пользователя не включается.
+          description: Связи MR с задачами, подтверждённые и кандидаты. В `getMergeRequest` from_object_id содержит MR, to - связанную задачу; задача без доступа у пользователя не включается. ID, тип, метод и статус связи сохраняются независимо от направления показа.
           items: {$ref: '#/components/schemas/Link'}
     GitSha:
       type: string
