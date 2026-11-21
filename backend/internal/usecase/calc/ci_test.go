@@ -294,3 +294,59 @@ func TestCI_AsOfDoesNotUseFutureCompletion(t *testing.T) {
 	assert.InDelta(t, .5, *s.point("I02", "", p).Value, 0)
 	assert.NotEqual(t, before, s.hash(p.start, p.end))
 }
+
+// jenkinsFacts are builds of one job as normalize stores them: results as native statuses and, for a build without
+// an execution manifest, one attempt for the build itself and a cut history.
+func jenkinsFacts(results ...string) (entity.CIFacts, period) {
+	start, end := day(1), day(8)
+	finished := start.Add(time.Minute)
+	f := entity.CIFacts{AreaID: newID(), Provider: entity.ProviderJenkins}
+	outcomes := map[string]entity.CIOutcome{
+		"SUCCESS": entity.CISuccess, "FAILURE": entity.CIFailed, "UNSTABLE": entity.CIFailed, "ABORTED": entity.CICanceled, "NOT_BUILT": entity.CISkipped,
+	}
+	seconds := int64(60)
+	for _, r := range results {
+		run := newID()
+		f.Runs = append(f.Runs, entity.CIRunVersion{
+			ID: newID(), RunID: run, AreaID: f.AreaID, NativeStatus: r, Outcome: outcomes[r],
+			StartedAt: &start, FinishedAt: &finished, AttemptHistory: entity.AttemptHistoryTruncated,
+		})
+		f.Attempts = append(f.Attempts, entity.CIAttemptVersion{
+			ID: newID(), AttemptID: newID(), RunID: run, JobKey: "build", ConfigFingerprint: []byte("build"), AttemptNo: 1,
+			NativeStatus: r, Outcome: outcomes[r], DurationS: &seconds, StartedAt: &start, FinishedAt: &finished,
+		})
+	}
+	return f, period{start: start, end: end}
+}
+
+func TestCI_JenkinsResults(t *testing.T) {
+	t.Parallel()
+	f, p := jenkinsFacts("SUCCESS", "FAILURE", "UNSTABLE", "ABORTED", "NOT_BUILT")
+	s := sourceOf(f)
+	final := s.point("I01", "runs", p)
+	require.NotNil(t, final.Value)
+	assert.InDelta(t, 3, *final.Denominator, 0, "ABORTED and NOT_BUILT are not in the denominator")
+	assert.InDelta(t, 1.0/3, *final.Value, 1e-9)
+	for class, want := range map[string]float64{"unstable": 1, "failure": 1, "canceled": 1, "skipped": 1, "success": 1} {
+		pt := s.point("I06", "runs:"+class, p)
+		require.NotNil(t, pt.Numerator, class)
+		assert.InDelta(t, want, *pt.Numerator, 0, class)
+	}
+	unstable := s.point("I06", "jobs:unstable", p)
+	require.NotNil(t, unstable.Numerator)
+	assert.InDelta(t, 1, *unstable.Numerator, 0, "the attempt of a build keeps UNSTABLE apart")
+}
+
+func TestCI_JenkinsBuildWithoutManifest(t *testing.T) {
+	t.Parallel()
+	f, p := jenkinsFacts("FAILURE")
+	s := sourceOf(f)
+	retries := s.point("I04", "seconds", p)
+	assert.Equal(t, entity.StateBounded, retries.State, "inner retries of the build are unknown")
+	assert.Nil(t, retries.Value)
+	require.NotNil(t, retries.Bound)
+	assert.Equal(t, entity.BoundLower, retries.Bound.Kind)
+	for _, metric := range []string{"I02", "I03"} {
+		assert.Nil(t, s.point(metric, "", p).Value, metric)
+	}
+}

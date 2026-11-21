@@ -10,7 +10,8 @@ var (
 	_ciRoles  = []string{"numerator", "denominator", "excluded", "missing"}
 )
 
-// _ciNativeClasses is part of definition version 1, independent of normalization's coarser outcomes.
+// _ciNativeClasses is part of definition version 1, independent of normalization's coarser outcomes. A native status
+// is matched without case: Jenkins gives UNSTABLE where GitLab gives failed.
 var _ciNativeClasses = map[string]string{
 	"success": "success", "failed": "failure", "failure": "failure", "timeout": "timeout",
 	"timed_out": "timeout", "canceled": "canceled", "cancelled": "canceled", "canceling": "canceled",

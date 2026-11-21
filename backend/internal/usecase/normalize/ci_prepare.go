@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	_providerGitLab = "gitlab"
+	_providerGitLab  = "gitlab"
+	_providerJenkins = "jenkins"
 	// _gitlabUnknownFailure is the failure reason GitLab gives when it does not know the cause.
 	_gitlabUnknownFailure = "unknown_failure"
 )
@@ -30,6 +31,17 @@ var _gitlabOutcomes = map[string]entity.CIOutcome{
 	"canceled":             entity.CICanceled,
 	"skipped":              entity.CISkipped,
 	"manual":               entity.CISkipped,
+}
+
+// _jenkinsOutcomes maps the results of Jenkins builds to outcomes; the result itself stays as the native status, so
+// calc tells UNSTABLE from FAILURE. A build in progress has no result yet.
+var _jenkinsOutcomes = map[string]entity.CIOutcome{
+	"":          entity.CIRunning,
+	"SUCCESS":   entity.CISuccess,
+	"FAILURE":   entity.CIFailed,
+	"UNSTABLE":  entity.CIFailed,
+	"ABORTED":   entity.CICanceled,
+	"NOT_BUILT": entity.CISkipped,
 }
 
 type ciRunCandidate struct {
@@ -59,6 +71,15 @@ func (in *input) ciKey(kind entity.ObjectKind, id string) entity.SourceKey {
 	return entity.SourceKey{InstanceID: in.instance, Kind: kind, NativeID: id}
 }
 
+// runKey is the identity of a CI run: a Jenkins build is unique within its job only (TZ 12.4).
+func (in *input) runKey(job, id string) entity.SourceKey {
+	k := in.ciKey(entity.ObjectCIRun, id)
+	if in.provider == _providerJenkins {
+		k.NativeNS = job
+	}
+	return k
+}
+
 func (in *input) ciRun(rec *envelope.Record, b baseFact, areaKind entity.ObjectKind) (*ciRunCandidate, error) {
 	var p envelope.CiRunV1
 	if err := json.Unmarshal(rec.Payload, &p); err != nil {
@@ -72,7 +93,7 @@ func (in *input) ciRun(rec *envelope.Record, b baseFact, areaKind entity.ObjectK
 		history = entity.AttemptHistoryTruncated
 	}
 	c := &ciRunCandidate{
-		key: in.ciKey(entity.ObjectCIRun, rec.NativeId), area: entity.SourceKey{InstanceID: in.instance, Kind: areaKind, NativeID: p.ProjectNativeId},
+		key: in.runKey(rec.NativeNs, rec.NativeId), area: entity.SourceKey{InstanceID: in.instance, Kind: areaKind, NativeID: p.ProjectNativeId},
 		mr: deref(p.MrNativeId),
 		version: entity.CIRunVersion{
 			Record: b.ref, Revision: b.revision, ObservedAt: b.observed, SourceUpdatedAt: p.UpdatedAt,
@@ -82,7 +103,7 @@ func (in *input) ciRun(rec *envelope.Record, b baseFact, areaKind entity.ObjectK
 		},
 	}
 	if parent := deref(p.ParentRunNativeId); parent != "" && parent != rec.NativeId {
-		k := in.ciKey(entity.ObjectCIRun, parent)
+		k := in.runKey(rec.NativeNs, parent)
 		c.parent = &k
 	}
 	return c, nil
@@ -115,12 +136,14 @@ func (in *input) ciAttempt(rec *envelope.Record, b baseFact) (*ciAttemptCandidat
 	}, nil
 }
 
-// outcome takes the outcome of GitLab from the native status by one table; other sources give it themselves.
+// outcome takes the outcome of GitLab and Jenkins from the native status by their tables; other sources give it
+// themselves.
 func (in *input) outcome(native string, given entity.CIOutcome) entity.CIOutcome {
-	if in.provider != _providerGitLab {
+	table := map[string]map[string]entity.CIOutcome{_providerGitLab: _gitlabOutcomes, _providerJenkins: _jenkinsOutcomes}[in.provider]
+	if table == nil {
 		return given
 	}
-	if o, ok := _gitlabOutcomes[native]; ok {
+	if o, ok := table[native]; ok {
 		return o
 	}
 	return entity.CIUnknown

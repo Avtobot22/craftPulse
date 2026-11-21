@@ -85,7 +85,7 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 	part, more := u.part(recs, job.AfterNo)
 	var in *input
 	if len(part) > 0 {
-		if in, err = u.prepare(ctx, rc, part, via(job, rc)); err != nil {
+		if in, err = u.prepare(ctx, rc, part, via(job, rc), job.AfterNo == 0); err != nil {
 			return err
 		}
 	}
@@ -156,7 +156,8 @@ func (u *UseCase) part(recs []entity.IngestRecord, after int) ([]entity.IngestRe
 	return rest, false
 }
 
-func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, part []entity.IngestRecord, via entity.ObservedVia) (*input, error) {
+// prepare reads a part; the first part also reads the execution manifest of the package.
+func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, part []entity.IngestRecord, via entity.ObservedVia, first bool) (*input, error) {
 	if rc.ObjectKey == "" || rc.SourceInstanceID == nil {
 		return nil, errorf("receipt %s has accepted records but no stored package", rc.ID)
 	}
@@ -169,7 +170,7 @@ func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, part []entity.
 	if err != nil {
 		return nil, err
 	}
-	in, err := prepare(rc, pkg, part, via)
+	in, err := prepare(rc, pkg, part, via, first)
 	if err != nil {
 		return nil, err
 	}

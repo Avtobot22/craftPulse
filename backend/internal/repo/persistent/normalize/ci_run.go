@@ -224,6 +224,22 @@ func (r *Repo) ReadCIAttemptVersions(ctx context.Context, orgID entity.ID, areas
 	return mapCIAttemptVersions(rows), nil
 }
 
+// RunsWithAttempts are the runs among runIDs with a current attempt of a job other than except.
+func (r *Repo) RunsWithAttempts(ctx context.Context, orgID entity.ID, runIDs []entity.ID, except string) (map[entity.ID]bool, error) {
+	if len(runIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.q(ctx).RunsWithAttempts(ctx, RunsWithAttemptsParams{OrganizationID: uuid.UUID(orgID), RunIds: ids(runIDs), ExceptJobKey: except})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: runs with attempts: %w", err)
+	}
+	out := make(map[entity.ID]bool, len(rows))
+	for _, id := range rows {
+		out[entity.ID(id)] = true
+	}
+	return out, nil
+}
+
 func int8Of(p *int64) pgtype.Int8 {
 	if p == nil {
 		return pgtype.Int8{}

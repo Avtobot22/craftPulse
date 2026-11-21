@@ -15,7 +15,8 @@
       "kinds": [
         "ci_run",
         "ci_attempt",
-        "report_file"
+        "report_file",
+        "execution_manifest"
       ]
     },
     "coverage": {
@@ -579,6 +580,7 @@
             "ci_run",
             "ci_attempt",
             "report_file",
+            "execution_manifest",
             "finding",
             "document",
             "git_ref"
@@ -1413,6 +1415,59 @@
         "title": "API overview",
         "updated_at": "2026-04-22T15:40:00+03:00",
         "version_ref": "d65d0505a6ba45eb2cac791d30c0a59bdb8c619d"
+      }
+    },
+    {
+      "kind": "execution_manifest",
+      "version": "1",
+      "classes": [
+        "file"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "job",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "build_number",
+            "schema": {
+              "types": [
+                "integer"
+              ],
+              "minimum": 1
+            }
+          },
+          {
+            "name": "sha",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          }
+        ],
+        "required": [
+          "job",
+          "build_number",
+          "sha"
+        ],
+        "closed": true
+      },
+      "example": {
+        "build_number": 7,
+        "job": "demo",
+        "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"
       }
     },
     {

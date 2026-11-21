@@ -37,6 +37,9 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 	if err := w.writeMRFacts(ctx, in); err != nil {
 		return nil, err
 	}
+	if err := w.decideBuilds(ctx, in); err != nil {
+		return nil, err
+	}
 	if err := w.writeCIFacts(ctx, in); err != nil {
 		return nil, err
 	}
@@ -101,6 +104,15 @@ func (in *input) keys() []entity.SourceKey {
 	for _, c := range in.ciAttempts {
 		set[c.key], set[c.run] = true, true
 	}
+	for _, m := range in.manifests {
+		set[m.run], set[buildAttemptKey(m.run)] = true, true
+		for _, a := range m.attempts {
+			set[a.key] = true
+		}
+	}
+	for _, a := range in.buildAttempts {
+		set[a.key] = true
+	}
 	for _, c := range in.reports {
 		if c.run != nil {
 			set[*c.run] = true
@@ -131,7 +143,7 @@ func (u *UseCase) placeAreas(ctx context.Context, org entity.ID, in *input, obje
 				objects[k] = o
 			}
 			continue
-		case entity.ObjectTrackerProject, entity.ObjectRepository, entity.ObjectConnection:
+		case entity.ObjectTrackerProject, entity.ObjectRepository, entity.ObjectConnection, entity.ObjectCIProject:
 		}
 		areas[o.ID] = k.Kind
 		if o.CurrentAreaID == nil {

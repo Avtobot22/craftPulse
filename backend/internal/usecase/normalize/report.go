@@ -58,7 +58,11 @@ func (in *input) reportFile(rec *envelope.Record, b baseFact, scan *envelope.Sca
 		if p.Completeness != nil {
 			c.report.Completeness = string(*p.Completeness)
 		}
-		c.run, c.attempt = in.ciObjects(p.RunNativeId, p.AttemptNativeId)
+		job := ""
+		if in.area.Kind == entity.ObjectCIProject {
+			job = in.area.NativeID
+		}
+		c.run, c.attempt = in.ciObjects(job, p.RunNativeId, p.AttemptNativeId)
 		return c, nil
 	}
 	return c, in.provenance(c, tool)
@@ -92,7 +96,7 @@ func (in *input) provenance(c *reportCandidate, t *envelope.ScanToolRun) error {
 	}
 	c.component = t.Component
 	if t.Ci != nil {
-		c.run, c.attempt = in.ciObjects(&t.Ci.RunNativeId, t.Ci.AttemptNativeId)
+		c.run, c.attempt = in.ciObjects(deref(t.Ci.JobNativeId), &t.Ci.RunNativeId, t.Ci.AttemptNativeId)
 	}
 	return nil
 }
@@ -110,10 +114,11 @@ func scanTool(scan *envelope.ScanManifestV1, file string) *envelope.ScanToolRun 
 	return nil
 }
 
-// ciObjects are the identities of the pipeline and the attempt of a report by the rules of CI runs.
-func (in *input) ciObjects(run, attempt *string) (runKey, attemptKey *entity.SourceKey) {
+// ciObjects are the identities of the pipeline and the attempt of a report by the rules of CI runs; job names the
+// job of a Jenkins build.
+func (in *input) ciObjects(job string, run, attempt *string) (runKey, attemptKey *entity.SourceKey) {
 	if id := deref(run); id != "" {
-		k := in.ciKey(entity.ObjectCIRun, id)
+		k := in.runKey(job, id)
 		runKey = &k
 	}
 	if id := deref(attempt); id != "" {
@@ -138,6 +143,7 @@ func hexHash(s *string) ([]byte, error) {
 // stream, file by file.
 func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input) error {
 	byFile := map[string][]*reportCandidate{}
+	manifests := map[string][]*manifestCandidate{}
 	var names []string
 	for _, c := range in.reports {
 		if c.parser == nil {
@@ -148,6 +154,15 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 		}
 		byFile[c.file] = append(byFile[c.file], c)
 	}
+	for _, c := range in.manifests {
+		if c.file == "" || c.parser == nil || c.rejected != "" {
+			continue
+		}
+		if _, ok := byFile[c.file]; !ok && manifests[c.file] == nil {
+			names = append(names, c.file)
+		}
+		manifests[c.file] = append(manifests[c.file], c)
+	}
 	if len(names) == 0 {
 		return nil
 	}
@@ -157,6 +172,9 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 	}
 	defer body.Close()
 	return envelope.Files(body, names, func(name string, content io.Reader) error {
+		if list := manifests[name]; len(list) > 0 {
+			return readManifestFile(in, list, content)
+		}
 		first := byFile[name][0]
 		src := &sourceReader{r: content}
 		parsed, err := first.parser.read(src, first.report.Kind)
@@ -177,6 +195,26 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 		}
 		return nil
 	})
+}
+
+func readManifestFile(in *input, list []*manifestCandidate, content io.Reader) error {
+	src := &sourceReader{r: content}
+	parsed, err := list[0].parser.read(src, _recordExecutionManifest)
+	if src.err != nil {
+		return src.err
+	}
+	reason := ""
+	if rejected := (*errReport)(nil); errors.As(err, &rejected) {
+		reason = rejected.reason
+	} else if err != nil {
+		return err
+	}
+	for _, c := range list {
+		if err := in.readManifest(c, parsed, reason); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // sourceReader keeps an error of reading the stored package apart from a broken report.

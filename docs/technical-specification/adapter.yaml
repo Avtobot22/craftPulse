@@ -62,6 +62,7 @@ x-craftpulse-identity:
   - {srs_row: Запуск и job GitHub Actions, provider: github, object_kind: ci_run, native_ns: пусто, native_id: ID запуска workflow, mutable: имя workflow}
   - {srs_row: Запуск и job GitHub Actions, provider: github, object_kind: ci_attempt, native_ns: ID запуска workflow, native_id: 'номер попытки запуска и ID job через `/`', mutable: имя job}
   - {srs_row: Сборка Jenkins, provider: jenkins, object_kind: ci_run, native_ns: полное имя job, native_id: номер сборки, mutable: '-'}
+  - {srs_row: Сборка Jenkins, provider: jenkins, object_kind: execution_manifest, native_ns: полное имя job, native_id: номер сборки, mutable: '-'}
   - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: analysis_project, native_ns: пусто, native_id: ключ проекта, mutable: название проекта}
   - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: report_file, native_ns: ключ проекта, native_id: ключ анализа, mutable: ветка}
   - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: finding, native_ns: ключ проекта, native_id: ключ замечания, mutable: строка замечания}

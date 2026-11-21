@@ -47,6 +47,14 @@ func writePackage(t *testing.T, schemaID string, broken bool) string {
 			at := time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)
 			rec.EventTime = &at
 		case envelope.RecordRecordClassFile:
+			if kind == "execution_manifest" {
+				raw, err := os.ReadFile("../../pkg/envelope/testdata/ci/jenkins-retry/execution-manifest.json")
+				require.NoError(t, err)
+				ref, err := w.AddFile("files/execution-manifest.json", "application/json", raw)
+				require.NoError(t, err)
+				rec.File = &ref
+				break
+			}
 			ref, err := w.AddFile("files/report.xml", "application/xml", []byte("<testsuites/>"))
 			require.NoError(t, err)
 			rec.File = &ref
