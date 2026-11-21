@@ -76,3 +76,65 @@ func (b *AddDirtyKeyBatchResults) Close() error {
 	b.closed = true
 	return b.br.Close()
 }
+
+const saveActivityCheck = `-- name: SaveActivityCheck :batchexec
+INSERT INTO sync.activity_check (organization_id, run_id, scope_id, object_kind, native_ns, native_id, matches)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (organization_id, run_id, scope_id, object_kind, native_ns, native_id)
+DO UPDATE SET matches = sync.activity_check.matches AND excluded.matches
+`
+
+type SaveActivityCheckBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type SaveActivityCheckParams struct {
+	OrganizationID uuid.UUID
+	RunID          uuid.UUID
+	ScopeID        uuid.UUID
+	ObjectKind     string
+	NativeNs       string
+	NativeID       string
+	Matches        bool
+}
+
+func (q *Queries) SaveActivityCheck(ctx context.Context, arg []SaveActivityCheckParams) *SaveActivityCheckBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.OrganizationID,
+			a.RunID,
+			a.ScopeID,
+			a.ObjectKind,
+			a.NativeNs,
+			a.NativeID,
+			a.Matches,
+		}
+		batch.Queue(saveActivityCheck, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &SaveActivityCheckBatchResults{br, len(arg), false}
+}
+
+func (b *SaveActivityCheckBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *SaveActivityCheckBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}

@@ -62,6 +62,14 @@ func (u *UseCase) RunMR(ctx context.Context, job entity.SyncMRJob, holder string
 		if err := u.end(ctx, org, conn, holder, complete); err != nil {
 			return err
 		}
+		if f == nil && job.SchemaID == "merge_requests" {
+			scope := step{scope: scopes[i], schema: job.SchemaID}
+			for _, history := range histories(entity.SyncPageJob{OrganizationID: org, ConnectionID: conn}, scope, sel) {
+				if err := u.d.Queue.Enqueue(ctx, history, entity.QueueBulk); err != nil {
+					return err
+				}
+			}
+		}
 		if more {
 			return u.d.Queue.EnqueueAt(ctx, next, entity.QueueInteractive, at)
 		}

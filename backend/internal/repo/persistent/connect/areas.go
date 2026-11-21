@@ -21,6 +21,7 @@ func (r *Repo) AreaSources(ctx context.Context, orgID entity.ID, areaIDs []entit
 	for i := range rows {
 		row := &rows[i]
 		out[i] = entity.AreaSource{
+			ScopeID: entity.ID(row.ScopeID), HistoryFrom: timePtr(row.HistoryFrom),
 			UserToken: row.AccessMode == string(entity.AccessUserToken), AreaID: entity.ID(row.AreaID), ConnectionID: entity.ID(row.ConnectionID), InstanceID: entity.ID(row.InstanceID),
 			Kind: entity.ScopeKind(row.ScopeKind), NativeScopeID: row.NativeScopeID, Active: row.ScopeStatus == "active",
 			ConnectionStatus: entity.ConnectionStatus(row.ConnectionStatus), PausedUntil: timePtr(row.PausedUntil),

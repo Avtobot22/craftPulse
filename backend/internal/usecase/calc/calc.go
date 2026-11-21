@@ -55,9 +55,19 @@ type Collection interface {
 	CICollection(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaCollection, error)
 }
 
+// ActivityCollection is the sync evidence used by the activity series.
+type ActivityCollection interface {
+	ActivityConnectionAreas(ctx context.Context, org, connection entity.ID) ([]entity.ID, error)
+	ActivityCollection(ctx context.Context, org entity.ID, areas []entity.ID, connection entity.ID) ([]entity.AreaCollection, error)
+	ActivityHistory(ctx context.Context, org entity.ID, areas []entity.ID, connection entity.ID, at time.Time) ([]entity.ActivityHistoryEvidence, error)
+	ActivityReconciliations(ctx context.Context, org entity.ID, connections []entity.ID, from, at time.Time) ([]entity.ReconcileRun, error)
+	ActivityReceiptConnections(ctx context.Context, org entity.ID, receipts []entity.ID) (map[entity.ID]entity.ID, error)
+}
+
 // Links is the link module: the links of tasks to MRs with an end among the objects that hold at a knowledge number.
 type Links interface {
 	TaskMREdgesAt(ctx context.Context, orgID entity.ID, objectIDs []entity.ID, seq int64) ([]entity.LinkEdge, error)
+	MREdgesAt(ctx context.Context, orgID entity.ID, mrIDs []entity.ID, seq int64) ([]entity.LinkEdge, error)
 }
 
 // Rights is the access module: what the sources allow the subject to read now (TZ 13.4, 13.5).
@@ -80,6 +90,7 @@ type Deps struct {
 	Settings  Settings
 	// Collection is nil where no source is collected; then only the history of the facts tells completeness.
 	Collection Collection
+	Activity   ActivityCollection
 	Rights     Rights
 	// Links is nil where the coverage of links is not computed; its series then get no links.
 	Links   Links

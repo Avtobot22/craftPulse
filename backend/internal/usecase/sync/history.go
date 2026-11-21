@@ -2,12 +2,20 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 
 	"github.com/rs/zerolog"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 )
+
+func completeHistoryPage(p *entity.PreparedPackage) bool {
+	var m envelope.Manifest
+	return json.Unmarshal(p.Receipt.Manifest, &m) == nil && m.Completeness == envelope.ManifestCompletenessComplete &&
+		!slices.ContainsFunc(p.Records, func(r entity.IngestRecord) bool { return r.Outcome == entity.RecordRejected })
+}
 
 // RunHistory reads on the cut history of one object under the lease of its connection, page by page,
 // until the source reports the end; failures repeat it like a page of collection.
@@ -36,6 +44,15 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 	if page != nil {
 		page.ObservedVia = entity.ViaBackfill
 	}
+	key := in.ObjectKeys[0]
+	hasHistory := job.HasHistory || f == nil && slices.ContainsFunc(page.Records, func(r entity.IngestRecord) bool {
+		return r.Kind == key.ObjectKind || key.ObjectKind == "task" && r.Kind == "task_event" ||
+			key.ObjectKind == "merge_request" && r.Kind == "mr_event"
+	})
+	incomplete := job.Incomplete || f == nil && (!completeHistoryPage(page) ||
+		slices.ContainsFunc(sel.Truncated, func(t envelope.TruncatedHistory) bool {
+			return string(t.RecordKind) == key.ObjectKind && t.NativeNs == key.NativeNS && t.NativeId == key.NativeID
+		}))
 	var next []entity.Job
 	at := u.d.Clock.Now()
 	switch {
@@ -56,12 +73,30 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 		more := job
 		more.Retry = 0
 		more.Cursor = sourceCursor(sel.NextCursor)
+		more.Incomplete = incomplete
+		more.HasHistory = hasHistory
 		next = []entity.Job{more}
 	}
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		if page != nil {
-			if _, err := u.d.Ingest.RecordPage(ctx, page); err != nil {
+			rc, err := u.d.Ingest.RecordPage(ctx, page)
+			if err != nil {
 				return err
+			}
+			if f == nil && sel.End && hasHistory && !incomplete && rc.Status != entity.ReceiptPartial &&
+				(key.ObjectKind == "task" || key.ObjectKind == "merge_request") {
+				if err := u.d.Repo.SaveActivityRecovery(ctx, org, job.ScopeID, rc.ID, key, rc.ReceivedAt); err != nil {
+					return err
+				}
+				if _, err := u.d.Tenants.NextSeq(ctx, org); err != nil {
+					return err
+				}
+				if area := scopes[i].AreaID; area != nil {
+					recount := entity.CalcRecountJob{OrganizationID: org, AreaID: *area, CorrelationID: job.CorrelationID}
+					if err := u.d.Queue.Enqueue(ctx, recount, entity.QueueBulk); err != nil {
+						return err
+					}
+				}
 			}
 		}
 		// The job ends first: a repeat after a pause has the same arguments, and an active equal job absorbs it.

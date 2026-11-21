@@ -146,7 +146,7 @@ WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND stat
 
 -- name: AreaSources :many
 SELECT s.area_id::uuid AS area_id, s.connection_id, s.instance_id, s.scope_kind, s.native_scope_id, s.status AS scope_status,
-    c.status AS connection_status, c.paused_until, c.access_mode
+    c.status AS connection_status, c.paused_until, c.access_mode, s.id AS scope_id, s.history_from
 FROM connect.connection_scope s
 JOIN connect.connection c ON c.organization_id = s.organization_id AND c.id = s.connection_id
 WHERE s.organization_id = sqlc.arg(organization_id) AND s.area_id = ANY (sqlc.arg(area_ids)::uuid[])

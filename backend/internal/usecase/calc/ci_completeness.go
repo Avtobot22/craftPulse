@@ -13,7 +13,8 @@ func (c *ciSource) covered(p period) bool {
 	}
 	for _, area := range c.areas {
 		found := false
-		for _, s := range c.collection {
+		for i := range c.collection {
+			s := &c.collection[i]
 			if s.AreaID != area {
 				continue
 			}
@@ -71,7 +72,8 @@ func (c *ciSource) completeness(est string, p period) entity.Point {
 	} else {
 		pt.State, pt.Value, pt.Numerator, pt.Denominator = entity.StateAssessed, num(complete/loaded), num(complete), num(loaded)
 	}
-	for _, s := range c.collection {
+	for i := range c.collection {
+		s := &c.collection[i]
 		evidence, _ := json.Marshal(map[string]any{
 			"area_id": s.AreaID, "connection_id": s.ConnectionID, "completeness": s.Completeness,
 			"phase": s.Phase, "watermark": s.Watermark, "history_from": s.HistoryFrom, "reconciliation": s.Reconcile,

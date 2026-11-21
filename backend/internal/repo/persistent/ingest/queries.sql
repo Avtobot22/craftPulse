@@ -113,3 +113,27 @@ ORDER BY received_at, id LIMIT 1;
 UPDATE ingest.record SET outcome = 'rejected', reason_code = sqlc.arg(reason_code)
 WHERE organization_id = sqlc.arg(organization_id) AND receipt_id = sqlc.arg(receipt_id) AND record_no = sqlc.arg(record_no)
     AND outcome = 'accepted';
+-- name: ActivityReceiptConnections :many
+SELECT id, connection_id FROM ingest.receipt
+WHERE organization_id = $1 AND id = ANY(sqlc.arg(receipt_ids)::uuid[]) AND connection_id IS NOT NULL;
+
+-- name: ActivityTruncationManifests :many
+SELECT id, scope_id, received_at, manifest FROM ingest.receipt
+WHERE organization_id = $1 AND scope_id = ANY(sqlc.arg(scope_ids)::uuid[]) AND received_at <= sqlc.arg(cutoff)::timestamptz
+    AND schema_id IN ('task_events', 'merge_requests')
+    AND status IN ('accepted', 'partial', 'duplicate')
+    AND jsonb_array_length(manifest -> 'selection' -> 'truncated') > 0
+ORDER BY received_at, id;
+
+-- name: ActivityCompleteReceipts :many
+SELECT rc.id FROM ingest.receipt rc
+WHERE rc.organization_id = $1 AND rc.id = ANY(sqlc.arg(receipt_ids)::uuid[])
+    AND (rc.status = 'accepted' OR rc.status = 'duplicate' AND EXISTS (
+        SELECT 1 FROM ingest.receipt original
+        WHERE original.organization_id = rc.organization_id AND original.id = rc.duplicate_of AND original.status = 'accepted'
+    ))
+    AND NOT EXISTS (
+        SELECT 1 FROM ingest.record rec
+        WHERE rec.organization_id = rc.organization_id AND rec.receipt_id = COALESCE(rc.duplicate_of, rc.id)
+            AND rec.outcome IN ('rejected', 'conflict', 'suppressed')
+    );

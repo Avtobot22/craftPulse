@@ -42,6 +42,7 @@ func (u *UseCase) queueReconcile(ctx context.Context, org, conn entity.ID, dataK
 type tally struct {
 	expected, observed, missing, changed int
 	dirty                                []entity.DirtyKey
+	checks                               []entity.ActivityHistoryCheck
 }
 
 // RunReconcile compares the identities and versions of the manifest of the source with the current versions
@@ -165,12 +166,17 @@ func (u *UseCase) compareBatch(ctx context.Context, org, area, scope entity.ID, 
 	for i := range items {
 		it := &items[i]
 		t.expected++
-		cur, ok := current[entity.ObjectKey{ObjectKind: it.RecordKind, NativeNS: it.NativeNS, NativeID: it.NativeID}]
+		key := entity.ObjectKey{ObjectKind: it.RecordKind, NativeNS: it.NativeNS, NativeID: it.NativeID}
+		cur, ok := current[key]
+		matches := ok && (it.Version != "" && it.Version == cur.Revision ||
+			it.Version == "" && (it.UpdatedAt == nil || cur.UpdatedAt != nil && it.UpdatedAt.Equal(*cur.UpdatedAt)))
+		if key.ObjectKind == "task" || key.ObjectKind == "merge_request" {
+			t.checks = append(t.checks, entity.ActivityHistoryCheck{ScopeID: scope, Key: key, Matches: matches})
+		}
 		switch {
 		case !ok:
 			t.missing++
-		case it.Version != "" && it.Version != cur.Revision,
-			it.Version == "" && it.UpdatedAt != nil && (cur.UpdatedAt == nil || !it.UpdatedAt.Equal(*cur.UpdatedAt)):
+		case !matches:
 			t.observed++
 			t.changed++
 		default:
@@ -230,6 +236,9 @@ func (u *UseCase) closeRun(ctx context.Context, job entity.SyncReconcileJob, run
 		}
 		if t != nil {
 			run.ExpectedCount, run.ObservedCount, run.MissingCount, run.ChangedCount = &t.expected, &t.observed, &t.missing, &t.changed
+			if err := u.d.Repo.SaveActivityChecks(ctx, org, run.ID, t.checks); err != nil {
+				return err
+			}
 		}
 		if err := u.d.Repo.FinishReconcile(ctx, org, run); err != nil {
 			return err
@@ -248,6 +257,9 @@ func (u *UseCase) closeRun(ctx context.Context, job entity.SyncReconcileJob, run
 				return err
 			}
 		}
+		if err := u.recountActivity(ctx, org, conn, job.CorrelationID); err != nil {
+			return err
+		}
 		zerolog.Ctx(ctx).Info().Str("connection_id", conn.String()).Str("data_kind", job.DataKind).Str("outcome", run.Outcome).
 			Str("reason", run.ReasonCode).Str("correlation_id", job.CorrelationID.String()).Msg("reconciliation finished")
 		return u.end(ctx, org, conn, holder, complete)
@@ -257,7 +269,7 @@ func (u *UseCase) closeRun(ctx context.Context, job entity.SyncReconcileJob, run
 // reconciledAreas are the areas whose completeness of tasks a finished reconciliation decides: calc recounts their
 // series, since the completeness of a collection is an input of T39-T42 (TZ 10.3, rule 6).
 func (u *UseCase) reconciledAreas(ctx context.Context, org, conn entity.ID, dataKind string) ([]entity.ID, error) {
-	if dataKind != _dataTasks && dataKind != "ci" {
+	if dataKind != _dataTasks && dataKind != "ci" && dataKind != "merge_requests" {
 		return nil, nil
 	}
 	scopes, err := u.d.Connect.Scopes(ctx, org, conn)

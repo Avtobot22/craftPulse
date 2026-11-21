@@ -173,7 +173,8 @@ func (c *ciSource) hash(from, to time.Time) []byte {
 		}
 		d.flag(c.covered(p))
 	}
-	for _, a := range c.collection {
+	for i := range c.collection {
+		a := &c.collection[i]
 		d.id(a.AreaID)
 		d.id(a.ConnectionID)
 		d.text(a.Completeness)

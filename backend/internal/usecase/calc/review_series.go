@@ -13,6 +13,7 @@ import (
 const (
 	_scopeTeam       = "team"
 	_scopeRepository = "repository"
+	_scopeConnection = "connection"
 )
 
 // seriesScope is a scope of a series as calc.series.scope keeps it; a team or a repository.
@@ -20,6 +21,7 @@ type seriesScope struct {
 	Kind         string    `json:"kind"`
 	TeamID       entity.ID `json:"team_id"`
 	RepositoryID entity.ID `json:"repository_id"`
+	ConnectionID entity.ID `json:"connection_id"`
 }
 
 type repositoryScope struct {
@@ -41,7 +43,7 @@ func scopeOf(raw []byte) (seriesScope, bool, error) {
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return seriesScope{}, false, fmt.Errorf("calc: scope of the series: %w", err)
 	}
-	return s, s.Kind == _scopeTeam || s.Kind == _scopeRepository, nil
+	return s, s.Kind == _scopeTeam || s.Kind == _scopeRepository || s.Kind == _scopeConnection, nil
 }
 
 // ReviewSeries finds the series of a set of the review of MRs, of the events or of the coverage of links of a team or
@@ -70,6 +72,10 @@ func (u *UseCase) scopedSeries(ctx context.Context, orgID entity.ID, scope entit
 	if err != nil {
 		return entity.CalcSeries{}, fmt.Errorf("calc: encode scope: %w", err)
 	}
+	return u.ensureScopedSeries(ctx, orgID, raw, set, step)
+}
+
+func (u *UseCase) ensureScopedSeries(ctx context.Context, orgID entity.ID, raw []byte, set string, step entity.Step) (entity.CalcSeries, error) {
 	sum := sha256.Sum256(raw)
 	id, err := u.d.NewID()
 	if err != nil {
@@ -97,6 +103,9 @@ func validReviewStep(set string, step entity.Step) bool {
 func (u *UseCase) scopeAreas(ctx context.Context, org entity.ID, s seriesScope) ([]entity.ID, error) {
 	if s.Kind == _scopeRepository {
 		return []entity.ID{s.RepositoryID}, nil
+	}
+	if s.Kind == _scopeConnection {
+		return u.d.Activity.ActivityConnectionAreas(ctx, org, s.ConnectionID)
 	}
 	return u.teamAreas(ctx, org, s.TeamID)
 }
@@ -204,12 +213,21 @@ func (u *UseCase) source(ctx context.Context, job entity.CalcSliceJob, rev *enti
 	if err != nil {
 		return nil, scope, fmt.Errorf("calc: time zone %q: %w", rev.Timezone, err)
 	}
-	areas, err := u.scopeAreas(ctx, job.OrganizationID, scope)
-	if err != nil {
-		return nil, scope, err
+	var areas []entity.ID
+	if job.ActivityAreas != nil && series.MetricSet == entity.MetricSetActivity {
+		areas = *job.ActivityAreas
+	} else {
+		areas, err = u.scopeAreas(ctx, job.OrganizationID, scope)
+		if err != nil {
+			return nil, scope, err
+		}
 	}
 	if series.MetricSet == entity.MetricSetCI {
 		src, err := u.ciSource(ctx, job, rev, series, areas, loc)
+		return src, scope, err
+	}
+	if series.MetricSet == entity.MetricSetActivity {
+		src, err := u.activitySource(ctx, job, rev, series, scope, areas, loc)
 		return src, scope, err
 	}
 	facts := make([]entity.ReviewFacts, 0, len(areas))

@@ -117,6 +117,16 @@ func (u *UseCase) TaskMREdgesAt(ctx context.Context, orgID entity.ID, objectIDs 
 	return out, err
 }
 
+func (u *UseCase) MREdgesAt(ctx context.Context, orgID entity.ID, mrIDs []entity.ID, seq int64) ([]entity.LinkEdge, error) {
+	var out []entity.LinkEdge
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.MREdgesAt(ctx, orgID, mrIDs, seq)
+		return err
+	})
+	return out, err
+}
+
 // Decide confirms or rejects a candidate in the caller's organization transaction; the caller has checked that
 // the user sees both ends. A repeat with the same key returns the saved link, and a confirmation of a pair that
 // is already confirmed returns the existing link instead of a second one.

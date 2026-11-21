@@ -322,6 +322,7 @@ type CalcSliceJob struct {
 	RevisionID     ID                `json:"revision_id,omitzero"`
 	PartNo         int               `json:"part_no,omitempty"`
 	Sources        *[]AreaCollection `json:"sources,omitempty"`
+	ActivityAreas  *[]ID             `json:"activity_areas,omitempty"`
 	Structure      int64             `json:"structure,omitempty"`
 	CorrelationID  ID                `json:"correlation_id"`
 }
@@ -343,6 +344,7 @@ type CalcRecountJob struct {
 	OrganizationID ID `json:"organization_id" river:"unique"`
 	AreaID         ID `json:"area_id,omitzero" river:"unique"`
 	TeamID         ID `json:"team_id,omitzero" river:"unique"`
+	ConnectionID   ID `json:"connection_id,omitzero" river:"unique"`
 	CorrelationID  ID `json:"correlation_id"`
 }
 
@@ -470,12 +472,15 @@ type TargetBaselines struct {
 // completeness of a calculation (T39, T40, T42). Completeness is complete only after a reconciliation without
 // differences (BR-022).
 type AreaCollection struct {
-	AreaID        ID
-	ConnectionID  ID
-	Completeness  string
-	Watermark     *time.Time
-	LastSuccessAt *time.Time
-	Reconcile     *ReconcileRun
+	AreaID              ID
+	ConnectionID        ID
+	DataKind            string
+	LastErrorCode       string
+	Completeness        string
+	Watermark           *time.Time
+	LastSuccessAt       *time.Time
+	Reconcile           *ReconcileRun
+	ConnectionReconcile *ReconcileRun
 	// Phase is the phase of the collection of tasks; empty before the first page.
 	Phase       SyncPhase
 	HistoryFrom *time.Time

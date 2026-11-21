@@ -8,7 +8,7 @@ import (
 )
 
 // _percentiles are the ranks of the estimators of a distribution.
-var _percentiles = map[string]int{EstimatorP50: 50, EstimatorP85: 85}
+var _percentiles = map[string]int{EstimatorP50: 50, EstimatorP85: 85, _estimatorP95: 95}
 
 // tally collects the contributions of a point; numerators are counted once per task.
 type tally struct {

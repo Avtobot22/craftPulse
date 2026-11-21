@@ -98,6 +98,22 @@ func (r *Repo) TaskMREdgesAt(ctx context.Context, orgID entity.ID, objectIDs []e
 	return out, nil
 }
 
+func (r *Repo) MREdgesAt(ctx context.Context, orgID entity.ID, mrIDs []entity.ID, seq int64) ([]entity.LinkEdge, error) {
+	ids := make([]uuid.UUID, len(mrIDs))
+	for i, id := range mrIDs {
+		ids[i] = uuid.UUID(id)
+	}
+	rows, err := r.q(ctx).MREdgesAt(ctx, MREdgesAtParams{OrganizationID: uuid.UUID(orgID), MrIds: ids, Seq: seq})
+	if err != nil {
+		return nil, fmt.Errorf("link: read MR edges: %w", err)
+	}
+	out := make([]entity.LinkEdge, len(rows))
+	for i := range rows {
+		out[i] = toEdge(&rows[i])
+	}
+	return out, nil
+}
+
 func (r *Repo) InsertEdge(ctx context.Context, orgID entity.ID, e *entity.LinkEdge) error {
 	in := InsertEdgeParams{
 		OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(e.ID), LinkType: string(e.Type), FromObjectID: uuid.UUID(e.From),

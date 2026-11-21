@@ -125,7 +125,8 @@ func contextOf(in *input) pointContext {
 // incompleteAreas are the areas a connection of which has not reconciled without differences.
 func incompleteAreas(collection []entity.AreaCollection) map[entity.ID]bool {
 	out := map[entity.ID]bool{}
-	for _, c := range collection {
+	for i := range collection {
+		c := collection[i]
 		if c.Completeness != entity.CollectionComplete {
 			out[c.AreaID] = true
 		}

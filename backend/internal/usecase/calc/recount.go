@@ -41,6 +41,22 @@ type due struct {
 // series gets one chain in 5 minutes at most (TZ 10.6).
 func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, complete Complete) error {
 	org := job.OrganizationID
+	var connectionAreas []entity.ID
+	if u.d.Activity != nil && (!job.TeamID.IsZero() || !job.ConnectionID.IsZero()) {
+		scope := entity.ActivityScope{TeamID: job.TeamID, ConnectionID: job.ConnectionID}
+		for _, step := range []entity.Step{entity.StepWeek, entity.StepMonth} {
+			if _, err := u.ActivitySeries(ctx, org, scope, step); err != nil {
+				return err
+			}
+		}
+		if !job.ConnectionID.IsZero() {
+			var err error
+			connectionAreas, err = u.d.Activity.ActivityConnectionAreas(ctx, org, job.ConnectionID)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	all, err := u.orgSeries(ctx, org)
 	if err != nil {
 		return err
@@ -49,6 +65,9 @@ func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, com
 	var plans []due
 	for i := range all {
 		s := &all[i]
+		if !job.ConnectionID.IsZero() && s.MetricSet != entity.MetricSetActivity {
+			continue
+		}
 		scope, ok, err := scopeOf(s.Scope)
 		if err != nil {
 			return err
@@ -61,6 +80,10 @@ func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, com
 			return err
 		}
 		if !job.AreaID.IsZero() && !slices.Contains(areas, job.AreaID) {
+			continue
+		}
+		if !job.ConnectionID.IsZero() && scope.ConnectionID != job.ConnectionID &&
+			(!scope.ConnectionID.IsZero() || !slices.ContainsFunc(areas, func(a entity.ID) bool { return slices.Contains(connectionAreas, a) })) {
 			continue
 		}
 		p, err := u.plan(ctx, org, s, scope.TeamID, areas, at, job.CorrelationID)
@@ -235,7 +258,11 @@ func (u *UseCase) plan(ctx context.Context, org entity.ID, s *entity.CalcSeries,
 	if err != nil {
 		return due{}, err
 	}
-	sources, err := u.seriesCollection(ctx, org, areas, s.MetricSet)
+	scope, err := parseScope(s.Scope)
+	if err != nil {
+		return due{}, err
+	}
+	sources, err := u.seriesCollection(ctx, org, areas, s.MetricSet, scope.ConnectionID)
 	if err != nil {
 		return due{}, err
 	}
@@ -350,7 +377,10 @@ func (u *UseCase) revisions(ctx context.Context, org entity.ID, s *entity.CalcSe
 func (u *UseCase) orgSeries(ctx context.Context, org entity.ID) ([]entity.CalcSeries, error) {
 	var out []entity.CalcSeries
 	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
-		for _, set := range []string{entity.MetricSetFlow, entity.MetricSetReview, entity.MetricSetEvents, entity.MetricSetLinks, entity.MetricSetCI} {
+		for _, set := range []string{
+			entity.MetricSetFlow, entity.MetricSetReview, entity.MetricSetEvents, entity.MetricSetLinks,
+			entity.MetricSetCI, entity.MetricSetActivity,
+		} {
 			series, err := u.d.Repo.OrgSeries(ctx, org, set)
 			if err != nil {
 				return err

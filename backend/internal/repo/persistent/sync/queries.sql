@@ -91,3 +91,60 @@ ORDER BY received_at DESC, id DESC LIMIT 1;
 -- name: LastWebhookRejection :one
 SELECT rejected_at, reject_reason FROM sync.webhook_delivery WHERE organization_id = $1 AND connection_id = $2 AND rejected_at IS NOT NULL
 ORDER BY rejected_at DESC, id DESC LIMIT 1;
+
+-- name: SaveActivityCheck :batchexec
+INSERT INTO sync.activity_check (organization_id, run_id, scope_id, object_kind, native_ns, native_id, matches)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (organization_id, run_id, scope_id, object_kind, native_ns, native_id)
+DO UPDATE SET matches = sync.activity_check.matches AND excluded.matches;
+
+-- name: SaveActivityPagination :exec
+INSERT INTO sync.activity_pagination (organization_id, scope_id, receipt_id, data_kind, observed_at, complete)
+VALUES ($1, $2, $3, $4, $5, $6);
+
+-- name: SaveActivityRecovery :exec
+INSERT INTO sync.activity_recovery (organization_id, scope_id, receipt_id, object_kind, native_ns, native_id, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7);
+
+-- name: ActivityReconciliations :many
+SELECT r.* FROM sync.reconcile_run r
+WHERE r.organization_id = $1 AND r.connection_id = ANY(sqlc.arg(connection_ids)::uuid[])
+    AND r.started_at <= sqlc.arg(cutoff)::timestamptz
+    AND (COALESCE(finished_at, sqlc.arg(cutoff)::timestamptz) >= sqlc.arg(window_from)::timestamptz OR id IN (
+        SELECT prior.id FROM (
+            SELECT DISTINCT ON (connection_id, data_kind, (outcome = 'complete')) id
+            FROM sync.reconcile_run
+            WHERE organization_id = $1 AND connection_id = ANY(sqlc.arg(connection_ids)::uuid[])
+                AND finished_at < sqlc.arg(window_from)::timestamptz
+            ORDER BY connection_id, data_kind, (outcome = 'complete'), started_at DESC, id DESC
+        ) prior
+    ))
+ORDER BY started_at, id;
+
+-- name: ActivityChecks :many
+WITH runs AS (
+    SELECT DISTINCT ON (connection_id, data_kind) id, connection_id, data_kind, finished_at
+    FROM sync.reconcile_run
+    WHERE organization_id = sqlc.arg(organization_id) AND connection_id = ANY(sqlc.arg(connection_ids)::uuid[])
+        AND data_kind IN ('tasks', 'merge_requests') AND outcome IN ('complete', 'incomplete')
+        AND finished_at <= sqlc.arg(cutoff)::timestamptz
+    ORDER BY connection_id, data_kind, started_at DESC, id DESC
+)
+SELECT ck.run_id, ck.scope_id, ck.object_kind, ck.native_ns, ck.native_id, ck.matches,
+    r.finished_at, COALESCE(paged.receipt_id, '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS pagination_receipt
+FROM sync.activity_check ck
+JOIN runs r ON r.id = ck.run_id
+LEFT JOIN LATERAL (
+    SELECT p.receipt_id, p.complete FROM sync.activity_pagination p
+    WHERE p.organization_id = ck.organization_id AND p.scope_id = ck.scope_id AND p.data_kind = r.data_kind
+        AND p.observed_at <= r.finished_at
+    ORDER BY p.observed_at DESC, p.receipt_id DESC LIMIT 1
+) paged ON paged.complete
+WHERE ck.organization_id = sqlc.arg(organization_id) AND ck.scope_id = ANY(sqlc.arg(scope_ids)::uuid[]);
+
+-- name: ActivityRecoveries :many
+SELECT DISTINCT ON (scope_id, object_kind, native_ns, native_id)
+    scope_id, object_kind, native_ns, native_id, receipt_id, observed_at
+FROM sync.activity_recovery
+WHERE organization_id = $1 AND scope_id = ANY(sqlc.arg(scope_ids)::uuid[]) AND observed_at <= sqlc.arg(cutoff)::timestamptz
+ORDER BY scope_id, object_kind, native_ns, native_id, observed_at DESC, receipt_id DESC;

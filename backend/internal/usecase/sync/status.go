@@ -39,6 +39,7 @@ func (u *UseCase) Status(ctx context.Context, orgID, connectionID entity.ID) (en
 	for i := range states {
 		st := states[i]
 		item := entity.SyncDataKindStatus{SyncState: st, FailedPagePresent: st.FailedCursor != ""}
+		item.AffectedMetrics = append(item.AffectedMetrics, "A27")
 		if st.Watermark != nil {
 			lag := int64(max(now.Sub(*st.Watermark), 0) / time.Second)
 			item.LagSeconds = &lag
