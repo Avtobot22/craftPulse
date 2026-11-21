@@ -45,6 +45,11 @@ type ActivityHistoryNotice struct {
 	HistoryFrom *time.Time
 }
 
+type ActivityHistoryRecovery struct {
+	ActivityHistoryNotice
+	PageReceiptIDs []ID
+}
+
 type ActivityHistoryEvidence struct {
 	Source   AreaSource
 	Check    *ActivityCheckResult

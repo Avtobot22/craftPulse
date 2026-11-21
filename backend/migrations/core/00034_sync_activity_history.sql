@@ -19,7 +19,9 @@ CREATE TABLE sync.activity_recovery (
     native_ns text COLLATE "C" NOT NULL,
     native_id text COLLATE "C" NOT NULL,
     observed_at timestamptz NOT NULL,
-    PRIMARY KEY (organization_id, scope_id, object_kind, native_ns, native_id, receipt_id)
+    page_receipt_ids uuid[] NOT NULL,
+    PRIMARY KEY (organization_id, scope_id, object_kind, native_ns, native_id, receipt_id),
+    CHECK (cardinality(page_receipt_ids) > 0 AND receipt_id = page_receipt_ids[cardinality(page_receipt_ids)])
 );
 
 CREATE TABLE sync.activity_pagination (

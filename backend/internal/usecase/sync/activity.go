@@ -137,8 +137,9 @@ func (u *UseCase) ActivityHistory(ctx context.Context, org entity.ID, areas []en
 		return nil, nil
 	}
 	var (
-		checks           []entity.ActivityCheckResult
-		cuts, recoveries []entity.ActivityHistoryNotice
+		checks     []entity.ActivityCheckResult
+		cuts       []entity.ActivityHistoryNotice
+		recoveries []entity.ActivityHistoryRecovery
 	)
 	ids := slices.Collect(maps.Keys(byScope))
 	var complete map[entity.ID]bool
@@ -160,8 +161,10 @@ func (u *UseCase) ActivityHistory(ctx context.Context, org entity.ID, areas []en
 				receipts[check.PaginationReceipt] = true
 			}
 		}
-		for _, recovery := range recoveries {
-			receipts[recovery.ReceiptID] = true
+		for i := range recoveries {
+			for _, receipt := range recoveries[i].PageReceiptIDs {
+				receipts[receipt] = true
+			}
 		}
 		complete, err = u.d.Ingest.ActivityCompleteReceipts(ctx, org, slices.Collect(maps.Keys(receipts)))
 		return err
@@ -187,12 +190,13 @@ func (u *UseCase) ActivityHistory(ctx context.Context, org entity.ID, areas []en
 		evidence.Source, evidence.Key, evidence.Cut = byScope[k.scope], k.key, &cut
 		objects[k] = evidence
 	}
-	for _, recovery := range recoveries {
+	for i := range recoveries {
+		recovery := &recoveries[i]
 		k := scopeObject{recovery.ScopeID, recovery.Key}
 		evidence, ok := objects[k]
-		if ok && complete[recovery.ReceiptID] && (evidence.Cut == nil || recovery.ObservedAt.After(evidence.Cut.ObservedAt) ||
+		if ok && historyReceiptsComplete(recovery.PageReceiptIDs, complete) && (evidence.Cut == nil || recovery.ObservedAt.After(evidence.Cut.ObservedAt) ||
 			recovery.ObservedAt.Equal(evidence.Cut.ObservedAt) && compareActivityIDs(recovery.ReceiptID, evidence.Cut.ReceiptID) > 0) {
-			evidence.Recovery = &recovery
+			evidence.Recovery = &recovery.ActivityHistoryNotice
 			objects[k] = evidence
 		}
 	}

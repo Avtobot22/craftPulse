@@ -49,11 +49,11 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 		return r.Kind == key.ObjectKind || key.ObjectKind == "task" && r.Kind == "task_event" ||
 			key.ObjectKind == "merge_request" && r.Kind == "mr_event"
 	})
-	incomplete := job.Incomplete || f == nil && (!completeHistoryPage(page) ||
+	incomplete := job.Incomplete || job.Cursor != nil && len(job.PageReceiptIDs) == 0 || f == nil && (!completeHistoryPage(page) ||
 		slices.ContainsFunc(sel.Truncated, func(t envelope.TruncatedHistory) bool {
 			return string(t.RecordKind) == key.ObjectKind && t.NativeNs == key.NativeNS && t.NativeId == key.NativeID
 		}))
-	var next []entity.Job
+	var next *entity.SyncHistoryJob
 	at := u.d.Clock.Now()
 	switch {
 	case f != nil:
@@ -67,7 +67,7 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 			Str("reason", f.code).Int("retry", job.Retry).Bool("stopped", f.stop).Str("correlation_id", job.CorrelationID.String()).
 			Msg("history of an object failed")
 		if !f.stop {
-			at, next = f.at, []entity.Job{retry}
+			at, next = f.at, &retry
 		}
 	case !sel.End:
 		more := job
@@ -75,7 +75,7 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 		more.Cursor = sourceCursor(sel.NextCursor)
 		more.Incomplete = incomplete
 		more.HasHistory = hasHistory
-		next = []entity.Job{more}
+		next = &more
 	}
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		if page != nil {
@@ -83,17 +83,17 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 			if err != nil {
 				return err
 			}
-			if f == nil && sel.End && hasHistory && !incomplete && rc.Status != entity.ReceiptPartial &&
-				(key.ObjectKind == "task" || key.ObjectKind == "merge_request") {
-				if err := u.d.Repo.SaveActivityRecovery(ctx, org, job.ScopeID, rc.ID, key, rc.ReceivedAt); err != nil {
-					return err
-				}
-				if _, err := u.d.Tenants.NextSeq(ctx, org); err != nil {
-					return err
-				}
-				if area := scopes[i].AreaID; area != nil {
-					recount := entity.CalcRecountJob{OrganizationID: org, AreaID: *area, CorrelationID: job.CorrelationID}
-					if err := u.d.Queue.Enqueue(ctx, recount, entity.QueueBulk); err != nil {
+			if f == nil && (key.ObjectKind == "task" || key.ObjectKind == "merge_request") {
+				pages := slices.Concat(job.PageReceiptIDs, []entity.ID{rc.ID})
+				switch {
+				case next != nil:
+					next.PageReceiptIDs = pages
+				case hasHistory && !incomplete:
+					recovery := entity.ActivityHistoryRecovery{
+						ActivityHistoryNotice: entity.ActivityHistoryNotice{ScopeID: job.ScopeID, Key: key, ReceiptID: rc.ID, ObservedAt: rc.ReceivedAt},
+						PageReceiptIDs:        pages,
+					}
+					if err := u.saveHistoryRecovery(ctx, org, &recovery, scopes[i].AreaID, job.CorrelationID); err != nil {
 						return err
 					}
 				}
@@ -103,11 +103,30 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 		if err := u.end(ctx, org, conn, holder, complete); err != nil {
 			return err
 		}
-		for _, j := range next {
-			if err := u.d.Queue.EnqueueAt(ctx, j, entity.QueueBulk, at); err != nil {
-				return err
-			}
+		if next != nil {
+			return u.d.Queue.EnqueueAt(ctx, *next, entity.QueueBulk, at)
 		}
 		return nil
 	})
+}
+
+func (u *UseCase) saveHistoryRecovery(ctx context.Context, org entity.ID, recovery *entity.ActivityHistoryRecovery, area *entity.ID, corr entity.ID) error {
+	complete, err := u.d.Ingest.ActivityCompleteReceipts(ctx, org, recovery.PageReceiptIDs)
+	if err != nil || !historyReceiptsComplete(recovery.PageReceiptIDs, complete) {
+		return err
+	}
+	if err := u.d.Repo.SaveActivityRecovery(ctx, org, recovery); err != nil {
+		return err
+	}
+	if _, err := u.d.Tenants.NextSeq(ctx, org); err != nil {
+		return err
+	}
+	if area != nil {
+		return u.d.Queue.Enqueue(ctx, entity.CalcRecountJob{OrganizationID: org, AreaID: *area, CorrelationID: corr}, entity.QueueBulk)
+	}
+	return nil
+}
+
+func historyReceiptsComplete(ids []entity.ID, complete map[entity.ID]bool) bool {
+	return len(ids) > 0 && !slices.ContainsFunc(ids, func(id entity.ID) bool { return !complete[id] })
 }

@@ -134,3 +134,30 @@ func TestActivityLinkAmbiguityUsesDistinctTasks(t *testing.T) {
 		assert.InDelta(t, want, *p.Value, 1e-12, est)
 	}
 }
+
+func TestActivityHashChangesWhenMROpeningMovesBetweenPoints(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	for _, step := range []entity.Step{entity.StepWeek, entity.StepMonth} {
+		t.Run(string(step), func(t *testing.T) {
+			boundary := nextStep(start, step)
+			end := nextStep(boundary, step)
+			s := activitySource{
+				window: entity.Window{From: start, To: end, Step: step}, asOf: end, location: time.UTC,
+				series: &entity.CalcSeries{Step: step},
+				links: []activityLinks{{
+					mr: entity.ID{1}, opened: boundary.Add(-time.Hour),
+					pairs: []activityPair{{OtherID: entity.ID{2}, Type: entity.LinkTaskMR, Status: entity.LinkConfirmed}},
+				}},
+			}
+			points := s.periods()
+			require.Len(t, points, 2)
+			before := s.hash(start, end)
+			assert.InDelta(t, 1, *activityTestPoint(t, s.linkPoints(points[0]), "confirmed").Value, 0)
+			s.links[0].opened = boundary.Add(time.Hour)
+			assert.NotEqual(t, before, s.hash(start, end))
+			assert.InDelta(t, 0, *activityTestPoint(t, s.linkPoints(points[0]), "confirmed").Value, 0)
+			assert.InDelta(t, 1, *activityTestPoint(t, s.linkPoints(points[1]), "confirmed").Value, 0)
+		})
+	}
+}

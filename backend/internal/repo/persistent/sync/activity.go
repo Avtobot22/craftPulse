@@ -52,10 +52,11 @@ func (r *Repo) SaveActivityPagination(ctx context.Context, org, scope, receipt e
 	return nil
 }
 
-func (r *Repo) SaveActivityRecovery(ctx context.Context, org, scope, receipt entity.ID, object entity.ObjectKey, at time.Time) error {
+func (r *Repo) SaveActivityRecovery(ctx context.Context, org entity.ID, recovery *entity.ActivityHistoryRecovery) error {
 	if err := New(postgres.Conn(ctx, r.pool)).SaveActivityRecovery(ctx, SaveActivityRecoveryParams{
-		OrganizationID: uuid.UUID(org), ScopeID: uuid.UUID(scope), ReceiptID: uuid.UUID(receipt), ObjectKind: object.ObjectKind,
-		NativeNs: object.NativeNS, NativeID: object.NativeID, ObservedAt: at,
+		OrganizationID: uuid.UUID(org), ScopeID: uuid.UUID(recovery.ScopeID), ReceiptID: uuid.UUID(recovery.ReceiptID),
+		ObjectKind: recovery.Key.ObjectKind, NativeNs: recovery.Key.NativeNS, NativeID: recovery.Key.NativeID,
+		ObservedAt: recovery.ObservedAt, PageReceiptIds: activityUUIDs(recovery.PageReceiptIDs),
 	}); err != nil {
 		return fmt.Errorf("sync: save recovered activity history: %w", err)
 	}
@@ -109,19 +110,26 @@ func (r *Repo) ActivityChecks(ctx context.Context, org entity.ID, scopes []entit
 	return out, nil
 }
 
-func (r *Repo) ActivityRecoveries(ctx context.Context, org entity.ID, scopes []entity.ID, at time.Time) ([]entity.ActivityHistoryNotice, error) {
+func (r *Repo) ActivityRecoveries(ctx context.Context, org entity.ID, scopes []entity.ID, at time.Time) ([]entity.ActivityHistoryRecovery, error) {
 	rows, err := New(postgres.Conn(ctx, r.pool)).ActivityRecoveries(ctx, ActivityRecoveriesParams{
 		OrganizationID: uuid.UUID(org), ScopeIds: activityUUIDs(scopes), Cutoff: at,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("sync: read activity recoveries: %w", err)
 	}
-	out := make([]entity.ActivityHistoryNotice, len(rows))
+	out := make([]entity.ActivityHistoryRecovery, len(rows))
 	for i := range rows {
 		row := &rows[i]
-		out[i] = entity.ActivityHistoryNotice{
-			ScopeID: entity.ID(row.ScopeID), ReceiptID: entity.ID(row.ReceiptID), ObservedAt: row.ObservedAt,
-			Key: entity.ObjectKey{ObjectKind: row.ObjectKind, NativeNS: row.NativeNs, NativeID: row.NativeID},
+		ids := make([]entity.ID, len(row.PageReceiptIds))
+		for j, id := range row.PageReceiptIds {
+			ids[j] = entity.ID(id)
+		}
+		out[i] = entity.ActivityHistoryRecovery{
+			ActivityHistoryNotice: entity.ActivityHistoryNotice{
+				ScopeID: entity.ID(row.ScopeID), ReceiptID: entity.ID(row.ReceiptID), ObservedAt: row.ObservedAt,
+				Key: entity.ObjectKey{ObjectKind: row.ObjectKind, NativeNS: row.NativeNs, NativeID: row.NativeID},
+			},
+			PageReceiptIDs: ids,
 		}
 	}
 	return out, nil

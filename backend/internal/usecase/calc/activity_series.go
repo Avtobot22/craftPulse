@@ -277,6 +277,7 @@ func (s *activitySource) hash(from, to time.Time) []byte {
 	for _, links := range s.links {
 		if part.has(links.opened) {
 			d.id(links.mr)
+			d.time(links.opened)
 			d.bytes(activityEvidence(links.pairs))
 		}
 	}

@@ -180,7 +180,7 @@ func (q *Queries) ActivityReconciliations(ctx context.Context, arg ActivityRecon
 
 const activityRecoveries = `-- name: ActivityRecoveries :many
 SELECT DISTINCT ON (scope_id, object_kind, native_ns, native_id)
-    scope_id, object_kind, native_ns, native_id, receipt_id, observed_at
+    scope_id, object_kind, native_ns, native_id, receipt_id, observed_at, page_receipt_ids
 FROM sync.activity_recovery
 WHERE organization_id = $1 AND scope_id = ANY($2::uuid[]) AND observed_at <= $3::timestamptz
 ORDER BY scope_id, object_kind, native_ns, native_id, observed_at DESC, receipt_id DESC
@@ -193,12 +193,13 @@ type ActivityRecoveriesParams struct {
 }
 
 type ActivityRecoveriesRow struct {
-	ScopeID    uuid.UUID
-	ObjectKind string
-	NativeNs   string
-	NativeID   string
-	ReceiptID  uuid.UUID
-	ObservedAt time.Time
+	ScopeID        uuid.UUID
+	ObjectKind     string
+	NativeNs       string
+	NativeID       string
+	ReceiptID      uuid.UUID
+	ObservedAt     time.Time
+	PageReceiptIds []uuid.UUID
 }
 
 func (q *Queries) ActivityRecoveries(ctx context.Context, arg ActivityRecoveriesParams) ([]ActivityRecoveriesRow, error) {
@@ -217,6 +218,7 @@ func (q *Queries) ActivityRecoveries(ctx context.Context, arg ActivityRecoveries
 			&i.NativeID,
 			&i.ReceiptID,
 			&i.ObservedAt,
+			&i.PageReceiptIds,
 		); err != nil {
 			return nil, err
 		}
@@ -656,8 +658,8 @@ func (q *Queries) SaveActivityPagination(ctx context.Context, arg SaveActivityPa
 }
 
 const saveActivityRecovery = `-- name: SaveActivityRecovery :exec
-INSERT INTO sync.activity_recovery (organization_id, scope_id, receipt_id, object_kind, native_ns, native_id, observed_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO sync.activity_recovery (organization_id, scope_id, receipt_id, object_kind, native_ns, native_id, observed_at, page_receipt_ids)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type SaveActivityRecoveryParams struct {
@@ -668,6 +670,7 @@ type SaveActivityRecoveryParams struct {
 	NativeNs       string
 	NativeID       string
 	ObservedAt     time.Time
+	PageReceiptIds []uuid.UUID
 }
 
 func (q *Queries) SaveActivityRecovery(ctx context.Context, arg SaveActivityRecoveryParams) error {
@@ -679,6 +682,7 @@ func (q *Queries) SaveActivityRecovery(ctx context.Context, arg SaveActivityReco
 		arg.NativeNs,
 		arg.NativeID,
 		arg.ObservedAt,
+		arg.PageReceiptIds,
 	)
 	return err
 }

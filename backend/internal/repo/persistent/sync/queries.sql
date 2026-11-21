@@ -103,8 +103,8 @@ INSERT INTO sync.activity_pagination (organization_id, scope_id, receipt_id, dat
 VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: SaveActivityRecovery :exec
-INSERT INTO sync.activity_recovery (organization_id, scope_id, receipt_id, object_kind, native_ns, native_id, observed_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+INSERT INTO sync.activity_recovery (organization_id, scope_id, receipt_id, object_kind, native_ns, native_id, observed_at, page_receipt_ids)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: ActivityReconciliations :many
 SELECT r.* FROM sync.reconcile_run r
@@ -144,7 +144,7 @@ WHERE ck.organization_id = sqlc.arg(organization_id) AND ck.scope_id = ANY(sqlc.
 
 -- name: ActivityRecoveries :many
 SELECT DISTINCT ON (scope_id, object_kind, native_ns, native_id)
-    scope_id, object_kind, native_ns, native_id, receipt_id, observed_at
+    scope_id, object_kind, native_ns, native_id, receipt_id, observed_at, page_receipt_ids
 FROM sync.activity_recovery
 WHERE organization_id = $1 AND scope_id = ANY(sqlc.arg(scope_ids)::uuid[]) AND observed_at <= sqlc.arg(cutoff)::timestamptz
 ORDER BY scope_id, object_kind, native_ns, native_id, observed_at DESC, receipt_id DESC;

@@ -283,9 +283,9 @@ type SyncRepo interface {
 	FinishReconcile(ctx context.Context, orgID entity.ID, run entity.ReconcileRun) error
 	SaveActivityChecks(ctx context.Context, orgID, runID entity.ID, checks []entity.ActivityHistoryCheck) error
 	SaveActivityPagination(ctx context.Context, orgID, scopeID, receiptID entity.ID, dataKind string, at time.Time, complete bool) error
-	SaveActivityRecovery(ctx context.Context, orgID, scopeID, receiptID entity.ID, object entity.ObjectKey, at time.Time) error
+	SaveActivityRecovery(ctx context.Context, orgID entity.ID, recovery *entity.ActivityHistoryRecovery) error
 	ActivityChecks(ctx context.Context, orgID entity.ID, scopes []entity.AreaSource, at time.Time) ([]entity.ActivityCheckResult, error)
-	ActivityRecoveries(ctx context.Context, orgID entity.ID, scopes []entity.ID, at time.Time) ([]entity.ActivityHistoryNotice, error)
+	ActivityRecoveries(ctx context.Context, orgID entity.ID, scopes []entity.ID, at time.Time) ([]entity.ActivityHistoryRecovery, error)
 	ActivityReconciliations(ctx context.Context, orgID entity.ID, connections []entity.ID, from, at time.Time) ([]entity.ReconcileRun, error)
 
 	AddDirtyKeys(ctx context.Context, orgID, connectionID entity.ID, keys []entity.DirtyKey, at time.Time) error
