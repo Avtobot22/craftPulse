@@ -3749,6 +3749,28 @@
                 }
               },
               {
+                "name": "source_root",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "min_length": 1,
+                  "max_length": 4096
+                }
+              },
+              {
+                "name": "source_dir",
+                "schema": {
+                  "types": [
+                    "string",
+                    "null"
+                  ],
+                  "min_length": 1,
+                  "max_length": 4096
+                }
+              },
+              {
                 "name": "history",
                 "schema": {
                   "types": [

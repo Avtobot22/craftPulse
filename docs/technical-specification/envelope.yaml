@@ -852,6 +852,22 @@ components:
             minLength: 1
             maxLength: 4096
           description: Проанализированные файлы тестового кода. Показатели production-области считаются без них.
+        source_root:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 4096
+          description: Абсолютный путь корня репозитория на runner, где работал инструмент. По нему normalize
+            приводит абсолютные пути отчёта к корню репозитория; без него абсолютный путь исключается.
+        source_dir:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 4096
+          description: Каталог от корня репозитория, от которого отчёт отсчитывает относительные пути, например
+            src/main/java для JaCoCo XML. Без него относительные пути отсчитываются от корня.
         history:
           oneOf:
             - $ref: "#/components/schemas/ScanHistory"

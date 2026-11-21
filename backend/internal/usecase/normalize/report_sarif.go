@@ -105,7 +105,8 @@ type sarifRun struct {
 
 // parseSARIF reads a SARIF log: runs, the rules of tool.driver and results. Members of a run may come in any order,
 // so its results are resolved against its rules once the run is read.
-func parseSARIF(r io.Reader, kind string) (*parsedReport, error) {
+func parseSARIF(r io.Reader, in parseInput) (*parsedReport, error) {
+	kind := in.kind
 	dec := json.NewDecoder(r)
 	out := &parsedReport{}
 	err := object(dec, func(key string) error {

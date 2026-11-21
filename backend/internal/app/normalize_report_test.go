@@ -28,9 +28,11 @@ var (
 	_imageHash  = "sha256:" + strings.Repeat("6", 64)
 )
 
-// reportSpec is one tool run of a scan manifest with its report file; content replaces the fixture when set.
+// reportSpec is one tool run of a scan manifest with its report file; content replaces the fixture and name the
+// file name of the package when set.
 type reportSpec struct {
 	fixture, kind, format, producer, version string
+	name, sourceRoot, sourceDir              string
 	content                                  []byte
 	ci                                       *envelope.ScanCiCoordinates
 	component                                *envelope.ScanComponent
@@ -60,16 +62,21 @@ func reportPackage(t *testing.T, sha string, specs ...reportSpec) []byte {
 	require.NoError(t, err)
 	scan := &envelope.ScanManifestV1{SchemaVersion: envelope.ScanManifestV1SchemaVersionN1}
 	started := time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)
-	for i, s := range specs {
+	for i := range specs {
+		s := &specs[i]
 		content := s.content
 		if content == nil {
 			content = reportFixture(t, s.fixture)
 		}
-		path := "files/reports/" + s.kind + "-" + s.fixture
+		name := s.name
+		if name == "" {
+			name = s.fixture
+		}
+		path := "files/reports/" + s.kind + "-" + name
 		ref, err := w.AddFile(path, "application/json", content)
 		require.NoError(t, err)
 		tool := envelope.ScanToolRun{
-			Id: s.kind + "-" + s.fixture, Producer: s.producer, ProducerVersion: s.version, Mode: envelope.ScanToolRunModeBuiltin,
+			Id: s.kind + "-" + name, Producer: s.producer, ProducerVersion: s.version, Mode: envelope.ScanToolRunModeBuiltin,
 			ProfileId: ptr("go-default"), ProfileImageDigest: ptr(_imageHash), ReportKind: envelope.ScanToolRunReportKind(s.kind),
 			Component: s.component, Language: ptr("go"), RulesHash: ptr(_rulesHash), ConfigHash: ptr(_configHash), DbVersion: ptr("2026-11-16"),
 			DbPublishedAt: ptr(started.Add(-24 * time.Hour)), ScopeHash: _scopeHash, Sha: &sha, Ci: s.ci,
@@ -78,6 +85,7 @@ func reportPackage(t *testing.T, sha string, specs ...reportSpec) []byte {
 			ScannedCount: ptr(12), SkippedCount: ptr(1),
 			SkippedTargets: []envelope.ScanSkippedTarget{{Path: "app/generated.go", Reason: envelope.ScanSkippedTargetReasonUnsupported}},
 			History:        &envelope.ScanHistory{FromSha: strings.Repeat("b", 40), ToSha: sha, Truncated: true},
+			SourceRoot:     nonEmpty(s.sourceRoot), SourceDir: nonEmpty(s.sourceDir),
 			Reports: []envelope.ScanReport{{
 				File: ref, ReportKind: envelope.ScanReportReportKind(s.kind), ReportFormat: envelope.ScanReportReportFormat(s.format), FormatVersion: "1",
 			}},

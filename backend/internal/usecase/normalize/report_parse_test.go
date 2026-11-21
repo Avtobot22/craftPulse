@@ -26,7 +26,7 @@ func parse(t *testing.T, format, kind string, data []byte) (*parsedReport, error
 	t.Helper()
 	p, ok := parserOf(format)
 	require.True(t, ok)
-	return p.read(bytes.NewReader(data), kind)
+	return p.read(bytes.NewReader(data), parseInput{kind: kind})
 }
 
 type row struct {
@@ -276,7 +276,7 @@ func TestParseSARIF_VersionAfterRuns(t *testing.T) {
 
 func TestFormatsWithoutParser(t *testing.T) {
 	t.Parallel()
-	for _, format := range []string{"junit_xml", "lcov", "trivy_json", "gitleaks_json", "lizard_csv"} {
+	for _, format := range []string{"trivy_json", "gitleaks_json", "lizard_csv"} {
 		_, ok := parserOf(format)
 		assert.False(t, ok, format)
 	}

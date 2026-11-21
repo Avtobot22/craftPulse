@@ -1749,7 +1749,13 @@ type ScanToolRun struct {
 	Sha                *string               `json:"sha"`
 	SkippedCount       *int                  `json:"skipped_count"`
 	SkippedTargets     []ScanSkippedTarget   `json:"skipped_targets"`
-	StartedAt          time.Time             `json:"started_at"`
+
+	// SourceDir Каталог от корня репозитория, от которого отчёт отсчитывает относительные пути, например src/main/java для JaCoCo XML. Без него относительные пути отсчитываются от корня.
+	SourceDir *string `json:"source_dir,omitempty"`
+
+	// SourceRoot Абсолютный путь корня репозитория на runner, где работал инструмент. По нему normalize приводит абсолютные пути отчёта к корню репозитория; без него абсолютный путь исключается.
+	SourceRoot *string   `json:"source_root,omitempty"`
+	StartedAt  time.Time `json:"started_at"`
 
 	// TestTargets Проанализированные файлы тестового кода. Показатели production-области считаются без них.
 	TestTargets *[]string `json:"test_targets,omitempty"`

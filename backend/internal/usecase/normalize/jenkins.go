@@ -147,7 +147,7 @@ func (in *input) stepAttempts(c *manifestCandidate) error {
 
 // parseJenkinsExecution reads an execution manifest by the schema of the envelope: a file of an adapter has not
 // been checked at intake as the one of the CI step was.
-func parseJenkinsExecution(r io.Reader, _ string) (*parsedReport, error) {
+func parseJenkinsExecution(r io.Reader, _ parseInput) (*parsedReport, error) {
 	data, err := io.ReadAll(io.LimitReader(r, _maxManifestBytes+1))
 	if err != nil {
 		return nil, err

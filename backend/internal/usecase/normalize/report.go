@@ -1,7 +1,9 @@
 package normalize
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -28,8 +30,11 @@ type reportCandidate struct {
 	attempt   *entity.SourceKey
 	component *envelope.ScanComponent
 	parser    *reportParser
+	paths     parseInput
 	report    entity.ScanReport
 	findings  []entity.FindingOccurrence
+	tests     []parsedTest
+	coverage  []entity.CoverageFact
 	rejected  string
 }
 
@@ -50,6 +55,7 @@ func (in *input) reportFile(rec *envelope.Record, b baseFact, scan *envelope.Sca
 		},
 	}
 	c.parser, _ = parserOf(c.report.Format)
+	c.paths.kind = c.report.Kind
 	tool := scanTool(scan, rec.File.Path)
 	if tool == nil {
 		if p.ExitClass != nil {
@@ -95,6 +101,7 @@ func (in *input) provenance(c *reportCandidate, t *envelope.ScanToolRun) error {
 		return err
 	}
 	c.component = t.Component
+	c.paths.sourceRoot, c.paths.sourceDir = deref(t.SourceRoot), deref(t.SourceDir)
 	if t.Ci != nil {
 		c.run, c.attempt = in.ciObjects(deref(t.Ci.JobNativeId), &t.Ci.RunNativeId, t.Ci.AttemptNativeId)
 	}
@@ -177,7 +184,7 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 		}
 		first := byFile[name][0]
 		src := &sourceReader{r: content}
-		parsed, err := first.parser.read(src, first.report.Kind)
+		parsed, err := first.parser.read(src, first.paths)
 		if src.err != nil {
 			return src.err
 		}
@@ -185,21 +192,60 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 		if err != nil && !errors.As(err, &rejected) {
 			return err
 		}
+		var coverage []entity.CoverageFact
+		if rejected == nil {
+			if coverage, err = u.lineMaps(ctx, rc, name, parsed.coverage); err != nil {
+				return err
+			}
+		}
 		for _, c := range byFile[name] {
 			if rejected != nil {
 				c.rejected = rejected.reason
 				continue
 			}
-			c.findings = parsed.findings
+			c.findings, c.tests, c.coverage = parsed.findings, parsed.tests, coverage
+			c.report.SkippedTargets = append(c.report.SkippedTargets, parsed.excluded...)
 			c.report.SchemaVersion, c.report.ParserVersion = parsed.formatVersion, first.parser.version
 		}
 		return nil
 	})
 }
 
+// lineMaps puts the map of lines of a coverage report in the object store before the transaction refers to it: one
+// object per file of the package, a line per file and kind, so normalizing the package again writes the same object.
+func (u *UseCase) lineMaps(ctx context.Context, rc entity.Receipt, file string, coverage []parsedCoverage) ([]entity.CoverageFact, error) {
+	if len(coverage) == 0 {
+		return nil, nil
+	}
+	sum := sha256.Sum256([]byte(file))
+	key := "line-maps/" + rc.OrganizationID.String() + "/" + rc.ID.String() + "/" + hex.EncodeToString(sum[:]) + ".jsonl"
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	facts := make([]entity.CoverageFact, len(coverage))
+	for i := range coverage {
+		c := &coverage[i]
+		line := struct {
+			Path   string    `json:"path"`
+			Kind   string    `json:"kind"`
+			Points [][]int64 `json:"points"`
+		}{c.path, c.kind, c.points}
+		if line.Points == nil {
+			line.Points = [][]int64{}
+		}
+		if err := enc.Encode(line); err != nil {
+			return nil, errorf("encode line map of %s: %w", c.path, err)
+		}
+		facts[i] = entity.CoverageFact{Path: c.path, Kind: c.kind, Covered: c.covered, Executable: c.executable, LineMapKey: key}
+	}
+	if err := u.d.Objects.Put(ctx, key, &buf); err != nil {
+		return nil, errorf("put line map: %w", err)
+	}
+	return facts, nil
+}
+
 func readManifestFile(in *input, list []*manifestCandidate, content io.Reader) error {
 	src := &sourceReader{r: content}
-	parsed, err := list[0].parser.read(src, _recordExecutionManifest)
+	parsed, err := list[0].parser.read(src, parseInput{kind: _recordExecutionManifest})
 	if src.err != nil {
 		return src.err
 	}
@@ -268,6 +314,10 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 	if err != nil {
 		return err
 	}
+	attempts, err := w.testAttempts(ctx, valid)
+	if err != nil {
+		return err
+	}
 	for _, c := range valid {
 		if slices.Contains(done, c.report.Record.RecordNo) {
 			continue
@@ -283,12 +333,71 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 			id := w.objects[*c.attempt].ID
 			r.AttemptID = &id
 		}
-		if err := w.u.d.Repo.InsertReport(ctx, w.org, &r, c.findings); err != nil {
+		rows := entity.ReportRows{Findings: c.findings, Tests: w.executions(c, r.AttemptID, attempts), Coverage: c.coverage}
+		if err := w.u.d.Repo.InsertReport(ctx, w.org, &r, rows); err != nil {
 			return err
 		}
 		w.changes.add(area, _factReport, changedAt(r.StartedAt, r.FinishedAt))
 	}
 	return nil
+}
+
+// testAttempts are the current versions of the attempts JUnit reports of the part belong to, read after the CI facts
+// of the part are written.
+func (w *writer) testAttempts(ctx context.Context, reports []*reportCandidate) (map[entity.ID]entity.CIAttemptVersion, error) {
+	var ids []entity.ID
+	for _, c := range reports {
+		if len(c.tests) > 0 && c.attempt != nil {
+			ids = append(ids, w.objects[*c.attempt].ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	list, err := w.u.d.Repo.CurrentCIAttemptVersions(ctx, w.org, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[entity.ID]entity.CIAttemptVersion, len(list))
+	for i := range list {
+		out[list[i].AttemptID] = list[i]
+	}
+	return out, nil
+}
+
+// executions are the test cases of a report in the configuration of its attempt (DR-006). An attempt not collected
+// yet stands for its own configuration, so the jobs of a matrix stay apart; a report without an attempt has an
+// unknown one. The run starts with the attempt, or else with the report.
+func (w *writer) executions(c *reportCandidate, attempt *entity.ID, attempts map[entity.ID]entity.CIAttemptVersion) []entity.TestExecution {
+	if len(c.tests) == 0 {
+		return nil
+	}
+	config := fingerprint("config", "unknown")
+	started := w.now
+	if c.report.FinishedAt != nil {
+		started = *c.report.FinishedAt
+	}
+	if c.report.StartedAt != nil {
+		started = *c.report.StartedAt
+	}
+	if attempt != nil {
+		config = fingerprint("config", "attempt", c.attempt.NativeID)
+		if v, ok := attempts[*attempt]; ok {
+			config = v.ConfigFingerprint
+			if v.StartedAt != nil {
+				started = *v.StartedAt
+			}
+		}
+	}
+	out := make([]entity.TestExecution, len(c.tests))
+	for i := range c.tests {
+		t := &c.tests[i]
+		out[i] = entity.TestExecution{
+			CaseKey: t.key, CaseKeyHash: t.keyHash, AttemptID: attempt, ConfigFingerprint: config, Ordinal: t.ordinal,
+			Outcome: t.outcome, DurationMS: t.durationMS, RunStartedAt: started,
+		}
+	}
+	return out
 }
 
 // components are the confirmed components of the repository, read once when a report names one.

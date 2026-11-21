@@ -88,3 +88,52 @@ type FindingOccurrence struct {
 	Fingerprint      []byte
 	Evidence         json.RawMessage
 }
+
+// Outcomes of a test execution (normalize.test_execution.outcome).
+const (
+	TestPassed  = "passed"
+	TestFailed  = "failed"
+	TestError   = "error"
+	TestSkipped = "skipped"
+)
+
+// Kinds of coverage (normalize.coverage_fact.kind): line and branch coverage never mix (FR-062).
+const (
+	CoverageLine   = "line"
+	CoverageBranch = "branch"
+)
+
+// SkippedOutsideRepository is the reason a file of a coverage report is left out: its path is not under the root
+// of the repository.
+const SkippedOutsideRepository = "outside_repository"
+
+// ReportRows are the rows a report gives: findings of an analysis, executions of tests or coverage of files.
+type ReportRows struct {
+	Findings []FindingOccurrence
+	Tests    []TestExecution
+	Coverage []CoverageFact
+}
+
+// TestExecution is a test case of a JUnit report in the configuration of its attempt (DR-006): the same case in two
+// configurations of a matrix is two executions, not two attempts of one test. Ordinal counts the same case within
+// one report.
+type TestExecution struct {
+	CaseKey           string
+	CaseKeyHash       []byte
+	AttemptID         *ID
+	ConfigFingerprint []byte
+	Ordinal           int
+	Outcome           string
+	DurationMS        *int64
+	RunStartedAt      time.Time
+}
+
+// CoverageFact is the coverage of a file by one kind (DR-008); its map of lines lies in the object store by
+// LineMapKey.
+type CoverageFact struct {
+	Path       string
+	Kind       string
+	Covered    int
+	Executable int
+	LineMapKey string
+}

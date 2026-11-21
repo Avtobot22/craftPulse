@@ -612,6 +612,9 @@ produced them. A missing or empty report is recorded as failed, never as a clean
 				}
 				in.Reports = append(in.Reports, spec)
 			}
+			if in.SourceRoot == "" {
+				in.SourceRoot = a.getenv("CI_PROJECT_DIR")
+			}
 			s, err := a.session(cmd.Context(), false)
 			if err != nil {
 				return err
@@ -633,6 +636,8 @@ produced them. A missing or empty report is recorded as failed, never as a clean
 	fl.StringVar(&in.ProducerVersion, "producer-version", "unknown", "version of that tool")
 	fl.StringVar(&in.FormatVersion, "format-version", "1", "version of the report format")
 	fl.StringVar(&in.ProducerJob, "producer-job", "", "ID of the job that produced the reports")
+	fl.StringVar(&in.SourceRoot, "source-root", "", "absolute checkout the tool ran in (default CI_PROJECT_DIR)")
+	fl.StringVar(&in.SourceDir, "source-dir", "", "directory of the repository the relative paths of the reports start from, for example src/main/java")
 	_ = cmd.MarkFlagRequired("report") // the flag is declared just above
 	return cmd
 }

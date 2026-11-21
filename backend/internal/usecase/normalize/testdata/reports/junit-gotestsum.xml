@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="7" failures="1" errors="0" time="0.004000">
+	<testsuite tests="7" failures="1" time="0.002000" name="example.com/demo/calc" timestamp="2026-11-21T09:00:00+07:00">
+		<properties>
+			<property name="go.version" value="go1.27.4 linux/amd64"></property>
+			<property name="coverage.statements.pct" value="85.71"></property>
+		</properties>
+		<testcase classname="example.com/demo/calc" name="TestDiv" time="0.000000"></testcase>
+		<testcase classname="example.com/demo/calc" name="TestDivZero" time="0.001000"></testcase>
+		<testcase classname="example.com/demo/calc" name="TestAbsBroken" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestAbsBroken&#xA;    calc_test.go:19: expected 2&#xA;--- FAIL: TestAbsBroken (0.00s)&#xA;</failure>
+		</testcase>
+		<testcase classname="example.com/demo/calc" name="TestSkipped" time="0.000000">
+			<skipped message="=== RUN   TestSkipped&#xA;    calc_test.go:23: not ready&#xA;--- SKIP: TestSkipped (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="example.com/demo/calc" name="TestTable/one" time="0.000000"></testcase>
+		<testcase classname="example.com/demo/calc" name="TestTable/two" time="0.000000"></testcase>
+		<testcase classname="example.com/demo/calc" name="TestTable" time="0.000000"></testcase>
+	</testsuite>
+</testsuites>

@@ -42,13 +42,25 @@ type reportParser struct {
 	version string
 	kinds   []string
 	accepts func(formatVersion string) bool
-	parse   func(r io.Reader, kind string) (*parsedReport, error)
+	parse   func(r io.Reader, in parseInput) (*parsedReport, error)
+}
+
+// parseInput is what a parser reads a file with: the kind of the report and, for the paths of coverage, the checkout
+// the tool ran in and the directory of the repository its relative paths start from.
+type parseInput struct {
+	kind       string
+	sourceRoot string
+	sourceDir  string
 }
 
 type parsedReport struct {
 	formatVersion string
 	findings      []entity.FindingOccurrence
 	execution     *envelope.JenkinsExecutionManifestV1
+	tests         []parsedTest
+	coverage      []parsedCoverage
+	// excluded are the files of a coverage report outside the repository.
+	excluded []entity.SkippedTarget
 }
 
 // _parsers is the registry of report parsers; a format without a parser here is not read yet, and its record
@@ -68,6 +80,30 @@ var _parsers = []reportParser{
 		kinds:   []string{entity.AnalysisSAST, entity.AnalysisSecrets, entity.AnalysisSCA},
 		accepts: regexp.MustCompile(`^15\.[012]\.\d+$`).MatchString,
 		parse:   parseGitLabSecurity,
+	},
+	{
+		format: "junit_xml", version: "junit-xml/1",
+		kinds:   []string{entity.AnalysisJUnit},
+		accepts: func(v string) bool { return v == _junitSuites || v == _junitSuite },
+		parse:   parseJUnit,
+	},
+	{
+		format: "lcov", version: "lcov/1",
+		kinds:   []string{entity.AnalysisCoverage},
+		accepts: func(v string) bool { return v == _lcovVersion },
+		parse:   parseLCOV,
+	},
+	{
+		format: "cobertura", version: "cobertura-04/1",
+		kinds:   []string{entity.AnalysisCoverage},
+		accepts: func(v string) bool { return v == _coberturaVersion },
+		parse:   parseCobertura,
+	},
+	{
+		format: "jacoco", version: "jacoco-1.1/1",
+		kinds:   []string{entity.AnalysisCoverage},
+		accepts: func(v string) bool { return v == _jacocoVersion },
+		parse:   parseJaCoCo,
 	},
 	{
 		format: _formatJenkinsExecution, version: "jenkins-execution-1/1",
@@ -98,11 +134,11 @@ func parserOf(format string) (*reportParser, bool) {
 }
 
 // read parses a file and checks the kind and the version of its format.
-func (p *reportParser) read(r io.Reader, kind string) (*parsedReport, error) {
-	if !slices.Contains(p.kinds, kind) {
-		return nil, &errReport{reason: entity.RecordReportFormatUnsupported, detail: p.format + " does not carry " + kind}
+func (p *reportParser) read(r io.Reader, in parseInput) (*parsedReport, error) {
+	if !slices.Contains(p.kinds, in.kind) {
+		return nil, &errReport{reason: entity.RecordReportFormatUnsupported, detail: p.format + " does not carry " + in.kind}
 	}
-	out, err := p.parse(r, kind)
+	out, err := p.parse(r, in)
 	if err != nil {
 		if e := (*errReport)(nil); errors.As(err, &e) {
 			return nil, err
