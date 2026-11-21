@@ -243,6 +243,7 @@ type IngestRepo interface {
 	PageRecords(ctx context.Context, orgID, receiptID entity.ID, f entity.RecordFilter) ([]entity.IngestRecord, error)
 	Record(ctx context.Context, orgID, receiptID entity.ID, no int) (entity.IngestRecord, error)
 	SetRecordOutcome(ctx context.Context, orgID, receiptID entity.ID, rec entity.IngestRecord) error
+	RejectAcceptedRecord(ctx context.Context, orgID, receiptID entity.ID, no int, reason string) (bool, error)
 	PageConflicts(ctx context.Context, orgID entity.ID, f entity.ConflictFilter) ([]entity.IngestConflict, error)
 	LockConflict(ctx context.Context, orgID, id entity.ID) (entity.IngestConflict, error)
 	ResolveConflict(ctx context.Context, orgID entity.ID, c entity.IngestConflict) error
@@ -326,6 +327,10 @@ type NormalizeRepo interface {
 	ReadCIRunVersions(ctx context.Context, orgID entity.ID, areas, allowed, runs []entity.ID, seq int64) ([]entity.CIRunVersion, error)
 	FindCIRunIDs(ctx context.Context, orgID entity.ID, areas, allowed []entity.ID, q entity.RunsQuery, seq int64) ([]entity.ID, error)
 	ReadCIAttemptVersions(ctx context.Context, orgID entity.ID, areas, allowed, runs []entity.ID, seq int64) ([]entity.CIAttemptVersion, error)
+
+	// ReportedRecords are the records of a receipt among nos that already gave a report.
+	ReportedRecords(ctx context.Context, orgID, receiptID entity.ID, nos []int) ([]int, error)
+	InsertReport(ctx context.Context, orgID entity.ID, rep *entity.ScanReport, findings []entity.FindingOccurrence) error
 
 	RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error)
 	// EnsureObjects creates the identities that are new with the knowledge number seq and returns all by key.

@@ -137,7 +137,7 @@ func (u *UseCase) submit(ctx context.Context, s entity.Subject, rc entity.Receip
 		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, err)
 	}
 	verified := &countingReader{r: body}
-	res, err := u.clean(ctx, verified, io.Discard)
+	res, err := u.clean(ctx, rc.Channel, verified, io.Discard)
 	_ = body.Close()
 	if verified.err != nil {
 		return entity.Receipt{}, fmt.Errorf("%w: %w", entity.ErrObjectStoreUnavailable, verified.err)

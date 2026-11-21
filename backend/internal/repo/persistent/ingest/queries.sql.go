@@ -497,6 +497,32 @@ func (q *Queries) PageRecords(ctx context.Context, arg PageRecordsParams) ([]Ing
 	return items, nil
 }
 
+const rejectAcceptedRecord = `-- name: RejectAcceptedRecord :execrows
+UPDATE ingest.record SET outcome = 'rejected', reason_code = $1
+WHERE organization_id = $2 AND receipt_id = $3 AND record_no = $4
+    AND outcome = 'accepted'
+`
+
+type RejectAcceptedRecordParams struct {
+	ReasonCode     pgtype.Text
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+	RecordNo       int32
+}
+
+func (q *Queries) RejectAcceptedRecord(ctx context.Context, arg RejectAcceptedRecordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rejectAcceptedRecord,
+		arg.ReasonCode,
+		arg.OrganizationID,
+		arg.ReceiptID,
+		arg.RecordNo,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const resolveConflict = `-- name: ResolveConflict :exec
 UPDATE ingest.conflict SET status = 'resolved', resolution = $1, resolved_by = $2,
     resolved_at = $3

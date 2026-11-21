@@ -108,3 +108,8 @@ SELECT id FROM ingest.receipt
 WHERE organization_id = $1 AND project_id = $2 AND id <> $3 AND package_hash = $4
     AND channel = 'ci' AND upload_token_id IS NOT NULL AND status IN ('quarantined', 'accepted', 'partial')
 ORDER BY received_at, id LIMIT 1;
+
+-- name: RejectAcceptedRecord :execrows
+UPDATE ingest.record SET outcome = 'rejected', reason_code = sqlc.arg(reason_code)
+WHERE organization_id = sqlc.arg(organization_id) AND receipt_id = sqlc.arg(receipt_id) AND record_no = sqlc.arg(record_no)
+    AND outcome = 'accepted';

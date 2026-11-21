@@ -1104,6 +1104,56 @@ func (q *Queries) InsertAreas(ctx context.Context, arg InsertAreasParams) error 
 	return err
 }
 
+const insertFindings = `-- name: InsertFindings :exec
+INSERT INTO normalize.finding_occurrence (organization_id, report_id, known_seq, native_id, rule_id, finding_kind, path, line_start, line_end,
+    package_purl, native_severity, native_confidence, fingerprint, evidence)
+SELECT $1, $2, $3, NULLIF(unnest($4::text[]), ''),
+    unnest($5::text[]), unnest($6::text[]), NULLIF(unnest($7::text[]), ''),
+    NULLIF(unnest($8::integer[]), 0), NULLIF(unnest($9::integer[]), 0),
+    NULLIF(unnest($10::text[]), ''), NULLIF(unnest($11::text[]), ''),
+    NULLIF(unnest($12::text[]), ''), unnest($13::bytea[]),
+    NULLIF(unnest($14::text[]), '')::jsonb
+`
+
+type InsertFindingsParams struct {
+	OrganizationID    uuid.UUID
+	ReportID          uuid.UUID
+	KnownSeq          int64
+	NativeIds         []string
+	RuleIds           []string
+	FindingKinds      []string
+	Paths             []string
+	LineStarts        []int32
+	LineEnds          []int32
+	PackagePurls      []string
+	NativeSeverities  []string
+	NativeConfidences []string
+	Fingerprints      [][]byte
+	Evidences         []string
+}
+
+// An empty text and a zero line stand for NULL: arrays of the statement carry no NULL elements. Set-returning
+// functions of one select list run in step, so the arrays give one row per finding.
+func (q *Queries) InsertFindings(ctx context.Context, arg InsertFindingsParams) error {
+	_, err := q.db.Exec(ctx, insertFindings,
+		arg.OrganizationID,
+		arg.ReportID,
+		arg.KnownSeq,
+		arg.NativeIds,
+		arg.RuleIds,
+		arg.FindingKinds,
+		arg.Paths,
+		arg.LineStarts,
+		arg.LineEnds,
+		arg.PackagePurls,
+		arg.NativeSeverities,
+		arg.NativeConfidences,
+		arg.Fingerprints,
+		arg.Evidences,
+	)
+	return err
+}
+
 const insertObjects = `-- name: InsertObjects :exec
 INSERT INTO normalize.source_object (organization_id, instance_id, object_kind, native_ns, native_id, identity_quality, first_known_seq, restricted)
 SELECT $1::uuid, ($2::uuid[])[i], ($3::text[])[i], ($4::text[])[i],
@@ -1134,6 +1184,97 @@ func (q *Queries) InsertObjects(ctx context.Context, arg InsertObjectsParams) er
 		arg.KnownSeq,
 	)
 	return err
+}
+
+const insertReport = `-- name: InsertReport :one
+INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
+    producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
+    scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
+    skipped_targets, history_from_sha, history_to_sha, history_truncated)
+VALUES ($1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10, $11, $12,
+    $13, $14, $15, $16, $17,
+    $18, $19, $20, $21, $22, $23,
+    $24, $25, $26, $27, $28,
+    $29, $30, $31, $32, $33)
+RETURNING id
+`
+
+type InsertReportParams struct {
+	OrganizationID   uuid.UUID
+	ReceiptID        uuid.UUID
+	RecordNo         int32
+	KnownSeq         int64
+	AreaID           uuid.UUID
+	ComponentID      uuid.NullUUID
+	ReportKind       string
+	Mode             string
+	Producer         pgtype.Text
+	ProducerVersion  pgtype.Text
+	ReportFormat     string
+	SchemaVersion    string
+	ParserVersion    string
+	ProfileID        pgtype.Text
+	RulesHash        []byte
+	ConfigHash       []byte
+	DbVersion        pgtype.Text
+	DbPublishedAt    pgtype.Timestamptz
+	ScopeHash        []byte
+	Sha              pgtype.Text
+	ArtifactDigest   pgtype.Text
+	RunID            uuid.NullUUID
+	AttemptID        uuid.NullUUID
+	StartedAt        pgtype.Timestamptz
+	FinishedAt       pgtype.Timestamptz
+	ExitClass        string
+	Completeness     string
+	ScannedCount     pgtype.Int4
+	SkippedCount     pgtype.Int4
+	SkippedTargets   []byte
+	HistoryFromSha   pgtype.Text
+	HistoryToSha     pgtype.Text
+	HistoryTruncated pgtype.Bool
+}
+
+func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertReport,
+		arg.OrganizationID,
+		arg.ReceiptID,
+		arg.RecordNo,
+		arg.KnownSeq,
+		arg.AreaID,
+		arg.ComponentID,
+		arg.ReportKind,
+		arg.Mode,
+		arg.Producer,
+		arg.ProducerVersion,
+		arg.ReportFormat,
+		arg.SchemaVersion,
+		arg.ParserVersion,
+		arg.ProfileID,
+		arg.RulesHash,
+		arg.ConfigHash,
+		arg.DbVersion,
+		arg.DbPublishedAt,
+		arg.ScopeHash,
+		arg.Sha,
+		arg.ArtifactDigest,
+		arg.RunID,
+		arg.AttemptID,
+		arg.StartedAt,
+		arg.FinishedAt,
+		arg.ExitClass,
+		arg.Completeness,
+		arg.ScannedCount,
+		arg.SkippedCount,
+		arg.SkippedTargets,
+		arg.HistoryFromSha,
+		arg.HistoryToSha,
+		arg.HistoryTruncated,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const knownCIAttemptVersions = `-- name: KnownCIAttemptVersions :many
@@ -2004,6 +2145,37 @@ func (q *Queries) ReadRepositoryVersion(ctx context.Context, arg ReadRepositoryV
 		&i.WebUrl,
 	)
 	return i, err
+}
+
+const reportedRecords = `-- name: ReportedRecords :many
+SELECT record_no FROM normalize.report
+WHERE organization_id = $1 AND receipt_id = $2 AND record_no = ANY ($3::integer[])
+`
+
+type ReportedRecordsParams struct {
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+	RecordNos      []int32
+}
+
+func (q *Queries) ReportedRecords(ctx context.Context, arg ReportedRecordsParams) ([]int32, error) {
+	rows, err := q.db.Query(ctx, reportedRecords, arg.OrganizationID, arg.ReceiptID, arg.RecordNos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var record_no int32
+		if err := rows.Scan(&record_no); err != nil {
+			return nil, err
+		}
+		items = append(items, record_no)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const repositoryAreas = `-- name: RepositoryAreas :many

@@ -19,14 +19,17 @@ import (
 // second (TZ 12.6).
 const _partSize = 200
 
-// Ingest is the ingest module: a receipt with its accepted records.
+// Ingest is the ingest module: a receipt with its accepted records, and the records normalize could not read.
 type Ingest interface {
 	Accepted(ctx context.Context, orgID, receiptID entity.ID) (entity.Receipt, []entity.IngestRecord, error)
+	RejectRecords(ctx context.Context, orgID, receiptID entity.ID, reasons map[int]string) error
 }
 
-// Accounts is org: source accounts and the confirmed project areas (TZ 10.3, rules 1 and 7).
+// Accounts is org: source accounts, the confirmed project areas and the components of a repository (TZ 10.3,
+// rules 1 and 7).
 type Accounts interface {
 	ProjectAreas(context.Context, entity.ID, time.Time) ([]entity.Link, error)
+	RepositoryComponents(ctx context.Context, orgID, areaID entity.ID) ([]entity.Component, error)
 	EnsureSourceAccounts(ctx context.Context, orgID, instanceID entity.ID, accounts []entity.SourceAccount) (map[string]entity.ID, error)
 	AssignmentAt(ctx context.Context, orgID, accountID entity.ID, seq int64) (entity.AccountAssignment, bool, error)
 }
@@ -166,7 +169,11 @@ func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, part []entity.
 	if err != nil {
 		return nil, err
 	}
-	return prepare(rc, pkg, part, via)
+	in, err := prepare(rc, pkg, part, via)
+	if err != nil {
+		return nil, err
+	}
+	return in, u.readReports(ctx, rc, in)
 }
 
 // via is how craftPulse learned of the events of a receipt: sync names its phase, the channel decides

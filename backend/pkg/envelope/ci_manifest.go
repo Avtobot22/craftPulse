@@ -196,6 +196,9 @@ func (c *checker) readCIManifest(r io.Reader, h *tar.Header) *Rejection {
 }
 
 func (c *checker) checkCIManifests() *Rejection {
+	if c.result.ScanManifest == nil && c.result.ExecutionManifest == nil && c.page {
+		return nil
+	}
 	if (c.reportDeclared || (len(c.files) > 0 && slices.Contains(c.rule.Kinds, "report_file"))) && c.result.ScanManifest == nil {
 		return &Rejection{ReasonMissingScanManifest, "report files require " + ScanManifestName}
 	}

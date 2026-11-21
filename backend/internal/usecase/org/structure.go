@@ -192,6 +192,25 @@ func (u *UseCase) ProjectComponents(ctx context.Context, orgID, projectID entity
 	return out, err
 }
 
+// RepositoryComponents are the confirmed components in force of a repository, the components its reports belong
+// to; it runs in the caller's organization transaction.
+func (u *UseCase) RepositoryComponents(ctx context.Context, orgID, areaID entity.ID) ([]entity.Component, error) {
+	var out []entity.Component
+	err := u.tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		all, err := u.orgs.CurrentComponents(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		for i := range all {
+			if all[i].RepositoryAreaID == areaID && all[i].Status == entity.ComponentConfirmed {
+				out = append(out, all[i])
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
 // ProjectAreas are the source areas of projects in force at the moment; it runs in the caller's organization
 // transaction, as access reads it together with the profile.
 func (u *UseCase) ProjectAreas(ctx context.Context, orgID entity.ID, at time.Time) ([]entity.Link, error) {

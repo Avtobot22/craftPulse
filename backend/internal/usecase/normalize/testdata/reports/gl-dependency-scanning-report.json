@@ -1,0 +1,30 @@
+{
+  "version": "15.2.1",
+  "scan": {
+    "analyzer": {"id": "gemnasium", "name": "gemnasium", "version": "6.3.1", "vendor": {"name": "GitLab"}},
+    "scanner": {"id": "gemnasium", "name": "gemnasium", "version": "6.3.1", "vendor": {"name": "GitLab"}},
+    "type": "dependency_scanning",
+    "start_time": "2026-11-17T10:00:00",
+    "end_time": "2026-11-17T10:00:20",
+    "status": "success"
+  },
+  "vulnerabilities": [
+    {
+      "id": "8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b",
+      "name": "Improper Input Validation in golang.org/x/net",
+      "description": "An attacker may cause excessive memory growth in a Go server accepting HTTP/2 requests.",
+      "severity": "Medium",
+      "solution": "Upgrade to version 0.33.0 or above.",
+      "location": {
+        "file": "go.sum",
+        "dependency": {"package": {"name": "golang.org/x/net"}, "version": "v0.30.0"}
+      },
+      "identifiers": [
+        {"type": "gemnasium", "name": "Gemnasium-0a1b2c3d", "value": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"},
+        {"type": "cve", "name": "CVE-2024-45338", "value": "CVE-2024-45338", "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-45338"},
+        {"type": "cwe", "name": "CWE-1333", "value": "1333"}
+      ]
+    }
+  ],
+  "dependency_files": []
+}

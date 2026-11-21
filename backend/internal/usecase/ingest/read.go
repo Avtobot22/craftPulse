@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"maps"
 	"slices"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -20,6 +21,36 @@ var _affected = map[string][]string{
 	"junit":          {"I03", "I04", "I05", "I07", "I08", "I09"},
 	"coverage":       {"I25", "I26"},
 	"documents":      {"D01", "D03", "D10", "D24", "D30"},
+}
+
+// RejectRecords rejects accepted records normalize could not read, with their reasons by number, in the caller's
+// transaction (AC-10): the receipt counts them as rejected and becomes partial. A record rejected before is left
+// as it is, so normalizing the receipt again changes nothing.
+func (u *UseCase) RejectRecords(ctx context.Context, orgID, receiptID entity.ID, reasons map[int]string) error {
+	if len(reasons) == 0 {
+		return nil
+	}
+	return u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		rc, err := u.d.Repo.LockReceipt(ctx, orgID, receiptID)
+		if err != nil {
+			return err
+		}
+		n := 0
+		for _, no := range slices.Sorted(maps.Keys(reasons)) {
+			rejected, err := u.d.Repo.RejectAcceptedRecord(ctx, orgID, receiptID, no, reasons[no])
+			if err != nil {
+				return err
+			}
+			if rejected {
+				n++
+			}
+		}
+		if n == 0 {
+			return nil
+		}
+		rc.AcceptedCount, rc.RejectedCount, rc.Status = rc.AcceptedCount-n, rc.RejectedCount+n, entity.ReceiptPartial
+		return u.d.Repo.SaveReceipt(ctx, rc)
+	})
 }
 
 // AffectedMetrics are the metrics whose data the schema of a receipt carries.

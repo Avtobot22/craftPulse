@@ -9,7 +9,9 @@ info:
     `records.jsonl`: одна запись `Record` в строке JSON. Для снимка задач универсального
     импорта вместо него допускается `records.csv` (схема `TaskCsvRow`). Файлы отчётов и
     содержимое документов лежат под `files/` и упоминаются из записей полем `file`.
-    Пакет с отчётами содержит `scan-manifest.json` по `ScanManifestV1`. Для Jenkins
+    Пакет с отчётами содержит `scan-manifest.json` по `ScanManifestV1`. Исключение - страница
+    адаптера: файлы отчётов из artifacts попытки CI источника идут без scan manifest, и их
+    producer и версии неизвестны. Для Jenkins
     `execution-manifest.json` по `JenkinsExecutionManifestV1` необязателен: без файла история
     внутренних повторов неизвестна. Оба файла могут идти после manifest.json в любом порядке
     относительно records.jsonl и files/. Ошибка схемы или версии отклоняет пакет целиком.

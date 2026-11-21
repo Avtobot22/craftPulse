@@ -40,6 +40,9 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 	if err := w.writeCIFacts(ctx, in); err != nil {
 		return nil, err
 	}
+	if err := w.reports(ctx, in); err != nil {
+		return nil, err
+	}
 	if err := w.tasks(ctx, in.tasks); err != nil {
 		return nil, err
 	}
@@ -65,7 +68,7 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 	return areas, nil
 }
 
-// keys are the identities a part names: areas, tasks, MRs and CI runs with the objects they refer to.
+// keys are the identities a part names: areas, tasks, MRs, CI runs and reports with the objects they refer to.
 func (in *input) keys() []entity.SourceKey {
 	set := map[entity.SourceKey]bool{in.area: true}
 	for _, t := range in.tasks {
@@ -97,6 +100,14 @@ func (in *input) keys() []entity.SourceKey {
 	}
 	for _, c := range in.ciAttempts {
 		set[c.key], set[c.run] = true, true
+	}
+	for _, c := range in.reports {
+		if c.run != nil {
+			set[*c.run] = true
+		}
+		if c.attempt != nil {
+			set[*c.attempt] = true
+		}
 	}
 	return slices.SortedFunc(maps.Keys(set), compareKeys)
 }

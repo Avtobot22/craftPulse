@@ -342,6 +342,17 @@ func (r *Repo) SetRecordOutcome(ctx context.Context, orgID, receiptID entity.ID,
 	return nil
 }
 
+// RejectAcceptedRecord marks an accepted record as rejected; false when the record is no longer accepted.
+func (r *Repo) RejectAcceptedRecord(ctx context.Context, orgID, receiptID entity.ID, no int, reason string) (bool, error) {
+	n, err := New(postgres.Conn(ctx, r.pool)).RejectAcceptedRecord(ctx, RejectAcceptedRecordParams{
+		OrganizationID: uuid.UUID(orgID), ReceiptID: uuid.UUID(receiptID), RecordNo: number(no), ReasonCode: text(reason),
+	})
+	if err != nil {
+		return false, fmt.Errorf("ingest: reject record: %w", err)
+	}
+	return n == 1, nil
+}
+
 func (r *Repo) PageConflicts(ctx context.Context, orgID entity.ID, f entity.ConflictFilter) ([]entity.IngestConflict, error) {
 	status := "resolved"
 	if f.Open {

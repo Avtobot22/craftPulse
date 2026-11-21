@@ -18,10 +18,10 @@ import (
 // records. The same input always gives the same bytes. Nothing is written when the whole package is
 // rejected; a stream that breaks while it is read is rejected as an invalid archive.
 func Clean(r io.Reader, limits Limits, w io.Writer) (*Result, error) {
-	return cleanPackage(r, limits, w, nil)
+	return cleanPackage(r, limits, w, nil, false)
 }
 
-func cleanPackage(r io.Reader, limits Limits, w io.Writer, redactor Redactor) (*Result, error) {
+func cleanPackage(r io.Reader, limits Limits, w io.Writer, redactor Redactor, page bool) (*Result, error) {
 	data, err := io.ReadAll(io.LimitReader(r, limits.MaxPackageBytes+1))
 	switch {
 	case err != nil:
@@ -29,7 +29,7 @@ func cleanPackage(r io.Reader, limits Limits, w io.Writer, redactor Redactor) (*
 	case int64(len(data)) > limits.MaxPackageBytes:
 		return &Result{Envelope: &Rejection{ReasonLimitExceeded, "package is larger than the limit"}}, nil
 	}
-	c := &checker{limits: limits, files: map[string]fileEntry{}, entries: map[string]bool{}, lines: map[int][]byte{}}
+	c := &checker{limits: limits, files: map[string]fileEntry{}, entries: map[string]bool{}, lines: map[int][]byte{}, page: page}
 	if rejection := c.read(bytes.NewReader(data)); rejection != nil {
 		return redactRejected(&Result{Manifest: c.result.Manifest, Envelope: rejection}, redactor)
 	}

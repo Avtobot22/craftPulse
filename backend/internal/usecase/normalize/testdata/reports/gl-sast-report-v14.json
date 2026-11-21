@@ -1,0 +1,95 @@
+{
+  "version": "14.1.2",
+  "vulnerabilities": [
+    {
+      "id": "5b9c1f0d6c0e4f7a8f2d3b1a0e9c8d7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d",
+      "name": "Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')",
+      "description": "SQL query is built from a formatted string; pass the values as query arguments.",
+      "severity": "High",
+      "location": {
+        "file": "app/main.go",
+        "start_line": 13,
+        "end_line": 13
+      },
+      "identifiers": [
+        {
+          "type": "semgrep_id",
+          "name": "go_sql_rule-concat-sqli",
+          "value": "go_sql_rule-concat-sqli"
+        },
+        {
+          "type": "cwe",
+          "name": "CWE-89",
+          "value": "89",
+          "url": "https://cwe.mitre.org/data/definitions/89.html"
+        },
+        {
+          "type": "owasp",
+          "name": "A03:2021 - Injection",
+          "value": "A03:2021"
+        }
+      ],
+      "tracking": {
+        "type": "source",
+        "items": [
+          {
+            "file": "app/main.go",
+            "line_start": 13,
+            "line_end": 13,
+            "signatures": [
+              {
+                "algorithm": "scope_offset",
+                "value": "app/main.go|handler[0]:2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "name": "Unhandled errors",
+      "description": "The error returned by os.Remove is not checked.",
+      "severity": "Low",
+      "location": {
+        "file": "app/main.go",
+        "start_line": 15
+      },
+      "identifiers": [
+        {
+          "type": "semgrep_id",
+          "name": "go_errors_rule-unhandled-error",
+          "value": "go_errors_rule-unhandled-error"
+        },
+        {
+          "type": "cwe",
+          "name": "CWE-703",
+          "value": "703"
+        }
+      ]
+    }
+  ],
+  "dependency_files": [],
+  "scan": {
+    "analyzer": {
+      "id": "semgrep",
+      "name": "Semgrep",
+      "version": "6.12.0",
+      "vendor": {
+        "name": "GitLab"
+      }
+    },
+    "scanner": {
+      "id": "semgrep",
+      "name": "Semgrep",
+      "version": "1.140.0",
+      "vendor": {
+        "name": "GitLab"
+      }
+    },
+    "type": "sast",
+    "start_time": "2026-11-17T10:00:00",
+    "end_time": "2026-11-17T10:00:30",
+    "status": "success"
+  }
+}

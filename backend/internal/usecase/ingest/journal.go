@@ -42,7 +42,7 @@ func (u *UseCase) RecordPage(ctx context.Context, p *entity.PreparedPackage) (en
 
 func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, r io.Reader) (*entity.PreparedPackage, error) {
 	var cleaned bytes.Buffer
-	res, err := u.clean(ctx, r, &cleaned)
+	res, err := u.clean(ctx, rc.Channel, r, &cleaned)
 	if err != nil {
 		return nil, err
 	}
