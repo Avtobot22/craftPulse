@@ -32,7 +32,7 @@ func run() error {
 		return err
 	}
 	if flag.NArg() == 0 {
-		return errors.New("command required: serve, ticket ROLE, status, check ROLE, report, erase ROLE")
+		return errors.New("command required: serve, ticket ROLE, status, check ROLE, inspect ROLE, refresh ROLE, report, erase ROLE")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

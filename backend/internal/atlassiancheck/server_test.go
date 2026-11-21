@@ -254,3 +254,48 @@ func TestReauthorizationKeepsPrivacyCycleAfterErasure(t *testing.T) {
 	require.Equal(t, 200, w.Code)
 	require.Equal(t, next, s.state.Tokens["a_allowed"].Next)
 }
+
+func TestInspectionReportsOAuthEvidenceWithoutCredentials(t *testing.T) {
+	t.Parallel()
+	s := testServer(t)
+	inventory(s, "owner", "id-owner")
+	current := s.state.Tokens["owner"]
+	current.Refresh = "original-refresh"
+	s.state.Tokens["owner"] = current
+	s.provider.http.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "auth.atlassian.com" {
+			return reply(200, `{"access_token":"new-access","refresh_token":"new-refresh","expires_in":3600,"token_type":"Bearer"}`), nil
+		}
+		require.Equal(t, "Bearer new-access", r.Header.Get("Authorization"))
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/myself"):
+			return reply(200, `{"active":true,"accountId":"id-owner"}`), nil
+		case strings.HasSuffix(r.URL.Path, "/accessible-resources"):
+			return reply(200, `[{"id":"`+s.config.CloudID+`","url":"https://sample.atlassian.net","scopes":["read:jira-work","read:jira-user"]},{"id":"`+s.config.CloudID+`","url":"https://sample.atlassian.net","scopes":["read:space:confluence","read:page:confluence","read:content-details:confluence"]}]`), nil
+		case strings.HasSuffix(r.URL.Path, "/mypermissions"):
+			return reply(200, `{"permissions":{"BROWSE_PROJECTS":{"havePermission":false}}}`), nil
+		default:
+			return reply(200, `{}`), nil
+		}
+	})
+	control := func(command string) *httptest.ResponseRecorder {
+		r := httptest.NewRequestWithContext(t.Context(), "POST", "/control/"+command+"?role=owner", nil)
+		r.Header.Set("Authorization", "Bearer "+s.config.ControlSecret)
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		require.NotContains(t, w.Body.String(), "new-access")
+		require.NotContains(t, w.Body.String(), "new-refresh")
+		return w
+	}
+	require.JSONEq(t, `{"refreshed":true,"rotated":true}`, control("refresh").Body.String())
+	var result inspection
+	require.NoError(t, json.Unmarshal(control("inspect").Body.Bytes(), &result))
+	require.Len(t, result.Objects, 9)
+	require.Len(t, result.Permissions, 3)
+	require.NotNil(t, result.Permissions[0].Browse)
+	require.False(t, *result.Permissions[0].Browse)
+	require.True(t, result.Resource.JiraScopes)
+	require.True(t, result.Resource.ConfluenceScopes)
+	require.Equal(t, "https://sample.atlassian.net", result.Resource.SiteURL)
+}

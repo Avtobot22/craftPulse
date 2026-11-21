@@ -4,16 +4,21 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 )
 
 type accessResult struct {
-	Object  string `json:"object"`
-	Status  int    `json:"status"`
-	Allowed bool   `json:"allowed"`
-	Matches bool   `json:"matches"`
+	Object string `json:"object"`
+	requestResult
+	Allowed bool `json:"allowed"`
+	Matches bool `json:"matches"`
 }
 
 func (s *Server) check(ctx context.Context, role string) ([]accessResult, error) {
+	return s.checkObjects(ctx, role, false)
+}
+
+func (s *Server) checkObjects(ctx context.Context, role string, includeSpaces bool) ([]accessResult, error) {
 	access, err := s.access(ctx, role)
 	if err != nil {
 		return nil, err
@@ -29,11 +34,12 @@ func (s *Server) check(ctx context.Context, role string) ([]accessResult, error)
 	a := all || role == "a_allowed" || role == "a_denied"
 	b := all || role == "b"
 	restricted := all || role == "a_allowed"
-	objects := []struct {
+	type checkObject struct {
 		name    string
 		url     string
 		allowed bool
-	}{
+	}
+	objects := []checkObject{
 		{"jira_cpa", s.provider.jira("/project/CPA"), a},
 		{"jira_cpb", s.provider.jira("/project/CPB"), a},
 		{"jira_cpz", s.provider.jira("/project/CPZ"), b},
@@ -42,8 +48,15 @@ func (s *Server) check(ctx context.Context, role string) ([]accessResult, error)
 		{"confluence_b", s.provider.confluence("/wiki/api/v2/pages/360631?body-format=storage"), b},
 		{"confluence_restricted", s.provider.confluence("/wiki/api/v2/pages/491521?body-format=storage"), restricted},
 	}
+	if includeSpaces {
+		objects = append(objects,
+			checkObject{"confluence_space_a", s.provider.confluence("/wiki/api/v2/spaces/360451"), a},
+			checkObject{"confluence_space_b", s.provider.confluence("/wiki/api/v2/spaces/360600"), b},
+		)
+	}
 	results := make([]accessResult, 0, len(objects))
 	for _, object := range objects {
+		start := time.Now()
 		_, _, status, requestErr := s.provider.request(ctx, http.MethodGet, object.url, access, nil)
 		if requestErr != nil {
 			return nil, requestErr
@@ -53,7 +66,8 @@ func (s *Server) check(ctx context.Context, role string) ([]accessResult, error)
 			matches = status == http.StatusForbidden || status == http.StatusNotFound
 		}
 		results = append(results, accessResult{
-			Object: object.name, Status: status, Allowed: object.allowed, Matches: matches,
+			Object: object.name, Allowed: object.allowed, Matches: matches,
+			requestResult: requestResult{Status: status, MS: time.Since(start).Milliseconds()},
 		})
 	}
 	return results, nil
