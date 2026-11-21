@@ -1099,6 +1099,230 @@
       }
     },
     {
+      "kind": "ci_attempt",
+      "version": "2",
+      "classes": [
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "run_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "job_key",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "job_name",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "config_fingerprint",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          {
+            "name": "attempt_no",
+            "schema": {
+              "types": [
+                "integer"
+              ],
+              "minimum": 1
+            }
+          },
+          {
+            "name": "native_status",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "outcome",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "running",
+                "success",
+                "failed",
+                "canceled",
+                "skipped",
+                "unknown"
+              ]
+            }
+          },
+          {
+            "name": "allow_failure",
+            "schema": {
+              "types": [
+                "boolean"
+              ]
+            }
+          },
+          {
+            "name": "failure_kind",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "runner_class",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "created_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "failure_reason",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "parent_run_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "artifact_status",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "expired",
+                "unavailable",
+                "size_limit"
+              ]
+            }
+          },
+          {
+            "name": "started_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "finished_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "duration_s",
+            "schema": {
+              "types": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          {
+            "name": "duration_seconds",
+            "schema": {
+              "types": [
+                "number",
+                "null"
+              ],
+              "format": "double",
+              "minimum": 0
+            }
+          }
+        ],
+        "required": [
+          "run_native_id",
+          "job_key",
+          "job_name",
+          "config_fingerprint",
+          "attempt_no",
+          "native_status",
+          "outcome",
+          "allow_failure"
+        ],
+        "closed": true
+      },
+      "example": {
+        "allow_failure": false,
+        "attempt_no": 2,
+        "config_fingerprint": "3f6c2a1b9d8e7f6054a3b2c1d0e9f8a73f6c2a1b9d8e7f6054a3b2c1d0e9f8a7",
+        "duration_s": 120,
+        "failure_kind": null,
+        "finished_at": "2026-10-01T09:08:00+03:00",
+        "job_key": "test/go",
+        "job_name": "test",
+        "native_status": "success",
+        "outcome": "success",
+        "run_native_id": "5001",
+        "runner_class": "shared",
+        "started_at": "2026-10-01T09:06:00+03:00"
+      }
+    },
+    {
       "kind": "ci_run",
       "version": "1",
       "classes": [
@@ -1149,6 +1373,181 @@
           },
           {
             "name": "parent_run_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "definition_version",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "native_status",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "outcome",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "running",
+                "success",
+                "failed",
+                "canceled",
+                "skipped",
+                "unknown"
+              ]
+            }
+          },
+          {
+            "name": "started_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "finished_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "updated_at",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          }
+        ],
+        "required": [
+          "project_native_id",
+          "ref_name",
+          "sha",
+          "native_status",
+          "outcome"
+        ],
+        "closed": true
+      },
+      "example": {
+        "definition_version": null,
+        "finished_at": "2026-10-01T09:12:00+03:00",
+        "mr_native_id": "9001",
+        "native_status": "failed",
+        "outcome": "failed",
+        "parent_run_native_id": null,
+        "project_native_id": "42",
+        "ref_name": "refs/merge-requests/7/head",
+        "sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+        "started_at": "2026-10-01T09:05:00+03:00",
+        "updated_at": "2026-10-01T09:12:00+03:00"
+      }
+    },
+    {
+      "kind": "ci_run",
+      "version": "2",
+      "classes": [
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "project_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "ref_name",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 1024
+            }
+          },
+          {
+            "name": "sha",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "mr_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "parent_run_native_id",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "max_length": 255
+            }
+          },
+          {
+            "name": "source",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "max_length": 64
+            }
+          },
+          {
+            "name": "attempt_history_truncated",
+            "schema": {
+              "types": [
+                "boolean"
+              ]
+            }
+          },
+          {
+            "name": "trigger_job_native_id",
             "schema": {
               "types": [
                 "string",

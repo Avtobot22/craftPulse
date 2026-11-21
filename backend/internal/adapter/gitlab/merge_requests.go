@@ -205,8 +205,8 @@ func (s source) fetchMRs(ctx context.Context, projectID int64, in adaptersdk.Fet
 }
 
 func (a *Adapter) Manifest(ctx context.Context, call adaptersdk.Call, in adaptersdk.ManifestInput) (adaptersdk.ManifestPage, error) {
-	if in.SchemaId != adaptersdk.ManifestInputSchemaIdMergeRequests {
-		return adaptersdk.ManifestPage{}, adaptersdk.NewError(adaptersdk.AdapterErrorCodeNotSupported, "GitLab manifest serves merge_requests")
+	if in.SchemaId != adaptersdk.ManifestInputSchemaIdMergeRequests && in.SchemaId != adaptersdk.ManifestInputSchemaIdCiRuns {
+		return adaptersdk.ManifestPage{}, adaptersdk.NewError(adaptersdk.AdapterErrorCodeNotSupported, "GitLab manifest serves merge_requests and ci_runs")
 	}
 	if in.Limit < 1 || in.Limit > 10000 {
 		return adaptersdk.ManifestPage{}, adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidRequest, "invalid Manifest limit")
@@ -224,6 +224,9 @@ func (a *Adapter) Manifest(ctx context.Context, call adaptersdk.Call, in adapter
 	s, err := a.bound(ctx, call)
 	if err != nil {
 		return adaptersdk.ManifestPage{}, err
+	}
+	if in.SchemaId == adaptersdk.ManifestInputSchemaIdCiRuns {
+		return s.manifestCIRuns(ctx, projectID, in, cursor)
 	}
 	limit := min(in.Limit, 100)
 	items, err := s.listMRs(ctx, projectID, in.Period, cursor, limit+1)

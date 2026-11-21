@@ -1,0 +1,639 @@
+{
+  "version": "19.5.5",
+  "pipelines": {
+    "4": {
+      "pipeline": {
+        "id": 4,
+        "iid": 4,
+        "project_id": 1,
+        "ref": "refs/merge-requests/1/head",
+        "sha": "4bb9f50f3c4bdf1aac2263a363906b8c0532f085",
+        "source": "merge_request_event",
+        "status": "skipped",
+        "started_at": null,
+        "finished_at": null,
+        "updated_at": "2026-11-12T05:35:34.748Z"
+      },
+      "jobs": [],
+      "bridges": [],
+      "graphql": {
+        "data": {
+          "project": {
+            "pipeline": {
+              "upstream": null,
+              "sourceJob": null,
+              "mergeRequest": {
+                "id": "gid://gitlab/MergeRequest/1",
+                "project": {
+                  "id": "gid://gitlab/Project/1"
+                }
+              }
+            }
+          }
+        }
+      },
+      "artifacts": {}
+    },
+    "6": {
+      "pipeline": {
+        "id": 6,
+        "iid": 6,
+        "project_id": 1,
+        "ref": "main",
+        "sha": "b6d1306018bad7f6a2335960aa41849bc03a3461",
+        "source": "push",
+        "status": "success",
+        "started_at": "2026-11-12T05:41:57.553Z",
+        "finished_at": "2026-11-12T05:42:02.914Z",
+        "updated_at": "2026-11-12T05:42:02.928Z"
+      },
+      "jobs": [
+        {
+          "id": 4,
+          "name": "stand-connectivity",
+          "status": "success",
+          "allow_failure": false,
+          "created_at": "2026-11-12T05:41:51.223Z",
+          "started_at": "2026-11-12T05:41:57.235Z",
+          "finished_at": "2026-11-12T05:42:02.670Z",
+          "duration": 5.434828,
+          "tag_list": [
+            "cp87-test"
+          ],
+          "artifacts": [
+            {
+              "file_type": "trace",
+              "size": 4134,
+              "filename": "job.log",
+              "file_format": null
+            }
+          ],
+          "artifacts_expire_at": null,
+          "erased_at": null,
+          "runner": {
+            "runner_type": "project_type"
+          }
+        }
+      ],
+      "bridges": [],
+      "graphql": {
+        "data": {
+          "project": {
+            "pipeline": {
+              "upstream": null,
+              "sourceJob": null,
+              "mergeRequest": null
+            }
+          }
+        }
+      },
+      "artifacts": {}
+    },
+    "7": {
+      "pipeline": {
+        "id": 7,
+        "iid": 7,
+        "project_id": 1,
+        "sha": "e61c510e7b10d4ef38e4d487362e029668a721fe",
+        "ref": "craftpulse-144-1795273080",
+        "status": "failed",
+        "source": "push",
+        "updated_at": "2026-11-21T15:05:58.207Z",
+        "started_at": "2026-11-21T14:58:14.678Z",
+        "finished_at": "2026-11-21T15:05:58.177Z"
+      },
+      "jobs": [
+        {
+          "id": 14,
+          "status": "failed",
+          "name": "timeout",
+          "allow_failure": false,
+          "created_at": "2026-11-21T15:04:55.487Z",
+          "started_at": "2026-11-21T15:04:56.965Z",
+          "finished_at": "2026-11-21T15:05:57.937Z",
+          "erased_at": null,
+          "duration": 60.971852,
+          "failure_reason": "job_execution_timeout",
+          "artifacts": [
+            {
+              "file_type": "trace",
+              "size": 3662,
+              "filename": "job.log",
+              "file_format": null
+            }
+          ],
+          "runner": {
+            "runner_type": "project_type"
+          },
+          "artifacts_expire_at": null
+        },
+        {
+          "id": 13,
+          "status": "success",
+          "name": "matrix: [linux]",
+          "allow_failure": false,
+          "created_at": "2026-11-21T15:02:37.647Z",
+          "started_at": "2026-11-21T15:03:15.134Z",
+          "finished_at": "2026-11-21T15:03:23.626Z",
+          "erased_at": null,
+          "duration": 8.492087,
+          "artifacts": [
+            {
+              "file_type": "junit",
+              "size": 150,
+              "filename": "junit.xml.gz",
+              "file_format": "gzip"
+            },
+            {
+              "file_type": "cobertura",
+              "size": 170,
+              "filename": "cobertura-coverage.xml.gz",
+              "file_format": "gzip"
+            },
+            {
+              "file_type": "trace",
+              "size": 5300,
+              "filename": "job.log",
+              "file_format": null
+            }
+          ],
+          "runner": {
+            "runner_type": "project_type"
+          },
+          "artifacts_expire_at": "2026-11-22T15:03:22.407Z"
+        },
+        {
+          "id": 10,
+          "status": "manual",
+          "name": "manual",
+          "allow_failure": true,
+          "created_at": "2026-11-21T14:58:09.857Z",
+          "started_at": null,
+          "finished_at": null,
+          "erased_at": null,
+          "duration": null,
+          "artifacts": [],
+          "runner": null,
+          "artifacts_expire_at": null
+        },
+        {
+          "id": 9,
+          "status": "failed",
+          "name": "timeout",
+          "allow_failure": false,
+          "created_at": "2026-11-21T14:58:09.857Z",
+          "started_at": "2026-11-21T15:02:08.353Z",
+          "finished_at": "2026-11-21T15:03:09.594Z",
+          "erased_at": null,
+          "duration": 61.241203,
+          "failure_reason": "job_execution_timeout",
+          "artifacts": [
+            {
+              "file_type": "trace",
+              "size": 3662,
+              "filename": "job.log",
+              "file_format": null
+            }
+          ],
+          "runner": {
+            "runner_type": "project_type"
+          },
+          "artifacts_expire_at": null
+        },
+        {
+          "id": 8,
+          "status": "success",
+          "name": "expired",
+          "allow_failure": false,
+          "created_at": "2026-11-21T14:58:09.857Z",
+          "started_at": "2026-11-21T15:02:01.628Z",
+          "finished_at": "2026-11-21T15:02:08.133Z",
+          "erased_at": "2026-11-21T15:09:14.470Z",
+          "duration": 6.504759,
+          "artifacts": [],
+          "runner": {
+            "runner_type": "project_type"
+          },
+          "artifacts_expire_at": null
+        },
+        {
+          "id": 7,
+          "status": "failed",
+          "name": "allowed",
+          "allow_failure": true,
+          "created_at": "2026-11-21T14:58:09.857Z",
+          "started_at": "2026-11-21T15:01:56.624Z",
+          "finished_at": "2026-11-21T15:02:01.408Z",
+          "erased_at": null,
+          "duration": 4.783225,
+          "failure_reason": "script_failure",
+          "artifacts": [
+            {
+              "file_type": "trace",
+              "size": 3596,
+              "filename": "job.log",
+              "file_format": null
+            }
+          ],
+          "runner": {
+            "runner_type": "project_type"
+          },
+          "artifacts_expire_at": null
+        },
+        {
+          "id": 6,
+          "status": "success",
+          "name": "matrix: [windows]",
+          "allow_failure": false,
+          "created_at": "2026-11-21T14:58:09.857Z",
+          "started_at": "2026-11-21T15:01:49.361Z",
+          "finished_at": "2026-11-21T15:01:56.388Z",
+          "erased_at": null,
+          "duration": 7.026662,
+          "artifacts": [
+            {
+              "file_type": "junit",
+              "size": 150,
+              "filename": "junit.xml.gz",
+              "file_format": "gzip"
+            },
+            {
+              "file_type": "cobertura",
+              "size": 170,
+              "filename": "cobertura-coverage.xml.gz",
+              "file_format": "gzip"
+            },
+            {
+              "file_type": "trace",
+              "size": 5298,
+              "filename": "job.log",
+              "file_format": null
+            }
+          ],
+          "runner": {
+            "runner_type": "project_type"
+          },
+          "artifacts_expire_at": "2026-11-22T15:01:55.437Z"
+        },
+        {
+          "id": 5,
+          "status": "failed",
+          "name": "matrix: [linux]",
+          "allow_failure": false,
+          "created_at": "2026-11-21T14:58:09.857Z",
+          "started_at": "2026-11-21T15:01:40.168Z",
+          "finished_at": "2026-11-21T15:01:49.122Z",
+          "erased_at": null,
+          "duration": 8.953165,
+          "failure_reason": "script_failure",
+          "artifacts": [
+            {
+              "file_type": "junit",
+              "size": 150,
+              "filename": "junit.xml.gz",
+              "file_format": "gzip"
+            },
+            {
+              "file_type": "cobertura",
+              "size": 170,
+              "filename": "cobertura-coverage.xml.gz",
+              "file_format": "gzip"
+            },
+            {
+              "file_type": "trace",
+              "size": 5312,
+              "filename": "job.log",
+              "file_format": null
+            }
+          ],
+          "runner": {
+            "runner_type": "project_type"
+          },
+          "artifacts_expire_at": "2026-11-22T15:01:48.300Z"
+        }
+      ],
+      "bridges": [
+        {
+          "id": 11,
+          "downstream_pipeline": {
+            "id": 8,
+            "project_id": 1,
+            "sha": "e61c510e7b10d4ef38e4d487362e029668a721fe",
+            "ref": "craftpulse-144-1795273080",
+            "status": "pending",
+            "created_at": "2026-11-21T14:58:14.906Z",
+            "updated_at": "2026-11-21T14:58:15.811Z"
+          }
+        }
+      ],
+      "graphql": {
+        "data": {
+          "project": {
+            "pipeline": {
+              "upstream": null,
+              "sourceJob": null,
+              "mergeRequest": null
+            }
+          }
+        }
+      },
+      "artifacts": {
+        "13/junit": {
+          "status": 200,
+          "content_type": "application/octet-stream",
+          "body": "H4sIGLeyAWsA/2p1bml0LnhtbABqdW5pdC54bWwAAGQAm/88dGVzdHN1aXRlcz48dGVzdHN1aXRlIG5hbWU9ImZpeHR1cmUiIHRlc3RzPSIxIj48dGVzdGNhc2UgbmFtZT0iZXhhbXBsZSIvPjwvdGVzdHN1aXRlPjwvdGVzdHN1aXRlcz4KAAAA//8DAKOfbd1kAAAA",
+          "xml_sha256": "e6f8d7e461cb29819bd868d2f106aa444da52cf9449e944c2563ad40876179e8"
+        },
+        "13/cobertura": {
+          "status": 200,
+          "content_type": "application/octet-stream",
+          "body": "H4sIGLeyAWsA/2NvdmVyYWdlLnhtbABjb3ZlcmFnZS54bWwATMzNrsIgEMXx/X0Kwr5p757yLiM94kS+MiCpb2+KGrv8Z35njMsdQh6qQyrntOor7+0h0CpwwiTUsOp/rS5Cyd0+vbyvdRpzbEMcvk6dAm+nxRkt3zc/t2jlciwBO7fnyMYRtVEsR1lTyN3Jo87WzC53CHnYvxcAAAD//wMAZFbMergAAAA=",
+          "xml_sha256": "d8409fe9f41b22d5a4697671419c0eadb980dfb2ab034863a533820edcd1a36c"
+        },
+        "8/junit": {
+          "status": 404
+        },
+        "6/junit": {
+          "status": 200,
+          "content_type": "application/octet-stream",
+          "body": "H4sIGGGyAWsA/2p1bml0LnhtbABqdW5pdC54bWwAAGQAm/88dGVzdHN1aXRlcz48dGVzdHN1aXRlIG5hbWU9ImZpeHR1cmUiIHRlc3RzPSIxIj48dGVzdGNhc2UgbmFtZT0iZXhhbXBsZSIvPjwvdGVzdHN1aXRlPjwvdGVzdHN1aXRlcz4KAAAA//8DAKOfbd1kAAAA",
+          "xml_sha256": "e6f8d7e461cb29819bd868d2f106aa444da52cf9449e944c2563ad40876179e8"
+        },
+        "6/cobertura": {
+          "status": 200,
+          "content_type": "application/octet-stream",
+          "body": "H4sIGGGyAWsA/2NvdmVyYWdlLnhtbABjb3ZlcmFnZS54bWwATMzNrsIgEMXx/X0Kwr5p757yLiM94kS+MiCpb2+KGrv8Z35njMsdQh6qQyrntOor7+0h0CpwwiTUsOp/rS5Cyd0+vbyvdRpzbEMcvk6dAm+nxRkt3zc/t2jlciwBO7fnyMYRtVEsR1lTyN3Jo87WzC53CHnYvxcAAAD//wMAZFbMergAAAA=",
+          "xml_sha256": "d8409fe9f41b22d5a4697671419c0eadb980dfb2ab034863a533820edcd1a36c"
+        },
+        "5/junit": {
+          "status": 200,
+          "content_type": "application/octet-stream",
+          "body": "H4sIGFmyAWsA/2p1bml0LnhtbABqdW5pdC54bWwAAGQAm/88dGVzdHN1aXRlcz48dGVzdHN1aXRlIG5hbWU9ImZpeHR1cmUiIHRlc3RzPSIxIj48dGVzdGNhc2UgbmFtZT0iZXhhbXBsZSIvPjwvdGVzdHN1aXRlPjwvdGVzdHN1aXRlcz4KAAAA//8DAKOfbd1kAAAA",
+          "xml_sha256": "e6f8d7e461cb29819bd868d2f106aa444da52cf9449e944c2563ad40876179e8"
+        },
+        "5/cobertura": {
+          "status": 200,
+          "content_type": "application/octet-stream",
+          "body": "H4sIGFmyAWsA/2NvdmVyYWdlLnhtbABjb3ZlcmFnZS54bWwATMzNrsIgEMXx/X0Kwr5p757yLiM94kS+MiCpb2+KGrv8Z35njMsdQh6qQyrntOor7+0h0CpwwiTUsOp/rS5Cyd0+vbyvdRpzbEMcvk6dAm+nxRkt3zc/t2jlciwBO7fnyMYRtVEsR1lTyN3Jo87WzC53CHnYvxcAAAD//wMAZFbMergAAAA=",
+          "xml_sha256": "d8409fe9f41b22d5a4697671419c0eadb980dfb2ab034863a533820edcd1a36c"
+        }
+      },
+      "previous": {
+        "pipeline": {
+          "id": 7,
+          "iid": 7,
+          "project_id": 1,
+          "sha": "e61c510e7b10d4ef38e4d487362e029668a721fe",
+          "ref": "craftpulse-144-1795273080",
+          "status": "failed",
+          "source": "push",
+          "updated_at": "2026-11-21T15:03:24.172Z",
+          "started_at": "2026-11-21T14:58:14.678Z",
+          "finished_at": "2026-11-21T15:03:24.144Z"
+        },
+        "jobs": [
+          {
+            "id": 13,
+            "status": "success",
+            "name": "matrix: [linux]",
+            "allow_failure": false,
+            "created_at": "2026-11-21T15:02:37.647Z",
+            "started_at": "2026-11-21T15:03:15.134Z",
+            "finished_at": "2026-11-21T15:03:23.626Z",
+            "erased_at": null,
+            "duration": 8.492087,
+            "artifacts": [
+              {
+                "file_type": "junit",
+                "size": 150,
+                "filename": "junit.xml.gz",
+                "file_format": "gzip"
+              },
+              {
+                "file_type": "cobertura",
+                "size": 170,
+                "filename": "cobertura-coverage.xml.gz",
+                "file_format": "gzip"
+              }
+            ],
+            "runner": {
+              "runner_type": "project_type"
+            },
+            "artifacts_expire_at": "2026-11-22T15:03:22.407Z"
+          },
+          {
+            "id": 10,
+            "status": "manual",
+            "name": "manual",
+            "allow_failure": true,
+            "created_at": "2026-11-21T14:58:09.857Z",
+            "started_at": null,
+            "finished_at": null,
+            "erased_at": null,
+            "duration": null,
+            "artifacts": [],
+            "runner": null,
+            "artifacts_expire_at": null
+          },
+          {
+            "id": 9,
+            "status": "failed",
+            "name": "timeout",
+            "allow_failure": false,
+            "created_at": "2026-11-21T14:58:09.857Z",
+            "started_at": "2026-11-21T15:02:08.353Z",
+            "finished_at": "2026-11-21T15:03:09.594Z",
+            "erased_at": null,
+            "duration": 61.241203,
+            "failure_reason": "job_execution_timeout",
+            "artifacts": [],
+            "runner": {
+              "runner_type": "project_type"
+            },
+            "artifacts_expire_at": null
+          },
+          {
+            "id": 8,
+            "status": "success",
+            "name": "expired",
+            "allow_failure": false,
+            "created_at": "2026-11-21T14:58:09.857Z",
+            "started_at": "2026-11-21T15:02:01.628Z",
+            "finished_at": "2026-11-21T15:02:08.133Z",
+            "erased_at": null,
+            "duration": 6.504759,
+            "artifacts": [
+              {
+                "file_type": "junit",
+                "size": 64,
+                "filename": "junit.xml.gz",
+                "file_format": "gzip"
+              },
+              {
+                "file_type": "trace",
+                "size": 4232,
+                "filename": "job.log",
+                "file_format": null
+              }
+            ],
+            "runner": {
+              "runner_type": "project_type"
+            },
+            "artifacts_expire_at": "2026-11-21T15:02:17.264Z"
+          },
+          {
+            "id": 7,
+            "status": "failed",
+            "name": "allowed",
+            "allow_failure": true,
+            "created_at": "2026-11-21T14:58:09.857Z",
+            "started_at": "2026-11-21T15:01:56.624Z",
+            "finished_at": "2026-11-21T15:02:01.408Z",
+            "erased_at": null,
+            "duration": 4.783225,
+            "failure_reason": "script_failure",
+            "artifacts": [
+              {
+                "file_type": "trace",
+                "size": 3596,
+                "filename": "job.log",
+                "file_format": null
+              }
+            ],
+            "runner": {
+              "runner_type": "project_type"
+            },
+            "artifacts_expire_at": null
+          },
+          {
+            "id": 6,
+            "status": "success",
+            "name": "matrix: [windows]",
+            "allow_failure": false,
+            "created_at": "2026-11-21T14:58:09.857Z",
+            "started_at": "2026-11-21T15:01:49.361Z",
+            "finished_at": "2026-11-21T15:01:56.388Z",
+            "erased_at": null,
+            "duration": 7.026662,
+            "artifacts": [
+              {
+                "file_type": "junit",
+                "size": 150,
+                "filename": "junit.xml.gz",
+                "file_format": "gzip"
+              },
+              {
+                "file_type": "cobertura",
+                "size": 170,
+                "filename": "cobertura-coverage.xml.gz",
+                "file_format": "gzip"
+              },
+              {
+                "file_type": "trace",
+                "size": 5298,
+                "filename": "job.log",
+                "file_format": null
+              }
+            ],
+            "runner": {
+              "runner_type": "project_type"
+            },
+            "artifacts_expire_at": "2026-11-22T15:01:55.437Z"
+          },
+          {
+            "id": 5,
+            "status": "failed",
+            "name": "matrix: [linux]",
+            "allow_failure": false,
+            "created_at": "2026-11-21T14:58:09.857Z",
+            "started_at": "2026-11-21T15:01:40.168Z",
+            "finished_at": "2026-11-21T15:01:49.122Z",
+            "erased_at": null,
+            "duration": 8.953165,
+            "failure_reason": "script_failure",
+            "artifacts": [
+              {
+                "file_type": "junit",
+                "size": 150,
+                "filename": "junit.xml.gz",
+                "file_format": "gzip"
+              },
+              {
+                "file_type": "cobertura",
+                "size": 170,
+                "filename": "cobertura-coverage.xml.gz",
+                "file_format": "gzip"
+              },
+              {
+                "file_type": "trace",
+                "size": 5312,
+                "filename": "job.log",
+                "file_format": null
+              }
+            ],
+            "runner": {
+              "runner_type": "project_type"
+            },
+            "artifacts_expire_at": "2026-11-22T15:01:48.300Z"
+          }
+        ]
+      }
+    },
+    "8": {
+      "pipeline": {
+        "id": 8,
+        "iid": 8,
+        "project_id": 1,
+        "sha": "e61c510e7b10d4ef38e4d487362e029668a721fe",
+        "ref": "craftpulse-144-1795273080",
+        "status": "success",
+        "source": "parent_pipeline",
+        "created_at": "2026-11-21T14:58:14.906Z",
+        "updated_at": "2026-11-21T15:03:15.150Z",
+        "started_at": "2026-11-21T15:03:10.223Z",
+        "finished_at": "2026-11-21T15:03:15.131Z"
+      },
+      "jobs": [
+        {
+          "id": 12,
+          "status": "success",
+          "name": "child-job",
+          "allow_failure": false,
+          "created_at": "2026-11-21T14:58:15.097Z",
+          "started_at": "2026-11-21T15:03:10.124Z",
+          "finished_at": "2026-11-21T15:03:14.917Z",
+          "erased_at": null,
+          "duration": 4.793427,
+          "artifacts": [],
+          "runner": {
+            "runner_type": "project_type"
+          },
+          "artifacts_expire_at": null,
+          "tag_list": [
+            "cp87-test"
+          ]
+        }
+      ],
+      "bridges": [],
+      "graphql": {
+        "data": {
+          "project": {
+            "pipeline": {
+              "upstream": {
+                "id": "gid://gitlab/Ci::Pipeline/7",
+                "project": {
+                  "id": "gid://gitlab/Project/1"
+                }
+              },
+              "sourceJob": {
+                "id": "gid://gitlab/Ci::Bridge/11"
+              },
+              "mergeRequest": null
+            }
+          }
+        }
+      },
+      "artifacts": {}
+    }
+  }
+}

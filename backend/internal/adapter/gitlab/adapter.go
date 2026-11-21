@@ -262,8 +262,10 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 	if in.Limit < 1 || in.Limit > 1000 {
 		return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidRequest, "invalid Fetch limit")
 	}
-	if in.SchemaId != adaptersdk.FetchInputSchemaIdMergeRequests && in.SchemaId != adaptersdk.FetchInputSchemaIdAccounts {
-		return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeNotSupported, "GitLab serves merge_requests and accounts")
+	switch in.SchemaId {
+	case adaptersdk.FetchInputSchemaIdMergeRequests, adaptersdk.FetchInputSchemaIdAccounts, adaptersdk.FetchInputSchemaIdCiRuns:
+	default:
+		return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeNotSupported, "GitLab serves merge_requests, accounts, and ci_runs")
 	}
 	projectID, err := scopeID(in.Scope)
 	if err != nil {
@@ -281,6 +283,8 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 		err = s.fetchMRs(ctx, projectID, in, m, page)
 	case adaptersdk.FetchInputSchemaIdAccounts:
 		err = s.fetchAccounts(ctx, projectID, in, m, page)
+	case adaptersdk.FetchInputSchemaIdCiRuns:
+		err = s.fetchCIRuns(ctx, projectID, in, m, page)
 	default:
 		panic("validated GitLab schema")
 	}

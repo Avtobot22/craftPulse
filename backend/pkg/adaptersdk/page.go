@@ -96,11 +96,13 @@ func (p *Page) AddFile(name, mediaType string, r io.Reader) (envelope.FileRef, e
 	h := sha256.New()
 	left := p.limits.MaxUnpackedBytes - p.unpacked
 	n, err := io.Copy(io.MultiWriter(p.contents, h), io.LimitReader(r, left+1))
-	if err != nil {
-		return envelope.FileRef{}, fmt.Errorf("adaptersdk: spool file: %w", err)
-	}
-	if n > left {
-		_ = p.contents.Truncate(offset)
+	if err != nil || n > left {
+		if rollbackErr := p.contents.Truncate(offset); rollbackErr != nil {
+			return envelope.FileRef{}, fmt.Errorf("adaptersdk: discard partial file: %w", rollbackErr)
+		}
+		if err != nil {
+			return envelope.FileRef{}, fmt.Errorf("adaptersdk: spool file: %w", err)
+		}
 		return envelope.FileRef{}, ErrPageFull
 	}
 	p.unpacked += n

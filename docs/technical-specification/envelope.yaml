@@ -499,6 +499,56 @@ components:
         finished_at: {type: [string, 'null'], format: date-time}
         duration_s: {type: [integer, 'null'], minimum: 0}
       example: {run_native_id: '5001', job_key: test/go, job_name: test, config_fingerprint: 3f6c2a1b9d8e7f6054a3b2c1d0e9f8a73f6c2a1b9d8e7f6054a3b2c1d0e9f8a7, attempt_no: 2, native_status: success, outcome: success, allow_failure: false, failure_kind: null, runner_class: shared, started_at: '2026-10-01T09:06:00+03:00', finished_at: '2026-10-01T09:08:00+03:00', duration_s: 120}
+    CiRunV2:
+      type: object
+      description: Запуск pipeline или workflow (`normalize.ci_run_version`). `native_id` - ID запуска.
+      x-craftpulse-record: {kind: ci_run, version: '2', classes: [object]}
+      required: [project_native_id, ref_name, sha, native_status, outcome]
+      additionalProperties: false
+      properties:
+        project_native_id: {type: string, minLength: 1, maxLength: 255}
+        ref_name: {type: string, maxLength: 1024}
+        sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        mr_native_id: {type: [string, 'null'], maxLength: 255}
+        parent_run_native_id: {type: [string, 'null'], maxLength: 255}
+        source: {type: string, maxLength: 64}
+        attempt_history_truncated: {type: boolean}
+        trigger_job_native_id: {type: [string, 'null'], maxLength: 255}
+        definition_version: {type: [string, 'null'], maxLength: 255}
+        native_status: {type: string, maxLength: 64}
+        outcome: {type: string, enum: [running, success, failed, canceled, skipped, unknown]}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        updated_at: {type: [string, 'null'], format: date-time}
+      example: {project_native_id: '42', ref_name: refs/merge-requests/7/head, sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, mr_native_id: '9001', parent_run_native_id: null, definition_version: null, native_status: failed, outcome: failed, started_at: '2026-10-01T09:05:00+03:00', finished_at: '2026-10-01T09:12:00+03:00', updated_at: '2026-10-01T09:12:00+03:00'}
+    CiAttemptV2:
+      type: object
+      description: |
+        Попытка job (`normalize.ci_attempt_version`). Логический job задают `job_key` и
+        `config_fingerprint` матрицы; повторная попытка получает новый ID и `attempt_no`.
+      x-craftpulse-record: {kind: ci_attempt, version: '2', classes: [object]}
+      required: [run_native_id, job_key, job_name, config_fingerprint, attempt_no, native_status, outcome, allow_failure]
+      additionalProperties: false
+      properties:
+        run_native_id: {type: string, minLength: 1, maxLength: 255}
+        job_key: {type: string, minLength: 1, maxLength: 1024}
+        job_name: {type: string, maxLength: 1024}
+        config_fingerprint: {type: string, pattern: '^[0-9a-f]{64}$'}
+        attempt_no: {type: integer, minimum: 1}
+        native_status: {type: string, maxLength: 64}
+        outcome: {type: string, enum: [running, success, failed, canceled, skipped, unknown]}
+        allow_failure: {type: boolean}
+        failure_kind: {type: [string, 'null'], maxLength: 64}
+        runner_class: {type: [string, 'null'], maxLength: 255}
+        created_at: {type: [string, 'null'], format: date-time}
+        failure_reason: {type: [string, 'null'], maxLength: 64}
+        parent_run_native_id: {type: [string, 'null'], maxLength: 255}
+        artifact_status: {type: string, enum: [expired, unavailable, size_limit]}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        duration_s: {type: [integer, 'null'], minimum: 0}
+        duration_seconds: {type: [number, 'null'], format: double, minimum: 0}
+      example: {run_native_id: '5001', job_key: test/go, job_name: test, config_fingerprint: 3f6c2a1b9d8e7f6054a3b2c1d0e9f8a73f6c2a1b9d8e7f6054a3b2c1d0e9f8a7, attempt_no: 2, native_status: success, outcome: success, allow_failure: false, failure_kind: null, runner_class: shared, started_at: '2026-10-01T09:06:00+03:00', finished_at: '2026-10-01T09:08:00+03:00', duration_s: 120}
     ReportFileV1:
       type: object
       description: |
