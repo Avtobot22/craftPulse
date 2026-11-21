@@ -18,7 +18,7 @@ func ciFixture() (entity.CIFacts, period) {
 	run, area := newID(), newID()
 	f := entity.CIFacts{AreaID: area, Provider: entity.ProviderGitLab, Runs: []entity.CIRunVersion{{
 		ID: newID(), RunID: run, AreaID: area, NativeStatus: "success", Outcome: entity.CISuccess,
-		StartedAt: &start, FinishedAt: &finished, AttemptHistory: entity.AttemptHistoryComplete,
+		StartedAt: &start, FinishedAt: &finished, AttemptHistory: entity.AttemptHistoryComplete, AllowFailureSemantics: true,
 	}}}
 	for i, s := range []struct {
 		config, native string
@@ -154,7 +154,7 @@ func TestCI_AllowedFailureUsesFinalAttemptAndSourceSemantics(t *testing.T) {
 				f.Attempts = f.Attempts[:1]
 			}
 			if !tt.gitlab {
-				f.Provider = entity.ProviderJenkins
+				f.Provider, f.Runs[0].AllowFailureSemantics = entity.ProviderJenkins, false
 			}
 			pt := sourceOf(f).point("I05", "", p)
 			require.Equal(t, tt.state, pt.State)

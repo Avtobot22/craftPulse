@@ -207,7 +207,7 @@ func (q *Queries) CurrentCIAttemptVersions(ctx context.Context, arg CurrentCIAtt
 }
 
 const currentCIRunVersions = `-- name: CurrentCIRunVersions :many
-SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history FROM normalize.ci_run_version WHERE organization_id = $1 AND run_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history, allow_failure_semantics FROM normalize.ci_run_version WHERE organization_id = $1 AND run_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
 `
 
 type CurrentCIRunVersionsParams struct {
@@ -248,6 +248,7 @@ func (q *Queries) CurrentCIRunVersions(ctx context.Context, arg CurrentCIRunVers
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.AttemptHistory,
+			&i.AllowFailureSemantics,
 		); err != nil {
 			return nil, err
 		}
@@ -1843,7 +1844,7 @@ func (q *Queries) ReadCIAttemptVersions(ctx context.Context, arg ReadCIAttemptVe
 }
 
 const readCIRunVersions = `-- name: ReadCIRunVersions :many
-SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.run_id, v.area_id, v.mr_id, v.source_updated_at, v.ref_name, v.sha, v.parent_run_id, v.definition_version, v.native_status, v.outcome, v.started_at, v.finished_at, v.attempt_history FROM normalize.ci_run_version v
+SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.run_id, v.area_id, v.mr_id, v.source_updated_at, v.ref_name, v.sha, v.parent_run_id, v.definition_version, v.native_status, v.outcome, v.started_at, v.finished_at, v.attempt_history, v.allow_failure_semantics FROM normalize.ci_run_version v
 JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
 WHERE v.organization_id = $1 AND o.deleted_at IS NULL AND o.current_area_id = ANY($2::uuid[])
     AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
@@ -1899,6 +1900,7 @@ func (q *Queries) ReadCIRunVersions(ctx context.Context, arg ReadCIRunVersionsPa
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.AttemptHistory,
+			&i.AllowFailureSemantics,
 		); err != nil {
 			return nil, err
 		}

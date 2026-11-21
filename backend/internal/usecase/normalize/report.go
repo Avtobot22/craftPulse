@@ -122,7 +122,7 @@ func (in *input) ciObjects(job string, run, attempt *string) (runKey, attemptKey
 		runKey = &k
 	}
 	if id := deref(attempt); id != "" {
-		k := in.ciKey(entity.ObjectCIAttempt, id)
+		k := in.attemptKey(deref(run), id)
 		attemptKey = &k
 	}
 	return runKey, attemptKey

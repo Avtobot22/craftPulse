@@ -435,7 +435,7 @@ components:
       additionalProperties: false
       properties:
         mr_native_id: {type: string, minLength: 1, maxLength: 255}
-        event_kind: {type: string, enum: [ready, reviewer_assigned, reviewer_removed, review, comment, approval, head_pushed, merged, closed, reopened]}
+        event_kind: {type: string, enum: [ready, draft, reviewer_assigned, reviewer_removed, review, comment, approval, head_pushed, merged, closed, reopened]}
         actor_account_native_id: {type: [string, 'null'], maxLength: 255}
         target_account_native_id: {type: [string, 'null'], maxLength: 255}
         head_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
@@ -449,7 +449,7 @@ components:
       additionalProperties: false
       properties:
         mr_native_id: {type: string, minLength: 1, maxLength: 255}
-        event_kind: {type: string, enum: [ready, reviewer_assigned, reviewer_removed, review, comment, approval, head_pushed, merged, closed, reopened]}
+        event_kind: {type: string, enum: [ready, draft, reviewer_assigned, reviewer_removed, review, comment, approval, head_pushed, merged, closed, reopened]}
         actor_account_native_id: {type: [string, 'null'], maxLength: 255}
         target_account_native_id: {type: [string, 'null'], maxLength: 255}
         head_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}

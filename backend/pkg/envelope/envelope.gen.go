@@ -357,6 +357,7 @@ const (
 	MrEventV1EventKindApproval         MrEventV1EventKind = "approval"
 	MrEventV1EventKindClosed           MrEventV1EventKind = "closed"
 	MrEventV1EventKindComment          MrEventV1EventKind = "comment"
+	MrEventV1EventKindDraft            MrEventV1EventKind = "draft"
 	MrEventV1EventKindHeadPushed       MrEventV1EventKind = "head_pushed"
 	MrEventV1EventKindMerged           MrEventV1EventKind = "merged"
 	MrEventV1EventKindReady            MrEventV1EventKind = "ready"
@@ -374,6 +375,8 @@ func (e MrEventV1EventKind) Valid() bool {
 	case MrEventV1EventKindClosed:
 		return true
 	case MrEventV1EventKindComment:
+		return true
+	case MrEventV1EventKindDraft:
 		return true
 	case MrEventV1EventKindHeadPushed:
 		return true
@@ -423,6 +426,7 @@ const (
 	MrEventV2EventKindApproval         MrEventV2EventKind = "approval"
 	MrEventV2EventKindClosed           MrEventV2EventKind = "closed"
 	MrEventV2EventKindComment          MrEventV2EventKind = "comment"
+	MrEventV2EventKindDraft            MrEventV2EventKind = "draft"
 	MrEventV2EventKindHeadPushed       MrEventV2EventKind = "head_pushed"
 	MrEventV2EventKindMerged           MrEventV2EventKind = "merged"
 	MrEventV2EventKindReady            MrEventV2EventKind = "ready"
@@ -440,6 +444,8 @@ func (e MrEventV2EventKind) Valid() bool {
 	case MrEventV2EventKindClosed:
 		return true
 	case MrEventV2EventKindComment:
+		return true
+	case MrEventV2EventKindDraft:
 		return true
 	case MrEventV2EventKindHeadPushed:
 		return true

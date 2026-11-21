@@ -127,8 +127,14 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 			if err != nil {
 				return nil, err
 			}
-			if c != nil {
-				keep(&in.mrEvents, mrEvents, entity.SourceKey{NativeNS: c.mr.NativeID, NativeID: c.event.EventKey}, c, func(*mrEventCandidate) bool { return true })
+			if c == nil {
+				continue
+			}
+			approval := in.githubReview(c)
+			for _, e := range []*mrEventCandidate{c, approval} {
+				if e != nil {
+					keep(&in.mrEvents, mrEvents, entity.SourceKey{NativeNS: e.mr.NativeID, NativeID: e.event.EventKey}, e, func(*mrEventCandidate) bool { return true })
+				}
 			}
 		case kind == "mr_revision":
 			c, err := in.mrRevision(rec, base)
