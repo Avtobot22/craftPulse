@@ -537,24 +537,25 @@ func (e RecordRecordClass) Valid() bool {
 
 // Defines values for RecordRecordKind.
 const (
-	RecordRecordKindAccount        RecordRecordKind = "account"
-	RecordRecordKindCiAttempt      RecordRecordKind = "ci_attempt"
-	RecordRecordKindCiRun          RecordRecordKind = "ci_run"
-	RecordRecordKindDocument       RecordRecordKind = "document"
-	RecordRecordKindFinding        RecordRecordKind = "finding"
-	RecordRecordKindGitRef         RecordRecordKind = "git_ref"
-	RecordRecordKindMergeRequest   RecordRecordKind = "merge_request"
-	RecordRecordKindMrEvent        RecordRecordKind = "mr_event"
-	RecordRecordKindMrRevision     RecordRecordKind = "mr_revision"
-	RecordRecordKindRelation       RecordRecordKind = "relation"
-	RecordRecordKindReportFile     RecordRecordKind = "report_file"
-	RecordRecordKindRepository     RecordRecordKind = "repository"
-	RecordRecordKindTask           RecordRecordKind = "task"
-	RecordRecordKindTaskEvent      RecordRecordKind = "task_event"
-	RecordRecordKindTaskField      RecordRecordKind = "task_field"
-	RecordRecordKindTaskResolution RecordRecordKind = "task_resolution"
-	RecordRecordKindTaskStatus     RecordRecordKind = "task_status"
-	RecordRecordKindTaskType       RecordRecordKind = "task_type"
+	RecordRecordKindAccount           RecordRecordKind = "account"
+	RecordRecordKindCiAttempt         RecordRecordKind = "ci_attempt"
+	RecordRecordKindCiRun             RecordRecordKind = "ci_run"
+	RecordRecordKindDocument          RecordRecordKind = "document"
+	RecordRecordKindExecutionManifest RecordRecordKind = "execution_manifest"
+	RecordRecordKindFinding           RecordRecordKind = "finding"
+	RecordRecordKindGitRef            RecordRecordKind = "git_ref"
+	RecordRecordKindMergeRequest      RecordRecordKind = "merge_request"
+	RecordRecordKindMrEvent           RecordRecordKind = "mr_event"
+	RecordRecordKindMrRevision        RecordRecordKind = "mr_revision"
+	RecordRecordKindRelation          RecordRecordKind = "relation"
+	RecordRecordKindReportFile        RecordRecordKind = "report_file"
+	RecordRecordKindRepository        RecordRecordKind = "repository"
+	RecordRecordKindTask              RecordRecordKind = "task"
+	RecordRecordKindTaskEvent         RecordRecordKind = "task_event"
+	RecordRecordKindTaskField         RecordRecordKind = "task_field"
+	RecordRecordKindTaskResolution    RecordRecordKind = "task_resolution"
+	RecordRecordKindTaskStatus        RecordRecordKind = "task_status"
+	RecordRecordKindTaskType          RecordRecordKind = "task_type"
 )
 
 // Valid indicates whether the value is a known member of the RecordRecordKind enum.
@@ -567,6 +568,8 @@ func (e RecordRecordKind) Valid() bool {
 	case RecordRecordKindCiRun:
 		return true
 	case RecordRecordKindDocument:
+		return true
+	case RecordRecordKindExecutionManifest:
 		return true
 	case RecordRecordKindFinding:
 		return true
@@ -1326,6 +1329,20 @@ type DocumentV1AclState string
 
 // DocumentV1DocFormat defines model for DocumentV1.DocFormat.
 type DocumentV1DocFormat string
+
+// ExecutionManifestFileV1 Execution manifest сборки Jenkins, который адаптер читает из artifacts сборки (класс `file`).
+// Файл записи - `JenkinsExecutionManifestV1`. `native_ns` - полное имя job, `native_id` - номер
+// сборки, как у записи `ci_run` той же сборки. Manifest другой сборки или другого SHA
+// отклоняется при нормализации, и сборка остаётся с неизвестными внутренними повторами.
+type ExecutionManifestFileV1 struct {
+	BuildNumber int `json:"build_number"`
+
+	// Job Полное имя job.
+	Job string `json:"job"`
+
+	// Sha SHA сборки по данным Jenkins.
+	Sha string `json:"sha"`
+}
 
 // FileRef defines model for FileRef.
 type FileRef struct {

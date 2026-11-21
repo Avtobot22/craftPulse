@@ -6,6 +6,8 @@ const (
 	ObjectCIRun     ObjectKind = "ci_run"
 	ObjectCIAttempt ObjectKind = "ci_attempt"
 	ObjectCIJob     ObjectKind = "ci_job"
+	// ObjectCIProject is the area of a CI system without a repository of its own, such as a job of Jenkins.
+	ObjectCIProject ObjectKind = "ci_project"
 )
 
 const MetricSetCI = "ci"

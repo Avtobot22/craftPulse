@@ -42,6 +42,9 @@ type input struct {
 	ciRuns       []*ciRunCandidate
 	ciAttempts   []*ciAttemptCandidate
 	reports      []*reportCandidate
+	manifests    []*manifestCandidate
+	// buildAttempts are the attempts that stand for a whole Jenkins build of the part without its manifest.
+	buildAttempts map[entity.SourceKey]*ciAttemptCandidate
 }
 
 type taskCandidate struct {
@@ -66,7 +69,7 @@ type entryCandidate struct {
 
 // prepare reads the records of a part from the package. A later record of the same object in the part
 // wins by the order of the source, so a transaction writes one new version of an object (TZ 12.6).
-func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecord, via entity.ObservedVia) (*input, error) {
+func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecord, via entity.ObservedVia, first bool) (*input, error) {
 	m := pkg.Manifest
 	in := &input{
 		receipt:   rc.ID,
@@ -153,6 +156,12 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 				return nil, err
 			}
 			in.reports = append(in.reports, c)
+		case kind == _recordExecutionManifest:
+			c, err := in.manifestRecord(rec, base)
+			if err != nil {
+				return nil, err
+			}
+			in.manifests = append(in.manifests, c)
 		case kind == "task":
 			c, err := in.task(rec, base, taskNS)
 			if err != nil {
@@ -178,6 +187,9 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 		}
 	}
 	slices.SortFunc(in.tasks, func(a, b *taskCandidate) int { return compareKeys(a.key, b.key) })
+	if err := in.jenkinsBuilds(rc, pkg, part, first); err != nil {
+		return nil, err
+	}
 	return in, nil
 }
 

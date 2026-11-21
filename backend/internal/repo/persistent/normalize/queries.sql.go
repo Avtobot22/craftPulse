@@ -2253,6 +2253,38 @@ func (q *Queries) RestrictedObjects(ctx context.Context, arg RestrictedObjectsPa
 	return items, nil
 }
 
+const runsWithAttempts = `-- name: RunsWithAttempts :many
+SELECT DISTINCT run_id FROM normalize.ci_attempt_version
+WHERE organization_id = $1 AND run_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+    AND job_key <> $3
+`
+
+type RunsWithAttemptsParams struct {
+	OrganizationID uuid.UUID
+	RunIds         []uuid.UUID
+	ExceptJobKey   string
+}
+
+func (q *Queries) RunsWithAttempts(ctx context.Context, arg RunsWithAttemptsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, runsWithAttempts, arg.OrganizationID, arg.RunIds, arg.ExceptJobKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var run_id uuid.UUID
+		if err := rows.Scan(&run_id); err != nil {
+			return nil, err
+		}
+		items = append(items, run_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setAreaChangeSeq = `-- name: SetAreaChangeSeq :exec
 UPDATE normalize.area SET last_change_seq = $1
 WHERE organization_id = $2 AND area_id = ANY ($3::uuid[])

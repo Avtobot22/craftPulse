@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 )
 
 const (
@@ -47,6 +48,7 @@ type reportParser struct {
 type parsedReport struct {
 	formatVersion string
 	findings      []entity.FindingOccurrence
+	execution     *envelope.JenkinsExecutionManifestV1
 }
 
 // _parsers is the registry of report parsers; a format without a parser here is not read yet, and its record
@@ -66,6 +68,12 @@ var _parsers = []reportParser{
 		kinds:   []string{entity.AnalysisSAST, entity.AnalysisSecrets, entity.AnalysisSCA},
 		accepts: regexp.MustCompile(`^15\.[012]\.\d+$`).MatchString,
 		parse:   parseGitLabSecurity,
+	},
+	{
+		format: _formatJenkinsExecution, version: "jenkins-execution-1/1",
+		kinds:   []string{_recordExecutionManifest},
+		accepts: func(v string) bool { return v == "1" },
+		parse:   parseJenkinsExecution,
 	},
 }
 

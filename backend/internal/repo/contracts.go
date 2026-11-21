@@ -322,6 +322,8 @@ type NormalizeRepo interface {
 	KnownCIAttemptVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.Revision, error)
 	SupersedeCIAttemptVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
 	InsertCIAttemptVersions(ctx context.Context, orgID entity.ID, versions []entity.CIAttemptVersion) error
+	// RunsWithAttempts are the runs among the IDs with a current attempt of a job other than except.
+	RunsWithAttempts(ctx context.Context, orgID entity.ID, runIDs []entity.ID, except string) (map[entity.ID]bool, error)
 	// MatchRunMRs returns, by the index of each match, the MR that passes it.
 	MatchRunMRs(ctx context.Context, orgID, instanceID entity.ID, matches []entity.RunMRMatch) (map[int]entity.ID, error)
 	ReadCIRunVersions(ctx context.Context, orgID entity.ID, areas, allowed, runs []entity.ID, seq int64) ([]entity.CIRunVersion, error)

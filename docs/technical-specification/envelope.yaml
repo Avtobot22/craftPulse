@@ -59,7 +59,7 @@ x-craftpulse-schemas:
     kinds: [repository, merge_request, mr_revision, mr_event, account]
   ci_runs:
     versions: ['1']
-    kinds: [ci_run, ci_attempt, report_file]
+    kinds: [ci_run, ci_attempt, report_file, execution_manifest]
   findings:
     versions: ['1']
     kinds: [finding, report_file]
@@ -193,7 +193,7 @@ components:
         record_class: {type: string, enum: [event, object, snapshot, file]}
         record_kind:
           type: string
-          enum: [repository, task, task_event, task_status, task_resolution, task_type, task_field, relation, account, merge_request, mr_revision, mr_event, ci_run, ci_attempt, report_file, finding, document, git_ref]
+          enum: [repository, task, task_event, task_status, task_resolution, task_type, task_field, relation, account, merge_request, mr_revision, mr_event, ci_run, ci_attempt, report_file, execution_manifest, finding, document, git_ref]
         payload_schema: {type: string, pattern: '^[a-z_]+/[0-9]+$', description: 'Вид и версия схемы тела, например `task_event/1`.'}
         native_ns: {type: string, maxLength: 255, description: 'Пространство имён исходного ID по правилу `x-craftpulse-identity` контракта адаптера; пусто, если ID уникален в экземпляре.'}
         native_id: {type: string, minLength: 1, maxLength: 1024}
@@ -524,6 +524,21 @@ components:
         exit_class: {type: string, enum: [success, findings, partial, failed, timeout, unknown]}
         completeness: {type: string, enum: [complete, partial, unknown]}
       example: {report_kind: junit, report_format: junit_xml, sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, artifact_digest: null, run_native_id: '5001', attempt_native_id: '7002', producer: go test, producer_version: go1.27.0, profile_id: go-light, rules_hash: null, config_hash: null, db_version: null, started_at: '2026-10-01T09:06:00+03:00', finished_at: '2026-10-01T09:08:00+03:00', exit_class: findings, completeness: complete}
+    ExecutionManifestFileV1:
+      type: object
+      description: |
+        Execution manifest сборки Jenkins, который адаптер читает из artifacts сборки (класс `file`).
+        Файл записи - `JenkinsExecutionManifestV1`. `native_ns` - полное имя job, `native_id` - номер
+        сборки, как у записи `ci_run` той же сборки. Manifest другой сборки или другого SHA
+        отклоняется при нормализации, и сборка остаётся с неизвестными внутренними повторами.
+      x-craftpulse-record: {kind: execution_manifest, version: '1', classes: [file]}
+      required: [job, build_number, sha]
+      additionalProperties: false
+      properties:
+        job: {type: string, minLength: 1, maxLength: 255, description: Полное имя job.}
+        build_number: {type: integer, minimum: 1}
+        sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$', description: SHA сборки по данным Jenkins.}
+      example: {job: demo, build_number: 7, sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac}
     FindingV1:
       type: object
       description: 'Находка: формат универсального импорта (`report_format = envelope`) и замечания SonarQube. Идентичность - по `x-craftpulse-identity` контракта адаптера: у импорта `native_ns` - SHA ревизии, `native_id` - ID находки у инструмента или её отпечаток.'

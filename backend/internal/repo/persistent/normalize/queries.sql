@@ -442,3 +442,8 @@ SELECT sqlc.arg(organization_id), sqlc.arg(report_id), sqlc.arg(known_seq), NULL
     NULLIF(unnest(sqlc.arg(package_purls)::text[]), ''), NULLIF(unnest(sqlc.arg(native_severities)::text[]), ''),
     NULLIF(unnest(sqlc.arg(native_confidences)::text[]), ''), unnest(sqlc.arg(fingerprints)::bytea[]),
     NULLIF(unnest(sqlc.arg(evidences)::text[]), '')::jsonb;
+
+-- name: RunsWithAttempts :many
+SELECT DISTINCT run_id FROM normalize.ci_attempt_version
+WHERE organization_id = sqlc.arg(organization_id) AND run_id = ANY (sqlc.arg(run_ids)::uuid[]) AND superseded_seq IS NULL
+    AND job_key <> sqlc.arg(except_job_key);

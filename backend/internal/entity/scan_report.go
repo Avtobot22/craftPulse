@@ -11,6 +11,9 @@ const (
 	RecordReportInvalid            = "invalid_report"
 	RecordReportFormatUnsupported  = "unsupported_report_format"
 	RecordReportVersionUnsupported = "unsupported_report_version"
+	// RecordManifestMismatch rejects an execution manifest of another build or SHA: the build keeps unknown
+	// inner retries.
+	RecordManifestMismatch = "execution_manifest_mismatch"
 )
 
 // Kinds of findings (normalize.finding_occurrence.finding_kind).

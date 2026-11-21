@@ -10,7 +10,7 @@ func ciClass(native string, outcome entity.CIOutcome, failure string) string {
 	if failure == "job_execution_timeout" || failure == "stuck_or_timeout_failure" {
 		return "timeout"
 	}
-	if v, ok := _ciNativeClasses[native]; ok {
+	if v, ok := _ciNativeClasses[strings.ToLower(native)]; ok {
 		return v
 	}
 	switch outcome {
