@@ -34,14 +34,20 @@ type Accounts interface {
 	AssignmentAt(ctx context.Context, orgID, accountID entity.ID, seq int64) (entity.AccountAssignment, bool, error)
 }
 
+type ReportAreas interface {
+	LockStructureVersion(context.Context, entity.ID) (int64, error)
+	LinkReportArea(ctx context.Context, orgID, projectID, areaID entity.ID, version, seq int64) error
+}
+
 // Complete ends the job in the transaction of its part.
 type Complete = func(ctx context.Context) error
 
 type Deps struct {
-	Repo     repo.NormalizeRepo
-	Tenants  repo.TenantRepo
-	Ingest   Ingest
-	Accounts Accounts
+	Repo        repo.NormalizeRepo
+	Tenants     repo.TenantRepo
+	Ingest      Ingest
+	Accounts    Accounts
+	ReportAreas ReportAreas
 	// Links records normalized relationships; Rights is needed only for decideLink.
 	Links   Links
 	Rights  Rights
@@ -93,6 +99,14 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		areas := job.Areas
 		if in != nil {
+			var structureVersion *int64
+			if in.hasImportedReport() {
+				version, err := u.d.ReportAreas.LockStructureVersion(ctx, org)
+				if err != nil {
+					return err
+				}
+				structureVersion = &version
+			}
 			if err := u.d.Links.LockWrites(ctx, org); err != nil {
 				return err
 			}
@@ -100,7 +114,7 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 			if err != nil {
 				return err
 			}
-			changed, err := u.write(ctx, org, seq, in, job.ResolvedNo)
+			changed, err := u.write(ctx, org, seq, in, job.ResolvedNo, structureVersion)
 			if err != nil {
 				return err
 			}

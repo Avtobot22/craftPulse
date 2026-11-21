@@ -56,6 +56,7 @@ func (in *input) reportFile(rec *envelope.Record, b baseFact, scan *envelope.Sca
 	}
 	c.parser, _ = parserOf(c.report.Format)
 	c.paths.kind = c.report.Kind
+	c.paths.sha = c.report.SHA
 	tool := scanTool(scan, rec.File.Path)
 	if tool == nil {
 		if p.ExitClass != nil {
@@ -81,7 +82,12 @@ func (in *input) provenance(c *reportCandidate, t *envelope.ScanToolRun) error {
 	r.ProfileID, r.DBVersion, r.DBPublishedAt = deref(t.ProfileId), deref(t.DbVersion), t.DbPublishedAt
 	r.SHA, r.ArtifactDigest = deref(t.Sha), deref(t.ArtifactDigest)
 	started, finished := t.StartedAt, t.FinishedAt
-	r.StartedAt, r.FinishedAt = &started, &finished
+	if !started.IsZero() {
+		r.StartedAt = &started
+	}
+	if !finished.IsZero() {
+		r.FinishedAt = &finished
+	}
 	r.ExitClass, r.Completeness = string(t.ExitClass), string(t.Completeness)
 	r.ScannedCount, r.SkippedCount = t.ScannedCount, t.SkippedCount
 	for _, s := range t.SkippedTargets {
