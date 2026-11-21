@@ -58,6 +58,7 @@ type sarifResult struct {
 			} `json:"region"`
 		} `json:"physicalLocation"` //nolint:tagliatelle // SARIF wire format.
 	} `json:"locations"`
+	Fingerprints        map[string]string `json:"fingerprints"`
 	PartialFingerprints map[string]string `json:"partialFingerprints"` //nolint:tagliatelle // SARIF wire format.
 	Suppressions        []json.RawMessage `json:"suppressions"`
 	Properties          sarifProperties   `json:"properties"`
@@ -233,6 +234,7 @@ func (run *sarifRun) findings(kind string, out *[]entity.FindingOccurrence) erro
 			return err
 		}
 		f.Fingerprint = sarifFingerprint(kind, &f, res.PartialFingerprints)
+		f.ContentFingerprint = sarifContent(kind, f.RuleID, res.Fingerprints, res.PartialFingerprints)
 		*out = append(*out, f)
 	}
 	return nil
@@ -273,14 +275,30 @@ func (res *sarifResult) level(rule *sarifRule) string {
 // its lines without them. An empty fingerprint value is no fingerprint.
 func sarifFingerprint(kind string, f *entity.FindingOccurrence, partial map[string]string) []byte {
 	parts := []string{"sarif/1", kind, f.RuleID, f.Path}
-	var named []string
-	for _, k := range slices.Sorted(maps.Keys(partial)) {
-		if v := strings.TrimSpace(partial[k]); v != "" {
-			named = append(named, k+"="+v)
-		}
-	}
+	named := namedValues(partial)
 	if len(named) == 0 {
 		return fingerprint(append(parts, "lines", lineText(f.LineStart), lineText(f.LineEnd))...)
 	}
 	return fingerprint(append(append(parts, "partial"), named...)...)
+}
+
+// sarifContent hashes what the tool says of the content of a result, without its path and lines; a result without
+// fingerprints of its tool has no content fingerprint.
+func sarifContent(kind, rule string, fingerprints, partial map[string]string) []byte {
+	full, named := namedValues(fingerprints), namedValues(partial)
+	if len(full) == 0 && len(named) == 0 {
+		return nil
+	}
+	parts := append([]string{"sarif-content/1", kind, rule, "fingerprints"}, full...)
+	return fingerprint(append(append(parts, "partial"), named...)...)
+}
+
+func namedValues(m map[string]string) []string {
+	var out []string
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		if v := strings.TrimSpace(m[k]); v != "" {
+			out = append(out, k+"="+v)
+		}
+	}
+	return out
 }

@@ -42,6 +42,7 @@ type apiModules struct {
 	targets            usecase.Targets
 	documentationAreas docs.Areas
 	links              usecase.Links
+	findingReports     change.Reports
 	// catalog is the catalog of check profiles of the release.
 	catalog entity.CheckCatalog
 }
@@ -69,8 +70,8 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 		Access: decisions, References: orgs, Areas: m.documentationAreas, Auditor: auditor, Clock: c, NewID: newID,
 	})
 	checks := change.New(change.Deps{
-		Repo: changerepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Components: orgs, Roots: documentation, Auditor: auditor,
-		Catalog: m.catalog, Clock: c, NewID: newID,
+		Repo: changerepo.NewRepo(pool), Reports: m.findingReports, Tenants: platform.NewRepo(pool), Tx: tx, Components: orgs, Roots: documentation,
+		Auditor: auditor, Catalog: m.catalog, Clock: c, NewID: newID,
 	})
 	return v1.Deps{
 		Handler: handler.New(handler.Deps{

@@ -137,6 +137,9 @@ func gitlabFinding(kind string, v *gitlabVulnerability, tool *toolRef) (entity.F
 		return entity.FindingOccurrence{}, err
 	}
 	f.Fingerprint = fingerprint("gitlab/1", kind, f.RuleID, f.Path, lineText(f.LineStart), lineText(f.LineEnd), pkg, version)
+	if pkg != "" {
+		f.ContentFingerprint = fingerprint("gitlab-content/1", kind, f.RuleID, pkg, version)
+	}
 	return f, nil
 }
 

@@ -133,3 +133,32 @@ func checkProfileBody(v *entity.CheckProfileVersion) openapi.CheckProfileVersion
 	}
 	return out
 }
+
+func (h *checks) ListBaselines(ctx context.Context, req openapi.ListBaselinesRequestObject) (openapi.ListBaselinesResponseObject, error) {
+	s, ok := middleware.SubjectFrom(ctx)
+	if !ok {
+		return nil, entity.ErrAuthRequired
+	}
+	list, err := h.uc.Baselines(ctx, s, entity.ID(req.ProjectId))
+	if err != nil {
+		return nil, err
+	}
+	var out openapi.BaselineList
+	out.Data = emptyOf(out.Data, len(list))
+	for i := range list {
+		b := &list[i]
+		item := elemOf(out.Data)
+		item.ComponentId, item.Language, item.AnalysisKind = uuid.UUID(b.ComponentID), b.Language, openapi.AnalysisKind(b.AnalysisKind)
+		item.State, item.Branch, item.Sha, item.ReasonCode = openapi.BaselineListDataState(b.State), b.Branch, optional(b.SHA), optional(b.ReasonCode)
+		if b.ReportID != nil {
+			id := uuid.UUID(*b.ReportID)
+			item.ReportId = &id
+		}
+		if b.EstablishedAt != nil {
+			at := b.EstablishedAt.UTC()
+			item.EstablishedAt = &at
+		}
+		out.Data = append(out.Data, *item)
+	}
+	return openapi.ListBaselines200JSONResponse(out), nil
+}

@@ -13,6 +13,288 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const assignedOccurrences = `-- name: AssignedOccurrences :many
+SELECT occurrence_id FROM change.occurrence_identity
+WHERE organization_id = $1 AND occurrence_id = ANY ($2::uuid[])
+`
+
+type AssignedOccurrencesParams struct {
+	OrganizationID uuid.UUID
+	OccurrenceIds  []uuid.UUID
+}
+
+func (q *Queries) AssignedOccurrences(ctx context.Context, arg AssignedOccurrencesParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, assignedOccurrences, arg.OrganizationID, arg.OccurrenceIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var occurrence_id uuid.UUID
+		if err := rows.Scan(&occurrence_id); err != nil {
+			return nil, err
+		}
+		items = append(items, occurrence_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const currentBaselines = `-- name: CurrentBaselines :many
+SELECT organization_id, id, component_id, language, analysis_kind, profile_version_id, report_id, established_at, superseded_at FROM change.baseline
+WHERE organization_id = $1 AND component_id = ANY ($2::uuid[]) AND superseded_at IS NULL
+ORDER BY component_id, language, analysis_kind
+`
+
+type CurrentBaselinesParams struct {
+	OrganizationID uuid.UUID
+	ComponentIds   []uuid.UUID
+}
+
+func (q *Queries) CurrentBaselines(ctx context.Context, arg CurrentBaselinesParams) ([]ChangeBaseline, error) {
+	rows, err := q.db.Query(ctx, currentBaselines, arg.OrganizationID, arg.ComponentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ChangeBaseline
+	for rows.Next() {
+		var i ChangeBaseline
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.ComponentID,
+			&i.Language,
+			&i.AnalysisKind,
+			&i.ProfileVersionID,
+			&i.ReportID,
+			&i.EstablishedAt,
+			&i.SupersededAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const findingIdentity = `-- name: FindingIdentity :one
+SELECT organization_id, id, area_id, method_version, fingerprint, content_fingerprint, rule_id, finding_kind, first_report_id, first_seen_at FROM change.finding_identity WHERE organization_id = $1 AND id = $2
+`
+
+type FindingIdentityParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) FindingIdentity(ctx context.Context, arg FindingIdentityParams) (ChangeFindingIdentity, error) {
+	row := q.db.QueryRow(ctx, findingIdentity, arg.OrganizationID, arg.ID)
+	var i ChangeFindingIdentity
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.AreaID,
+		&i.MethodVersion,
+		&i.Fingerprint,
+		&i.ContentFingerprint,
+		&i.RuleID,
+		&i.FindingKind,
+		&i.FirstReportID,
+		&i.FirstSeenAt,
+	)
+	return i, err
+}
+
+const identitiesByContent = `-- name: IdentitiesByContent :many
+SELECT id, rule_id, content_fingerprint FROM change.finding_identity
+WHERE organization_id = $1 AND area_id = $2 AND method_version = $3
+    AND content_fingerprint = ANY ($4::bytea[])
+ORDER BY first_seen_at, id
+`
+
+type IdentitiesByContentParams struct {
+	OrganizationID      uuid.UUID
+	AreaID              uuid.UUID
+	MethodVersion       int32
+	ContentFingerprints [][]byte
+}
+
+type IdentitiesByContentRow struct {
+	ID                 uuid.UUID
+	RuleID             string
+	ContentFingerprint []byte
+}
+
+func (q *Queries) IdentitiesByContent(ctx context.Context, arg IdentitiesByContentParams) ([]IdentitiesByContentRow, error) {
+	rows, err := q.db.Query(ctx, identitiesByContent,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.MethodVersion,
+		arg.ContentFingerprints,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IdentitiesByContentRow
+	for rows.Next() {
+		var i IdentitiesByContentRow
+		if err := rows.Scan(&i.ID, &i.RuleID, &i.ContentFingerprint); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identitiesByFingerprint = `-- name: IdentitiesByFingerprint :many
+SELECT id, fingerprint FROM change.finding_identity
+WHERE organization_id = $1 AND area_id = $2 AND method_version = $3
+    AND fingerprint = ANY ($4::bytea[])
+`
+
+type IdentitiesByFingerprintParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	MethodVersion  int32
+	Fingerprints   [][]byte
+}
+
+type IdentitiesByFingerprintRow struct {
+	ID          uuid.UUID
+	Fingerprint []byte
+}
+
+func (q *Queries) IdentitiesByFingerprint(ctx context.Context, arg IdentitiesByFingerprintParams) ([]IdentitiesByFingerprintRow, error) {
+	rows, err := q.db.Query(ctx, identitiesByFingerprint,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.MethodVersion,
+		arg.Fingerprints,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IdentitiesByFingerprintRow
+	for rows.Next() {
+		var i IdentitiesByFingerprintRow
+		if err := rows.Scan(&i.ID, &i.Fingerprint); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const insertBaseline = `-- name: InsertBaseline :exec
+INSERT INTO change.baseline (organization_id, component_id, language, analysis_kind, profile_version_id, report_id, established_at)
+VALUES ($1, $2, $3, $4, $5,
+    $6, $7)
+`
+
+type InsertBaselineParams struct {
+	OrganizationID   uuid.UUID
+	ComponentID      uuid.UUID
+	Language         string
+	AnalysisKind     string
+	ProfileVersionID uuid.UUID
+	ReportID         uuid.UUID
+	EstablishedAt    time.Time
+}
+
+func (q *Queries) InsertBaseline(ctx context.Context, arg InsertBaselineParams) error {
+	_, err := q.db.Exec(ctx, insertBaseline,
+		arg.OrganizationID,
+		arg.ComponentID,
+		arg.Language,
+		arg.AnalysisKind,
+		arg.ProfileVersionID,
+		arg.ReportID,
+		arg.EstablishedAt,
+	)
+	return err
+}
+
+const insertFindingIdentity = `-- name: InsertFindingIdentity :one
+INSERT INTO change.finding_identity (organization_id, area_id, method_version, fingerprint, content_fingerprint, rule_id, finding_kind,
+    first_report_id, first_seen_at)
+VALUES ($1, $2, $3, $4, $5,
+    $6, $7, $8, $9)
+ON CONFLICT (organization_id, area_id, method_version, fingerprint) DO UPDATE SET fingerprint = EXCLUDED.fingerprint
+RETURNING id
+`
+
+type InsertFindingIdentityParams struct {
+	OrganizationID     uuid.UUID
+	AreaID             uuid.UUID
+	MethodVersion      int32
+	Fingerprint        []byte
+	ContentFingerprint []byte
+	RuleID             string
+	FindingKind        string
+	FirstReportID      uuid.UUID
+	FirstSeenAt        time.Time
+}
+
+// The update of nothing returns the row a concurrent job inserted first.
+func (q *Queries) InsertFindingIdentity(ctx context.Context, arg InsertFindingIdentityParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertFindingIdentity,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.MethodVersion,
+		arg.Fingerprint,
+		arg.ContentFingerprint,
+		arg.RuleID,
+		arg.FindingKind,
+		arg.FirstReportID,
+		arg.FirstSeenAt,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertOccurrenceIdentities = `-- name: InsertOccurrenceIdentities :exec
+INSERT INTO change.occurrence_identity (organization_id, occurrence_id, finding_identity_id, match_kind, reported_at, known_seq)
+SELECT $1, unnest($2::uuid[]), unnest($3::uuid[]),
+    unnest($4::text[]), $5, $6
+ON CONFLICT (organization_id, occurrence_id) DO NOTHING
+`
+
+type InsertOccurrenceIdentitiesParams struct {
+	OrganizationID     uuid.UUID
+	OccurrenceIds      []uuid.UUID
+	FindingIdentityIds []uuid.UUID
+	MatchKinds         []string
+	ReportedAt         time.Time
+	KnownSeq           int64
+}
+
+func (q *Queries) InsertOccurrenceIdentities(ctx context.Context, arg InsertOccurrenceIdentitiesParams) error {
+	_, err := q.db.Exec(ctx, insertOccurrenceIdentities,
+		arg.OrganizationID,
+		arg.OccurrenceIds,
+		arg.FindingIdentityIds,
+		arg.MatchKinds,
+		arg.ReportedAt,
+		arg.KnownSeq,
+	)
+	return err
+}
+
 const insertProfileVersion = `-- name: InsertProfileVersion :exec
 INSERT INTO change.profile_version (organization_id, id, project_id, version_no, base_version_no, content_hash, known_seq, confirmed_by, confirmed_at,
     confirmation_id)
@@ -72,6 +354,42 @@ func (q *Queries) LatestProfileVersion(ctx context.Context, arg LatestProfileVer
 		&i.ConfirmedBy,
 		&i.ConfirmedAt,
 		&i.ConfirmationID,
+	)
+	return i, err
+}
+
+const lockCurrentBaseline = `-- name: LockCurrentBaseline :one
+SELECT organization_id, id, component_id, language, analysis_kind, profile_version_id, report_id, established_at, superseded_at FROM change.baseline
+WHERE organization_id = $1 AND component_id = $2 AND language = $3
+    AND analysis_kind = $4 AND superseded_at IS NULL
+FOR UPDATE
+`
+
+type LockCurrentBaselineParams struct {
+	OrganizationID uuid.UUID
+	ComponentID    uuid.UUID
+	Language       string
+	AnalysisKind   string
+}
+
+func (q *Queries) LockCurrentBaseline(ctx context.Context, arg LockCurrentBaselineParams) (ChangeBaseline, error) {
+	row := q.db.QueryRow(ctx, lockCurrentBaseline,
+		arg.OrganizationID,
+		arg.ComponentID,
+		arg.Language,
+		arg.AnalysisKind,
+	)
+	var i ChangeBaseline
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.ComponentID,
+		&i.Language,
+		&i.AnalysisKind,
+		&i.ProfileVersionID,
+		&i.ReportID,
+		&i.EstablishedAt,
+		&i.SupersededAt,
 	)
 	return i, err
 }
@@ -141,4 +459,57 @@ func (q *Queries) ProfileVersionByConfirmation(ctx context.Context, arg ProfileV
 		&i.ConfirmationID,
 	)
 	return i, err
+}
+
+const reportIdentities = `-- name: ReportIdentities :many
+SELECT organization_id, occurrence_id, finding_identity_id, match_kind, reported_at, known_seq FROM change.occurrence_identity
+WHERE organization_id = $1 AND occurrence_id = ANY ($2::uuid[])
+ORDER BY occurrence_id
+`
+
+type ReportIdentitiesParams struct {
+	OrganizationID uuid.UUID
+	OccurrenceIds  []uuid.UUID
+}
+
+func (q *Queries) ReportIdentities(ctx context.Context, arg ReportIdentitiesParams) ([]ChangeOccurrenceIdentity, error) {
+	rows, err := q.db.Query(ctx, reportIdentities, arg.OrganizationID, arg.OccurrenceIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ChangeOccurrenceIdentity
+	for rows.Next() {
+		var i ChangeOccurrenceIdentity
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.OccurrenceID,
+			&i.FindingIdentityID,
+			&i.MatchKind,
+			&i.ReportedAt,
+			&i.KnownSeq,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const supersedeBaseline = `-- name: SupersedeBaseline :exec
+UPDATE change.baseline SET superseded_at = $1 WHERE organization_id = $2 AND id = $3
+`
+
+type SupersedeBaselineParams struct {
+	SupersededAt   pgtype.Timestamptz
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) SupersedeBaseline(ctx context.Context, arg SupersedeBaselineParams) error {
+	_, err := q.db.Exec(ctx, supersedeBaseline, arg.SupersededAt, arg.OrganizationID, arg.ID)
+	return err
 }

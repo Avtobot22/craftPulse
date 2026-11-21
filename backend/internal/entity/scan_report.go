@@ -59,6 +59,9 @@ type ScanReport struct {
 	SkippedCount    *int
 	SkippedTargets  []SkippedTarget
 	History         *ScanHistory
+	// RefName is the branch or tag of the run and Language the language of the check; empty when unknown.
+	RefName  string
+	Language string
 }
 
 type SkippedTarget struct {
@@ -86,7 +89,10 @@ type FindingOccurrence struct {
 	NativeSeverity   string
 	NativeConfidence string
 	Fingerprint      []byte
-	Evidence         json.RawMessage
+	// ContentFingerprint leaves the path and the lines out, so the same content at another place is found moved;
+	// nil when the tool says nothing of the content.
+	ContentFingerprint []byte
+	Evidence           json.RawMessage
 }
 
 // Outcomes of a test execution (normalize.test_execution.outcome).
@@ -136,4 +142,44 @@ type CoverageFact struct {
 	Covered    int
 	Executable int
 	LineMapKey string
+}
+
+// ReportFindings is a report as change reads it to identify its findings and to decide its baseline. Interrupted is
+// an attempt of the report that was canceled; DefaultBranch is the main branch of its repository, empty when unknown.
+type ReportFindings struct {
+	ID            ID
+	AreaID        ID
+	ComponentID   *ID
+	Kind          string
+	Language      string
+	RefName       string
+	SHA           string
+	ExitClass     string
+	Completeness  string
+	StartedAt     *time.Time
+	FinishedAt    *time.Time
+	KnownSeq      int64
+	Interrupted   bool
+	DefaultBranch string
+	Occurrences   []ReportOccurrence
+}
+
+// ReportOccurrence is a finding of a report with its coordinates and fingerprints.
+type ReportOccurrence struct {
+	ID                 ID
+	RuleID             string
+	Kind               string
+	Path               string
+	LineStart          *int
+	PackagePURL        string
+	Fingerprint        []byte
+	ContentFingerprint []byte
+}
+
+// BranchReportQuery asks for the last report of a component, language and kind of analysis on a branch.
+type BranchReportQuery struct {
+	ComponentID ID
+	Language    string
+	Kind        string
+	RefName     string
 }

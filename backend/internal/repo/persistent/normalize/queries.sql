@@ -422,26 +422,27 @@ WHERE organization_id = sqlc.arg(organization_id) AND receipt_id = sqlc.arg(rece
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
     scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
-    skipped_targets, history_from_sha, history_to_sha, history_truncated)
+    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language)
 VALUES (sqlc.arg(organization_id), sqlc.arg(receipt_id), sqlc.arg(record_no), sqlc.arg(known_seq), sqlc.arg(area_id), sqlc.narg(component_id),
     sqlc.arg(report_kind), sqlc.arg(mode), sqlc.narg(producer), sqlc.narg(producer_version), sqlc.arg(report_format), sqlc.arg(schema_version),
     sqlc.arg(parser_version), sqlc.narg(profile_id), sqlc.narg(rules_hash), sqlc.narg(config_hash), sqlc.narg(db_version),
     sqlc.narg(db_published_at), sqlc.narg(scope_hash), sqlc.narg(sha), sqlc.narg(artifact_digest), sqlc.narg(run_id), sqlc.narg(attempt_id),
     sqlc.narg(started_at), sqlc.narg(finished_at), sqlc.arg(exit_class), sqlc.arg(completeness), sqlc.narg(scanned_count),
-    sqlc.narg(skipped_count), sqlc.arg(skipped_targets), sqlc.narg(history_from_sha), sqlc.narg(history_to_sha), sqlc.narg(history_truncated))
+    sqlc.narg(skipped_count), sqlc.arg(skipped_targets), sqlc.narg(history_from_sha), sqlc.narg(history_to_sha), sqlc.narg(history_truncated),
+    sqlc.narg(ref_name), sqlc.narg(language))
 RETURNING id;
 
 -- An empty text and a zero line stand for NULL: arrays of the statement carry no NULL elements. Set-returning
 -- functions of one select list run in step, so the arrays give one row per finding.
 -- name: InsertFindings :exec
 INSERT INTO normalize.finding_occurrence (organization_id, report_id, known_seq, native_id, rule_id, finding_kind, path, line_start, line_end,
-    package_purl, native_severity, native_confidence, fingerprint, evidence)
+    package_purl, native_severity, native_confidence, fingerprint, content_fingerprint, evidence)
 SELECT sqlc.arg(organization_id), sqlc.arg(report_id), sqlc.arg(known_seq), NULLIF(unnest(sqlc.arg(native_ids)::text[]), ''),
     unnest(sqlc.arg(rule_ids)::text[]), unnest(sqlc.arg(finding_kinds)::text[]), NULLIF(unnest(sqlc.arg(paths)::text[]), ''),
     NULLIF(unnest(sqlc.arg(line_starts)::integer[]), 0), NULLIF(unnest(sqlc.arg(line_ends)::integer[]), 0),
     NULLIF(unnest(sqlc.arg(package_purls)::text[]), ''), NULLIF(unnest(sqlc.arg(native_severities)::text[]), ''),
     NULLIF(unnest(sqlc.arg(native_confidences)::text[]), ''), unnest(sqlc.arg(fingerprints)::bytea[]),
-    NULLIF(unnest(sqlc.arg(evidences)::text[]), '')::jsonb;
+    NULLIF(unnest(sqlc.arg(content_fingerprints)::bytea[]), ''::bytea), NULLIF(unnest(sqlc.arg(evidences)::text[]), '')::jsonb;
 
 -- name: EnsureTestCases :exec
 INSERT INTO normalize.test_case (organization_id, area_id, case_key, case_key_hash)
@@ -466,6 +467,45 @@ INSERT INTO normalize.coverage_fact (organization_id, report_id, path, path_hash
 SELECT sqlc.arg(organization_id), sqlc.arg(report_id), unnest(sqlc.arg(paths)::text[]), unnest(sqlc.arg(path_hashes)::bytea[]),
     unnest(sqlc.arg(kinds)::text[]), unnest(sqlc.arg(covered)::integer[]), unnest(sqlc.arg(executable)::integer[]),
     NULLIF(unnest(sqlc.arg(line_map_keys)::text[]), ''), sqlc.arg(known_seq);
+
+-- name: ReceiptReports :many
+SELECT r.id, r.area_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language, COALESCE(r.ref_name, '')::text AS ref_name,
+    COALESCE(r.sha, '')::text AS sha, r.exit_class, r.completeness, r.started_at, r.finished_at, r.known_seq,
+    COALESCE(a.outcome = 'canceled', false)::boolean AS interrupted, COALESCE(v.default_branch, '')::text AS default_branch
+FROM normalize.report r
+LEFT JOIN normalize.ci_attempt_version a ON a.organization_id = r.organization_id AND a.attempt_id = r.attempt_id AND a.superseded_seq IS NULL
+LEFT JOIN normalize.repository_version v ON v.organization_id = r.organization_id AND v.repository_id = r.area_id AND v.superseded_seq IS NULL
+WHERE r.organization_id = sqlc.arg(organization_id) AND r.receipt_id = sqlc.arg(receipt_id)
+ORDER BY r.record_no;
+
+-- name: ReportOccurrences :many
+SELECT id, report_id, rule_id, finding_kind, COALESCE(path, '')::text AS path, line_start, COALESCE(package_purl, '')::text AS package_purl, fingerprint,
+    content_fingerprint
+FROM normalize.finding_occurrence
+WHERE organization_id = sqlc.arg(organization_id) AND report_id = ANY (sqlc.arg(report_ids)::uuid[])
+ORDER BY report_id, id;
+
+-- name: ReportsByID :many
+SELECT r.id, r.area_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language, COALESCE(r.ref_name, '')::text AS ref_name,
+    COALESCE(r.sha, '')::text AS sha, r.exit_class, r.completeness, r.started_at, r.finished_at, r.known_seq
+FROM normalize.report r
+WHERE r.organization_id = sqlc.arg(organization_id) AND r.id = ANY (sqlc.arg(ids)::uuid[]);
+
+-- The last report of every component, language and kind of analysis on the branches asked; a report without its
+-- time sorts last.
+-- name: LastBranchReports :many
+SELECT DISTINCT ON (r.component_id, COALESCE(r.language, ''), r.report_kind, r.ref_name)
+    r.id, r.area_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language, COALESCE(r.ref_name, '')::text AS ref_name,
+    COALESCE(r.sha, '')::text AS sha, r.exit_class, r.completeness, r.started_at, r.finished_at, r.known_seq
+FROM normalize.report r
+WHERE r.organization_id = sqlc.arg(organization_id) AND r.component_id = ANY (sqlc.arg(component_ids)::uuid[])
+    AND r.ref_name = ANY (sqlc.arg(ref_names)::text[])
+ORDER BY r.component_id, COALESCE(r.language, ''), r.report_kind, r.ref_name, COALESCE(r.finished_at, r.started_at) DESC NULLS LAST, r.known_seq DESC;
+
+-- name: DefaultBranches :many
+SELECT repository_id, default_branch::text AS default_branch FROM normalize.repository_version
+WHERE organization_id = sqlc.arg(organization_id) AND repository_id = ANY (sqlc.arg(repository_ids)::uuid[]) AND superseded_seq IS NULL
+    AND default_branch IS NOT NULL;
 
 -- name: RunsWithAttempts :many
 SELECT DISTINCT run_id FROM normalize.ci_attempt_version

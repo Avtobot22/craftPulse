@@ -5,7 +5,7 @@ const KindNormalizeBatch = "normalize.batch"
 // NormalizeBatchJob turns the accepted records of a receipt into canonical facts, a part at a time:
 // AfterNo is the last record number a committed part took and Areas the areas the parts before changed.
 // ResolvedNo is the record a conflict resolution accepted, which may replace the version of the same source
-// revision.
+// revision. Reports tells that a part gave reports, so change identifies them after the last part.
 type NormalizeBatchJob struct {
 	OrganizationID ID          `json:"organization_id"`
 	ReceiptID      ID          `json:"receipt_id"`
@@ -13,6 +13,7 @@ type NormalizeBatchJob struct {
 	Areas          []ID        `json:"areas,omitempty"`
 	ObservedVia    ObservedVia `json:"observed_via,omitempty"`
 	ResolvedNo     int         `json:"resolved_no,omitempty"`
+	Reports        bool        `json:"reports,omitempty"`
 	CorrelationID  ID          `json:"correlation_id"`
 }
 

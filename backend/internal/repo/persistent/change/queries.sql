@@ -18,3 +18,60 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 INSERT INTO change.profile_entry (organization_id, profile_version_id, component_id, language, analysis_kind, mode, profile_id, tool_versions,
     rules_hash)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+
+-- name: IdentitiesByFingerprint :many
+SELECT id, fingerprint FROM change.finding_identity
+WHERE organization_id = sqlc.arg(organization_id) AND area_id = sqlc.arg(area_id) AND method_version = sqlc.arg(method_version)
+    AND fingerprint = ANY (sqlc.arg(fingerprints)::bytea[]);
+
+-- name: IdentitiesByContent :many
+SELECT id, rule_id, content_fingerprint FROM change.finding_identity
+WHERE organization_id = sqlc.arg(organization_id) AND area_id = sqlc.arg(area_id) AND method_version = sqlc.arg(method_version)
+    AND content_fingerprint = ANY (sqlc.arg(content_fingerprints)::bytea[])
+ORDER BY first_seen_at, id;
+
+-- The update of nothing returns the row a concurrent job inserted first.
+-- name: InsertFindingIdentity :one
+INSERT INTO change.finding_identity (organization_id, area_id, method_version, fingerprint, content_fingerprint, rule_id, finding_kind,
+    first_report_id, first_seen_at)
+VALUES (sqlc.arg(organization_id), sqlc.arg(area_id), sqlc.arg(method_version), sqlc.arg(fingerprint), sqlc.narg(content_fingerprint),
+    sqlc.arg(rule_id), sqlc.arg(finding_kind), sqlc.arg(first_report_id), sqlc.arg(first_seen_at))
+ON CONFLICT (organization_id, area_id, method_version, fingerprint) DO UPDATE SET fingerprint = EXCLUDED.fingerprint
+RETURNING id;
+
+-- name: AssignedOccurrences :many
+SELECT occurrence_id FROM change.occurrence_identity
+WHERE organization_id = sqlc.arg(organization_id) AND occurrence_id = ANY (sqlc.arg(occurrence_ids)::uuid[]);
+
+-- name: InsertOccurrenceIdentities :exec
+INSERT INTO change.occurrence_identity (organization_id, occurrence_id, finding_identity_id, match_kind, reported_at, known_seq)
+SELECT sqlc.arg(organization_id), unnest(sqlc.arg(occurrence_ids)::uuid[]), unnest(sqlc.arg(finding_identity_ids)::uuid[]),
+    unnest(sqlc.arg(match_kinds)::text[]), sqlc.arg(reported_at), sqlc.arg(known_seq)
+ON CONFLICT (organization_id, occurrence_id) DO NOTHING;
+
+-- name: FindingIdentity :one
+SELECT * FROM change.finding_identity WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id);
+
+-- name: ReportIdentities :many
+SELECT * FROM change.occurrence_identity
+WHERE organization_id = sqlc.arg(organization_id) AND occurrence_id = ANY (sqlc.arg(occurrence_ids)::uuid[])
+ORDER BY occurrence_id;
+
+-- name: LockCurrentBaseline :one
+SELECT * FROM change.baseline
+WHERE organization_id = sqlc.arg(organization_id) AND component_id = sqlc.arg(component_id) AND language = sqlc.arg(language)
+    AND analysis_kind = sqlc.arg(analysis_kind) AND superseded_at IS NULL
+FOR UPDATE;
+
+-- name: SupersedeBaseline :exec
+UPDATE change.baseline SET superseded_at = sqlc.arg(superseded_at) WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id);
+
+-- name: InsertBaseline :exec
+INSERT INTO change.baseline (organization_id, component_id, language, analysis_kind, profile_version_id, report_id, established_at)
+VALUES (sqlc.arg(organization_id), sqlc.arg(component_id), sqlc.arg(language), sqlc.arg(analysis_kind), sqlc.arg(profile_version_id),
+    sqlc.arg(report_id), sqlc.arg(established_at));
+
+-- name: CurrentBaselines :many
+SELECT * FROM change.baseline
+WHERE organization_id = sqlc.arg(organization_id) AND component_id = ANY (sqlc.arg(component_ids)::uuid[]) AND superseded_at IS NULL
+ORDER BY component_id, language, analysis_kind;

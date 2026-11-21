@@ -11,6 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ChangeBaseline struct {
+	OrganizationID   uuid.UUID
+	ID               uuid.UUID
+	ComponentID      uuid.UUID
+	Language         string
+	AnalysisKind     string
+	ProfileVersionID uuid.UUID
+	ReportID         uuid.UUID
+	EstablishedAt    time.Time
+	SupersededAt     pgtype.Timestamptz
+}
+
+type ChangeFindingIdentity struct {
+	OrganizationID     uuid.UUID
+	ID                 uuid.UUID
+	AreaID             uuid.UUID
+	MethodVersion      int32
+	Fingerprint        []byte
+	ContentFingerprint []byte
+	RuleID             string
+	FindingKind        string
+	FirstReportID      uuid.UUID
+	FirstSeenAt        time.Time
+}
+
+type ChangeOccurrenceIdentity struct {
+	OrganizationID    uuid.UUID
+	OccurrenceID      uuid.UUID
+	FindingIdentityID uuid.UUID
+	MatchKind         string
+	ReportedAt        time.Time
+	KnownSeq          int64
+}
+
 type ChangeProfileEntry struct {
 	OrganizationID   uuid.UUID
 	ProfileVersionID uuid.UUID
