@@ -1,0 +1,37 @@
+{
+  "issue": "https://github.com/Avtobot22/craftPulse/issues/90",
+  "url": "https://jenkins.defects.team",
+  "host": "defects",
+  "version": "2.580.2",
+  "java": 21,
+  "base_image": "jenkins/jenkins:2.580.2-jdk21@sha256:74401de6a6f92e1afe1b02d1c8e3d0c33f263bfb5275dd8813f9150355f2367b",
+  "plugins_lock": "plugins.txt",
+  "deployment": {
+    "type": "Docker Compose",
+    "project": "craftpulse-jenkins90",
+    "directory": "/opt/craftpulse/ci90/jenkins",
+    "http_bind": "127.0.0.1:8182",
+    "tls": "Caddy, public ACME certificate, system trust store",
+    "volume": "craftpulse-jenkins90_jenkins_home",
+    "memory_mib": 768,
+    "memory_and_swap_mib": 1280,
+    "build_node": "built-in",
+    "executors": 1,
+    "build_policy": "Only trusted operator-owned test pipelines. No Docker socket, no privileged builds, no external credentials."
+  },
+  "accounts": [
+    {"login": "cp90-admin", "permissions": ["Overall/Administer"], "purpose": "stand operator"},
+    {"login": "cp90-reader", "permissions": ["Overall/Read", "Job/Read:cp90-org-a", "Job/Read:cp90-org-b"], "purpose": "build API collector"},
+    {"login": "anonymous", "permissions": []}
+  ],
+  "jobs": {"org-a": "cp90-org-a", "org-b": "cp90-org-b", "negative_control": "cp90-control"},
+  "secrets": {
+    "directory": "/etc/craftpulse-ci90/jenkins",
+    "collector_credential": "credentials.json -> cp90-reader.token",
+    "encrypted_owner_bundle": ".local/secrets/ci90/secrets.sops.json"
+  },
+  "snapshot": {
+    "consistency": "Stop this Compose project and SonarQube before archiving volumes, /etc/craftpulse-ci90 and /opt/craftpulse/ci90. Encrypt the archive with age before transfer.",
+    "restore": "Stop only the two ci90 Compose projects, restore the trusted archive with numeric owners, start both projects and repeat acceptance.py and SonarQube acceptance."
+  }
+}
