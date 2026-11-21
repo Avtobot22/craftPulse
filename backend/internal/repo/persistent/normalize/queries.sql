@@ -413,3 +413,32 @@ SELECT obj.object_kind, obj.native_ns, obj.native_id, v.source_revision, v.sourc
 FROM normalize.source_object obj
 JOIN normalize.ci_run_version v ON v.organization_id = obj.organization_id AND v.run_id = obj.id AND v.superseded_seq IS NULL
 WHERE obj.organization_id = $1 AND v.area_id = $2 AND obj.native_id = ANY($3::text[]) AND obj.deleted_at IS NULL;
+
+-- name: ReportedRecords :many
+SELECT record_no FROM normalize.report
+WHERE organization_id = sqlc.arg(organization_id) AND receipt_id = sqlc.arg(receipt_id) AND record_no = ANY (sqlc.arg(record_nos)::integer[]);
+
+-- name: InsertReport :one
+INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
+    producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
+    scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
+    skipped_targets, history_from_sha, history_to_sha, history_truncated)
+VALUES (sqlc.arg(organization_id), sqlc.arg(receipt_id), sqlc.arg(record_no), sqlc.arg(known_seq), sqlc.arg(area_id), sqlc.narg(component_id),
+    sqlc.arg(report_kind), sqlc.arg(mode), sqlc.narg(producer), sqlc.narg(producer_version), sqlc.arg(report_format), sqlc.arg(schema_version),
+    sqlc.arg(parser_version), sqlc.narg(profile_id), sqlc.narg(rules_hash), sqlc.narg(config_hash), sqlc.narg(db_version),
+    sqlc.narg(db_published_at), sqlc.narg(scope_hash), sqlc.narg(sha), sqlc.narg(artifact_digest), sqlc.narg(run_id), sqlc.narg(attempt_id),
+    sqlc.narg(started_at), sqlc.narg(finished_at), sqlc.arg(exit_class), sqlc.arg(completeness), sqlc.narg(scanned_count),
+    sqlc.narg(skipped_count), sqlc.arg(skipped_targets), sqlc.narg(history_from_sha), sqlc.narg(history_to_sha), sqlc.narg(history_truncated))
+RETURNING id;
+
+-- An empty text and a zero line stand for NULL: arrays of the statement carry no NULL elements. Set-returning
+-- functions of one select list run in step, so the arrays give one row per finding.
+-- name: InsertFindings :exec
+INSERT INTO normalize.finding_occurrence (organization_id, report_id, known_seq, native_id, rule_id, finding_kind, path, line_start, line_end,
+    package_purl, native_severity, native_confidence, fingerprint, evidence)
+SELECT sqlc.arg(organization_id), sqlc.arg(report_id), sqlc.arg(known_seq), NULLIF(unnest(sqlc.arg(native_ids)::text[]), ''),
+    unnest(sqlc.arg(rule_ids)::text[]), unnest(sqlc.arg(finding_kinds)::text[]), NULLIF(unnest(sqlc.arg(paths)::text[]), ''),
+    NULLIF(unnest(sqlc.arg(line_starts)::integer[]), 0), NULLIF(unnest(sqlc.arg(line_ends)::integer[]), 0),
+    NULLIF(unnest(sqlc.arg(package_purls)::text[]), ''), NULLIF(unnest(sqlc.arg(native_severities)::text[]), ''),
+    NULLIF(unnest(sqlc.arg(native_confidences)::text[]), ''), unnest(sqlc.arg(fingerprints)::bytea[]),
+    NULLIF(unnest(sqlc.arg(evidences)::text[]), '')::jsonb;

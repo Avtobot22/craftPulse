@@ -89,3 +89,37 @@ func (p *Package) Record(no int) (*Record, bool, error) {
 	}
 	return &rec, true, nil
 }
+
+// Files streams the named files of a cleaned package in the order they are stored: visit reads one file before the
+// next is opened, so a report is never held in memory whole. A name the package lacks is an error.
+func Files(r io.Reader, names []string, visit func(name string, content io.Reader) error) error {
+	wanted := make(map[string]bool, len(names))
+	for _, n := range names {
+		wanted[n] = true
+	}
+	gz, err := gzip.NewReader(r)
+	if err != nil {
+		return fmt.Errorf("envelope: open cleaned package: %w", err)
+	}
+	tr := tar.NewReader(gz)
+	for len(wanted) > 0 {
+		header, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("envelope: read cleaned package: %w", err)
+		}
+		if !wanted[header.Name] {
+			continue
+		}
+		delete(wanted, header.Name)
+		if err := visit(header.Name, tr); err != nil {
+			return err
+		}
+	}
+	for name := range wanted {
+		return fmt.Errorf("envelope: cleaned package has no file %s", name)
+	}
+	return nil
+}

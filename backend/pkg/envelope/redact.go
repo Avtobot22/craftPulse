@@ -21,7 +21,13 @@ type Redactor interface {
 
 // CleanWithRedactor validates input before discovery and revalidates rewritten file references and records.
 func CleanWithRedactor(r io.Reader, limits Limits, w io.Writer, redactor Redactor) (*Result, error) {
-	return cleanPackage(r, limits, w, redactor)
+	return cleanPackage(r, limits, w, redactor, false)
+}
+
+// CleanPageWithRedactor cleans a page of an adapter like CleanWithRedactor; its report files are artifacts the
+// adapter read from the CI of the source, so they may come without a scan manifest.
+func CleanPageWithRedactor(r io.Reader, limits Limits, w io.Writer, redactor Redactor) (*Result, error) {
+	return cleanPackage(r, limits, w, redactor, true)
 }
 
 func rejectedRedaction(err error) (*Result, error) {
@@ -74,7 +80,7 @@ func (c *checker) redact(data []byte, w io.Writer, redactor Redactor) (*Result, 
 		return rejectedRedaction(err)
 	}
 	var safe bytes.Buffer
-	result, err := Clean(bytes.NewReader(rewritten), c.limits, &safe)
+	result, err := cleanPackage(bytes.NewReader(rewritten), c.limits, &safe, nil, c.page)
 	if err != nil {
 		return nil, err
 	}

@@ -141,6 +141,8 @@ type checker struct {
 	scanRaw        []byte
 	executionRaw   []byte
 	reportDeclared bool
+	// page is a page of an adapter: its report files come from the CI of the source without a scan manifest.
+	page bool
 }
 
 // pendingFile is a file reference checked after the whole archive is read; verify compares hash and size.

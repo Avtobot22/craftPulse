@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	"github.com/Avtobot22/craftPulse/backend/pkg/secrets"
 )
@@ -53,12 +54,17 @@ func (r *packageRedactor) Redact(name string, data []byte) (sanitized []byte, re
 	return out.Bytes(), r.detector.Scrubber.Replacements() - before, nil
 }
 
-func (u *UseCase) clean(ctx context.Context, r io.Reader, w io.Writer) (*envelope.Result, error) {
+// clean checks and redacts a package; a page of sync may carry report files of the source without a scan manifest.
+func (u *UseCase) clean(ctx context.Context, channel entity.ReceiptChannel, r io.Reader, w io.Writer) (*envelope.Result, error) {
 	detector, err := secrets.New(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return envelope.CleanWithRedactor(r, u.d.Limits, w, &packageRedactor{ctx: ctx, detector: detector})
+	redactor := &packageRedactor{ctx: ctx, detector: detector}
+	if channel == entity.ChannelSync {
+		return envelope.CleanPageWithRedactor(r, u.d.Limits, w, redactor)
+	}
+	return envelope.CleanWithRedactor(r, u.d.Limits, w, redactor)
 }
 
 func (r *packageRedactor) VerifyPackage(data []byte) error {

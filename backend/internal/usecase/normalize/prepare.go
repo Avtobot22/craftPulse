@@ -26,6 +26,7 @@ var _dictionaries = map[envelope.RecordRecordKind]entity.DictionaryKind{
 // input is a part of a receipt parsed and canonized before the transaction (TZ 12.6): only the decisions
 // against the current versions are left for the time the knowledge counter is locked.
 type input struct {
+	receipt      entity.ID
 	instance     entity.ID
 	provider     string
 	area         entity.SourceKey
@@ -40,6 +41,7 @@ type input struct {
 	mrRevisions  []*mrRevisionCandidate
 	ciRuns       []*ciRunCandidate
 	ciAttempts   []*ciAttemptCandidate
+	reports      []*reportCandidate
 }
 
 type taskCandidate struct {
@@ -67,6 +69,7 @@ type entryCandidate struct {
 func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecord, via entity.ObservedVia) (*input, error) {
 	m := pkg.Manifest
 	in := &input{
+		receipt:   rc.ID,
 		instance:  *rc.SourceInstanceID,
 		provider:  string(m.Source.Provider),
 		area:      entity.SourceKey{InstanceID: *rc.SourceInstanceID, Kind: entity.ObjectKind(m.Area.Kind), NativeID: m.Area.NativeId},
@@ -144,6 +147,12 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 				return nil, err
 			}
 			keep(&in.ciAttempts, ciAttempts, c.key, c, func(old *ciAttemptCandidate) bool { return !olderAttempt(c.version, old.version) })
+		case kind == _reportFileRecord:
+			c, err := in.reportFile(rec, base, pkg.ScanManifest)
+			if err != nil {
+				return nil, err
+			}
+			in.reports = append(in.reports, c)
 		case kind == "task":
 			c, err := in.task(rec, base, taskNS)
 			if err != nil {
