@@ -63,7 +63,18 @@ func NewSourceClient(cfg ClientConfig) *SourceClient {
 
 // Do returns a 2xx response with a size-bounded body; every other outcome is a classified *Error.
 func (c *SourceClient) Do(req *http.Request) (*http.Response, error) {
-	resp, err := c.http.Do(req) //nolint:gosec // the address is checked by netguard when the connection is made
+	return c.send(c.http, req, c.maxBody)
+}
+
+// DoDirect keeps source-specific credential headers on the requested origin.
+func (c *SourceClient) DoDirect(req *http.Request, maxBody int64) (*http.Response, error) {
+	client := *c.http
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return c.send(&client, req, min(c.maxBody, maxBody))
+}
+
+func (c *SourceClient) send(client *http.Client, req *http.Request, maxBody int64) (*http.Response, error) {
+	resp, err := client.Do(req) //nolint:gosec // the address is checked by netguard when the connection is made
 	if err != nil {
 		return nil, classifyError(err)
 	}
@@ -72,7 +83,7 @@ func (c *SourceClient) Do(req *http.Request) (*http.Response, error) {
 		_ = resp.Body.Close()
 		return nil, classifyStatus(resp, c.now())
 	}
-	resp.Body = &limitedBody{rc: resp.Body, left: c.maxBody}
+	resp.Body = &limitedBody{rc: resp.Body, left: maxBody}
 	return resp, nil
 }
 
@@ -95,6 +106,10 @@ func DecodeJSON(resp *http.Response, v any) error {
 	if err == nil {
 		return nil
 	}
+	return decodeError(err)
+}
+
+func decodeError(err error) error {
 	_, syntax := errors.AsType[*json.SyntaxError](err)
 	_, mismatch := errors.AsType[*json.UnmarshalTypeError](err)
 	if syntax || mismatch || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {

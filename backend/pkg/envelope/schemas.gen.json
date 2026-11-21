@@ -2115,6 +2115,14 @@
             }
           },
           {
+            "name": "event_time_unknown",
+            "schema": {
+              "types": [
+                "boolean"
+              ]
+            }
+          },
+          {
             "name": "system_note",
             "schema": {
               "types": [

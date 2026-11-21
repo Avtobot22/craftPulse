@@ -79,15 +79,16 @@ func (in *input) mergeRequest(rec *envelope.Record, b baseFact) (*mrCandidate, e
 }
 
 func (in *input) mrEvent(rec *envelope.Record, b baseFact, via entity.ObservedVia) (*mrEventCandidate, error) {
-	// Both supported payload versions share these fields; v2 adds system_note.
+	// Both payload versions share the event fields.
 	var p struct {
 		envelope.MrEventV1
-		SystemNote bool `json:"system_note"`
+		SystemNote       bool `json:"system_note"`
+		EventTimeUnknown bool `json:"event_time_unknown"`
 	}
 	if err := json.Unmarshal(rec.Payload, &p); err != nil {
 		return nil, errorf("decode MR event %s: %w", rec.NativeId, err)
 	}
-	if p.SystemNote && (p.EventKind == "comment" || p.EventKind == "review") {
+	if p.EventTimeUnknown || p.SystemNote && (p.EventKind == "comment" || p.EventKind == "review" && (p.ReviewState == nil || *p.ReviewState != envelope.MrEventV1ReviewStateChangesRequested)) {
 		return nil, nil
 	}
 	if rec.EventTime == nil {

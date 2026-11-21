@@ -198,7 +198,7 @@ components:
         native_ns: {type: string, maxLength: 255, description: 'Пространство имён исходного ID по правилу `x-craftpulse-identity` контракта адаптера; пусто, если ID уникален в экземпляре.'}
         native_id: {type: string, minLength: 1, maxLength: 1024}
         source_revision: {type: [string, 'null'], maxLength: 255, description: 'Ревизия у источника: ID changelog события, номер версии объекта. Пусто - ревизией служит хэш содержимого.'}
-        event_time: {type: [string, 'null'], format: date-time, description: Время события у источника с исходным смещением; обязательно для `event`.}
+        event_time: {type: [string, 'null'], format: date-time, description: 'Время события у источника с исходным смещением. Для `event` обязательно, кроме `mr_event/2` с отметкой `event_time_unknown`.'}
         observed_time: {type: [string, 'null'], format: date-time, description: 'Когда источник отдал запись, если позже события.'}
         file:
           oneOf:
@@ -454,6 +454,7 @@ components:
         target_account_native_id: {type: [string, 'null'], maxLength: 255}
         head_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
         review_state: {type: [string, 'null'], enum: [approved, changes_requested, commented, null]}
+        event_time_unknown: {type: boolean, description: 'Источник подтвердил событие MR без времени. Объект помечается усечённым, событие не участвует в расчётах.'}
         system_note: {type: boolean, description: Системная заметка. Переход сохраняется как событие; comment и review пропускаются.}
       example: {mr_native_id: '9001', event_kind: review, actor_account_native_id: demo-person-03, target_account_native_id: null, head_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, review_state: commented}
     CiRunV1:

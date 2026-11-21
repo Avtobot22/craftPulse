@@ -1508,11 +1508,14 @@ type MrEventV1ReviewState string
 
 // MrEventV2 Событие MR (`normalize.mr_event`). `native_ns` - ID MR, `native_id` - ID note, approval или события у источника.
 type MrEventV2 struct {
-	ActorAccountNativeId *string               `json:"actor_account_native_id,omitempty"`
-	EventKind            MrEventV2EventKind    `json:"event_kind"`
-	HeadSha              *string               `json:"head_sha,omitempty"`
-	MrNativeId           string                `json:"mr_native_id"`
-	ReviewState          *MrEventV2ReviewState `json:"review_state,omitempty"`
+	ActorAccountNativeId *string            `json:"actor_account_native_id,omitempty"`
+	EventKind            MrEventV2EventKind `json:"event_kind"`
+
+	// EventTimeUnknown Источник подтвердил событие MR без времени. Объект помечается усечённым, событие не участвует в расчётах.
+	EventTimeUnknown *bool                 `json:"event_time_unknown,omitempty"`
+	HeadSha          *string               `json:"head_sha,omitempty"`
+	MrNativeId       string                `json:"mr_native_id"`
+	ReviewState      *MrEventV2ReviewState `json:"review_state,omitempty"`
 
 	// SystemNote Системная заметка. Переход сохраняется как событие; comment и review пропускаются.
 	SystemNote            *bool   `json:"system_note,omitempty"`
@@ -1559,7 +1562,7 @@ type Producer struct {
 
 // Record Строка `records.jsonl`. Тело записи `payload` проверяется по схеме из `payload_schema`.
 type Record struct {
-	// EventTime Время события у источника с исходным смещением; обязательно для `event`.
+	// EventTime Время события у источника с исходным смещением. Для `event` обязательно, кроме `mr_event/2` с отметкой `event_time_unknown`.
 	EventTime *time.Time `json:"event_time"`
 	File      *FileRef   `json:"file"`
 	NativeId  string     `json:"native_id"`
