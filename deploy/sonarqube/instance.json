@@ -1,0 +1,39 @@
+{
+  "issue": "https://github.com/Avtobot22/craftPulse/issues/90",
+  "url": "https://sonar.defects.team",
+  "host": "defects",
+  "version": "26.11.0.134175",
+  "edition": "Community Build",
+  "image": "sonarqube:26.11.0.134175-community@sha256:65541accbdb92e27fe770fc6ba99988a3dd5a0c71ffafd67f88abfad366996fa",
+  "database_image": "postgres:17.12-alpine3.23@sha256:318b8c3c90e13b6fc3a1e57b9bd260965ad578d46401b1b3cfdcc4e17ac81a3f",
+  "deployment": {
+    "type": "Docker Compose",
+    "project": "craftpulse-sonarqube90",
+    "directory": "/opt/craftpulse/ci90/sonarqube",
+    "http_bind": "127.0.0.1:9002",
+    "tls": "Caddy, public ACME certificate, system trust store",
+    "volumes": ["craftpulse-sonarqube90_db_data", "craftpulse-sonarqube90_sonar_data", "craftpulse-sonarqube90_sonar_extensions", "craftpulse-sonarqube90_sonar_logs"],
+    "memory_mib": {"sonarqube": 1792, "postgres": 256},
+    "memory_and_swap_mib": {"sonarqube": 2816, "postgres": 384},
+    "heap_mib": {"web": 384, "compute_engine": 384, "search": 256},
+    "vm_max_map_count": 1048576,
+    "host_swap_extension": {"path": "/var/lib/craftpulse-ci90.swap", "size_gib": 2},
+    "capacity": "Small test source. Concurrent or large analyses on this shared 4 GiB host require separate capacity validation."
+  },
+  "accounts": [
+    {"login": "admin", "permissions": ["system administrator"], "purpose": "stand operator, default password changed"},
+    {"login": "cp90-reader", "permissions": ["Browse:cp90-org-a", "See Source Code:cp90-org-a", "Browse:cp90-org-b", "See Source Code:cp90-org-b"], "token_type": "USER_TOKEN", "purpose": "Web API collector"},
+    {"login": "anonymous", "permissions": []}
+  ],
+  "projects": {"org-a": "cp90-org-a", "org-b": "cp90-org-b", "negative_control": "cp90-control", "visibility": "private"},
+  "global_defaults": "Authentication required; default project visibility private; all sonar-users global and fixture-project permissions removed. The Anyone group is no longer supported in Community Build 26.11.",
+  "secrets": {
+    "directory": "/etc/craftpulse-ci90",
+    "collector_credential": "sonar-credentials.json -> reader_token",
+    "encrypted_owner_bundle": ".local/secrets/ci90/secrets.sops.json"
+  },
+  "snapshot": {
+    "consistency": "Stop SonarQube and its dedicated PostgreSQL and archive all four named volumes with /etc/craftpulse-ci90 and Compose configuration. Use the same pinned images for restore.",
+    "restore": "Restore the trusted archive with numeric owners while both ci90 projects are stopped, start PostgreSQL then SonarQube and repeat manage.py acceptance."
+  }
+}

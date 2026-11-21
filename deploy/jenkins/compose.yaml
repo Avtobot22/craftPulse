@@ -1,0 +1,25 @@
+name: craftpulse-jenkins90
+services:
+  jenkins:
+    build: .
+    image: craftpulse-jenkins90:2.580.2
+    restart: unless-stopped
+    cpus: 0.75
+    mem_limit: 768m
+    memswap_limit: 1280m
+    environment:
+      JAVA_OPTS: -Xms128m -Xmx384m -Djenkins.install.runSetupWizard=false
+      JENKINS_OPTS: --httpPort=8080
+    ports:
+      - 127.0.0.1:8182:8080
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - ${JENKINS_SECRETS_DIR:?Set a private directory owned by UID 1000}:/bootstrap
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:8080/login]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 5m
+volumes:
+  jenkins_home:
