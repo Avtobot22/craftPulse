@@ -443,6 +443,30 @@ SELECT sqlc.arg(organization_id), sqlc.arg(report_id), sqlc.arg(known_seq), NULL
     NULLIF(unnest(sqlc.arg(native_confidences)::text[]), ''), unnest(sqlc.arg(fingerprints)::bytea[]),
     NULLIF(unnest(sqlc.arg(evidences)::text[]), '')::jsonb;
 
+-- name: EnsureTestCases :exec
+INSERT INTO normalize.test_case (organization_id, area_id, case_key, case_key_hash)
+SELECT sqlc.arg(organization_id), sqlc.arg(area_id), unnest(sqlc.arg(case_keys)::text[]), unnest(sqlc.arg(case_key_hashes)::bytea[])
+ON CONFLICT (organization_id, area_id, case_key_hash) DO NOTHING;
+
+-- name: TestCaseIDs :many
+SELECT id, case_key_hash FROM normalize.test_case
+WHERE organization_id = sqlc.arg(organization_id) AND area_id = sqlc.arg(area_id) AND case_key_hash = ANY (sqlc.arg(case_key_hashes)::bytea[]);
+
+-- A zero duration stands for NULL plus one: arrays of the statement carry no NULL elements, so a known duration is
+-- shifted by one.
+-- name: InsertTestExecutions :exec
+INSERT INTO normalize.test_execution (organization_id, report_id, test_case_id, attempt_id, config_fingerprint, ordinal, outcome,
+    duration_ms, run_started_at, known_seq)
+SELECT sqlc.arg(organization_id), sqlc.arg(report_id), unnest(sqlc.arg(test_case_ids)::uuid[]), sqlc.narg(attempt_id),
+    unnest(sqlc.arg(config_fingerprints)::bytea[]), unnest(sqlc.arg(ordinals)::smallint[]), unnest(sqlc.arg(outcomes)::text[]),
+    NULLIF(unnest(sqlc.arg(durations_ms)::bigint[]), 0) - 1, sqlc.arg(run_started_at), sqlc.arg(known_seq);
+
+-- name: InsertCoverageFacts :exec
+INSERT INTO normalize.coverage_fact (organization_id, report_id, path, path_hash, kind, covered, executable, line_map_key, known_seq)
+SELECT sqlc.arg(organization_id), sqlc.arg(report_id), unnest(sqlc.arg(paths)::text[]), unnest(sqlc.arg(path_hashes)::bytea[]),
+    unnest(sqlc.arg(kinds)::text[]), unnest(sqlc.arg(covered)::integer[]), unnest(sqlc.arg(executable)::integer[]),
+    NULLIF(unnest(sqlc.arg(line_map_keys)::text[]), ''), sqlc.arg(known_seq);
+
 -- name: RunsWithAttempts :many
 SELECT DISTINCT run_id FROM normalize.ci_attempt_version
 WHERE organization_id = sqlc.arg(organization_id) AND run_id = ANY (sqlc.arg(run_ids)::uuid[]) AND superseded_seq IS NULL

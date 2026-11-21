@@ -85,14 +85,16 @@ func TestClean_TaskCSVBecomesSnapshotRecords(t *testing.T) {
 	assert.Equal(t, res.Records[1].Hash, again.Records[0].Hash)
 }
 
-func TestClean_RefusesXMLWithADocumentType(t *testing.T) {
+func TestClean_RefusesXMLWithEntities(t *testing.T) {
 	t.Parallel()
 	report := schemaOf(t, "report_file")
 	for name, content := range map[string]string{
 		"external entity": `<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><testsuites>&x;</testsuites>`,
-		"lower case":      "\n  <!doctype html><testsuites/>",
+		"lower case":      "\n  <!doctype r [<!entity x 'y'>]><testsuites/>",
+		"empty subset":    `<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd" []><report/>`,
+		"quoted bracket":  `<!DOCTYPE r SYSTEM "a>b" [<!ENTITY x "y">]><r/>`,
 		"utf-16 le":       utf16(`<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><r>&x;</r>`, false, true),
-		"utf-16 be":       utf16(`<!DOCTYPE r><r/>`, true, true),
+		"utf-16 be":       utf16(`<!DOCTYPE r [<!ATTLIST r a CDATA "x">]><r/>`, true, true),
 		"utf-16 no bom":   utf16(`<!ENTITY x "y">`, false, false),
 	} {
 		data := build(t, manifest(envelope.ManifestSchemaIdJunit, false), func(w *envelope.Writer) {
@@ -116,6 +118,26 @@ func TestClean_RefusesXMLWithADocumentType(t *testing.T) {
 	})
 	res, _ := clean(t, json)
 	assert.Nil(t, res.Envelope, "only a file that starts as XML is checked")
+}
+
+func TestClean_AcceptsAnExternalDocumentType(t *testing.T) {
+	t.Parallel()
+	report := schemaOf(t, "report_file")
+	for name, content := range map[string]string{
+		"jacoco":    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd"><report name="x"/>`,
+		"cobertura": "<?xml version=\"1.0\" ?>\n<!DOCTYPE coverage SYSTEM 'http://cobertura.sourceforge.net/xml/coverage-04.dtd'>\n<coverage lines-valid=\"0\"/>",
+		"utf-16 be": utf16(`<!DOCTYPE r><r>[]</r>`, true, true),
+	} {
+		data := build(t, manifest(envelope.ManifestSchemaIdJunit, false), func(w *envelope.Writer) {
+			ref, err := w.AddFile("files/report.xml", "application/xml", []byte(content))
+			require.NoError(t, err)
+			rec := exampleRecord(t, w, report)
+			rec.File = &ref
+			require.NoError(t, w.AddRecord(rec))
+		})
+		res, _ := clean(t, data)
+		assert.Nil(t, res.Envelope, name)
+	}
 }
 
 func TestClean_BrokenStreamIsRejected(t *testing.T) {

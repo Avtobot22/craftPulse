@@ -332,7 +332,8 @@ type NormalizeRepo interface {
 
 	// ReportedRecords are the records of a receipt among nos that already gave a report.
 	ReportedRecords(ctx context.Context, orgID, receiptID entity.ID, nos []int) ([]int, error)
-	InsertReport(ctx context.Context, orgID entity.ID, rep *entity.ScanReport, findings []entity.FindingOccurrence) error
+	// InsertReport writes a report with its findings, test executions or coverage; the cases of the tests are kept per area.
+	InsertReport(ctx context.Context, orgID entity.ID, rep *entity.ScanReport, rows entity.ReportRows) error
 
 	RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error)
 	// EnsureObjects creates the identities that are new with the knowledge number seq and returns all by key.

@@ -38,6 +38,9 @@ type Import struct {
 	// ProducerJob is the ID of the job that produced the reports, when the step knows it: reports from the
 	// artifacts of another job carry only the pipeline and the SHA.
 	ProducerJob string
+	// SourceRoot is the checkout the tool ran in and SourceDir the directory of the repository its relative
+	// paths start from; normalize turns the paths of a report into paths of the repository by them.
+	SourceRoot, SourceDir string
 }
 
 // Importer records client reports as import runs in the job state.
@@ -61,7 +64,7 @@ func (im *Importer) Add(in *Import) ([]envelope.ScanToolRun, error) {
 			Mode: envelope.ScanToolRunModeImport, ReportKind: envelope.ScanToolRunReportKind(spec.Kind), Sha: &im.Job.SHA,
 			Ci: im.Job.ci(in.ProducerJob), SkippedTargets: []envelope.ScanSkippedTarget{}, Reports: []envelope.ScanReport{},
 			ExitClass: envelope.ScanToolRunExitClassFailed, Completeness: envelope.ScanToolRunCompletenessUnknown,
-			StartedAt: im.Now().UTC(), FinishedAt: im.Now().UTC(),
+			StartedAt: im.Now().UTC(), FinishedAt: im.Now().UTC(), SourceRoot: optional(in.SourceRoot), SourceDir: optional(in.SourceDir),
 		}
 		if rows := Select(im.Profile, Filter{Kind: spec.Kind, Mode: string(ciapi.CiCheckProfileEntriesModeImport)}); len(rows) == 1 {
 			run.ProfileId = &rows[0].ProfileID

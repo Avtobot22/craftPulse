@@ -49,7 +49,8 @@ type gitlabVulnerability struct {
 
 // parseGitLabSecurity reads a GitLab security report of schema 15: SAST, secret detection or dependency scanning.
 // Schema 15 has no confidence of a finding, so it stays unknown (BR-017).
-func parseGitLabSecurity(r io.Reader, kind string) (*parsedReport, error) {
+func parseGitLabSecurity(r io.Reader, in parseInput) (*parsedReport, error) {
+	kind := in.kind
 	dec := json.NewDecoder(r)
 	out := &parsedReport{}
 	var (

@@ -905,6 +905,29 @@ func (q *Queries) DictionaryRevisions(ctx context.Context, arg DictionaryRevisio
 	return items, nil
 }
 
+const ensureTestCases = `-- name: EnsureTestCases :exec
+INSERT INTO normalize.test_case (organization_id, area_id, case_key, case_key_hash)
+SELECT $1, $2, unnest($3::text[]), unnest($4::bytea[])
+ON CONFLICT (organization_id, area_id, case_key_hash) DO NOTHING
+`
+
+type EnsureTestCasesParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	CaseKeys       []string
+	CaseKeyHashes  [][]byte
+}
+
+func (q *Queries) EnsureTestCases(ctx context.Context, arg EnsureTestCasesParams) error {
+	_, err := q.db.Exec(ctx, ensureTestCases,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.CaseKeys,
+		arg.CaseKeyHashes,
+	)
+	return err
+}
+
 const findCIRunIDs = `-- name: FindCIRunIDs :many
 SELECT v.run_id FROM normalize.ci_run_version v
 JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
@@ -1105,6 +1128,40 @@ func (q *Queries) InsertAreas(ctx context.Context, arg InsertAreasParams) error 
 	return err
 }
 
+const insertCoverageFacts = `-- name: InsertCoverageFacts :exec
+INSERT INTO normalize.coverage_fact (organization_id, report_id, path, path_hash, kind, covered, executable, line_map_key, known_seq)
+SELECT $1, $2, unnest($3::text[]), unnest($4::bytea[]),
+    unnest($5::text[]), unnest($6::integer[]), unnest($7::integer[]),
+    NULLIF(unnest($8::text[]), ''), $9
+`
+
+type InsertCoverageFactsParams struct {
+	OrganizationID uuid.UUID
+	ReportID       uuid.UUID
+	Paths          []string
+	PathHashes     [][]byte
+	Kinds          []string
+	Covered        []int32
+	Executable     []int32
+	LineMapKeys    []string
+	KnownSeq       int64
+}
+
+func (q *Queries) InsertCoverageFacts(ctx context.Context, arg InsertCoverageFactsParams) error {
+	_, err := q.db.Exec(ctx, insertCoverageFacts,
+		arg.OrganizationID,
+		arg.ReportID,
+		arg.Paths,
+		arg.PathHashes,
+		arg.Kinds,
+		arg.Covered,
+		arg.Executable,
+		arg.LineMapKeys,
+		arg.KnownSeq,
+	)
+	return err
+}
+
 const insertFindings = `-- name: InsertFindings :exec
 INSERT INTO normalize.finding_occurrence (organization_id, report_id, known_seq, native_id, rule_id, finding_kind, path, line_start, line_end,
     package_purl, native_severity, native_confidence, fingerprint, evidence)
@@ -1276,6 +1333,45 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uui
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const insertTestExecutions = `-- name: InsertTestExecutions :exec
+INSERT INTO normalize.test_execution (organization_id, report_id, test_case_id, attempt_id, config_fingerprint, ordinal, outcome,
+    duration_ms, run_started_at, known_seq)
+SELECT $1, $2, unnest($3::uuid[]), $4,
+    unnest($5::bytea[]), unnest($6::smallint[]), unnest($7::text[]),
+    NULLIF(unnest($8::bigint[]), 0) - 1, $9, $10
+`
+
+type InsertTestExecutionsParams struct {
+	OrganizationID     uuid.UUID
+	ReportID           uuid.UUID
+	TestCaseIds        []uuid.UUID
+	AttemptID          uuid.NullUUID
+	ConfigFingerprints [][]byte
+	Ordinals           []int16
+	Outcomes           []string
+	DurationsMs        []int64
+	RunStartedAt       time.Time
+	KnownSeq           int64
+}
+
+// A zero duration stands for NULL plus one: arrays of the statement carry no NULL elements, so a known duration is
+// shifted by one.
+func (q *Queries) InsertTestExecutions(ctx context.Context, arg InsertTestExecutionsParams) error {
+	_, err := q.db.Exec(ctx, insertTestExecutions,
+		arg.OrganizationID,
+		arg.ReportID,
+		arg.TestCaseIds,
+		arg.AttemptID,
+		arg.ConfigFingerprints,
+		arg.Ordinals,
+		arg.Outcomes,
+		arg.DurationsMs,
+		arg.RunStartedAt,
+		arg.KnownSeq,
+	)
+	return err
 }
 
 const knownCIAttemptVersions = `-- name: KnownCIAttemptVersions :many
@@ -2706,6 +2802,42 @@ func (q *Queries) TaskVersionsAt(ctx context.Context, arg TaskVersionsAtParams) 
 			&i.RestrictionNative,
 			&i.RawFields,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const testCaseIDs = `-- name: TestCaseIDs :many
+SELECT id, case_key_hash FROM normalize.test_case
+WHERE organization_id = $1 AND area_id = $2 AND case_key_hash = ANY ($3::bytea[])
+`
+
+type TestCaseIDsParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	CaseKeyHashes  [][]byte
+}
+
+type TestCaseIDsRow struct {
+	ID          uuid.UUID
+	CaseKeyHash []byte
+}
+
+func (q *Queries) TestCaseIDs(ctx context.Context, arg TestCaseIDsParams) ([]TestCaseIDsRow, error) {
+	rows, err := q.db.Query(ctx, testCaseIDs, arg.OrganizationID, arg.AreaID, arg.CaseKeyHashes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TestCaseIDsRow
+	for rows.Next() {
+		var i TestCaseIDsRow
+		if err := rows.Scan(&i.ID, &i.CaseKeyHash); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -372,17 +372,23 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// xmlGuard finds a document type or entity declaration in a file that starts as XML: a parser of a
-// report could expand its entities or fetch an external one. Zero bytes are dropped before both checks, so
-// XML in UTF-16 or UTF-32 of ASCII markup is checked as well.
+// xmlGuard finds an entity declaration or a document type with an internal subset in a file that starts as
+// XML: a parser of a report could expand its entities. A document type that only names an external DTD, as JaCoCo
+// and Cobertura reports do, passes: the parsers of normalize never load one. Zero bytes are dropped before the
+// checks, so XML in UTF-16 or UTF-32 of ASCII markup is checked as well.
 type xmlGuard struct {
 	r                   io.Reader
 	decided, xml, found bool
-	tail                []byte
+	// doctype and entity count the matched bytes of their declarations; inDoctype is the declaration being read
+	// and quote the literal open in it.
+	doctype, entity int
+	inDoctype       bool
+	quote           byte
 }
 
 var (
-	_xmlDeclarations = [][]byte{[]byte("<!doctype"), []byte("<!entity")}
+	_doctype = []byte("<!doctype")
+	_entity  = []byte("<!entity")
 	// _wideMarks are the byte order marks of UTF-16 and UTF-32 once their zero bytes are dropped.
 	_wideMarks = [][]byte{{0xfe, 0xff}, {0xff, 0xfe}}
 )
@@ -402,14 +408,45 @@ func (g *xmlGuard) Read(p []byte) (int, error) {
 			g.decided, g.xml = true, trimmed[0] == '<'
 		}
 	}
-	if g.xml && !g.found && len(chunk) > 0 {
-		window := bytes.ToLower(append(g.tail, chunk...))
-		for _, d := range _xmlDeclarations {
-			if bytes.Contains(window, d) {
-				g.found = true
-			}
+	if g.xml {
+		for _, b := range bytes.ToLower(chunk) {
+			g.scan(b)
 		}
-		g.tail = append(g.tail[:0], window[max(0, len(window)-len("<!doctype")):]...)
 	}
 	return n, err
+}
+
+func (g *xmlGuard) scan(b byte) {
+	if g.entity = advance(_entity, g.entity, b); g.entity == len(_entity) {
+		g.found = true
+	}
+	if g.inDoctype {
+		switch {
+		case g.quote != 0:
+			if b == g.quote {
+				g.quote = 0
+			}
+		case b == '"' || b == '\'':
+			g.quote = b
+		case b == '[':
+			g.found = true
+		case b == '>':
+			g.inDoctype = false
+		}
+		return
+	}
+	if g.doctype = advance(_doctype, g.doctype, b); g.doctype == len(_doctype) {
+		g.inDoctype, g.doctype = true, 0
+	}
+}
+
+// advance is the count of matched bytes of a declaration after b; neither declaration repeats its first byte.
+func advance(decl []byte, matched int, b byte) int {
+	switch {
+	case b == decl[matched%len(decl)]:
+		return matched%len(decl) + 1
+	case b == decl[0]:
+		return 1
+	}
+	return 0
 }

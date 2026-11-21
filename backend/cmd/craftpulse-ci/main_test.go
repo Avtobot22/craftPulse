@@ -269,6 +269,7 @@ func TestUpload_PrintsReceiptOfAcceptedPackageWithFindings(t *testing.T) {
 	assert.NotContains(t, out, "gitleaks-default")
 	c.mustRun(c.goTool(c.copyReport("1")...)...)
 	require.NoError(t, os.WriteFile(c.path("junit.xml"), []byte(`<testsuites/>`), 0o600))
+	c.env["CI_PROJECT_DIR"] = "/builds/demo/app"
 	c.mustRun("import", "--report", "junit:junit_xml:"+c.path("junit.xml"), "--producer", "go test", "--producer-version", "go1.27.4", "--producer-job", "7001")
 	out = c.mustRun("upload", "--save", c.path("package.tar.gz"))
 
@@ -299,6 +300,9 @@ func TestUpload_PrintsReceiptOfAcceptedPackageWithFindings(t *testing.T) {
 	assert.Equal(t, envelope.ScanToolRunModeImport, imported.Mode)
 	assert.Equal(t, "7001", *imported.Ci.JobNativeId)
 	assert.Equal(t, _sha, *imported.Sha)
+	assert.Equal(t, "/builds/demo/app", *imported.SourceRoot, "the checkout of the job turns absolute report paths into repository paths")
+	assert.Nil(t, imported.SourceDir)
+	assert.Nil(t, builtin.SourceRoot)
 	for _, auth := range api.auth {
 		assert.Equal(t, "Bearer "+_token, auth)
 	}
