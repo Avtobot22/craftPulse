@@ -12,6 +12,7 @@ import (
 const (
 	_providerGitLab  = "gitlab"
 	_providerJenkins = "jenkins"
+	_providerGitHub  = "github"
 	// _gitlabUnknownFailure is the failure reason GitLab gives when it does not know the cause.
 	_gitlabUnknownFailure = "unknown_failure"
 )
@@ -71,6 +72,15 @@ func (in *input) ciKey(kind entity.ObjectKind, id string) entity.SourceKey {
 	return entity.SourceKey{InstanceID: in.instance, Kind: kind, NativeID: id}
 }
 
+// attemptKey is the identity of a CI attempt: an attempt of GitHub Actions is unique within its run only (TZ 12.4).
+func (in *input) attemptKey(run, id string) entity.SourceKey {
+	k := in.ciKey(entity.ObjectCIAttempt, id)
+	if in.provider == _providerGitHub {
+		k.NativeNS = run
+	}
+	return k
+}
+
 // runKey is the identity of a CI run: a Jenkins build is unique within its job only (TZ 12.4).
 func (in *input) runKey(job, id string) entity.SourceKey {
 	k := in.ciKey(entity.ObjectCIRun, id)
@@ -99,7 +109,7 @@ func (in *input) ciRun(rec *envelope.Record, b baseFact, areaKind entity.ObjectK
 			Record: b.ref, Revision: b.revision, ObservedAt: b.observed, SourceUpdatedAt: p.UpdatedAt,
 			RefName: p.RefName, SHA: p.Sha, DefinitionVersion: deref(p.DefinitionVersion), NativeStatus: p.NativeStatus,
 			Outcome: in.outcome(p.NativeStatus, entity.CIOutcome(p.Outcome)), StartedAt: p.StartedAt, FinishedAt: p.FinishedAt,
-			AttemptHistory: history,
+			AttemptHistory: history, AllowFailureSemantics: in.provider == _providerGitLab,
 		},
 	}
 	if parent := deref(p.ParentRunNativeId); parent != "" && parent != rec.NativeId {
@@ -126,7 +136,7 @@ func (in *input) ciAttempt(rec *envelope.Record, b baseFact) (*ciAttemptCandidat
 		failure = ""
 	}
 	return &ciAttemptCandidate{
-		key: in.ciKey(entity.ObjectCIAttempt, rec.NativeId), run: in.ciKey(entity.ObjectCIRun, p.RunNativeId),
+		key: in.attemptKey(rec.NativeNs, rec.NativeId), run: in.ciKey(entity.ObjectCIRun, p.RunNativeId),
 		version: entity.CIAttemptVersion{
 			Record: b.ref, Revision: b.revision, ObservedAt: b.observed, JobKey: p.JobKey, ConfigFingerprint: fingerprint,
 			AttemptNo: p.AttemptNo, NativeStatus: p.NativeStatus, Outcome: in.outcome(p.NativeStatus, entity.CIOutcome(p.Outcome)),
@@ -136,10 +146,12 @@ func (in *input) ciAttempt(rec *envelope.Record, b baseFact) (*ciAttemptCandidat
 	}, nil
 }
 
-// outcome takes the outcome of GitLab and Jenkins from the native status by their tables; other sources give it
-// themselves.
+// outcome takes the outcome of GitLab, GitHub and Jenkins from the native status by their tables; other sources
+// give it themselves.
 func (in *input) outcome(native string, given entity.CIOutcome) entity.CIOutcome {
-	table := map[string]map[string]entity.CIOutcome{_providerGitLab: _gitlabOutcomes, _providerJenkins: _jenkinsOutcomes}[in.provider]
+	table := map[string]map[string]entity.CIOutcome{
+		_providerGitLab: _gitlabOutcomes, _providerJenkins: _jenkinsOutcomes, _providerGitHub: _githubOutcomes,
+	}[in.provider]
 	if table == nil {
 		return given
 	}

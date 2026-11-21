@@ -62,6 +62,9 @@ type CIRunVersion struct {
 	StartedAt         *time.Time
 	FinishedAt        *time.Time
 	AttemptHistory    AttemptHistory
+	// AllowFailureSemantics tells whether the CI of the run marks an allowed failure of a job; without it I05
+	// leaves the run out.
+	AllowFailureSemantics bool
 }
 
 // CIAttemptVersion is an attempt of a job (DR-006): JobKey with ConfigFingerprint is the logical job, a

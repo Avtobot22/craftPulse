@@ -262,7 +262,7 @@ func (c *ciSource) allowed(p period) entity.Point {
 		if !r.in(p) || c.runClass(r) != "success" {
 			continue
 		}
-		if r.provider != entity.ProviderGitLab {
+		if !r.version.AllowFailureSemantics {
 			ciAdd(t, r, nil, nil, entity.RoleExcluded, nil, "allow_failure_unavailable")
 			continue
 		}

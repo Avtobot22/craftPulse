@@ -58,7 +58,7 @@ func (r *Repo) InsertCIRunVersions(ctx context.Context, orgID entity.ID, version
 			DefinitionVersion: text(v.DefinitionVersion), NativeStatus: v.NativeStatus, Outcome: string(v.Outcome),
 			StartedAt: tstz(v.StartedAt), FinishedAt: tstz(v.FinishedAt), AttemptHistory: string(v.AttemptHistory),
 			KnownSeq: v.KnownSeq, ReceiptID: uuid.UUID(v.Record.ReceiptID), RecordNo: no, SourceRevision: v.Revision.Source,
-			ContentHash: v.Revision.Hash, ObservedAt: v.ObservedAt,
+			ContentHash: v.Revision.Hash, ObservedAt: v.ObservedAt, AllowFailureSemantics: v.AllowFailureSemantics,
 		}
 	}
 	var batchErr error
@@ -81,6 +81,7 @@ func mapCIRunVersions(rows []NormalizeCiRunVersion) []entity.CIRunVersion {
 			SourceUpdatedAt: timePtr(row.SourceUpdatedAt), RefName: row.RefName, SHA: row.Sha, ParentRunID: idPtr(row.ParentRunID),
 			DefinitionVersion: row.DefinitionVersion.String, NativeStatus: row.NativeStatus, Outcome: entity.CIOutcome(row.Outcome),
 			StartedAt: timePtr(row.StartedAt), FinishedAt: timePtr(row.FinishedAt), AttemptHistory: entity.AttemptHistory(row.AttemptHistory),
+			AllowFailureSemantics: row.AllowFailureSemantics,
 		}
 	}
 	return out

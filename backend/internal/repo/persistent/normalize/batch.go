@@ -106,8 +106,8 @@ func (b *InsertCIAttemptVersionsBatchResults) Close() error {
 }
 
 const insertCIRunVersions = `-- name: InsertCIRunVersions :batchexec
-INSERT INTO normalize.ci_run_version (organization_id, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+INSERT INTO normalize.ci_run_version (organization_id, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at, allow_failure_semantics)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 `
 
 type InsertCIRunVersionsBatchResults struct {
@@ -117,26 +117,27 @@ type InsertCIRunVersionsBatchResults struct {
 }
 
 type InsertCIRunVersionsParams struct {
-	OrganizationID    uuid.UUID
-	RunID             uuid.UUID
-	AreaID            uuid.UUID
-	MrID              uuid.NullUUID
-	SourceUpdatedAt   pgtype.Timestamptz
-	RefName           string
-	Sha               string
-	ParentRunID       uuid.NullUUID
-	DefinitionVersion pgtype.Text
-	NativeStatus      string
-	Outcome           string
-	StartedAt         pgtype.Timestamptz
-	FinishedAt        pgtype.Timestamptz
-	AttemptHistory    string
-	KnownSeq          int64
-	ReceiptID         uuid.UUID
-	RecordNo          int32
-	SourceRevision    string
-	ContentHash       []byte
-	ObservedAt        time.Time
+	OrganizationID        uuid.UUID
+	RunID                 uuid.UUID
+	AreaID                uuid.UUID
+	MrID                  uuid.NullUUID
+	SourceUpdatedAt       pgtype.Timestamptz
+	RefName               string
+	Sha                   string
+	ParentRunID           uuid.NullUUID
+	DefinitionVersion     pgtype.Text
+	NativeStatus          string
+	Outcome               string
+	StartedAt             pgtype.Timestamptz
+	FinishedAt            pgtype.Timestamptz
+	AttemptHistory        string
+	KnownSeq              int64
+	ReceiptID             uuid.UUID
+	RecordNo              int32
+	SourceRevision        string
+	ContentHash           []byte
+	ObservedAt            time.Time
+	AllowFailureSemantics bool
 }
 
 func (q *Queries) InsertCIRunVersions(ctx context.Context, arg []InsertCIRunVersionsParams) *InsertCIRunVersionsBatchResults {
@@ -163,6 +164,7 @@ func (q *Queries) InsertCIRunVersions(ctx context.Context, arg []InsertCIRunVers
 			a.SourceRevision,
 			a.ContentHash,
 			a.ObservedAt,
+			a.AllowFailureSemantics,
 		}
 		batch.Queue(insertCIRunVersions, vals...)
 	}
