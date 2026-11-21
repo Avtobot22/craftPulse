@@ -31,3 +31,21 @@ func TestSummarizeRun_V28AndIncomplete(t *testing.T) {
 	assert.Equal(t, 1, u.SummarizeRun(run, facts.Provider).AllowedFailures)
 	assert.Zero(t, u.SummarizeRun(run, entity.ProviderJenkins).AllowedFailures)
 }
+
+func TestSummarizeRun_AllowedFailureUsesItsOwnRunOutcome(t *testing.T) {
+	t.Parallel()
+	facts, _ := ciFixture()
+	child := facts.Runs[0]
+	child.RunID = newID()
+	child.NativeStatus, child.Outcome = "failed", entity.CIFailed
+	attempt := facts.Attempts[0]
+	attempt.AttemptID, attempt.RunID, attempt.AllowFailure = newID(), child.RunID, true
+	run := entity.CIRun{
+		Run: facts.Runs[0], Children: []entity.CIRunVersion{child},
+		CIAttempts: entity.CIAttempts{History: entity.AttemptHistoryComplete, Attempts: append(facts.Attempts, attempt)},
+	}
+	u := New(Deps{})
+	assert.Zero(t, u.SummarizeRun(run, facts.Provider).AllowedFailures, "a successful parent does not make a failed child eligible for I05")
+	run.Children[0].NativeStatus, run.Children[0].Outcome = "success", entity.CISuccess
+	assert.Equal(t, 1, u.SummarizeRun(run, facts.Provider).AllowedFailures)
+}

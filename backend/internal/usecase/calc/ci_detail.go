@@ -15,7 +15,7 @@ func (*UseCase) SummarizeRun(run entity.CIRun, provider entity.Provider) entity.
 			if last.AttemptNo > 1 {
 				out.RetriedJobs++
 			}
-			if provider == entity.ProviderGitLab && ciClass(run.Run.NativeStatus, run.Run.Outcome, "") == "success" && last.AllowFailure && ciFailure(ciClass(last.NativeStatus, last.Outcome, last.FailureKind)) {
+			if provider == entity.ProviderGitLab && ciClass(r.version.NativeStatus, r.version.Outcome, "") == "success" && last.AllowFailure && ciFailure(ciClass(last.NativeStatus, last.Outcome, last.FailureKind)) {
 				out.AllowedFailures++
 			}
 		}
