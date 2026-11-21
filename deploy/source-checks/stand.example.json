@@ -1,0 +1,658 @@
+{
+  "sources": {
+    "jira_a_allowed": {
+      "base_url": "https://api.atlassian.com/ex/jira/c03cf9de-d764-469d-963e-4632d196bef9",
+      "credential_env": "CP91_A_ALLOWED_BEARER"
+    },
+    "confluence_a_allowed": {
+      "base_url": "https://api.atlassian.com/ex/confluence/c03cf9de-d764-469d-963e-4632d196bef9",
+      "credential_env": "CP91_A_ALLOWED_BEARER"
+    },
+    "jira_a_denied": {
+      "base_url": "https://api.atlassian.com/ex/jira/c03cf9de-d764-469d-963e-4632d196bef9",
+      "credential_env": "CP91_A_DENIED_BEARER"
+    },
+    "confluence_a_denied": {
+      "base_url": "https://api.atlassian.com/ex/confluence/c03cf9de-d764-469d-963e-4632d196bef9",
+      "credential_env": "CP91_A_DENIED_BEARER"
+    },
+    "jira_b": {
+      "base_url": "https://api.atlassian.com/ex/jira/c03cf9de-d764-469d-963e-4632d196bef9",
+      "credential_env": "CP91_B_BEARER"
+    },
+    "confluence_b": {
+      "base_url": "https://api.atlassian.com/ex/confluence/c03cf9de-d764-469d-963e-4632d196bef9",
+      "credential_env": "CP91_B_BEARER"
+    },
+    "atlassian_discovery": {
+      "base_url": "https://api.atlassian.com",
+      "credential_env": "CP91_A_ALLOWED_BEARER"
+    },
+    "atlassian_collection": {
+      "base_url": "https://craftpulse-mvp.atlassian.net",
+      "credential_env": "CP91_ATLASSIAN_BASIC",
+      "auth_prefix": "Basic "
+    },
+    "gitlab": {
+      "base_url": "https://gitlab.defects.team/api/v4",
+      "credential_env": "CP91_GITLAB_TOKEN",
+      "auth_header": "PRIVATE-TOKEN",
+      "auth_prefix": ""
+    },
+    "gitlab_blocked_fixture": {
+      "base_url": "https://gitlab.defects.team/api/v4",
+      "credential_env": "CP91_GITLAB_TOKEN",
+      "auth_header": "PRIVATE-TOKEN",
+      "auth_prefix": ""
+    },
+    "jira_user_search": {
+      "base_url": "https://craftpulse-mvp.atlassian.net",
+      "credential_env": "CP91_ATLASSIAN_BASIC",
+      "auth_prefix": "Basic "
+    }
+  },
+  "checks": [
+    {
+      "source": "jira_a_allowed",
+      "name": "jira_a_allowed_identity",
+      "path": "/rest/api/3/myself",
+      "expect_fields": {
+        "accountId": "<a_allowed-accountId>",
+        "active": true
+      }
+    },
+    {
+      "source": "jira_a_allowed",
+      "name": "jira_a_allowed_project_a",
+      "path": "/rest/api/3/project/CPA",
+      "status": [
+        200
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "jira_a_allowed",
+      "name": "jira_a_allowed_project_b",
+      "path": "/rest/api/3/project/CPZ",
+      "status": [
+        403,
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "jira_a_allowed",
+      "name": "jira_a_allowed_restricted",
+      "path": "/rest/api/3/issue/CPA-1",
+      "status": [
+        200
+      ],
+      "budget_ms": 2000,
+      "query": {
+        "fields": "id"
+      }
+    },
+    {
+      "source": "confluence_a_allowed",
+      "name": "confluence_a_allowed_space_a",
+      "path": "/wiki/api/v2/spaces/360451",
+      "status": [
+        200
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "confluence_a_allowed",
+      "name": "confluence_a_allowed_space_b",
+      "path": "/wiki/api/v2/spaces/360600",
+      "status": [
+        403,
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "confluence_a_allowed",
+      "name": "confluence_a_allowed_restricted",
+      "path": "/wiki/api/v2/pages/491521",
+      "status": [
+        200
+      ],
+      "budget_ms": 2000,
+      "query": {
+        "body-format": "storage"
+      }
+    },
+    {
+      "source": "jira_a_denied",
+      "name": "jira_a_denied_identity",
+      "path": "/rest/api/3/myself",
+      "expect_fields": {
+        "accountId": "<a_denied-accountId>",
+        "active": true
+      }
+    },
+    {
+      "source": "jira_a_denied",
+      "name": "jira_a_denied_project_a",
+      "path": "/rest/api/3/project/CPA",
+      "status": [
+        200
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "jira_a_denied",
+      "name": "jira_a_denied_project_b",
+      "path": "/rest/api/3/project/CPZ",
+      "status": [
+        403,
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "jira_a_denied",
+      "name": "jira_a_denied_restricted",
+      "path": "/rest/api/3/issue/CPA-1",
+      "status": [
+        403,
+        404
+      ],
+      "budget_ms": 2000,
+      "query": {
+        "fields": "id"
+      }
+    },
+    {
+      "source": "confluence_a_denied",
+      "name": "confluence_a_denied_space_a",
+      "path": "/wiki/api/v2/spaces/360451",
+      "status": [
+        200
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "confluence_a_denied",
+      "name": "confluence_a_denied_space_b",
+      "path": "/wiki/api/v2/spaces/360600",
+      "status": [
+        403,
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "confluence_a_denied",
+      "name": "confluence_a_denied_restricted",
+      "path": "/wiki/api/v2/pages/491521",
+      "status": [
+        403,
+        404
+      ],
+      "budget_ms": 2000,
+      "query": {
+        "body-format": "storage"
+      }
+    },
+    {
+      "source": "jira_b",
+      "name": "jira_b_identity",
+      "path": "/rest/api/3/myself",
+      "expect_fields": {
+        "accountId": "<b-accountId>",
+        "active": true
+      }
+    },
+    {
+      "source": "jira_b",
+      "name": "jira_b_project_a",
+      "path": "/rest/api/3/project/CPA",
+      "status": [
+        403,
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "jira_b",
+      "name": "jira_b_project_b",
+      "path": "/rest/api/3/project/CPZ",
+      "status": [
+        200
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "jira_b",
+      "name": "jira_b_restricted",
+      "path": "/rest/api/3/issue/CPA-1",
+      "status": [
+        403,
+        404
+      ],
+      "budget_ms": 2000,
+      "query": {
+        "fields": "id"
+      }
+    },
+    {
+      "source": "confluence_b",
+      "name": "confluence_b_space_a",
+      "path": "/wiki/api/v2/spaces/360451",
+      "status": [
+        403,
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "confluence_b",
+      "name": "confluence_b_space_b",
+      "path": "/wiki/api/v2/spaces/360600",
+      "status": [
+        200
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "confluence_b",
+      "name": "confluence_b_restricted",
+      "path": "/wiki/api/v2/pages/491521",
+      "status": [
+        403,
+        404
+      ],
+      "budget_ms": 2000,
+      "query": {
+        "body-format": "storage"
+      }
+    },
+    {
+      "source": "atlassian_discovery",
+      "name": "atlassian_3lo_site",
+      "path": "/oauth/token/accessible-resources",
+      "contains": {
+        "id": "c03cf9de-d764-469d-963e-4632d196bef9",
+        "url": "https://craftpulse-mvp.atlassian.net"
+      }
+    },
+    {
+      "source": "atlassian_collection",
+      "name": "jira_version",
+      "path": "/rest/api/3/serverInfo",
+      "observe": [
+        "version",
+        "buildNumber",
+        "deploymentType"
+      ]
+    },
+    {
+      "source": "atlassian_collection",
+      "name": "jira_inline_history",
+      "path": "/rest/api/3/issue/CPA-8",
+      "query": {
+        "expand": "changelog",
+        "fields": "updated"
+      },
+      "observe": [
+        "changelog.total",
+        "changelog.maxResults"
+      ]
+    },
+    {
+      "source": "atlassian_collection",
+      "name": "jira_full_history",
+      "path": "/rest/api/3/issue/CPA-8/changelog",
+      "mode": "jira-changelog",
+      "items": "values",
+      "query": {
+        "maxResults": 25
+      },
+      "reference_query": {
+        "maxResults": 100
+      },
+      "expected_count": 122,
+      "min_pages": 2
+    },
+    {
+      "source": "atlassian_collection",
+      "name": "jira_delta",
+      "path": "/rest/api/3/search/jql",
+      "mode": "jira-search",
+      "items": "issues",
+      "id": "key",
+      "query": {
+        "jql": "project = CPA AND labels = cp91-pagination AND updated >= \"2026-11-20\" ORDER BY updated DESC, id DESC",
+        "fields": "updated",
+        "maxResults": 2
+      },
+      "reference_query": {
+        "maxResults": 100
+      },
+      "expected_count": 5,
+      "min_pages": 2,
+      "pause_after_first": true,
+      "allow_drift": true
+    },
+    {
+      "source": "atlassian_collection",
+      "name": "confluence_edition",
+      "path": "/wiki/rest/api/settings/systemInfo",
+      "observe": [
+        "edition"
+      ]
+    },
+    {
+      "source": "atlassian_collection",
+      "name": "confluence_history",
+      "path": "/wiki/api/v2/pages/491521/versions",
+      "mode": "confluence",
+      "items": "results",
+      "id": "number",
+      "query": {
+        "limit": 1
+      },
+      "reference_query": {
+        "limit": 50
+      },
+      "min_pages": 2
+    },
+    {
+      "source": "atlassian_collection",
+      "name": "confluence_space_pages",
+      "path": "/wiki/api/v2/spaces/360451/pages",
+      "mode": "confluence",
+      "items": "results",
+      "query": {
+        "limit": 2
+      },
+      "reference_query": {
+        "limit": 50
+      },
+      "min_pages": 2
+    },
+    {
+      "source": "atlassian_collection",
+      "name": "confluence_delta",
+      "path": "/wiki/rest/api/search",
+      "mode": "confluence",
+      "items": "results",
+      "id": "content.id",
+      "query": {
+        "cql": "type = page AND space = ORGA AND title ~ \"cp91paginationfixture\" AND lastmodified >= \"2026-11-20\" ORDER BY lastmodified DESC",
+        "limit": 2
+      },
+      "reference_query": {
+        "limit": 50
+      },
+      "expected_count": 5,
+      "min_pages": 2,
+      "pause_after_first": true,
+      "allow_drift": true
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_version",
+      "path": "/version",
+      "observe": [
+        "version",
+        "revision",
+        "enterprise"
+      ]
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_collector",
+      "path": "/projects/1/members/2",
+      "expect_fields": {
+        "access_level": 20,
+        "state": "active"
+      },
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_inherited_owner",
+      "path": "/projects/1/members/all/5",
+      "expect_fields": {
+        "access_level": 50,
+        "state": "active"
+      },
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_inherited_owner_direct_control",
+      "path": "/projects/1/members/5",
+      "status": [
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_direct_reporter",
+      "path": "/projects/1/members/all/7",
+      "expect_fields": {
+        "access_level": 20,
+        "state": "active"
+      },
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_direct_reporter_control",
+      "path": "/projects/1/members/7",
+      "expect_fields": {
+        "access_level": 20,
+        "state": "active"
+      },
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_nonmember",
+      "path": "/projects/1/members/all/8",
+      "status": [
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_blocked_without_member",
+      "path": "/projects/1/members/all/9",
+      "status": [
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_blocked_user_control",
+      "path": "/users/9",
+      "expect_fields": {
+        "state": "blocked"
+      }
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_internal_project",
+      "path": "/projects/2",
+      "expect_fields": {
+        "visibility": "internal"
+      }
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_internal_reporter",
+      "path": "/projects/2/members/all/7",
+      "expect_fields": {
+        "access_level": 20,
+        "state": "active"
+      },
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_internal_nonmember",
+      "path": "/projects/2/members/all/8",
+      "status": [
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_internal_collector_outside",
+      "path": "/projects/6/members/all/7",
+      "status": [
+        404
+      ],
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab_blocked_fixture",
+      "name": "gitlab_blocked_with_membership",
+      "path": "/projects/7/members/all/9",
+      "expect_fields": {
+        "access_level": 20,
+        "state": "blocked"
+      },
+      "budget_ms": 2000
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_discussions",
+      "path": "/projects/7/merge_requests/1/discussions",
+      "mode": "gitlab",
+      "query": {
+        "per_page": 2
+      },
+      "reference_query": {
+        "per_page": 100
+      },
+      "min_pages": 2
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_state_events",
+      "path": "/projects/7/merge_requests/1/resource_state_events",
+      "mode": "gitlab",
+      "query": {
+        "per_page": 2
+      },
+      "reference_query": {
+        "per_page": 100
+      },
+      "min_pages": 2
+    },
+    {
+      "source": "gitlab",
+      "name": "gitlab_delta",
+      "path": "/projects/7/merge_requests",
+      "mode": "gitlab",
+      "id": "iid",
+      "query": {
+        "updated_after": "2026-11-20T00:00:00Z",
+        "state": "all",
+        "order_by": "updated_at",
+        "sort": "desc",
+        "per_page": 2
+      },
+      "reference_query": {
+        "per_page": 100
+      },
+      "expected_count": 5,
+      "min_pages": 2,
+      "pause_after_first": true,
+      "allow_drift": true
+    },
+    {
+      "source": "jira_user_search",
+      "name": "jira_user_search_projectKey_a_allowed",
+      "path": "/rest/api/3/user/viewissue/search",
+      "query": {
+        "projectKey": "CPA",
+        "accountId": "<a_allowed-accountId>",
+        "maxResults": 100
+      },
+      "contains": {
+        "accountId": "<a_allowed-accountId>"
+      },
+      "contains_expected": true
+    },
+    {
+      "source": "jira_user_search",
+      "name": "jira_user_search_projectKey_a_denied",
+      "path": "/rest/api/3/user/viewissue/search",
+      "query": {
+        "projectKey": "CPA",
+        "accountId": "<a_denied-accountId>",
+        "maxResults": 100
+      },
+      "contains": {
+        "accountId": "<a_denied-accountId>"
+      },
+      "contains_expected": true
+    },
+    {
+      "source": "jira_user_search",
+      "name": "jira_user_search_projectKey_b",
+      "path": "/rest/api/3/user/viewissue/search",
+      "query": {
+        "projectKey": "CPA",
+        "accountId": "<b-accountId>",
+        "maxResults": 100
+      },
+      "contains": {
+        "accountId": "<b-accountId>"
+      },
+      "contains_expected": false
+    },
+    {
+      "source": "jira_user_search",
+      "name": "jira_user_search_issueKey_a_allowed",
+      "path": "/rest/api/3/user/viewissue/search",
+      "query": {
+        "issueKey": "CPA-1",
+        "accountId": "<a_allowed-accountId>",
+        "maxResults": 100
+      },
+      "contains": {
+        "accountId": "<a_allowed-accountId>"
+      },
+      "contains_expected": true
+    },
+    {
+      "source": "jira_user_search",
+      "name": "jira_user_search_issueKey_a_denied",
+      "path": "/rest/api/3/user/viewissue/search",
+      "query": {
+        "issueKey": "CPA-1",
+        "accountId": "<a_denied-accountId>",
+        "maxResults": 100
+      },
+      "contains": {
+        "accountId": "<a_denied-accountId>"
+      },
+      "contains_expected": true
+    },
+    {
+      "source": "jira_user_search",
+      "name": "jira_user_search_issueKey_b",
+      "path": "/rest/api/3/user/viewissue/search",
+      "query": {
+        "issueKey": "CPA-1",
+        "accountId": "<b-accountId>",
+        "maxResults": 100
+      },
+      "contains": {
+        "accountId": "<b-accountId>"
+      },
+      "contains_expected": false
+    }
+  ]
+}
