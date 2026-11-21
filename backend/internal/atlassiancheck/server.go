@@ -235,6 +235,12 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 		}{roles, s.state.LastReport, s.state.ReportStatus}
 	case "check":
 		result, err = s.check(ctx, role)
+	case "inspect":
+		result, err = s.inspect(ctx, role)
+	case "refresh":
+		previous := s.state.Tokens[role].Refresh
+		_, err = s.refresh(ctx, role)
+		result = map[string]bool{"refreshed": err == nil, "rotated": s.state.Tokens[role].Refresh != previous}
 	case "report":
 		result, err = s.report(ctx)
 	case "erase":
@@ -259,6 +265,14 @@ func (s *Server) access(ctx context.Context, role string) (string, error) {
 	}
 	if t.Expires.After(time.Now().Add(time.Minute)) {
 		return t.Access, nil
+	}
+	return s.refresh(ctx, role)
+}
+
+func (s *Server) refresh(ctx context.Context, role string) (string, error) {
+	t, ok := s.state.Tokens[role]
+	if !ok {
+		return "", errors.New("role needs OAuth authorization")
 	}
 	fresh, err := s.provider.exchange(ctx, "refresh_token", t.Refresh)
 	if err != nil {
