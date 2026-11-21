@@ -20,7 +20,7 @@ const (
 // objects the part touches, decides which versions become current and writes them with seq. resolved is
 // the record a conflict resolution accepted, the only one that may replace a version of the same revision.
 // It returns the areas whose facts changed.
-func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input, resolved int) ([]entity.ID, error) {
+func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input, resolved int, structureVersion *int64) ([]entity.ID, error) {
 	now := u.d.Clock.Now()
 	accounts, err := u.d.Accounts.EnsureSourceAccounts(ctx, org, in.instance, sortedAccounts(in.accounts))
 	if err != nil {
@@ -32,6 +32,11 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 	}
 	if err := u.placeAreas(ctx, org, in, objects); err != nil {
 		return nil, err
+	}
+	if structureVersion != nil {
+		if err := u.d.ReportAreas.LinkReportArea(ctx, org, *in.importProject, objects[in.area].ID, *structureVersion, seq); err != nil {
+			return nil, err
+		}
 	}
 	w := &writer{u: u, org: org, seq: seq, now: now, resolved: resolved, objects: objects, accounts: accounts, changes: changes{}}
 	if err := w.writeMRFacts(ctx, in); err != nil {

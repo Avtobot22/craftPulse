@@ -1768,6 +1768,42 @@ func (e ImportUploadReportFormat) Valid() bool {
 	}
 }
 
+// Defines values for ImportUploadReportKind.
+const (
+	ImportUploadReportKindCode    ImportUploadReportKind = "code"
+	ImportUploadReportKindDocs    ImportUploadReportKind = "docs"
+	ImportUploadReportKindIac     ImportUploadReportKind = "iac"
+	ImportUploadReportKindImage   ImportUploadReportKind = "image"
+	ImportUploadReportKindOpenapi ImportUploadReportKind = "openapi"
+	ImportUploadReportKindSast    ImportUploadReportKind = "sast"
+	ImportUploadReportKindSca     ImportUploadReportKind = "sca"
+	ImportUploadReportKindSecrets ImportUploadReportKind = "secrets"
+)
+
+// Valid indicates whether the value is a known member of the ImportUploadReportKind enum.
+func (e ImportUploadReportKind) Valid() bool {
+	switch e {
+	case ImportUploadReportKindCode:
+		return true
+	case ImportUploadReportKindDocs:
+		return true
+	case ImportUploadReportKindIac:
+		return true
+	case ImportUploadReportKindImage:
+		return true
+	case ImportUploadReportKindOpenapi:
+		return true
+	case ImportUploadReportKindSast:
+		return true
+	case ImportUploadReportKindSca:
+		return true
+	case ImportUploadReportKindSecrets:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ImportUploadSchemaId.
 const (
 	ImportUploadSchemaIdCiRuns        ImportUploadSchemaId = "ci_runs"
@@ -6257,12 +6293,18 @@ type ImportUpload struct {
 	// CommitSha Ревизия, к которой относится отчёт; обязательна для `findings`, `junit` и `coverage`. Без неё отчёт отклоняется: результат не привязывается к head по догадке.
 	CommitSha *string `json:"commit_sha,omitempty"`
 
-	// File Файл по схеме импорта: JSON или CSV для фактов, отчёт поддержанного формата для `findings`, `junit` и `coverage`. JSON - массив записей `Record` канонического пакета (`envelope.yaml`), CSV - снимок текущих задач по `TaskCsvRow`.
+	// File Отчёт передаётся как JSON, XML или текст LCOV. Для других схем JSON содержит массив записей `Record` из `envelope.yaml`, а CSV содержит снимок текущих задач по `TaskCsvRow`.
 	File      openapi_types.File `json:"file"`
 	ProjectId openapi_types.UUID `json:"project_id"`
 
-	// ReportFormat Формат файла для `findings`, `junit` и `coverage`; для остальных схем не передаётся. `envelope` - находки в формате универсального импорта.
+	// ReportFormat Для `findings` укажите `envelope`, `sarif`, `gitlab_security` или `gitlab_code_quality`.
+	// Файл `envelope` содержит JSON-массив записей `Record` со схемой `finding/1` и ревизией `commit_sha`.
+	// Для `junit` укажите `junit_xml`. Для `coverage` доступны `lcov`, `cobertura` и `jacoco`.
+	// Остальные схемы это поле не используют.
 	ReportFormat *ImportUploadReportFormat `json:"report_format,omitempty"`
+
+	// ReportKind Вид проверки для SARIF. Если поле пропущено, используется `code`. Для GitLab Security вид определяется по `scan.type`.
+	ReportKind *ImportUploadReportKind `json:"report_kind,omitempty"`
 
 	// SchemaId `merge_requests` и `ci_runs` несут те же факты MR, запусков, jobs и попыток, что отдают адаптеры Git и CI.
 	SchemaId      ImportUploadSchemaId `json:"schema_id"`
@@ -6271,15 +6313,27 @@ type ImportUpload struct {
 	// Snapshot Файл содержит только текущее состояние без истории (CSV); прошлый WIP из него не строится.
 	Snapshot *bool `json:"snapshot,omitempty"`
 
+	// SourceDir Каталог от корня репозитория, относительно которого указаны пути в отчёте покрытия. По умолчанию используется корень.
+	SourceDir *string `json:"source_dir,omitempty"`
+
 	// SourceInstanceKey Экземпляр системы-источника; совпадение с подключённым экземпляром даёт те же идентичности (раздел 12.4).
 	SourceInstanceKey string `json:"source_instance_key"`
 
 	// SourceProvider Вид источника. Клиент показывает неизвестное значение как «другой источник».
 	SourceProvider Provider `json:"source_provider"`
+
+	// SourceRoot Абсолютный путь корня репозитория на машине, где получен отчёт покрытия. Нужен для сопоставления абсолютных путей отчёта.
+	SourceRoot *string `json:"source_root,omitempty"`
 }
 
-// ImportUploadReportFormat Формат файла для `findings`, `junit` и `coverage`; для остальных схем не передаётся. `envelope` - находки в формате универсального импорта.
+// ImportUploadReportFormat Для `findings` укажите `envelope`, `sarif`, `gitlab_security` или `gitlab_code_quality`.
+// Файл `envelope` содержит JSON-массив записей `Record` со схемой `finding/1` и ревизией `commit_sha`.
+// Для `junit` укажите `junit_xml`. Для `coverage` доступны `lcov`, `cobertura` и `jacoco`.
+// Остальные схемы это поле не используют.
 type ImportUploadReportFormat string
+
+// ImportUploadReportKind Вид проверки для SARIF. Если поле пропущено, используется `code`. Для GitLab Security вид определяется по `scan.type`.
+type ImportUploadReportKind string
 
 // ImportUploadSchemaId `merge_requests` и `ci_runs` несут те же факты MR, запусков, jobs и попыток, что отдают адаптеры Git и CI.
 type ImportUploadSchemaId string
@@ -7104,7 +7158,7 @@ type Receipt struct {
 	DuplicateOf     *openapi_types.UUID `json:"duplicate_of"`
 	Id              openapi_types.UUID  `json:"id"`
 
-	// ReasonCode Причина отказа пакета целиком: `schema_unsupported`, `envelope_invalid`, `path_unsafe`, `limit_exceeded`.
+	// ReasonCode Причина отказа пакета целиком. Возможные значения: `schema_unsupported`, `envelope_invalid`, `path_unsafe`, `limit_exceeded`, `outside_scope`.
 	ReasonCode    *string   `json:"reason_code"`
 	ReceivedAt    time.Time `json:"received_at"`
 	RecordCount   int       `json:"record_count"`
