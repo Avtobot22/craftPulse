@@ -3796,7 +3796,7 @@ export interface components {
         /** @enum {string} */
         AnalysisKind: "code" | "sast" | "sca" | "secrets" | "iac" | "image" | "junit" | "coverage" | "docs" | "openapi" | "sonar";
         ImportUpload: {
-            /** @description Файл по схеме импорта: JSON или CSV для фактов, отчёт поддержанного формата для `findings`, `junit` и `coverage`. JSON - массив записей `Record` канонического пакета (`envelope.yaml`), CSV - снимок текущих задач по `TaskCsvRow`. */
+            /** @description Отчёт передаётся как JSON, XML или текст LCOV. Для других схем JSON содержит массив записей `Record` из `envelope.yaml`, а CSV содержит снимок текущих задач по `TaskCsvRow`. */
             file: string;
             /**
              * @description `merge_requests` и `ci_runs` несут те же факты MR, запусков, jobs и попыток, что отдают адаптеры Git и CI.
@@ -3804,10 +3804,22 @@ export interface components {
              */
             schema_id: "tasks" | "task_events" | "relations" | "merge_requests" | "ci_runs" | "findings" | "junit" | "coverage" | "documents";
             /**
-             * @description Формат файла для `findings`, `junit` и `coverage`; для остальных схем не передаётся. `envelope` - находки в формате универсального импорта.
+             * @description Для `findings` укажите `envelope`, `sarif`, `gitlab_security` или `gitlab_code_quality`.
+             *     Файл `envelope` содержит JSON-массив записей `Record` со схемой `finding/1` и ревизией `commit_sha`.
+             *     Для `junit` укажите `junit_xml`. Для `coverage` доступны `lcov`, `cobertura` и `jacoco`.
+             *     Остальные схемы это поле не используют.
              * @enum {string}
              */
             report_format?: "envelope" | "sarif" | "gitlab_security" | "gitlab_code_quality" | "junit_xml" | "lcov" | "cobertura" | "jacoco";
+            /**
+             * @description Вид проверки для SARIF. Если поле пропущено, используется `code`. Для GitLab Security вид определяется по `scan.type`.
+             * @enum {string}
+             */
+            report_kind?: "code" | "sast" | "sca" | "secrets" | "iac" | "image" | "docs" | "openapi";
+            /** @description Абсолютный путь корня репозитория на машине, где получен отчёт покрытия. Нужен для сопоставления абсолютных путей отчёта. */
+            source_root?: string;
+            /** @description Каталог от корня репозитория, относительно которого указаны пути в отчёте покрытия. По умолчанию используется корень. */
+            source_dir?: string;
             /** @description Ревизия, к которой относится отчёт; обязательна для `findings`, `junit` и `coverage`. Без неё отчёт отклоняется: результат не привязывается к head по догадке. */
             commit_sha?: string;
             schema_version: string;
@@ -3838,7 +3850,7 @@ export interface components {
             rejected_count: number;
             replay_count: number;
             conflict_count: number;
-            /** @description Причина отказа пакета целиком: `schema_unsupported`, `envelope_invalid`, `path_unsafe`, `limit_exceeded`. */
+            /** @description Причина отказа пакета целиком. Возможные значения: `schema_unsupported`, `envelope_invalid`, `path_unsafe`, `limit_exceeded`, `outside_scope`. */
             reason_code: string | null;
             /** Format: uuid */
             duplicate_of: string | null;

@@ -49,6 +49,7 @@ type reportParser struct {
 // the tool ran in and the directory of the repository its relative paths start from.
 type parseInput struct {
 	kind       string
+	sha        string
 	sourceRoot string
 	sourceDir  string
 }
@@ -80,6 +81,16 @@ var _parsers = []reportParser{
 		kinds:   []string{entity.AnalysisSAST, entity.AnalysisSecrets, entity.AnalysisSCA},
 		accepts: regexp.MustCompile(`^15\.[012]\.\d+$`).MatchString,
 		parse:   parseGitLabSecurity,
+	},
+	{
+		format: "gitlab_code_quality", version: "gitlab-code-quality/1",
+		kinds: []string{entity.AnalysisCode}, accepts: func(v string) bool { return v == "1" },
+		parse: parseGitLabCodeQuality,
+	},
+	{
+		format: "envelope", version: "envelope-finding/1",
+		kinds: []string{entity.AnalysisCode}, accepts: func(v string) bool { return v == "1" },
+		parse: parseEnvelopeFindings,
 	},
 	{
 		format: "junit_xml", version: "junit-xml/1",

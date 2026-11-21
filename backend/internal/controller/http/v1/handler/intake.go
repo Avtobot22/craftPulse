@@ -22,7 +22,7 @@ import (
 const (
 	// _maxImportFile is the limit of the intake; the package around the file is checked again by it.
 	_maxImportFile  = 25 << 20
-	_maxFormField   = 1024
+	_maxFormField   = 4096
 	_receiptCursor  = "receipt"
 	_recordCursor   = "receipt_record"
 	_conflictCursor = "ingest_conflict"
@@ -31,7 +31,7 @@ const (
 
 var (
 	errPayloadTooLarge = errors.New("handler: the file is larger than the limit of the intake")
-	errUnsupportedFile = errors.New("handler: the file is neither JSON nor CSV")
+	errUnsupportedFile = errors.New("handler: unsupported import file media type")
 	errMalformedForm   = errors.New("handler: the form of the import is not valid multipart")
 )
 
@@ -72,6 +72,7 @@ func importForm(r *multipart.Reader) (entity.ImportFile, error) {
 		f       entity.ImportFile
 		fields  = map[string]string{}
 		hasFile bool
+		media   string
 	)
 	for {
 		part, err := r.NextPart()
@@ -86,6 +87,9 @@ func importForm(r *multipart.Reader) (entity.ImportFile, error) {
 		}
 		name := part.FormName()
 		if name == "file" {
+			if hasFile {
+				return entity.ImportFile{}, errMalformedForm
+			}
 			if f.Content, err = io.ReadAll(io.LimitReader(part, _maxImportFile+1)); err != nil {
 				if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 					return entity.ImportFile{}, errPayloadTooLarge
@@ -95,9 +99,7 @@ func importForm(r *multipart.Reader) (entity.ImportFile, error) {
 			if len(f.Content) > _maxImportFile {
 				return entity.ImportFile{}, errPayloadTooLarge
 			}
-			if f.Format, err = fileFormat(part.Header.Get("Content-Type"), f.Content); err != nil {
-				return entity.ImportFile{}, err
-			}
+			media = part.Header.Get("Content-Type")
 			hasFile = true
 			continue
 		}
@@ -127,17 +129,40 @@ func importForm(r *multipart.Reader) (entity.ImportFile, error) {
 		}
 		f.Snapshot = snapshot
 	}
-	for _, name := range []string{"report_format", "commit_sha"} {
-		if fields[name] != "" {
-			v.Add("/"+name, entity.FieldNotAllowedValue, "reports of findings, tests and coverage come with the CI step")
-		}
-	}
 	if len(v.Fields) > 0 {
 		return entity.ImportFile{}, v
 	}
 	f.ProjectID, f.SchemaID, f.SchemaVersion = entity.ID(project), fields["schema_id"], fields["schema_version"]
 	f.Provider, f.InstanceKey = entity.Provider(fields["source_provider"]), fields["source_instance_key"]
+	f.CommitSHA, f.ReportFormat = fields["commit_sha"], fields["report_format"]
+	f.ReportKind = fields["report_kind"]
+	f.SourceRoot, f.SourceDir = fields["source_root"], fields["source_dir"]
+	switch f.SchemaID {
+	case "findings", "junit", "coverage":
+		if !reportFileMedia(media) {
+			return entity.ImportFile{}, errUnsupportedFile
+		}
+	default:
+		if f.Format, err = fileFormat(media, f.Content); err != nil {
+			return entity.ImportFile{}, err
+		}
+	}
 	return f, nil
+}
+
+func reportFileMedia(contentType string) bool {
+	if contentType == "" {
+		return true
+	}
+	media, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	switch media {
+	case "application/octet-stream", "application/json", "application/sarif+json", "application/xml", "text/xml", "text/plain":
+		return true
+	}
+	return false
 }
 
 // fileFormat takes the media type of the part, and for a generic one looks at the first character.

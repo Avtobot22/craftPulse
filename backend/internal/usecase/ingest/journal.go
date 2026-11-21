@@ -60,6 +60,10 @@ func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, r io.Reader) (
 	if err != nil {
 		return nil, err
 	}
+	if !allowed && projectReportImport(rc, res.Manifest) {
+		p.Receipt.Status, p.Receipt.ReasonCode = entity.ReceiptRejected, entity.PackageOutsideScope
+		return p, nil
+	}
 	p.Receipt.SourceInstanceID, p.Receipt.PackageHash, p.Receipt.ObjectKey = &instance, res.ContentHash, packageKey(rc.OrganizationID, rc.ID)
 	p.Records = records(res, instance, allowed)
 	if rc.Channel == entity.ChannelCI {
@@ -114,18 +118,26 @@ func (u *UseCase) channel(ctx context.Context, rc entity.Receipt, m *envelope.Ma
 		if err != nil {
 			return entity.ID{}, false, err
 		}
-		s := entity.Subject{OrganizationID: rc.OrganizationID, UserID: *rc.RequestedBy}
-		_, err = u.d.Access.Authorize(ctx, s, entity.AccessRequest{
-			Operation: "createImport", Action: "imports.create", Area: entity.AreaRef{Kind: entity.AreaProject, ID: *rc.ProjectID},
-		})
-		if errors.Is(err, entity.ErrForbidden) || errors.Is(err, entity.ErrNotFound) {
-			return inst.ID, false, nil
-		}
-		return inst.ID, err == nil, err
+		allowed, err := u.importScope(ctx, rc, m)
+		return inst.ID, allowed, err
 	case entity.ChannelCI:
 		return u.ciScope(ctx, rc, m)
 	}
 	return entity.ID{}, false, errorf("channel %s has no intake yet", rc.Channel)
+}
+
+func (u *UseCase) importScope(ctx context.Context, rc entity.Receipt, m *envelope.Manifest) (bool, error) {
+	if projectReportImport(rc, m) && m.Area.NativeId != rc.ProjectID.String() {
+		return false, nil
+	}
+	s := entity.Subject{OrganizationID: rc.OrganizationID, UserID: *rc.RequestedBy}
+	_, err := u.d.Access.Authorize(ctx, s, entity.AccessRequest{
+		Operation: "createImport", Action: "imports.create", Area: entity.AreaRef{Kind: entity.AreaProject, ID: *rc.ProjectID},
+	})
+	if errors.Is(err, entity.ErrForbidden) || errors.Is(err, entity.ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // records turns the checked records into journal rows. A record without its own revision is revised by its

@@ -151,6 +151,7 @@ func (e *normalizeEnv) report(t *testing.T, receipt entity.ID, kind string) repo
 type findingRow struct {
 	rule, kind, path string
 	start            int
+	finish           *int
 	severity         string
 	confidence       *string
 	evidence         string
@@ -158,14 +159,14 @@ type findingRow struct {
 
 func (e *normalizeEnv) findings(t *testing.T, receipt entity.ID, kind string) []findingRow {
 	t.Helper()
-	rows, err := e.owner.Query(t.Context(), `SELECT f.rule_id, f.finding_kind, COALESCE(f.path, ''), COALESCE(f.line_start, 0),
+	rows, err := e.owner.Query(t.Context(), `SELECT f.rule_id, f.finding_kind, COALESCE(f.path, ''), COALESCE(f.line_start, 0), f.line_end,
 		COALESCE(f.native_severity, ''), f.native_confidence, COALESCE(f.evidence::text, '')
 		FROM normalize.finding_occurrence f JOIN normalize.report r ON r.organization_id = f.organization_id AND r.id = f.report_id
 		WHERE r.receipt_id = $1 AND r.report_kind = $2 ORDER BY f.path, f.line_start, f.rule_id`, uuid.UUID(receipt), kind)
 	require.NoError(t, err)
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (findingRow, error) {
 		var f findingRow
-		return f, row.Scan(&f.rule, &f.kind, &f.path, &f.start, &f.severity, &f.confidence, &f.evidence)
+		return f, row.Scan(&f.rule, &f.kind, &f.path, &f.start, &f.finish, &f.severity, &f.confidence, &f.evidence)
 	})
 	require.NoError(t, err)
 	return out

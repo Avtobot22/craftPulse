@@ -149,6 +149,15 @@ func (u *UseCase) submit(ctx context.Context, s entity.Subject, rc entity.Receip
 	if res.Envelope != nil {
 		return u.refuse(ctx, s, rc, res.Manifest, packageReason(res.Envelope.Code))
 	}
+	if projectReportImport(rc, res.Manifest) {
+		allowed, err := u.importScope(ctx, rc, res.Manifest)
+		if err != nil {
+			return entity.Receipt{}, err
+		}
+		if !allowed {
+			return u.refuse(ctx, s, rc, res.Manifest, entity.PackageOutsideScope)
+		}
+	}
 	rc.Status, rc.RecordCount = entity.ReceiptQuarantined, len(res.Records)
 	if err := describe(&rc, res.Manifest); err != nil {
 		return entity.Receipt{}, err

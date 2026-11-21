@@ -1,6 +1,7 @@
 package normalize
 
 import (
+	"bytes"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -48,6 +49,7 @@ func parseJUnit(r io.Reader, _ parseInput) (*parsedReport, error) {
 		tc     *junitCase
 	)
 	seen := map[string]int{}
+	depth := 0
 	for {
 		tok, err := dec.Token()
 		if errors.Is(err, io.EOF) {
@@ -58,12 +60,16 @@ func parseJUnit(r io.Reader, _ parseInput) (*parsedReport, error) {
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
-			if out.formatVersion == "" {
+			if depth == 0 {
+				if out.formatVersion != "" {
+					return nil, invalidReport("junit_xml: multiple root elements")
+				}
 				out.formatVersion = t.Name.Local
 				if t.Name.Local != _junitSuites && t.Name.Local != _junitSuite {
 					return out, nil
 				}
 			}
+			depth++
 			switch t.Name.Local {
 			case _junitSuite:
 				suites = append(suites, attr(t, "name"))
@@ -89,6 +95,7 @@ func parseJUnit(r io.Reader, _ parseInput) (*parsedReport, error) {
 				}
 			}
 		case xml.EndElement:
+			depth--
 			switch t.Name.Local {
 			case _junitSuite:
 				suites = suites[:len(suites)-1]
@@ -99,6 +106,13 @@ func parseJUnit(r io.Reader, _ parseInput) (*parsedReport, error) {
 				}
 				out.tests = append(out.tests, test)
 				tc = nil
+			}
+		case xml.CharData:
+			if dec.InputOffset() == int64(len(t)) {
+				t = bytes.TrimPrefix(t, []byte("\ufeff"))
+			}
+			if depth == 0 && len(bytes.TrimSpace(t)) != 0 {
+				return nil, invalidReport("junit_xml: text outside the root element")
 			}
 		}
 	}

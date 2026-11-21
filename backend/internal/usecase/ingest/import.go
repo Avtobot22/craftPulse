@@ -25,14 +25,16 @@ var _importAreas = map[string]envelope.AreaRefKind{
 }
 
 // Import packs a file of the universal import into the package CI sends and passes it to the intake of
-// the import channel (TZ 10.5.2). JSON is an array of records of the envelope, CSV is a snapshot of
-// current tasks without history (FR-016 A1). The manifest is built from the form; the read of a snapshot
-// is named by the hash of the file, so the same file sent again repeats the same read.
+// the import channel (TZ 10.5.2). Reports preserve the original file. Other JSON files are arrays
+// of envelope records, and CSV is a snapshot of current tasks without history (FR-016 A1).
 func (u *UseCase) Import(ctx context.Context, s entity.Subject, f entity.ImportFile) (entity.Receipt, error) {
 	if err := validateImport(f); err != nil {
 		return entity.Receipt{}, err
 	}
 	area := _importAreas[f.SchemaID]
+	if isReportImport(f.SchemaID) {
+		area = envelope.AreaRefKindAnalysisProject
+	}
 	m := &envelope.Manifest{
 		SchemaId: envelope.ManifestSchemaId(f.SchemaID), SchemaVersion: f.SchemaVersion,
 		Source:       envelope.Source{Provider: envelope.SourceProvider(f.Provider), InstanceKey: f.InstanceKey},
@@ -53,9 +55,12 @@ func (u *UseCase) Import(ctx context.Context, s entity.Subject, f entity.ImportF
 	if err != nil {
 		return entity.Receipt{}, err
 	}
-	if f.Format == entity.ImportCSV {
+	switch {
+	case isReportImport(f.SchemaID):
+		err = addImportReport(w, m, f)
+	case f.Format == entity.ImportCSV:
 		err = w.AddTasksCSV(f.Content)
-	} else {
+	default:
 		err = addJSONRecords(w, f.Content)
 	}
 	if err != nil {
@@ -93,8 +98,8 @@ func validateImport(f entity.ImportFile) error {
 	if !slices.Contains(_providers, f.Provider) {
 		v.Add("/source_provider", entity.FieldNotAllowedValue, "")
 	}
-	if _, ok := _importAreas[f.SchemaID]; !ok {
-		v.Add("/schema_id", entity.FieldNotAllowedValue, "reports of findings, tests and coverage come with the CI step")
+	if _, ok := _importAreas[f.SchemaID]; !ok && !isReportImport(f.SchemaID) {
+		v.Add("/schema_id", entity.FieldNotAllowedValue, "")
 	}
 	if f.SchemaVersion == "" || len(f.SchemaVersion) > _maxSchemaVersion {
 		v.Add("/schema_version", entity.FieldOutOfRange, "1 to 16 characters")
@@ -102,6 +107,20 @@ func validateImport(f entity.ImportFile) error {
 	if f.InstanceKey == "" || len(f.InstanceKey) > _maxInstanceKey {
 		v.Add("/source_instance_key", entity.FieldOutOfRange, "1 to 512 characters")
 	}
+	if isReportImport(f.SchemaID) {
+		validateImportReport(f, v)
+	} else {
+		if f.CommitSHA != "" {
+			v.Add("/commit_sha", entity.FieldNotAllowedValue, "only report imports take a commit SHA")
+		}
+		if f.ReportFormat != "" {
+			v.Add("/report_format", entity.FieldNotAllowedValue, "only report imports take a report format")
+		}
+		if f.ReportKind != "" {
+			v.Add("/report_kind", entity.FieldNotAllowedValue, "only SARIF imports take a report kind")
+		}
+	}
+	validateImportPaths(f, v)
 	if f.Format == entity.ImportCSV && f.SchemaID != "tasks" {
 		v.Add("/file", entity.FieldNotAllowedValue, "CSV is a snapshot of tasks")
 	}

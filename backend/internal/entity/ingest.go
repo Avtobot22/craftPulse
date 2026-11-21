@@ -31,6 +31,7 @@ const (
 	PackagePathUnsafe        = "path_unsafe"
 	PackageEnvelopeInvalid   = "envelope_invalid"
 	PackageSchemaUnsupported = "schema_unsupported"
+	PackageOutsideScope      = "outside_scope"
 )
 
 type RecordOutcome string
@@ -183,6 +184,11 @@ type ImportFile struct {
 	SchemaVersion string
 	Provider      Provider
 	InstanceKey   string
+	CommitSHA     string
+	ReportFormat  string
+	ReportKind    string
+	SourceRoot    string
+	SourceDir     string
 	Snapshot      bool
 	Format        ImportFormat
 	Content       []byte

@@ -391,6 +391,10 @@ func planLinks(p structurePlan, verr *entity.ValidationError, kind entity.LinkKi
 	}
 	fromField, toField := linkFields(kind)
 	type pair struct{ from, to entity.ID }
+	have := make(map[pair]bool, len(cur))
+	for _, l := range cur {
+		have[pair{l.From, l.To}] = true
+	}
 	wanted := make(map[pair]bool, len(in))
 	for i, l := range in {
 		at := fmt.Sprintf("%s/%d", field, i)
@@ -403,19 +407,18 @@ func planLinks(p structurePlan, verr *entity.ValidationError, kind entity.LinkKi
 		if !froms[l.From] {
 			verr.Add(at+fromField, entity.FieldUnknownReference, "the record is not in the structure")
 		}
-		if !tos[l.To] {
+		k := pair{l.From, l.To}
+		known := tos[l.To] || kind == entity.LinkProjectArea && have[k]
+		if !known {
 			verr.Add(at+toField, entity.FieldUnknownReference, "the linked record is not in the structure or not known from connections")
 		}
-		k := pair{l.From, l.To}
 		if wanted[k] {
 			verr.Add(at, entity.FieldDuplicate, "interval overlaps another one of the same pair")
 		}
 		wanted[k] = true
 	}
-	have := make(map[pair]bool, len(cur))
 	for _, l := range cur {
 		k := pair{l.From, l.To}
-		have[k] = true
 		if !wanted[k] {
 			p.closed[kind] = append(p.closed[kind], l)
 		}
