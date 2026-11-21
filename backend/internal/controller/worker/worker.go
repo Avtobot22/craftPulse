@@ -24,6 +24,7 @@ type Deps struct {
 	Normalizer usecase.Normalizer
 	Calculator usecase.Calculator
 	Retention  usecase.Retention
+	Identifier usecase.Identifier
 }
 
 // Register adds the handlers of the job kinds; the count matters: River refuses to fetch jobs without a
@@ -47,7 +48,8 @@ func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &extendWorker{calculator: d.Calculator})
 	river.AddWorker(w, &extendTickWorker{calculator: d.Calculator})
 	river.AddWorker(w, &retentionWorker{retention: d.Retention})
-	return 18
+	river.AddWorker(w, &identifyWorker{identifier: d.Identifier})
+	return 19
 }
 
 const (
@@ -78,6 +80,15 @@ func Periodic() []*river.PeriodicJob {
 			return entity.RetentionTickJob{}, &river.InsertOpts{Queue: entity.QueueBulk}
 		}, &river.PeriodicJobOpts{RunOnStart: true}),
 	}
+}
+
+type identifyWorker struct {
+	river.WorkerDefaults[entity.ChangeIdentifyJob]
+	identifier usecase.Identifier
+}
+
+func (w *identifyWorker) Work(ctx context.Context, job *river.Job[entity.ChangeIdentifyJob]) error {
+	return w.identifier.RunIdentify(ctx, job.Args, completeIn(job))
 }
 
 type retentionWorker struct {

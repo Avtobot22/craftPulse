@@ -757,6 +757,42 @@ func (q *Queries) CurrentTasksByNative(ctx context.Context, arg CurrentTasksByNa
 	return items, nil
 }
 
+const defaultBranches = `-- name: DefaultBranches :many
+SELECT repository_id, default_branch::text AS default_branch FROM normalize.repository_version
+WHERE organization_id = $1 AND repository_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+    AND default_branch IS NOT NULL
+`
+
+type DefaultBranchesParams struct {
+	OrganizationID uuid.UUID
+	RepositoryIds  []uuid.UUID
+}
+
+type DefaultBranchesRow struct {
+	RepositoryID  uuid.UUID
+	DefaultBranch string
+}
+
+func (q *Queries) DefaultBranches(ctx context.Context, arg DefaultBranchesParams) ([]DefaultBranchesRow, error) {
+	rows, err := q.db.Query(ctx, defaultBranches, arg.OrganizationID, arg.RepositoryIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DefaultBranchesRow
+	for rows.Next() {
+		var i DefaultBranchesRow
+		if err := rows.Scan(&i.RepositoryID, &i.DefaultBranch); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const dictionariesOfAreas = `-- name: DictionariesOfAreas :many
 SELECT area_id, entry_kind, native_id, name, attributes FROM normalize.dictionary_entry
 WHERE organization_id = $1 AND area_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
@@ -1164,30 +1200,31 @@ func (q *Queries) InsertCoverageFacts(ctx context.Context, arg InsertCoverageFac
 
 const insertFindings = `-- name: InsertFindings :exec
 INSERT INTO normalize.finding_occurrence (organization_id, report_id, known_seq, native_id, rule_id, finding_kind, path, line_start, line_end,
-    package_purl, native_severity, native_confidence, fingerprint, evidence)
+    package_purl, native_severity, native_confidence, fingerprint, content_fingerprint, evidence)
 SELECT $1, $2, $3, NULLIF(unnest($4::text[]), ''),
     unnest($5::text[]), unnest($6::text[]), NULLIF(unnest($7::text[]), ''),
     NULLIF(unnest($8::integer[]), 0), NULLIF(unnest($9::integer[]), 0),
     NULLIF(unnest($10::text[]), ''), NULLIF(unnest($11::text[]), ''),
     NULLIF(unnest($12::text[]), ''), unnest($13::bytea[]),
-    NULLIF(unnest($14::text[]), '')::jsonb
+    NULLIF(unnest($14::bytea[]), ''::bytea), NULLIF(unnest($15::text[]), '')::jsonb
 `
 
 type InsertFindingsParams struct {
-	OrganizationID    uuid.UUID
-	ReportID          uuid.UUID
-	KnownSeq          int64
-	NativeIds         []string
-	RuleIds           []string
-	FindingKinds      []string
-	Paths             []string
-	LineStarts        []int32
-	LineEnds          []int32
-	PackagePurls      []string
-	NativeSeverities  []string
-	NativeConfidences []string
-	Fingerprints      [][]byte
-	Evidences         []string
+	OrganizationID      uuid.UUID
+	ReportID            uuid.UUID
+	KnownSeq            int64
+	NativeIds           []string
+	RuleIds             []string
+	FindingKinds        []string
+	Paths               []string
+	LineStarts          []int32
+	LineEnds            []int32
+	PackagePurls        []string
+	NativeSeverities    []string
+	NativeConfidences   []string
+	Fingerprints        [][]byte
+	ContentFingerprints [][]byte
+	Evidences           []string
 }
 
 // An empty text and a zero line stand for NULL: arrays of the statement carry no NULL elements. Set-returning
@@ -1207,6 +1244,7 @@ func (q *Queries) InsertFindings(ctx context.Context, arg InsertFindingsParams) 
 		arg.NativeSeverities,
 		arg.NativeConfidences,
 		arg.Fingerprints,
+		arg.ContentFingerprints,
 		arg.Evidences,
 	)
 	return err
@@ -1248,13 +1286,14 @@ const insertReport = `-- name: InsertReport :one
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
     scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
-    skipped_targets, history_from_sha, history_to_sha, history_truncated)
+    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language)
 VALUES ($1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11, $12,
     $13, $14, $15, $16, $17,
     $18, $19, $20, $21, $22, $23,
     $24, $25, $26, $27, $28,
-    $29, $30, $31, $32, $33)
+    $29, $30, $31, $32, $33,
+    $34, $35)
 RETURNING id
 `
 
@@ -1292,6 +1331,8 @@ type InsertReportParams struct {
 	HistoryFromSha   pgtype.Text
 	HistoryToSha     pgtype.Text
 	HistoryTruncated pgtype.Bool
+	RefName          pgtype.Text
+	Language         pgtype.Text
 }
 
 func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uuid.UUID, error) {
@@ -1329,6 +1370,8 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uui
 		arg.HistoryFromSha,
 		arg.HistoryToSha,
 		arg.HistoryTruncated,
+		arg.RefName,
+		arg.Language,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
@@ -1598,6 +1641,72 @@ func (q *Queries) KnownRepositoryVersions(ctx context.Context, arg KnownReposito
 	for rows.Next() {
 		var i KnownRepositoryVersionsRow
 		if err := rows.Scan(&i.RepositoryID, &i.SourceRevision, &i.ContentHash); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lastBranchReports = `-- name: LastBranchReports :many
+SELECT DISTINCT ON (r.component_id, COALESCE(r.language, ''), r.report_kind, r.ref_name)
+    r.id, r.area_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language, COALESCE(r.ref_name, '')::text AS ref_name,
+    COALESCE(r.sha, '')::text AS sha, r.exit_class, r.completeness, r.started_at, r.finished_at, r.known_seq
+FROM normalize.report r
+WHERE r.organization_id = $1 AND r.component_id = ANY ($2::uuid[])
+    AND r.ref_name = ANY ($3::text[])
+ORDER BY r.component_id, COALESCE(r.language, ''), r.report_kind, r.ref_name, COALESCE(r.finished_at, r.started_at) DESC NULLS LAST, r.known_seq DESC
+`
+
+type LastBranchReportsParams struct {
+	OrganizationID uuid.UUID
+	ComponentIds   []uuid.UUID
+	RefNames       []string
+}
+
+type LastBranchReportsRow struct {
+	ID           uuid.UUID
+	AreaID       uuid.UUID
+	ComponentID  uuid.NullUUID
+	ReportKind   string
+	Language     string
+	RefName      string
+	Sha          string
+	ExitClass    string
+	Completeness string
+	StartedAt    pgtype.Timestamptz
+	FinishedAt   pgtype.Timestamptz
+	KnownSeq     int64
+}
+
+// The last report of every component, language and kind of analysis on the branches asked; a report without its
+// time sorts last.
+func (q *Queries) LastBranchReports(ctx context.Context, arg LastBranchReportsParams) ([]LastBranchReportsRow, error) {
+	rows, err := q.db.Query(ctx, lastBranchReports, arg.OrganizationID, arg.ComponentIds, arg.RefNames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LastBranchReportsRow
+	for rows.Next() {
+		var i LastBranchReportsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AreaID,
+			&i.ComponentID,
+			&i.ReportKind,
+			&i.Language,
+			&i.RefName,
+			&i.Sha,
+			&i.ExitClass,
+			&i.Completeness,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.KnownSeq,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -2245,6 +2354,129 @@ func (q *Queries) ReadRepositoryVersion(ctx context.Context, arg ReadRepositoryV
 	return i, err
 }
 
+const receiptReports = `-- name: ReceiptReports :many
+SELECT r.id, r.area_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language, COALESCE(r.ref_name, '')::text AS ref_name,
+    COALESCE(r.sha, '')::text AS sha, r.exit_class, r.completeness, r.started_at, r.finished_at, r.known_seq,
+    COALESCE(a.outcome = 'canceled', false)::boolean AS interrupted, COALESCE(v.default_branch, '')::text AS default_branch
+FROM normalize.report r
+LEFT JOIN normalize.ci_attempt_version a ON a.organization_id = r.organization_id AND a.attempt_id = r.attempt_id AND a.superseded_seq IS NULL
+LEFT JOIN normalize.repository_version v ON v.organization_id = r.organization_id AND v.repository_id = r.area_id AND v.superseded_seq IS NULL
+WHERE r.organization_id = $1 AND r.receipt_id = $2
+ORDER BY r.record_no
+`
+
+type ReceiptReportsParams struct {
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+}
+
+type ReceiptReportsRow struct {
+	ID            uuid.UUID
+	AreaID        uuid.UUID
+	ComponentID   uuid.NullUUID
+	ReportKind    string
+	Language      string
+	RefName       string
+	Sha           string
+	ExitClass     string
+	Completeness  string
+	StartedAt     pgtype.Timestamptz
+	FinishedAt    pgtype.Timestamptz
+	KnownSeq      int64
+	Interrupted   bool
+	DefaultBranch string
+}
+
+func (q *Queries) ReceiptReports(ctx context.Context, arg ReceiptReportsParams) ([]ReceiptReportsRow, error) {
+	rows, err := q.db.Query(ctx, receiptReports, arg.OrganizationID, arg.ReceiptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReceiptReportsRow
+	for rows.Next() {
+		var i ReceiptReportsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AreaID,
+			&i.ComponentID,
+			&i.ReportKind,
+			&i.Language,
+			&i.RefName,
+			&i.Sha,
+			&i.ExitClass,
+			&i.Completeness,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.KnownSeq,
+			&i.Interrupted,
+			&i.DefaultBranch,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reportOccurrences = `-- name: ReportOccurrences :many
+SELECT id, report_id, rule_id, finding_kind, COALESCE(path, '')::text AS path, line_start, COALESCE(package_purl, '')::text AS package_purl, fingerprint,
+    content_fingerprint
+FROM normalize.finding_occurrence
+WHERE organization_id = $1 AND report_id = ANY ($2::uuid[])
+ORDER BY report_id, id
+`
+
+type ReportOccurrencesParams struct {
+	OrganizationID uuid.UUID
+	ReportIds      []uuid.UUID
+}
+
+type ReportOccurrencesRow struct {
+	ID                 uuid.UUID
+	ReportID           uuid.UUID
+	RuleID             string
+	FindingKind        string
+	Path               string
+	LineStart          pgtype.Int4
+	PackagePurl        string
+	Fingerprint        []byte
+	ContentFingerprint []byte
+}
+
+func (q *Queries) ReportOccurrences(ctx context.Context, arg ReportOccurrencesParams) ([]ReportOccurrencesRow, error) {
+	rows, err := q.db.Query(ctx, reportOccurrences, arg.OrganizationID, arg.ReportIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReportOccurrencesRow
+	for rows.Next() {
+		var i ReportOccurrencesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReportID,
+			&i.RuleID,
+			&i.FindingKind,
+			&i.Path,
+			&i.LineStart,
+			&i.PackagePurl,
+			&i.Fingerprint,
+			&i.ContentFingerprint,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reportedRecords = `-- name: ReportedRecords :many
 SELECT record_no FROM normalize.report
 WHERE organization_id = $1 AND receipt_id = $2 AND record_no = ANY ($3::integer[])
@@ -2269,6 +2501,66 @@ func (q *Queries) ReportedRecords(ctx context.Context, arg ReportedRecordsParams
 			return nil, err
 		}
 		items = append(items, record_no)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reportsByID = `-- name: ReportsByID :many
+SELECT r.id, r.area_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language, COALESCE(r.ref_name, '')::text AS ref_name,
+    COALESCE(r.sha, '')::text AS sha, r.exit_class, r.completeness, r.started_at, r.finished_at, r.known_seq
+FROM normalize.report r
+WHERE r.organization_id = $1 AND r.id = ANY ($2::uuid[])
+`
+
+type ReportsByIDParams struct {
+	OrganizationID uuid.UUID
+	Ids            []uuid.UUID
+}
+
+type ReportsByIDRow struct {
+	ID           uuid.UUID
+	AreaID       uuid.UUID
+	ComponentID  uuid.NullUUID
+	ReportKind   string
+	Language     string
+	RefName      string
+	Sha          string
+	ExitClass    string
+	Completeness string
+	StartedAt    pgtype.Timestamptz
+	FinishedAt   pgtype.Timestamptz
+	KnownSeq     int64
+}
+
+func (q *Queries) ReportsByID(ctx context.Context, arg ReportsByIDParams) ([]ReportsByIDRow, error) {
+	rows, err := q.db.Query(ctx, reportsByID, arg.OrganizationID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReportsByIDRow
+	for rows.Next() {
+		var i ReportsByIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AreaID,
+			&i.ComponentID,
+			&i.ReportKind,
+			&i.Language,
+			&i.RefName,
+			&i.Sha,
+			&i.ExitClass,
+			&i.Completeness,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.KnownSeq,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

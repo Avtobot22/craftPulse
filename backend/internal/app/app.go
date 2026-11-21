@@ -123,7 +123,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, check
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection, webhooks: collection,
 		operations: views, reports: views, process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
-		catalog: catalog,
+		findingReports: normalizer, catalog: catalog,
 	}
 	api := newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules)
 	api.RunnerNetwork, api.TrustedProxies = cfg.RunnerNetwork, cfg.TrustedProxies
@@ -204,7 +204,7 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	workers := river.NewWorkers()
 	kinds := workerctrl.Register(workers, workerctrl.Deps{
 		Probes: connections, Packages: packages, Collection: collection, Normalizer: normalizer, Calculator: calculator,
-		Retention: purges,
+		Retention: purges, Identifier: newIdentifier(pool, normalizer, orgs, clock.System{}),
 	})
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Int("job_kinds", kinds).Msg("worker started")

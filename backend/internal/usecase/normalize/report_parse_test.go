@@ -234,6 +234,23 @@ func TestParseGitLabSecurity_Kinds(t *testing.T) {
 	deps, err := parse(t, "gitlab_security", entity.AnalysisSCA, fixture(t, "gl-dependency-scanning-report.json"))
 	require.NoError(t, err)
 	assert.Equal(t, &packageRef{Name: "golang.org/x/net", Version: "v0.30.0"}, evidenceOf(t, deps.findings[0]).Package)
+	assert.Len(t, deps.findings[0].ContentFingerprint, 32, "a package without its lockfile is the content of a dependency finding")
+	assert.Nil(t, sast.findings[0].ContentFingerprint, "schema 15 says nothing of the content of a SAST finding")
+}
+
+func TestParseSARIF_ContentFingerprint(t *testing.T) {
+	t.Parallel()
+	opengrep, err := parse(t, "sarif", entity.AnalysisSAST, fixture(t, "opengrep.sarif"))
+	require.NoError(t, err)
+	moved := bytes.Replace(fixture(t, "opengrep.sarif"), []byte(`"startLine":13`), []byte(`"startLine":31`), 1)
+	again, err := parse(t, "sarif", entity.AnalysisSAST, moved)
+	require.NoError(t, err)
+	assert.Len(t, opengrep.findings[0].ContentFingerprint, 32)
+	assert.Equal(t, opengrep.findings[0].ContentFingerprint, again.findings[0].ContentFingerprint, "the content fingerprint leaves the lines out")
+	assert.NotEqual(t, opengrep.findings[0].Fingerprint, again.findings[0].Fingerprint, "without partial fingerprints the lines identify a result")
+	golangci, err := parse(t, "sarif", entity.AnalysisCode, fixture(t, "golangci.sarif"))
+	require.NoError(t, err)
+	assert.Nil(t, golangci.findings[0].ContentFingerprint, "a tool without fingerprints says nothing of the content")
 }
 
 func TestParseGitLabSecurity_Rejections(t *testing.T) {

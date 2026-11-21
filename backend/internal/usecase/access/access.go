@@ -58,6 +58,7 @@ var _rules = map[string]rule{
 	"sync.read":             ruleAdministrator,
 	"process.manage":        ruleProcessOwner,
 	"docs.read":             ruleAreaRead,
+	"ci.read":               ruleAreaRead,
 	"docs.manage":           ruleServiceOwner,
 	"links.decide":          ruleProjectManager,
 	"check_profiles.manage": ruleTechLead,

@@ -33,6 +33,7 @@ var (
 type reportSpec struct {
 	fixture, kind, format, producer, version string
 	name, sourceRoot, sourceDir              string
+	exit, completeness                       string
 	content                                  []byte
 	ci                                       *envelope.ScanCiCoordinates
 	component                                *envelope.ScanComponent
@@ -55,7 +56,12 @@ func gitlabCI(run, attempt string) *envelope.ScanCiCoordinates {
 // reportPackage is a package of the CI step: the files, their scan manifest and a report_file record of each.
 func reportPackage(t *testing.T, sha string, specs ...reportSpec) []byte {
 	t.Helper()
-	m := manifestOf(envelope.ManifestSchemaIdFindings, envelope.SourceProviderGitlab, _gitlabInstance, "42")
+	return reportPackageOf(t, _gitlabInstance, sha, specs...)
+}
+
+func reportPackageOf(t *testing.T, instance, sha string, specs ...reportSpec) []byte {
+	t.Helper()
+	m := manifestOf(envelope.ManifestSchemaIdFindings, envelope.SourceProviderGitlab, instance, "42")
 	m.Area.Kind = envelope.AreaRefKindRepository
 	var buf bytes.Buffer
 	w, err := envelope.NewWriter(&buf, m)
@@ -89,6 +95,12 @@ func reportPackage(t *testing.T, sha string, specs ...reportSpec) []byte {
 			Reports: []envelope.ScanReport{{
 				File: ref, ReportKind: envelope.ScanReportReportKind(s.kind), ReportFormat: envelope.ScanReportReportFormat(s.format), FormatVersion: "1",
 			}},
+		}
+		if s.exit != "" {
+			tool.ExitClass, tool.Completeness = envelope.ScanToolRunExitClass(s.exit), envelope.ScanToolRunCompleteness(s.completeness)
+		}
+		if s.completeness == "complete" {
+			tool.SkippedTargets, tool.SkippedCount, tool.History = []envelope.ScanSkippedTarget{}, ptr(0), nil
 		}
 		scan.Tools = append(scan.Tools, tool)
 		payload := envelope.ReportFileV1{
@@ -233,6 +245,10 @@ func TestNormalizeReport_SARIFWithProvenanceAndRepeats(t *testing.T) {
 			assert.NotContains(t, f.evidence, banned, "evidence keeps no code and no secret")
 		}
 	}
+	assert.Equal(t, 3, e.n(t, "SELECT count(*) FROM normalize.report WHERE ref_name = 'demo/PA-1-change' AND language = 'go'"),
+		"the branch and the language of the run")
+	assert.Equal(t, 1, e.n(t, "SELECT count(*) FROM normalize.finding_occurrence WHERE content_fingerprint IS NOT NULL"),
+		"only Opengrep says what the content of its result is")
 	assert.Equal(t, 1, e.n(t, "SELECT count(*) FROM normalize.area_change WHERE area_id = $1 AND 'report' = ANY (fact_kinds)", uuid.UUID(area)))
 	assert.Equal(t, 1, e.n(t, "SELECT count(*) FROM river_job WHERE kind = $1 AND args->>'area_id' = $2", entity.KindCalcRecount, area.String()))
 
@@ -421,6 +437,8 @@ func TestNormalizeReport_AdapterArtifactWithoutScanManifest(t *testing.T) {
 	assert.Equal(t, "complete", r.Completeness)
 	assert.Equal(t, "gitlab-security-15/1", r.ParserVersion)
 	assert.Len(t, e.findings(t, rc.ID, "sast"), 2)
+	assert.Equal(t, 1, e.n(t, "SELECT count(*) FROM normalize.report WHERE receipt_id = $1 AND ref_name = 'refs/merge-requests/7/head' AND language IS NULL",
+		uuid.UUID(rc.ID)), "an artifact of the adapter takes the branch of its run")
 
 	imported := e.imported(t, e.admin, buf.Bytes())
 	assert.Equal(t, entity.ReceiptRejected, imported.Status, "outside sync a report file needs its scan manifest")

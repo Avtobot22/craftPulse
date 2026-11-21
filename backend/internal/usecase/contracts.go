@@ -196,6 +196,13 @@ type CheckProfiles interface {
 		d entity.CheckProfileDraft) (v entity.CheckProfileVersion, created bool, err error)
 	CICheckProfile(ctx context.Context, s entity.Subject) (entity.CICheckProfile, error)
 	CIConfiguration(ctx context.Context, s entity.Subject, projectID entity.ID, system string) (entity.CIConfiguration, error)
+	Baselines(ctx context.Context, s entity.Subject, projectID entity.ID) ([]entity.BaselineState, error)
+}
+
+// Identifier runs the job of change that gives the findings of reports their canonical findings and decides the
+// baselines of the main branch.
+type Identifier interface {
+	RunIdentify(ctx context.Context, job entity.ChangeIdentifyJob, complete func(context.Context) error) error
 }
 
 // Targets is the calc module for process owners: the historical p85 of a group as a baseline and the

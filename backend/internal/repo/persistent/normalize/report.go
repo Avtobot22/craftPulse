@@ -54,7 +54,7 @@ func (r *Repo) InsertReport(ctx context.Context, orgID entity.ID, rep *entity.Sc
 		RulesHash: rep.RulesHash, ConfigHash: rep.ConfigHash, DbVersion: text(rep.DBVersion), DbPublishedAt: tstz(rep.DBPublishedAt),
 		ScopeHash: rep.ScopeHash, Sha: text(rep.SHA), ArtifactDigest: text(rep.ArtifactDigest), RunID: nullID(rep.RunID),
 		AttemptID: nullID(rep.AttemptID), StartedAt: tstz(rep.StartedAt), FinishedAt: tstz(rep.FinishedAt), ExitClass: rep.ExitClass,
-		Completeness: rep.Completeness, SkippedTargets: skipped,
+		Completeness: rep.Completeness, SkippedTargets: skipped, RefName: text(rep.RefName), Language: text(rep.Language),
 	}
 	if p.ScannedCount, err = int4(rep.ScannedCount); err != nil {
 		return err
@@ -89,6 +89,7 @@ func (r *Repo) insertFindings(ctx context.Context, orgID entity.ID, id uuid.UUID
 		Paths: make([]string, len(findings)), LineStarts: make([]int32, len(findings)), LineEnds: make([]int32, len(findings)),
 		PackagePurls: make([]string, len(findings)), NativeSeverities: make([]string, len(findings)),
 		NativeConfidences: make([]string, len(findings)), Fingerprints: make([][]byte, len(findings)), Evidences: make([]string, len(findings)),
+		ContentFingerprints: make([][]byte, len(findings)),
 	}
 	for i := range findings {
 		o := &findings[i]
@@ -101,6 +102,10 @@ func (r *Repo) insertFindings(ctx context.Context, orgID entity.ID, id uuid.UUID
 		f.NativeIds[i], f.RuleIds[i], f.FindingKinds[i], f.Paths[i] = o.NativeID, o.RuleID, o.Kind, o.Path
 		f.PackagePurls[i], f.NativeSeverities[i], f.NativeConfidences[i] = o.PackagePURL, o.NativeSeverity, o.NativeConfidence
 		f.Fingerprints[i], f.Evidences[i] = o.Fingerprint, string(o.Evidence)
+		f.ContentFingerprints[i] = o.ContentFingerprint
+		if f.ContentFingerprints[i] == nil {
+			f.ContentFingerprints[i] = []byte{}
+		}
 	}
 	if err := r.q(ctx).InsertFindings(ctx, f); err != nil {
 		return fmt.Errorf("normalize: insert findings: %w", err)
@@ -211,4 +216,92 @@ func line(n *int) (int32, error) {
 		return 0, fmt.Errorf("normalize: line %d does not fit its column", *n)
 	}
 	return int32(*n), nil
+}
+
+// ReceiptReports are the reports a receipt gave with their findings, in the order of their records.
+func (r *Repo) ReceiptReports(ctx context.Context, orgID, receiptID entity.ID) ([]entity.ReportFindings, error) {
+	rows, err := r.q(ctx).ReceiptReports(ctx, ReceiptReportsParams{OrganizationID: uuid.UUID(orgID), ReceiptID: uuid.UUID(receiptID)})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: receipt reports: %w", err)
+	}
+	out := make([]entity.ReportFindings, len(rows))
+	reports := make([]uuid.UUID, len(rows))
+	at := make(map[uuid.UUID]int, len(rows))
+	for i := range rows {
+		row := &rows[i]
+		out[i] = reportFindings(ReportsByIDRow{
+			ID: row.ID, AreaID: row.AreaID, ComponentID: row.ComponentID, ReportKind: row.ReportKind, Language: row.Language, RefName: row.RefName,
+			Sha: row.Sha, ExitClass: row.ExitClass, Completeness: row.Completeness, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
+			KnownSeq: row.KnownSeq,
+		})
+		out[i].Interrupted, out[i].DefaultBranch = row.Interrupted, row.DefaultBranch
+		reports[i], at[row.ID] = row.ID, i
+	}
+	if len(rows) == 0 {
+		return out, nil
+	}
+	occurrences, err := r.q(ctx).ReportOccurrences(ctx, ReportOccurrencesParams{OrganizationID: uuid.UUID(orgID), ReportIds: reports})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: report occurrences: %w", err)
+	}
+	for i := range occurrences {
+		o := &occurrences[i]
+		rep := &out[at[o.ReportID]]
+		occ := entity.ReportOccurrence{
+			ID: entity.ID(o.ID), RuleID: o.RuleID, Kind: o.FindingKind, Path: o.Path, PackagePURL: o.PackagePurl, Fingerprint: o.Fingerprint, ContentFingerprint: o.ContentFingerprint,
+		}
+		if o.LineStart.Valid {
+			n := int(o.LineStart.Int32)
+			occ.LineStart = &n
+		}
+		rep.Occurrences = append(rep.Occurrences, occ)
+	}
+	return out, nil
+}
+
+// ReportsByID are the reports of ids without their findings.
+func (r *Repo) ReportsByID(ctx context.Context, orgID entity.ID, reportIDs []entity.ID) ([]entity.ReportFindings, error) {
+	rows, err := r.q(ctx).ReportsByID(ctx, ReportsByIDParams{OrganizationID: uuid.UUID(orgID), Ids: ids(reportIDs)})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: reports by id: %w", err)
+	}
+	out := make([]entity.ReportFindings, len(rows))
+	for i := range rows {
+		out[i] = reportFindings(rows[i])
+	}
+	return out, nil
+}
+
+// LastBranchReports are the last reports of every component, language and kind of analysis on the branches asked.
+func (r *Repo) LastBranchReports(ctx context.Context, orgID entity.ID, components []entity.ID, refs []string) ([]entity.ReportFindings, error) {
+	rows, err := r.q(ctx).LastBranchReports(ctx, LastBranchReportsParams{OrganizationID: uuid.UUID(orgID), ComponentIds: ids(components), RefNames: refs})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: last branch reports: %w", err)
+	}
+	out := make([]entity.ReportFindings, len(rows))
+	for i := range rows {
+		out[i] = reportFindings(ReportsByIDRow(rows[i]))
+	}
+	return out, nil
+}
+
+// DefaultBranches are the main branches of the repositories that name one.
+func (r *Repo) DefaultBranches(ctx context.Context, orgID entity.ID, repositories []entity.ID) (map[entity.ID]string, error) {
+	rows, err := r.q(ctx).DefaultBranches(ctx, DefaultBranchesParams{OrganizationID: uuid.UUID(orgID), RepositoryIds: ids(repositories)})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: default branches: %w", err)
+	}
+	out := make(map[entity.ID]string, len(rows))
+	for _, row := range rows {
+		out[entity.ID(row.RepositoryID)] = row.DefaultBranch
+	}
+	return out, nil
+}
+
+func reportFindings(row ReportsByIDRow) entity.ReportFindings {
+	return entity.ReportFindings{
+		ID: entity.ID(row.ID), AreaID: entity.ID(row.AreaID), ComponentID: idPtr(row.ComponentID), Kind: row.ReportKind, Language: row.Language,
+		RefName: row.RefName, SHA: row.Sha, ExitClass: row.ExitClass, Completeness: row.Completeness, StartedAt: timePtr(row.StartedAt),
+		FinishedAt: timePtr(row.FinishedAt), KnownSeq: row.KnownSeq,
+	}
 }

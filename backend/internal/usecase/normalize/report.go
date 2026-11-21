@@ -102,7 +102,9 @@ func (in *input) provenance(c *reportCandidate, t *envelope.ScanToolRun) error {
 	}
 	c.component = t.Component
 	c.paths.sourceRoot, c.paths.sourceDir = deref(t.SourceRoot), deref(t.SourceDir)
+	r.Language = deref(t.Language)
 	if t.Ci != nil {
+		r.RefName = t.Ci.RefName
 		c.run, c.attempt = in.ciObjects(deref(t.Ci.JobNativeId), &t.Ci.RunNativeId, t.Ci.AttemptNativeId)
 	}
 	return nil
@@ -318,6 +320,10 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 	if err != nil {
 		return err
 	}
+	refs, err := w.runRefs(ctx, valid)
+	if err != nil {
+		return err
+	}
 	for _, c := range valid {
 		if slices.Contains(done, c.report.Record.RecordNo) {
 			continue
@@ -328,6 +334,9 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 		if c.run != nil {
 			id := w.objects[*c.run].ID
 			r.RunID = &id
+			if r.RefName == "" {
+				r.RefName = refs[id]
+			}
 		}
 		if c.attempt != nil {
 			id := w.objects[*c.attempt].ID
@@ -340,6 +349,29 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 		w.changes.add(area, _factReport, changedAt(r.StartedAt, r.FinishedAt))
 	}
 	return nil
+}
+
+// runRefs are the branches of the runs of reports that came without a scan manifest, read after the CI facts of
+// the part are written.
+func (w *writer) runRefs(ctx context.Context, reports []*reportCandidate) (map[entity.ID]string, error) {
+	var ids []entity.ID
+	for _, c := range reports {
+		if c.report.RefName == "" && c.run != nil {
+			ids = append(ids, w.objects[*c.run].ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	list, err := w.u.d.Repo.CurrentCIRunVersions(ctx, w.org, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[entity.ID]string, len(list))
+	for i := range list {
+		out[list[i].RunID] = list[i].RefName
+	}
+	return out, nil
 }
 
 // testAttempts are the current versions of the attempts JUnit reports of the part belong to, read after the CI facts

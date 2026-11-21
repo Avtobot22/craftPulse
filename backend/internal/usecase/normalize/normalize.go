@@ -89,6 +89,7 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 			return err
 		}
 	}
+	reports := job.Reports || in != nil && len(in.reports) > 0
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		areas := job.Areas
 		if in != nil {
@@ -107,12 +108,20 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 		}
 		if more {
 			next := job
-			next.AfterNo, next.Areas = part[len(part)-1].No, areas
+			next.AfterNo, next.Areas, next.Reports = part[len(part)-1].No, areas, reports
 			if err := u.d.Queue.Enqueue(ctx, next, queueOf(rc)); err != nil {
 				return err
 			}
-		} else if err := u.recount(ctx, org, areas, job.CorrelationID); err != nil {
+			return complete(ctx)
+		}
+		if err := u.recount(ctx, org, areas, job.CorrelationID); err != nil {
 			return err
+		}
+		if reports {
+			identify := entity.ChangeIdentifyJob{OrganizationID: org, ReceiptID: job.ReceiptID, CorrelationID: job.CorrelationID}
+			if err := u.d.Queue.Enqueue(ctx, identify, queueOf(rc)); err != nil {
+				return err
+			}
 		}
 		return complete(ctx)
 	})

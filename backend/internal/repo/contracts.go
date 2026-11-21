@@ -343,6 +343,10 @@ type NormalizeRepo interface {
 	ReportedRecords(ctx context.Context, orgID, receiptID entity.ID, nos []int) ([]int, error)
 	// InsertReport writes a report with its findings, test executions or coverage; the cases of the tests are kept per area.
 	InsertReport(ctx context.Context, orgID entity.ID, rep *entity.ScanReport, rows entity.ReportRows) error
+	ReceiptReports(ctx context.Context, orgID, receiptID entity.ID) ([]entity.ReportFindings, error)
+	ReportsByID(ctx context.Context, orgID entity.ID, reportIDs []entity.ID) ([]entity.ReportFindings, error)
+	LastBranchReports(ctx context.Context, orgID entity.ID, components []entity.ID, refs []string) ([]entity.ReportFindings, error)
+	DefaultBranches(ctx context.Context, orgID entity.ID, repositories []entity.ID) (map[entity.ID]string, error)
 
 	RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error)
 	// EnsureObjects creates the identities that are new with the knowledge number seq and returns all by key.
@@ -489,4 +493,15 @@ type ChangeRepo interface {
 	LatestProfileVersion(ctx context.Context, orgID, projectID entity.ID) (entity.CheckProfileVersion, error)
 	ProfileVersionByConfirmation(ctx context.Context, orgID, confirmationID entity.ID) (entity.CheckProfileVersion, error)
 	InsertProfileVersion(ctx context.Context, orgID entity.ID, v entity.CheckProfileVersion) error
+
+	IdentitiesByFingerprint(ctx context.Context, orgID, areaID entity.ID, method int, fingerprints [][]byte) (map[string]entity.ID, error)
+	IdentitiesByContent(ctx context.Context, orgID, areaID entity.ID, method int, contents [][]byte) ([]entity.FindingIdentity, error)
+	InsertFindingIdentity(ctx context.Context, orgID entity.ID, f *entity.FindingIdentity) (entity.ID, error)
+	AssignedOccurrences(ctx context.Context, orgID entity.ID, occurrences []entity.ID) ([]entity.ID, error)
+	InsertOccurrenceIdentities(ctx context.Context, orgID entity.ID, list []entity.OccurrenceIdentity, at time.Time, seq int64) error
+	FindingIdentity(ctx context.Context, orgID, id entity.ID) (entity.FindingIdentity, error)
+	OccurrenceIdentities(ctx context.Context, orgID entity.ID, occurrences []entity.ID) ([]entity.OccurrenceIdentity, error)
+	LockCurrentBaseline(ctx context.Context, orgID, componentID entity.ID, language, kind string) (entity.Baseline, error)
+	ReplaceBaseline(ctx context.Context, orgID entity.ID, old, b *entity.Baseline) error
+	CurrentBaselines(ctx context.Context, orgID entity.ID, components []entity.ID) ([]entity.Baseline, error)
 }

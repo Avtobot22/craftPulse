@@ -1,5 +1,6 @@
 // Package change owns the technical results of a change (TZ 10.3): on M0 the matrix of checks of a project, the
-// profile the step of CI reads by its upload token and the configuration snippet that adds the step to CI.
+// profile the step of CI reads by its upload token, the configuration snippet that adds the step to CI, the
+// canonical findings across reports and the baselines of the main branch.
 package change
 
 import (
@@ -30,6 +31,7 @@ type Auditor interface {
 
 type Deps struct {
 	Repo       repo.ChangeRepo
+	Reports    Reports
 	Tenants    repo.TenantRepo
 	Tx         repo.Transactor
 	Components Components
