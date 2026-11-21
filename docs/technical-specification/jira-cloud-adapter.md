@@ -16,7 +16,7 @@ go build ./cmd/adapter-jiracloud
 
 Вид `accounts` использует стабильный `accountId`. Для поиска по проекту Jira фильтрует только первые 1000 аккаунтов сайта. Адаптер помечает такие страницы как `partial`. [Jira REST v3. Поиск пользователей](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-user-search/#api-rest-api-3-user-viewissue-search-get)
 
-Контрактные тесты запускаются с PostgreSQL в Docker. Тестовый сервер использует синтетические ответы REST v3 по протоколу стенда. Длинный changelog состоит из 122 записей на трёх страницах.
+Контрактные тесты запускаются с PostgreSQL в Docker. Тестовый сервер воспроизводит пагинацию, отказ в чтении истории и ответы с ошибками. Тест декодирования читает обезличенные ответы стенда Jira Cloud, включая changelog из 122 записей на трёх страницах.
 
 ```sh
 go test ./internal/app -run 'TestContract_JiraCloudAdapter|TestJiraCloudAdapter'

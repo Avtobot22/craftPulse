@@ -51,7 +51,7 @@ func (s source) fetchAccounts(ctx context.Context, projectID string, in adapters
 	}
 	users := responseRows[jiraAccount]{limit: _accountWindow}
 	err = s.get(ctx, "project_accounts", "user/viewissue/search", url.Values{
-		"projectKey": {p.Key}, "startAt": {strconv.Itoa(start)}, "maxResults": {strconv.Itoa(_accountWindow)},
+		"projectKey": {p.Key}, "query": {"*"}, "startAt": {strconv.Itoa(start)}, "maxResults": {strconv.Itoa(_accountWindow)},
 	}, &users)
 	if err != nil {
 		return err

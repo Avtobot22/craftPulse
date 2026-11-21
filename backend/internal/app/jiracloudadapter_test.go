@@ -126,7 +126,7 @@ func (f *jiraFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *jiraFixture) accounts(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("projectKey") != "DEMO" {
+	if r.URL.Query().Get("projectKey") != "DEMO" || r.URL.Query().Get("query") != "*" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
