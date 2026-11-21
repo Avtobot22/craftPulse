@@ -71,6 +71,7 @@ ON CONFLICT (connection_id, purpose) DO UPDATE SET
     previous_nonce = adapter.credential.nonce,
     ciphertext = EXCLUDED.ciphertext,
     nonce = EXCLUDED.nonce,
+    source_binding = NULL,
     replaced_at = EXCLUDED.replaced_at`, org, conn, string(purpose), ciphertext, nonce, at)
 		if err != nil {
 			return fmt.Errorf("adaptersdk: save credential: %w", err)

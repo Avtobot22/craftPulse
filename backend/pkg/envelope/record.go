@@ -76,7 +76,12 @@ func (c *checker) recordRule(record map[string]any) (recordRule, *Rejection) {
 		return recordRule{}, &Rejection{ReasonMissingNativeID, "native_id is required"}
 	}
 	class, _ := record["record_class"].(string)
-	if class == classEvent && record["event_time"] == nil {
+	payload, _ := record["payload"].(map[string]any)
+	unknownTime := record["payload_schema"] == "mr_event/2" && payload["event_time_unknown"] == true
+	if unknownTime && record["event_time"] != nil {
+		return recordRule{}, &Rejection{ReasonSchemaViolation, "payload.event_time_unknown: event_time must be null"}
+	}
+	if class == classEvent && record["event_time"] == nil && !unknownTime {
 		return recordRule{}, &Rejection{ReasonMissingEventTime, "event_time is required for an event"}
 	}
 	if bad := _rules.Record.validate(record, ""); bad != nil {
@@ -105,7 +110,6 @@ func (c *checker) recordRule(record map[string]any) (recordRule, *Rejection) {
 	if bad := rule.Schema.validate(record["payload"], "payload"); bad != nil {
 		return recordRule{}, &Rejection{ReasonSchemaViolation, bad.Error()}
 	}
-	payload, _ := record["payload"].(map[string]any) // validated as an object above
 	if problem := semantic(kind, payload); problem != "" {
 		return recordRule{}, &Rejection{ReasonSchemaViolation, problem}
 	}
