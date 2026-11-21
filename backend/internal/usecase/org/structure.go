@@ -275,7 +275,8 @@ func (u *UseCase) knownAreas(ctx context.Context, orgID entity.ID, in entity.Str
 		return nil, nil, err
 	}
 	known, repositories = make(map[entity.ID]bool, len(sources)), map[entity.ID]bool{}
-	for _, src := range sources {
+	for i := range sources {
+		src := &sources[i]
 		known[src.AreaID] = true
 		if src.Kind == entity.ScopeRepository {
 			repositories[src.AreaID] = true

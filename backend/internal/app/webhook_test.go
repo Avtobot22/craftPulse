@@ -251,7 +251,9 @@ func TestWebhook_MRAndPipelineReachNormalize(t *testing.T) {
 	m := mrManifest("10000")
 	m.Source.Provider, m.Source.InstanceKey = envelope.SourceProviderJiraCloud, _jiraInstance
 	yes := true
-	source := &webhookFetch{UseCase: e.connect, mr: pack(t, m, mrRepository(t, "10000", "demo/repo", "r1"), mrState(t, "9001", "10000", "Changed", "v2", _t2, &yes))}
+	eventAt := e.clock.Now().Add(-2 * time.Second)
+	source := &webhookFetch{UseCase: e.connect, mr: pack(t, m, mrRepository(t, "10000", "demo/repo", "r1"),
+		mrState(t, "9001", "10000", "Changed", "v2", _t2, &yes), reviewEvent(t, "webhook-review", "review", "7", eventAt))}
 	ci := ciManifest("10000")
 	ci.Source = m.Source
 	source.ci = pack(t, ci, ciRun(t, runSpec{id: "5001", project: "10000", sha: strings.Repeat("a", 40), status: "success", revision: "p2", updated: _t2, mr: "9001"}))
@@ -281,6 +283,28 @@ func TestWebhook_MRAndPipelineReachNormalize(t *testing.T) {
 	assert.Equal(t, "9001", target.Key.NativeID)
 	assert.Equal(t, "10000", target.ScopeNativeID)
 	assert.Equal(t, 2, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind='normalize.batch' AND args->>'observed_via'='webhook'"))
+
+	st, err := e.connect.State(t.Context(), e.org, e.conn)
+	require.NoError(t, err)
+	require.Len(t, st.Scopes, 1)
+	area, err := e.norm.AreaOf(t.Context(), e.org, st.Instance.ID, entity.ObjectRepository, "10000")
+	require.NoError(t, err)
+	require.NoError(t, e.connect.SetScopeArea(t.Context(), e.org, st.Scopes[0].ID, area))
+	c := activityCalculator(t, e.app, e.clock, e.norm, e.uc, nil)
+	series, err := c.ActivitySeries(t.Context(), e.org, entity.ActivityScope{ConnectionID: e.conn}, entity.StepWeek)
+	require.NoError(t, err)
+	observedAt := e.clock.Now()
+	e.clock.Advance(time.Second)
+	window := entity.Window{From: eventAt.Truncate(time.Hour), To: e.clock.Now(), Step: entity.StepWeek}
+	require.NoError(t, c.Refresh(t.Context(), e.org, series.ID, window, e.clock.Now()))
+	buildCalcJobs(t, e.owner, e.clock, c)
+	revision, err := c.Revision(t.Context(), e.org, series.ID, nil)
+	require.NoError(t, err)
+	webhook := activityStoredPoint(t, c, e.org, revision.ID, "A23", "webhook:p95", observedAt)
+	require.NotNil(t, webhook.Value)
+	assert.InDelta(t, 2, *webhook.Value, 0)
+	backfill := activityStoredPoint(t, c, e.org, revision.ID, "A23", "backfill:p95", observedAt)
+	assert.Nil(t, backfill.Value)
 }
 
 func routeInstance(t *testing.T, e *webhookEnv) entity.ID {

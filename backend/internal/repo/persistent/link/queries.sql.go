@@ -326,6 +326,58 @@ func (q *Queries) LockEdgeWrites(ctx context.Context, organizationID uuid.UUID) 
 	return err
 }
 
+const mREdgesAt = `-- name: MREdgesAt :many
+SELECT organization_id, id, link_type, from_object_id, to_object_id, method, status, known_seq, superseded_seq, superseded_at, receipt_id, record_no, evidence, actor_user_id, confirmation_id, decided_at, valid FROM link.edge
+WHERE organization_id = $1
+    AND (link_type = 'task_mr' AND to_object_id = ANY($2::uuid[])
+        OR link_type = 'mr_run' AND from_object_id = ANY($2::uuid[]))
+    AND known_seq <= $3 AND (superseded_seq IS NULL OR superseded_seq > $3)
+`
+
+type MREdgesAtParams struct {
+	OrganizationID uuid.UUID
+	MrIds          []uuid.UUID
+	Seq            int64
+}
+
+func (q *Queries) MREdgesAt(ctx context.Context, arg MREdgesAtParams) ([]LinkEdge, error) {
+	rows, err := q.db.Query(ctx, mREdgesAt, arg.OrganizationID, arg.MrIds, arg.Seq)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LinkEdge
+	for rows.Next() {
+		var i LinkEdge
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.LinkType,
+			&i.FromObjectID,
+			&i.ToObjectID,
+			&i.Method,
+			&i.Status,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.Evidence,
+			&i.ActorUserID,
+			&i.ConfirmationID,
+			&i.DecidedAt,
+			&i.Valid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const supersedeEdge = `-- name: SupersedeEdge :execrows
 UPDATE link.edge SET superseded_seq = $3, superseded_at = $4
 WHERE organization_id = $1 AND id = $2 AND superseded_seq IS NULL

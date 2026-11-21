@@ -152,15 +152,17 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		t := &targets[i]
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindTarget, ID: t.ID.String(), Version: strconv.Itoa(t.VersionNo)})
 	}
-	structure, err := u.d.Structure.StructureVersion(ctx, org)
-	if err != nil {
-		return err
+	var structure int64
+	if scope.Kind != _scopeConnection {
+		if structure, err = u.d.Structure.StructureVersion(ctx, org); err != nil {
+			return err
+		}
 	}
 	areas, err := u.scopeAreas(ctx, org, scope)
 	if err != nil {
 		return err
 	}
-	sources, err := u.seriesCollection(ctx, org, areas, series.MetricSet)
+	sources, err := u.seriesCollection(ctx, org, areas, series.MetricSet, scope.ConnectionID)
 	if err != nil {
 		return err
 	}
@@ -192,6 +194,9 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		}
 		next := job
 		next.RevisionID, next.PartNo, next.Sources, next.Structure = rev.ID, 1, &fixed, structure
+		if series.MetricSet == entity.MetricSetActivity {
+			next.ActivityAreas = &areas
+		}
 		return u.d.Queue.Enqueue(ctx, next, entity.QueueBulk)
 	})
 }
@@ -277,7 +282,7 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 		if areas, err = u.scopeAreas(ctx, org, scope); err != nil {
 			return err
 		}
-		if collection, err = u.seriesCollection(ctx, org, areas, series.MetricSet); err != nil {
+		if collection, err = u.seriesCollection(ctx, org, areas, series.MetricSet, scope.ConnectionID); err != nil {
 			return err
 		}
 	}
@@ -323,7 +328,7 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 			return err
 		}
 		published = true
-		return u.again(ctx, job, &rev, scope.TeamID, areas, collection, now)
+		return u.again(ctx, job, &rev, scope, areas, collection, now, series.MetricSet == entity.MetricSetActivity)
 	})
 	if err != nil {
 		return err
@@ -345,22 +350,31 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 // than the cutoff of the revision, or the structure or the collection is not the one of the start: the recount a
 // reconciliation asks for during the chain is dropped as its copy. It runs after the job completed itself, or the
 // copy would match the job that is still active and be dropped (TZ 10.6).
-func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entity.CalcRevision, team entity.ID, areas []entity.ID,
-	collection []entity.AreaCollection, now time.Time,
+func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entity.CalcRevision, scope seriesScope, areas []entity.ID,
+	collection []entity.AreaCollection, now time.Time, activity bool,
 ) error {
 	facts, err := u.d.Facts.AreaChangeSeq(ctx, job.OrganizationID, areas)
 	if err != nil {
 		return err
 	}
+	if activity {
+		seq, _, err := u.d.Tenants.Clock(ctx, job.OrganizationID)
+		if err != nil {
+			return err
+		}
+		facts = max(facts, seq)
+	}
 	var settings int64
-	if !team.IsZero() && u.d.Settings != nil {
-		if settings, err = u.d.Settings.LastSettingsSeq(ctx, job.OrganizationID, team); err != nil {
+	if !scope.TeamID.IsZero() && u.d.Settings != nil {
+		if settings, err = u.d.Settings.LastSettingsSeq(ctx, job.OrganizationID, scope.TeamID); err != nil {
 			return err
 		}
 	}
-	structure, err := u.d.Structure.StructureVersion(ctx, job.OrganizationID)
-	if err != nil {
-		return err
+	var structure int64
+	if scope.Kind != _scopeConnection {
+		if structure, err = u.d.Structure.StructureVersion(ctx, job.OrganizationID); err != nil {
+			return err
+		}
 	}
 	if max(facts, settings) <= rev.KnowledgeSeq && structure == job.Structure && (job.Sources == nil || sameCollection(*job.Sources, collection)) {
 		return nil
@@ -370,7 +384,7 @@ func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entit
 		at = now.Add(_loadingEvery)
 	}
 	next := job
-	next.RevisionID, next.PartNo, next.AsOf, next.Sources, next.Structure = entity.ID{}, 0, at, nil, 0
+	next.RevisionID, next.PartNo, next.AsOf, next.Sources, next.Structure, next.ActivityAreas = entity.ID{}, 0, at, nil, 0, nil
 	return u.d.Queue.EnqueueAt(ctx, next, entity.QueueBulk, at)
 }
 
@@ -475,7 +489,9 @@ func revisionHash(s *entity.CalcSeries, r *entity.CalcRevision, inputs []entity.
 func sameCollection(a, b []entity.AreaCollection) bool {
 	return slices.EqualFunc(a, b, func(x, y entity.AreaCollection) bool {
 		return x.AreaID == y.AreaID && x.ConnectionID == y.ConnectionID && x.Completeness == y.Completeness && x.Phase == y.Phase &&
-			sameTime(x.Watermark, y.Watermark) && sameTime(x.LastSuccessAt, y.LastSuccessAt) && sameTime(x.HistoryFrom, y.HistoryFrom) && sameRun(x.Reconcile, y.Reconcile)
+			x.DataKind == y.DataKind && x.LastErrorCode == y.LastErrorCode &&
+			sameTime(x.Watermark, y.Watermark) && sameTime(x.LastSuccessAt, y.LastSuccessAt) && sameTime(x.HistoryFrom, y.HistoryFrom) &&
+			sameRun(x.Reconcile, y.Reconcile) && sameRun(x.ConnectionReconcile, y.ConnectionReconcile)
 	})
 }
 
@@ -500,7 +516,10 @@ func (u *UseCase) collectionOf(ctx context.Context, org entity.ID, areas []entit
 	return u.d.Collection.AreaCollection(ctx, org, areas)
 }
 
-func (u *UseCase) seriesCollection(ctx context.Context, org entity.ID, areas []entity.ID, set string) ([]entity.AreaCollection, error) {
+func (u *UseCase) seriesCollection(ctx context.Context, org entity.ID, areas []entity.ID, set string, connection entity.ID) ([]entity.AreaCollection, error) {
+	if set == entity.MetricSetActivity {
+		return u.d.Activity.ActivityCollection(ctx, org, areas, connection)
+	}
 	if set == entity.MetricSetCI && u.d.Collection != nil && len(areas) > 0 {
 		return u.d.Collection.CICollection(ctx, org, areas)
 	}

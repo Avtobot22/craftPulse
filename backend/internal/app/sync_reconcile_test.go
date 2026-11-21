@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,8 +24,101 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/normalize"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/sync"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
+	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	pg "github.com/Avtobot22/craftPulse/backend/pkg/postgres"
 )
+
+type historyPages struct {
+	sync.Connect
+	first, last []byte
+}
+
+func (h *historyPages) Fetch(_ context.Context, _, _ entity.ID, in entity.FetchInput) (io.ReadCloser, error) {
+	if in.Cursor == nil {
+		return io.NopCloser(bytes.NewReader(h.first)), nil
+	}
+	return io.NopCloser(bytes.NewReader(h.last)), nil
+}
+
+func TestSync_RecoveryValidatesEveryHistoryPage(t *testing.T) {
+	t.Parallel()
+	e := newSyncEnv(t, testadapter.Config{})
+	conn := e.connection(t, "10000")
+	e.runner().settle(t)
+	scopes, err := e.connect.Scopes(t.Context(), e.org, conn)
+	require.NoError(t, err)
+	require.Len(t, scopes, 1)
+	require.NotNil(t, scopes[0].AreaID)
+	const taskID = "20003"
+	job := entity.SyncHistoryJob{
+		OrganizationID: e.org, ConnectionID: conn, ScopeID: scopes[0].ID,
+		SchemaID: "task_events", ObjectKind: "task", NativeID: taskID,
+	}
+	adapter := &historyPages{Connect: e.connect}
+	jobs, err := riverInsertClient(e.app)
+	require.NoError(t, err)
+	reader := sync.New(sync.Deps{
+		Repo: syncrepo.NewRepo(e.app), Tenants: platform.NewRepo(e.app), Connect: adapter, Ingest: e.intake, Normalize: e.norm,
+		Queue: queue.New(jobs), Tx: persistent.NewTransactor(e.app), Metrics: e.metrics, Clock: e.clock,
+	})
+	run := func(first, last *envelope.Record) entity.ID {
+		t.Helper()
+		e.clock.Advance(time.Second)
+		cursor := &envelope.Cursor{ModifiedAt: *first.EventTime, NativeId: first.NativeId}
+		manifest := importManifest("1")
+		manifest.SchemaId = "task_events"
+		manifest.Selection.End, manifest.Selection.NextCursor = false, cursor
+		adapter.first = pack(t, manifest, first)
+		manifest.Selection.End, manifest.Selection.Cursor, manifest.Selection.NextCursor = true, cursor, nil
+		adapter.last = pack(t, manifest, last)
+		require.NoError(t, reader.RunHistory(t.Context(), job, "history-test-first", nil))
+		var id int64
+		var raw []byte
+		require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT id,args FROM river_job WHERE kind = 'sync.history' AND state IN ('available','scheduled')").Scan(&id, &raw))
+		var next entity.SyncHistoryJob
+		require.NoError(t, json.Unmarshal(raw, &next))
+		require.Len(t, next.PageReceiptIDs, 1)
+		require.NoError(t, reader.RunHistory(t.Context(), next, "history-test-last", completeJob(id)))
+		e.runner().settle(t)
+		return next.PageReceiptIDs[0]
+	}
+	countRows := func(query string, args ...any) int {
+		t.Helper()
+		var n int
+		require.NoError(t, e.owner.QueryRow(t.Context(), query, args...).Scan(&n))
+		return n
+	}
+	recoveries := func() int {
+		return countRows("SELECT count(*) FROM sync.activity_recovery WHERE native_id = $1", taskID)
+	}
+	before := recoveries()
+	conflict := statusChange(t, taskID, "40001", _t1, "another-actor")
+	badReceipt := run(conflict, statusChange(t, taskID, "history-clean-final", _t2, "demo-person-05"))
+	assert.Equal(t, 1, countRows("SELECT count(*) FROM ingest.record WHERE receipt_id = $1 AND outcome = 'conflict'", uuid.UUID(badReceipt)))
+	assert.Equal(t, before, recoveries(), "a clean final page cannot confirm an earlier page with a journal conflict")
+
+	firstReceipt := run(statusChange(t, taskID, "history-page-one", _t1, "demo-person-05"),
+		statusChange(t, taskID, "history-page-two", _t2, "demo-person-05"))
+	require.Equal(t, before+1, recoveries())
+	assert.Equal(t, 1, countRows(
+		"SELECT count(*) FROM sync.activity_recovery WHERE cardinality(page_receipt_ids) = 2 AND page_receipt_ids[1] = $1", uuid.UUID(firstReceipt)))
+	recoveryOfTask := func() *entity.ActivityHistoryNotice {
+		t.Helper()
+		history, err := reader.ActivityHistory(t.Context(), e.org, []entity.ID{*scopes[0].AreaID}, conn, e.clock.Now())
+		require.NoError(t, err)
+		for i := range history {
+			if history[i].Key.NativeID == taskID {
+				require.NotNil(t, history[i].Cut)
+				return history[i].Recovery
+			}
+		}
+		t.Fatal("missing history evidence")
+		return nil
+	}
+	require.NotNil(t, recoveryOfTask())
+	require.NoError(t, e.intake.RejectRecords(t.Context(), e.org, firstReceipt, map[int]string{1: entity.RecordMissingSourceID}))
+	assert.Nil(t, recoveryOfTask(), "a later rejection on the first page invalidates recovery evidence")
+}
 
 // jobRunner runs the jobs of collection and normalization as the worker does, each completed in the
 // transaction of its result, in the order of their scheduled time; the clock moves to that time.

@@ -13,6 +13,127 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activityCompleteReceipts = `-- name: ActivityCompleteReceipts :many
+SELECT rc.id FROM ingest.receipt rc
+WHERE rc.organization_id = $1 AND rc.id = ANY($2::uuid[])
+    AND (rc.status = 'accepted' OR rc.status = 'duplicate' AND EXISTS (
+        SELECT 1 FROM ingest.receipt original
+        WHERE original.organization_id = rc.organization_id AND original.id = rc.duplicate_of AND original.status = 'accepted'
+    ))
+    AND NOT EXISTS (
+        SELECT 1 FROM ingest.record rec
+        WHERE rec.organization_id = rc.organization_id AND rec.receipt_id = COALESCE(rc.duplicate_of, rc.id)
+            AND rec.outcome IN ('rejected', 'conflict', 'suppressed')
+    )
+`
+
+type ActivityCompleteReceiptsParams struct {
+	OrganizationID uuid.UUID
+	ReceiptIds     []uuid.UUID
+}
+
+func (q *Queries) ActivityCompleteReceipts(ctx context.Context, arg ActivityCompleteReceiptsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, activityCompleteReceipts, arg.OrganizationID, arg.ReceiptIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const activityReceiptConnections = `-- name: ActivityReceiptConnections :many
+SELECT id, connection_id FROM ingest.receipt
+WHERE organization_id = $1 AND id = ANY($2::uuid[]) AND connection_id IS NOT NULL
+`
+
+type ActivityReceiptConnectionsParams struct {
+	OrganizationID uuid.UUID
+	ReceiptIds     []uuid.UUID
+}
+
+type ActivityReceiptConnectionsRow struct {
+	ID           uuid.UUID
+	ConnectionID uuid.NullUUID
+}
+
+func (q *Queries) ActivityReceiptConnections(ctx context.Context, arg ActivityReceiptConnectionsParams) ([]ActivityReceiptConnectionsRow, error) {
+	rows, err := q.db.Query(ctx, activityReceiptConnections, arg.OrganizationID, arg.ReceiptIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivityReceiptConnectionsRow
+	for rows.Next() {
+		var i ActivityReceiptConnectionsRow
+		if err := rows.Scan(&i.ID, &i.ConnectionID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const activityTruncationManifests = `-- name: ActivityTruncationManifests :many
+SELECT id, scope_id, received_at, manifest FROM ingest.receipt
+WHERE organization_id = $1 AND scope_id = ANY($2::uuid[]) AND received_at <= $3::timestamptz
+    AND schema_id IN ('task_events', 'merge_requests')
+    AND status IN ('accepted', 'partial', 'duplicate')
+    AND jsonb_array_length(manifest -> 'selection' -> 'truncated') > 0
+ORDER BY received_at, id
+`
+
+type ActivityTruncationManifestsParams struct {
+	OrganizationID uuid.UUID
+	ScopeIds       []uuid.UUID
+	Cutoff         time.Time
+}
+
+type ActivityTruncationManifestsRow struct {
+	ID         uuid.UUID
+	ScopeID    uuid.NullUUID
+	ReceivedAt time.Time
+	Manifest   []byte
+}
+
+func (q *Queries) ActivityTruncationManifests(ctx context.Context, arg ActivityTruncationManifestsParams) ([]ActivityTruncationManifestsRow, error) {
+	rows, err := q.db.Query(ctx, activityTruncationManifests, arg.OrganizationID, arg.ScopeIds, arg.Cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivityTruncationManifestsRow
+	for rows.Next() {
+		var i ActivityTruncationManifestsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ScopeID,
+			&i.ReceivedAt,
+			&i.Manifest,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countOutcomes = `-- name: CountOutcomes :many
 SELECT receipt_id, outcome, count(*)::integer AS n FROM ingest.record
 WHERE organization_id = $1 AND receipt_id = ANY($2::uuid[]) AND outcome IN ('replay', 'conflict')

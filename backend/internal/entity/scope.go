@@ -98,6 +98,7 @@ type RestrictedObject struct {
 // AreaSource is a scope of a connection that collected a source area; an area without one came only from
 // an import.
 type AreaSource struct {
+	ScopeID          ID
 	UserToken        bool
 	AreaID           ID
 	ConnectionID     ID
@@ -107,6 +108,7 @@ type AreaSource struct {
 	Active           bool
 	ConnectionStatus ConnectionStatus
 	PausedUntil      *time.Time
+	HistoryFrom      *time.Time
 }
 
 // SourceArea is an area of a source in listAreas.

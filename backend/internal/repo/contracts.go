@@ -227,6 +227,9 @@ type AdapterClient interface {
 
 // IngestRepo is the journal of intake under row-level security.
 type IngestRepo interface {
+	ActivityReceiptConnections(ctx context.Context, orgID entity.ID, receipts []entity.ID) (map[entity.ID]entity.ID, error)
+	ActivityTruncations(ctx context.Context, orgID entity.ID, scopes []entity.ID, at time.Time) ([]entity.ActivityHistoryNotice, error)
+	ActivityCompleteReceipts(ctx context.Context, orgID entity.ID, receipts []entity.ID) (map[entity.ID]bool, error)
 	SaveReceipt(ctx context.Context, r entity.Receipt) error
 	Receipt(ctx context.Context, orgID, id entity.ID) (entity.Receipt, error)
 	LockReceipt(ctx context.Context, orgID, id entity.ID) (entity.Receipt, error)
@@ -278,6 +281,12 @@ type SyncRepo interface {
 	// LastReconcile is the latest reconciliation of a connection, of one data kind when dataKind is set.
 	LastReconcile(ctx context.Context, orgID, connectionID entity.ID, dataKind string) (entity.ReconcileRun, bool, error)
 	FinishReconcile(ctx context.Context, orgID entity.ID, run entity.ReconcileRun) error
+	SaveActivityChecks(ctx context.Context, orgID, runID entity.ID, checks []entity.ActivityHistoryCheck) error
+	SaveActivityPagination(ctx context.Context, orgID, scopeID, receiptID entity.ID, dataKind string, at time.Time, complete bool) error
+	SaveActivityRecovery(ctx context.Context, orgID entity.ID, recovery *entity.ActivityHistoryRecovery) error
+	ActivityChecks(ctx context.Context, orgID entity.ID, scopes []entity.AreaSource, at time.Time) ([]entity.ActivityCheckResult, error)
+	ActivityRecoveries(ctx context.Context, orgID entity.ID, scopes []entity.ID, at time.Time) ([]entity.ActivityHistoryRecovery, error)
+	ActivityReconciliations(ctx context.Context, orgID entity.ID, connections []entity.ID, from, at time.Time) ([]entity.ReconcileRun, error)
 
 	AddDirtyKeys(ctx context.Context, orgID, connectionID entity.ID, keys []entity.DirtyKey, at time.Time) error
 	DirtyKeys(ctx context.Context, orgID, connectionID entity.ID, limit int) ([]entity.DirtyKey, error)

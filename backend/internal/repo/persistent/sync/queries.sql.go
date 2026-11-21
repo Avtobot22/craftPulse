@@ -42,6 +42,194 @@ func (q *Queries) AcquireLease(ctx context.Context, arg AcquireLeaseParams) (str
 	return holder, err
 }
 
+const activityChecks = `-- name: ActivityChecks :many
+WITH runs AS (
+    SELECT DISTINCT ON (connection_id, data_kind) id, connection_id, data_kind, finished_at
+    FROM sync.reconcile_run
+    WHERE organization_id = $1 AND connection_id = ANY($3::uuid[])
+        AND data_kind IN ('tasks', 'merge_requests') AND outcome IN ('complete', 'incomplete')
+        AND finished_at <= $4::timestamptz
+    ORDER BY connection_id, data_kind, started_at DESC, id DESC
+)
+SELECT ck.run_id, ck.scope_id, ck.object_kind, ck.native_ns, ck.native_id, ck.matches,
+    r.finished_at, COALESCE(paged.receipt_id, '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS pagination_receipt
+FROM sync.activity_check ck
+JOIN runs r ON r.id = ck.run_id
+LEFT JOIN LATERAL (
+    SELECT p.receipt_id, p.complete FROM sync.activity_pagination p
+    WHERE p.organization_id = ck.organization_id AND p.scope_id = ck.scope_id AND p.data_kind = r.data_kind
+        AND p.observed_at <= r.finished_at
+    ORDER BY p.observed_at DESC, p.receipt_id DESC LIMIT 1
+) paged ON paged.complete
+WHERE ck.organization_id = $1 AND ck.scope_id = ANY($2::uuid[])
+`
+
+type ActivityChecksParams struct {
+	OrganizationID uuid.UUID
+	ScopeIds       []uuid.UUID
+	ConnectionIds  []uuid.UUID
+	Cutoff         time.Time
+}
+
+type ActivityChecksRow struct {
+	RunID             uuid.UUID
+	ScopeID           uuid.UUID
+	ObjectKind        string
+	NativeNs          string
+	NativeID          string
+	Matches           bool
+	FinishedAt        pgtype.Timestamptz
+	PaginationReceipt uuid.UUID
+}
+
+func (q *Queries) ActivityChecks(ctx context.Context, arg ActivityChecksParams) ([]ActivityChecksRow, error) {
+	rows, err := q.db.Query(ctx, activityChecks,
+		arg.OrganizationID,
+		arg.ScopeIds,
+		arg.ConnectionIds,
+		arg.Cutoff,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivityChecksRow
+	for rows.Next() {
+		var i ActivityChecksRow
+		if err := rows.Scan(
+			&i.RunID,
+			&i.ScopeID,
+			&i.ObjectKind,
+			&i.NativeNs,
+			&i.NativeID,
+			&i.Matches,
+			&i.FinishedAt,
+			&i.PaginationReceipt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const activityReconciliations = `-- name: ActivityReconciliations :many
+SELECT r.organization_id, r.id, r.connection_id, r.data_kind, r.as_of, r.started_at, r.finished_at, r.expected_count, r.observed_count, r.missing_count, r.changed_count, r.outcome, r.reason_code FROM sync.reconcile_run r
+WHERE r.organization_id = $1 AND r.connection_id = ANY($2::uuid[])
+    AND r.started_at <= $3::timestamptz
+    AND (COALESCE(finished_at, $3::timestamptz) >= $4::timestamptz OR id IN (
+        SELECT prior.id FROM (
+            SELECT DISTINCT ON (connection_id, data_kind, (outcome = 'complete')) id
+            FROM sync.reconcile_run
+            WHERE organization_id = $1 AND connection_id = ANY($2::uuid[])
+                AND finished_at < $4::timestamptz
+            ORDER BY connection_id, data_kind, (outcome = 'complete'), started_at DESC, id DESC
+        ) prior
+    ))
+ORDER BY started_at, id
+`
+
+type ActivityReconciliationsParams struct {
+	OrganizationID uuid.UUID
+	ConnectionIds  []uuid.UUID
+	Cutoff         time.Time
+	WindowFrom     time.Time
+}
+
+func (q *Queries) ActivityReconciliations(ctx context.Context, arg ActivityReconciliationsParams) ([]SyncReconcileRun, error) {
+	rows, err := q.db.Query(ctx, activityReconciliations,
+		arg.OrganizationID,
+		arg.ConnectionIds,
+		arg.Cutoff,
+		arg.WindowFrom,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SyncReconcileRun
+	for rows.Next() {
+		var i SyncReconcileRun
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.ConnectionID,
+			&i.DataKind,
+			&i.AsOf,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.ExpectedCount,
+			&i.ObservedCount,
+			&i.MissingCount,
+			&i.ChangedCount,
+			&i.Outcome,
+			&i.ReasonCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const activityRecoveries = `-- name: ActivityRecoveries :many
+SELECT DISTINCT ON (scope_id, object_kind, native_ns, native_id)
+    scope_id, object_kind, native_ns, native_id, receipt_id, observed_at, page_receipt_ids
+FROM sync.activity_recovery
+WHERE organization_id = $1 AND scope_id = ANY($2::uuid[]) AND observed_at <= $3::timestamptz
+ORDER BY scope_id, object_kind, native_ns, native_id, observed_at DESC, receipt_id DESC
+`
+
+type ActivityRecoveriesParams struct {
+	OrganizationID uuid.UUID
+	ScopeIds       []uuid.UUID
+	Cutoff         time.Time
+}
+
+type ActivityRecoveriesRow struct {
+	ScopeID        uuid.UUID
+	ObjectKind     string
+	NativeNs       string
+	NativeID       string
+	ReceiptID      uuid.UUID
+	ObservedAt     time.Time
+	PageReceiptIds []uuid.UUID
+}
+
+func (q *Queries) ActivityRecoveries(ctx context.Context, arg ActivityRecoveriesParams) ([]ActivityRecoveriesRow, error) {
+	rows, err := q.db.Query(ctx, activityRecoveries, arg.OrganizationID, arg.ScopeIds, arg.Cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivityRecoveriesRow
+	for rows.Next() {
+		var i ActivityRecoveriesRow
+		if err := rows.Scan(
+			&i.ScopeID,
+			&i.ObjectKind,
+			&i.NativeNs,
+			&i.NativeID,
+			&i.ReceiptID,
+			&i.ObservedAt,
+			&i.PageReceiptIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countDirtyKeys = `-- name: CountDirtyKeys :one
 SELECT count(*) FROM sync.dirty_key WHERE organization_id = $1 AND connection_id = $2
 `
@@ -441,6 +629,62 @@ func (q *Queries) RunningReconcile(ctx context.Context, arg RunningReconcilePara
 		&i.ReasonCode,
 	)
 	return i, err
+}
+
+const saveActivityPagination = `-- name: SaveActivityPagination :exec
+INSERT INTO sync.activity_pagination (organization_id, scope_id, receipt_id, data_kind, observed_at, complete)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type SaveActivityPaginationParams struct {
+	OrganizationID uuid.UUID
+	ScopeID        uuid.UUID
+	ReceiptID      uuid.UUID
+	DataKind       string
+	ObservedAt     time.Time
+	Complete       bool
+}
+
+func (q *Queries) SaveActivityPagination(ctx context.Context, arg SaveActivityPaginationParams) error {
+	_, err := q.db.Exec(ctx, saveActivityPagination,
+		arg.OrganizationID,
+		arg.ScopeID,
+		arg.ReceiptID,
+		arg.DataKind,
+		arg.ObservedAt,
+		arg.Complete,
+	)
+	return err
+}
+
+const saveActivityRecovery = `-- name: SaveActivityRecovery :exec
+INSERT INTO sync.activity_recovery (organization_id, scope_id, receipt_id, object_kind, native_ns, native_id, observed_at, page_receipt_ids)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type SaveActivityRecoveryParams struct {
+	OrganizationID uuid.UUID
+	ScopeID        uuid.UUID
+	ReceiptID      uuid.UUID
+	ObjectKind     string
+	NativeNs       string
+	NativeID       string
+	ObservedAt     time.Time
+	PageReceiptIds []uuid.UUID
+}
+
+func (q *Queries) SaveActivityRecovery(ctx context.Context, arg SaveActivityRecoveryParams) error {
+	_, err := q.db.Exec(ctx, saveActivityRecovery,
+		arg.OrganizationID,
+		arg.ScopeID,
+		arg.ReceiptID,
+		arg.ObjectKind,
+		arg.NativeNs,
+		arg.NativeID,
+		arg.ObservedAt,
+		arg.PageReceiptIds,
+	)
+	return err
 }
 
 const saveState = `-- name: SaveState :exec

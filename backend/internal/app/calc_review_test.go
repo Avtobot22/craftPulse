@@ -9,12 +9,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
+	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 )
 
@@ -85,32 +87,37 @@ func (e *reviewEnv) confirm(t *testing.T, native string, kind entity.PersonKind)
 // build runs the waiting jobs of calc until none is left, moving the clock to the scheduled ones.
 func (e *reviewEnv) build(t *testing.T) {
 	t.Helper()
+	buildCalcJobs(t, e.owner, e.clock, e.calc)
+}
+
+func buildCalcJobs(t *testing.T, owner *pgxpool.Pool, clk *clock.Manual, calculator *calc.UseCase) {
+	t.Helper()
 	for range 200 {
 		var (
 			id   int64
 			kind string
 			raw  []byte
 		)
-		err := e.owner.QueryRow(t.Context(), "SELECT id, kind, args FROM river_job WHERE kind IN ($1, $2) AND state IN ('available', 'scheduled') ORDER BY scheduled_at, id LIMIT 1",
+		err := owner.QueryRow(t.Context(), "SELECT id, kind, args FROM river_job WHERE kind IN ($1, $2) AND state IN ('available', 'scheduled') ORDER BY scheduled_at, id LIMIT 1",
 			entity.KindCalcSlice, entity.KindCalcRecount).Scan(&id, &kind, &raw)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return
 		}
 		require.NoError(t, err)
 		var at time.Time
-		require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT scheduled_at FROM river_job WHERE id = $1", id).Scan(&at))
-		if d := at.Sub(e.clock.Now()); d > 0 {
-			e.clock.Advance(d)
+		require.NoError(t, owner.QueryRow(t.Context(), "SELECT scheduled_at FROM river_job WHERE id = $1", id).Scan(&at))
+		if d := at.Sub(clk.Now()); d > 0 {
+			clk.Advance(d)
 		}
 		if kind == entity.KindCalcRecount {
 			var job entity.CalcRecountJob
 			require.NoError(t, json.Unmarshal(raw, &job))
-			require.NoError(t, e.calc.RunRecount(t.Context(), job, completeJob(id)))
+			require.NoError(t, calculator.RunRecount(t.Context(), job, completeJob(id)))
 			continue
 		}
 		var job entity.CalcSliceJob
 		require.NoError(t, json.Unmarshal(raw, &job))
-		require.NoError(t, e.calc.RunSlice(t.Context(), job, completeJob(id)))
+		require.NoError(t, calculator.RunSlice(t.Context(), job, completeJob(id)))
 	}
 	t.Fatal("calc jobs did not end")
 }

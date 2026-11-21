@@ -38,6 +38,13 @@ WHERE organization_id = sqlc.arg(organization_id) AND link_type = 'task_mr'
     AND known_seq <= sqlc.arg(seq) AND (superseded_seq IS NULL OR superseded_seq > sqlc.arg(seq))
 ORDER BY from_object_id, to_object_id, method;
 
+-- name: MREdgesAt :many
+SELECT * FROM link.edge
+WHERE organization_id = sqlc.arg(organization_id)
+    AND (link_type = 'task_mr' AND to_object_id = ANY(sqlc.arg(mr_ids)::uuid[])
+        OR link_type = 'mr_run' AND from_object_id = ANY(sqlc.arg(mr_ids)::uuid[]))
+    AND known_seq <= sqlc.arg(seq) AND (superseded_seq IS NULL OR superseded_seq > sqlc.arg(seq));
+
 -- name: InsertEdge :exec
 INSERT INTO link.edge (organization_id, id, link_type, from_object_id, to_object_id, method, status, known_seq,
     receipt_id, record_no, evidence, actor_user_id, confirmation_id, decided_at, valid)

@@ -13,10 +13,10 @@ import (
 
 // _affected are the metrics of the MVP catalog a data kind feeds (docs/product/metrics/mvp.md).
 var _affected = map[string][]string{
-	"tasks":          {"T04", "T05", "T07", "T08", "T10", "T11", "T12", "T13", "T14", "T15", "T18", "T23"},
-	"task_events":    {"T04", "T05", "T07", "T08", "T10", "T11", "T12", "T13", "T14", "T15", "T18", "T23"},
+	"tasks":          {"T04", "T05", "T07", "T08", "T10", "T11", "T12", "T13", "T14", "T15", "T18", "T23", "A24"},
+	"task_events":    {"T04", "T05", "T07", "T08", "T10", "T11", "T12", "T13", "T14", "T15", "T18", "T23", "A23", "A24", "A28"},
 	"relations":      {"T13", "T15", "A18", "A20", "T28"},
-	"merge_requests": {"A05", "A06", "A07", "A10", "A18", "A20", "A22", "T28"},
+	"merge_requests": {"A05", "A06", "A07", "A10", "A18", "A20", "A22", "A23", "A24", "A28", "A30", "T28"},
 	"ci_runs":        {"I01", "I02", "I03", "I04", "I05", "I06", "I07", "I08", "I09", "I19"},
 	"junit":          {"I03", "I04", "I05", "I07", "I08", "I09"},
 	"coverage":       {"I25", "I26"},

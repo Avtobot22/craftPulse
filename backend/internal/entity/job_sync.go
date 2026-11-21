@@ -64,6 +64,9 @@ type SyncHistoryJob struct {
 	NativeNS       string        `json:"native_ns"`
 	NativeID       string        `json:"native_id"`
 	Cursor         *SourceCursor `json:"cursor,omitempty"`
+	Incomplete     bool          `json:"incomplete,omitempty"`
+	HasHistory     bool          `json:"has_history,omitempty"`
+	PageReceiptIDs []ID          `json:"page_receipt_ids,omitempty"`
 	CorrelationID  ID            `json:"correlation_id"`
 	Retry          int           `json:"retry,omitempty"`
 }

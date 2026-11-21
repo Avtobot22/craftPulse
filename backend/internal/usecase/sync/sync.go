@@ -66,6 +66,9 @@ type Ingest interface {
 	PreparePage(ctx context.Context, orgID, connectionID, scopeID entity.ID, page io.Reader) (*entity.PreparedPackage, error)
 	RecordPage(ctx context.Context, p *entity.PreparedPackage) (entity.Receipt, error)
 	AffectedMetrics(schemaID string) []string
+	ActivityReceiptConnections(ctx context.Context, orgID entity.ID, receipts []entity.ID) (map[entity.ID]entity.ID, error)
+	ActivityTruncations(ctx context.Context, orgID entity.ID, scopes []entity.ID, at time.Time) ([]entity.ActivityHistoryNotice, error)
+	ActivityCompleteReceipts(ctx context.Context, orgID entity.ID, receipts []entity.ID) (map[entity.ID]bool, error)
 }
 
 // Normalize is the normalize module: the current versions a manifest of the source is compared with.
@@ -130,10 +133,11 @@ func (s step) key() string { return s.scope.ID.String() + "/" + s.schema }
 // progress is the cursor of a data kind: the step being read, the cursor of every step, whether the next run
 // starts a new round and whether it starts the current step, whose first page then reads back by the overlap.
 type progress struct {
-	Current  string                          `json:"current"`
-	Cursors  map[string]*entity.SourceCursor `json:"cursors"`
-	NewRound bool                            `json:"new_round,omitempty"`
-	Overlap  bool                            `json:"overlap,omitempty"`
+	Current           string                          `json:"current"`
+	Cursors           map[string]*entity.SourceCursor `json:"cursors"`
+	NewRound          bool                            `json:"new_round,omitempty"`
+	Overlap           bool                            `json:"overlap,omitempty"`
+	HistoryIncomplete bool                            `json:"history_incomplete,omitempty"`
 }
 
 // RunPage reads one page of a data kind. holder names the run that takes the lease of the connection.
@@ -171,6 +175,8 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 		i = 0
 	}
 	cur := steps[i]
+	isHistory := cur.schema == "task_events" || cur.schema == "merge_requests"
+	backfill := st.Phase == entity.SyncBackfill
 	cursor := p.Cursors[cur.key()]
 	if (p.NewRound || p.Overlap) && cursor != nil {
 		back := entity.SourceCursor{ModifiedAt: cursor.ModifiedAt.Add(-_overlap)}
@@ -194,6 +200,12 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 	st.LastAttemptAt = &now
 	if failure != nil {
 		return u.fail(ctx, job, st, page, failure, holder, complete)
+	}
+	firstPage := st.CheckpointAt == nil
+	historyIncomplete := p.HistoryIncomplete
+	if isHistory {
+		historyIncomplete = historyIncomplete || !completeHistoryPage(page)
+		p.HistoryIncomplete = historyIncomplete && !sel.End
 	}
 	// The overlap only widens this fetch; the end of the selection keeps the cursor of the step, so rounds do not pile it up.
 	p.NewRound, p.Overlap = false, false
@@ -224,11 +236,23 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 	}
 	st.Cursor, st.CheckpointAt, st.FailedCursor, st.LastOutcome, st.LastErrorCode = string(raw), &now, "", "succeeded", ""
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
-		if _, err := u.d.Ingest.RecordPage(ctx, page); err != nil {
+		receipt, err := u.d.Ingest.RecordPage(ctx, page)
+		if err != nil {
 			return err
+		}
+		if isHistory && sel.End && (backfill || historyIncomplete || receipt.Status == entity.ReceiptPartial) {
+			if err := u.d.Repo.SaveActivityPagination(ctx, org, cur.scope.ID, receipt.ID, job.DataKind, receipt.ReceivedAt,
+				!historyIncomplete && receipt.Status != entity.ReceiptPartial); err != nil {
+				return err
+			}
 		}
 		if err := u.d.Repo.SaveState(ctx, org, st); err != nil {
 			return err
+		}
+		if firstPage {
+			if err := u.recountActivity(ctx, org, conn, job.CorrelationID); err != nil {
+				return err
+			}
 		}
 		// The job ends before its next page is queued: a page job is unique only among active ones (TZ 10.6).
 		if err := u.end(ctx, org, conn, holder, complete); err != nil {
@@ -358,6 +382,9 @@ func (u *UseCase) fail(ctx context.Context, job entity.SyncPageJob, st entity.Sy
 			}
 		}
 		if err := u.d.Repo.SaveState(ctx, org, st); err != nil {
+			return err
+		}
+		if err := u.recountActivity(ctx, org, conn, job.CorrelationID); err != nil {
 			return err
 		}
 		if err := u.end(ctx, org, conn, holder, complete); err != nil {

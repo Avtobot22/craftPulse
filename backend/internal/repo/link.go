@@ -18,6 +18,7 @@ type LinkRepo interface {
 	EdgeByConfirmation(ctx context.Context, orgID, key entity.ID) (entity.LinkEdge, error)
 	EdgesAt(ctx context.Context, orgID, objectID entity.ID, dir entity.LinkDirection, seq int64) ([]entity.LinkEdge, error)
 	TaskMREdgesAt(ctx context.Context, orgID entity.ID, objectIDs []entity.ID, seq int64) ([]entity.LinkEdge, error)
+	MREdgesAt(ctx context.Context, orgID entity.ID, mrIDs []entity.ID, seq int64) ([]entity.LinkEdge, error)
 	InsertEdge(ctx context.Context, orgID entity.ID, e *entity.LinkEdge) error
 	SupersedeEdge(ctx context.Context, orgID, id entity.ID, seq int64, at time.Time) error
 }

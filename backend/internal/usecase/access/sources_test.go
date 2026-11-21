@@ -64,7 +64,8 @@ type fakeSources struct {
 
 func (f *fakeSources) AreaSources(_ context.Context, _ entity.ID, ids []entity.ID) ([]entity.AreaSource, error) {
 	var out []entity.AreaSource
-	for _, a := range f.areas {
+	for i := range f.areas {
+		a := f.areas[i]
 		for _, id := range ids {
 			if a.AreaID == id {
 				out = append(out, a)
