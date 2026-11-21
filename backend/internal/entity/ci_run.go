@@ -37,6 +37,7 @@ const (
 type AttemptHistory string
 
 const (
+	AttemptHistoryUnknown   AttemptHistory = "unknown"
 	AttemptHistoryComplete  AttemptHistory = "complete"
 	AttemptHistoryTruncated AttemptHistory = "truncated"
 )

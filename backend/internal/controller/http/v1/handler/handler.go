@@ -29,6 +29,7 @@ type Handler struct {
 	process
 	checks
 	reports
+	codeDetails
 	fallback
 	session
 	organization
@@ -58,6 +59,7 @@ type Deps struct {
 	Sync          usecase.SyncStatus
 	Operations    usecase.Operations
 	Reports       usecase.TeamReports
+	Code          usecase.CodeDetails
 	Process       usecase.Process
 	Previews      usecase.MappingPreviews
 	Targets       usecase.Targets
@@ -77,6 +79,7 @@ func New(d Deps) *Handler {
 		intake:         intake{uc: d.Intake},
 		process:        process{uc: d.Process, previews: d.Previews, targets: d.Targets, connections: d.Connections},
 		checks:         checks{uc: d.Checks},
+		codeDetails:    codeDetails{uc: d.Code},
 		reports:        reports{operations: d.Operations, views: d.Reports},
 		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),
 		organization:   organization{structure: d.Structure, access: d.Access, connections: d.Connections},
@@ -135,7 +138,7 @@ func Error(c *gin.Context, err error) {
 	case errors.Is(err, entity.ErrIdempotencyKeyReused):
 		response.Write(c, response.IdempotencyKeyReused)
 		return
-	case errors.Is(err, errMalformedPage), errors.Is(err, errMalformedForm):
+	case errors.Is(err, errMalformedPage), errors.Is(err, errMalformedForm), errors.Is(err, entity.ErrInvalidCursor):
 		response.Write(c, response.MalformedRequest)
 		return
 	case errors.Is(err, errPayloadTooLarge):
