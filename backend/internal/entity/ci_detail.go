@@ -8,6 +8,7 @@ import (
 var ErrInvalidCursor = errors.New("invalid or expired list cursor")
 
 type MRDetail struct {
+	ReviewWait *ReviewWait
 	Version    MRVersion
 	Repository RepositoryVersion
 	AuthorKind PersonKind
@@ -23,18 +24,23 @@ type RunSummary struct {
 	UsageSeconds    Point
 }
 
-// PipelineReport summarizes normalized reports of one analysis kind.
+const (
+	PipelineReportReceived  = "received"
+	PipelineReportMissing   = "missing"
+	PipelineReportMalformed = "malformed"
+	PipelineReportPartial   = "partial"
+)
+
 type PipelineReport struct {
-	Kind                            string
-	Partial                         bool
-	Complete                        bool
-	Passed, Failed, Errors, Skipped int64
+	Kind  string
+	State string
 }
 
 type PipelineDetail struct {
 	Reports []PipelineReport
 	Run     CIRun
 	Summary RunSummary
+	Metrics TestCoverageRevision
 }
 
 type AttemptQuery struct {

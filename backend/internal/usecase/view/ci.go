@@ -15,9 +15,13 @@ import (
 )
 
 type CodeFacts interface {
-	PipelineReports(context.Context, entity.ID, *entity.CIRun) ([]entity.PipelineReport, error)
+	MRAt(context.Context, entity.Scope, entity.ID, entity.ID, int64) (entity.MRVersion, error)
+	AllRepositoryAreas(context.Context, entity.ID) ([]entity.ID, error)
+	RepositoryAreas(context.Context, entity.ID, []entity.ID) ([]entity.ID, error)
+	RestrictedObjects(context.Context, entity.Scope, entity.ID, []entity.ID) ([]entity.RestrictedObject, error)
+	ReportKnowledge(context.Context, entity.ID, *int64) (int64, error)
+	PipelineTestExecutions(context.Context, entity.ID, entity.ReportScope, entity.TestExecutionQuery) (entity.TestExecutionList, error)
 	CurrentObjects(context.Context, entity.ID, []entity.ID) ([]entity.LinkEnd, error)
-	CurrentMR(context.Context, entity.Scope, entity.ID, entity.ID) (entity.MRVersion, error)
 	Repository(context.Context, entity.Scope, entity.ID, entity.ID) (entity.RepositoryVersion, error)
 	RunAt(context.Context, entity.Scope, entity.ID, entity.ID, int64) (entity.CIRun, error)
 }
@@ -30,12 +34,9 @@ type CodeLinks interface {
 	TaskMREdgesAt(context.Context, entity.ID, []entity.ID, int64) ([]entity.LinkEdge, error)
 }
 
-type ActorAccounts interface {
-	AssignmentAt(context.Context, entity.ID, entity.ID, int64) (entity.AccountAssignment, bool, error)
-}
-
 type RunCalculator interface {
 	SummarizeRun(entity.CIRun) entity.RunSummary
+	TestCoverageAt(context.Context, entity.ID, entity.ReportScope) (entity.TestCoverageRevision, error)
 }
 
 // codeScope resolves only the authorization metadata before consulting the source. Facts are read afterwards.
@@ -80,9 +81,17 @@ func (u *UseCase) MergeRequest(ctx context.Context, s entity.Subject, scope enti
 	if !ok || end.Kind != entity.ObjectMergeRequest {
 		return entity.MRDetail{}, entity.ErrNotFound
 	}
-	v, err := u.d.Code.CurrentMR(ctx, scope, s.OrganizationID, id)
+	asOf := u.d.Clock.Now()
+	seq, err := u.d.Code.ReportKnowledge(ctx, s.OrganizationID, nil)
 	if err != nil {
 		return entity.MRDetail{}, err
+	}
+	v, err := u.d.Code.MRAt(ctx, scope, s.OrganizationID, id, seq)
+	if err != nil {
+		return entity.MRDetail{}, err
+	}
+	if !scope.Area(v.AreaID) {
+		return entity.MRDetail{}, entity.ErrNotFound
 	}
 	repository, err := u.d.Code.Repository(ctx, scope, s.OrganizationID, v.AreaID)
 	if err != nil && !errors.Is(err, entity.ErrNotFound) {
@@ -96,13 +105,18 @@ func (u *UseCase) MergeRequest(ctx context.Context, s entity.Subject, scope enti
 		}
 		out.SourceURL = mergeRequestURL(repository.WebURL, instance.Provider, *v.IID)
 	}
-	if v.AuthorAccountID != nil {
-		assignment, found, err := u.d.Actors.AssignmentAt(ctx, s.OrganizationID, *v.AuthorAccountID, math.MaxInt64)
-		if err != nil {
-			return entity.MRDetail{}, err
-		}
-		if found {
-			out.AuthorKind = assignment.ActorKind
+	reviewScope, _, err := u.reviewScope(ctx, s, scope, "getMergeRequest", []entity.ID{v.AreaID})
+	if err != nil {
+		return entity.MRDetail{}, err
+	}
+	reviews, err := u.d.ReviewCalculator.MRReviewsAt(ctx, reviewScope, s.OrganizationID, v.AreaID, seq, asOf)
+	if err != nil {
+		return entity.MRDetail{}, err
+	}
+	for i := range reviews {
+		if reviews[i].Version.MRID == v.MRID {
+			out.ReviewWait, out.AuthorKind = reviews[i].Wait, reviews[i].AuthorKind
+			break
 		}
 	}
 	edges, err := u.d.CodeLinks.TaskMREdgesAt(ctx, s.OrganizationID, []entity.ID{id}, math.MaxInt64)
@@ -157,36 +171,53 @@ func mergeRequestURL(base string, provider entity.Provider, iid int) *string {
 }
 
 func (u *UseCase) Pipeline(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID) (entity.PipelineDetail, error) {
-	out, err := u.readPipeline(ctx, s, scope, id, "getPipeline")
+	seq, err := u.d.Code.ReportKnowledge(ctx, s.OrganizationID, nil)
 	if err != nil {
 		return entity.PipelineDetail{}, err
 	}
-	out.Reports, err = u.d.Code.PipelineReports(ctx, s.OrganizationID, &out.Run)
-	return out, err
+	out, allowed, err := u.readPipeline(ctx, s, scope, id, "getPipeline", seq)
+	if err != nil {
+		return entity.PipelineDetail{}, err
+	}
+	out.Metrics, err = u.d.RunCalculator.TestCoverageAt(ctx, s.OrganizationID, pipelineReportScope(&out.Run, seq))
+	if err != nil {
+		return entity.PipelineDetail{}, err
+	}
+	r := &out.Run.Run
+	at := r.ObservedAt
+	if r.StartedAt != nil {
+		at = *r.StartedAt
+	}
+	expected, err := u.d.PipelineChecks.ExpectedPipelineReports(ctx, allowed, s.OrganizationID, r.AreaID, at)
+	if err != nil {
+		return entity.PipelineDetail{}, err
+	}
+	out.Reports = pipelineReports(expected, out.Metrics.Reports)
+	return out, nil
 }
 
-func (u *UseCase) readPipeline(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID, op string) (entity.PipelineDetail, error) {
+func (u *UseCase) readPipeline(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID, op string, seq int64) (entity.PipelineDetail, entity.Scope, error) {
 	scope, ends, err := u.codeScope(ctx, s, scope, op, []entity.ID{id})
 	if err != nil {
-		return entity.PipelineDetail{}, err
+		return entity.PipelineDetail{}, entity.Scope{}, err
 	}
 	if end, ok := ends[id]; !ok || end.Kind != entity.ObjectCIRun {
-		return entity.PipelineDetail{}, entity.ErrNotFound
+		return entity.PipelineDetail{}, entity.Scope{}, entity.ErrNotFound
 	}
-	run, err := u.d.Code.RunAt(ctx, scope, s.OrganizationID, id, math.MaxInt64)
+	run, err := u.d.Code.RunAt(ctx, scope, s.OrganizationID, id, seq)
 	if err != nil {
-		return entity.PipelineDetail{}, err
+		return entity.PipelineDetail{}, entity.Scope{}, err
 	}
 	if run.Run.MRID != nil {
 		_, visible, err := u.codeScope(ctx, s, scope, op, []entity.ID{*run.Run.MRID})
 		if err != nil {
-			return entity.PipelineDetail{}, err
+			return entity.PipelineDetail{}, entity.Scope{}, err
 		}
 		if _, allowed := visible[*run.Run.MRID]; !allowed {
 			run.Run.MRID = nil
 		}
 	}
-	return entity.PipelineDetail{Run: run, Summary: u.d.RunCalculator.SummarizeRun(run)}, nil
+	return entity.PipelineDetail{Run: run, Summary: u.d.RunCalculator.SummarizeRun(run)}, scope, nil
 }
 
 func (u *UseCase) PipelineAttempts(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID, q entity.AttemptQuery) (entity.AttemptList, error) {
@@ -200,7 +231,7 @@ func (u *UseCase) PipelineAttempts(ctx context.Context, s entity.Subject, scope 
 			return entity.AttemptList{}, entity.ErrInvalidCursor
 		}
 	}
-	detail, err := u.readPipeline(ctx, s, scope, id, "listPipelineAttempts")
+	detail, _, err := u.readPipeline(ctx, s, scope, id, "listPipelineAttempts", math.MaxInt64)
 	if err != nil {
 		return entity.AttemptList{}, err
 	}

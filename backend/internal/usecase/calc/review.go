@@ -149,3 +149,42 @@ func seconds(from, to time.Time) int64 {
 	}
 	return int64(to.Sub(from) / time.Second)
 }
+
+// MRReviewsAt applies the shared waiting rule to visible MRs on one time and knowledge cut.
+func (u *UseCase) MRReviewsAt(ctx context.Context, scope entity.Scope, org, area entity.ID, seq int64, at time.Time) ([]entity.MRReview, error) {
+	facts, err := u.d.Facts.MRReviewFactsAt(ctx, scope, org, area, seq)
+	if err != nil {
+		return nil, err
+	}
+	var collection []entity.AreaCollection
+	if u.d.Collection != nil {
+		collection, err = u.d.Collection.MRCollection(ctx, org, []entity.ID{area})
+		if err != nil {
+			return nil, err
+		}
+	}
+	mrs := reviewInputOf([]entity.ReviewFacts{facts}, incompleteAreas(collection))
+	out := make([]entity.MRReview, len(mrs))
+	for i := range mrs {
+		m := &mrs[i]
+		row := entity.MRReview{Version: m.version, AuthorKind: entity.PersonUnknown}
+		if id := m.version.AuthorAccountID; id != nil && m.kinds[*id] != "" {
+			row.AuthorKind = m.kinds[*id]
+		}
+		if !m.version.Draft {
+			since, _ := readyOf(&m.version, m.events)
+			end := at
+			for _, finished := range []*time.Time{m.version.MergedAt, m.version.ClosedAt} {
+				if finished != nil && finished.Before(end) {
+					end = *finished
+				}
+			}
+			if !since.After(end) {
+				wait := m.wait(end)
+				row.Wait = &wait
+			}
+		}
+		out[i] = row
+	}
+	return out, nil
+}

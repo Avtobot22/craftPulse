@@ -22,25 +22,33 @@ func (h *codeDetails) GetMergeRequest(ctx context.Context, req openapi.GetMergeR
 	if err != nil {
 		return nil, err
 	}
-	v := &detail.Version
 	links := make([]openapi.Link, len(detail.Links))
 	for i := range detail.Links {
 		link := &detail.Links[i]
 		links[i] = openapi.Link{
-			Id: uuid.UUID(link.Edge.ID), FromObjectId: uuid.UUID(v.MRID), LinkType: openapi.LinkLinkType(link.Edge.Type),
+			Id: uuid.UUID(link.Edge.ID), FromObjectId: uuid.UUID(detail.Version.MRID), LinkType: openapi.LinkLinkType(link.Edge.Type),
 			Method: openapi.LinkMethod(link.Edge.Method), Status: openapi.LinkStatus(link.Edge.Status), DecidedAt: link.Edge.DecidedAt,
 			To: openapi.ObjectRef{Id: uuid.UUID(link.To.ID), Kind: openapi.ObjectRefKindTask, DisplayKey: link.To.DisplayKey, Title: link.To.Title},
 		}
 	}
 	limited, notes := len(detail.Notes) > 0, accessNotes(detail.Notes)
+	out := mergeRequestBody(&detail)
+	out.Links, out.AccessLimited, out.AccessNotes = &links, &limited, &notes
+	return openapi.GetMergeRequest200JSONResponse(out), nil
+}
+
+func mergeRequestBody(detail *entity.MRDetail) openapi.MergeRequest {
+	v := &detail.Version
 	out := openapi.MergeRequest{
 		Id: uuid.UUID(v.MRID), Iid: v.IID, Title: optional(v.Title), State: openapi.MergeRequestState(v.State), Draft: v.Draft,
 		Area:    openapi.AreaRef{Id: uuid.UUID(v.AreaID), Kind: openapi.AreaRefKindRepository, DisplayName: detail.Repository.Name},
 		Author:  openapi.ActorRef{Kind: openapi.ActorRefKind(detail.AuthorKind), AccountId: uuidPtr(v.AuthorAccountID)},
 		HeadSha: v.HeadSHA, BaseSha: optional(v.BaseSHA), OpenedAt: v.OpenedAt, ReadyAt: v.ReadyAt, SourceUrl: detail.SourceURL,
-		Links: &links, AccessLimited: &limited, AccessNotes: &notes,
 	}
-	return openapi.GetMergeRequest200JSONResponse(out), nil
+	if w := detail.ReviewWait; w != nil {
+		out.ReviewWait = &openapi.ReviewWait{Kind: openapi.ReviewWaitKind(w.Kind), Since: w.Since, WaitSeconds: int(w.WaitSeconds), FallbackOpen: w.FallbackOpen}
+	}
+	return out
 }
 
 func (h *codeDetails) GetPipeline(ctx context.Context, req openapi.GetPipelineRequestObject) (openapi.GetPipelineResponseObject, error) {
@@ -58,39 +66,79 @@ func (h *codeDetails) GetPipeline(ctx context.Context, req openapi.GetPipelineRe
 		NativeStatus: run.NativeStatus, Outcome: openapi.PipelineOutcome(run.Outcome), StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
 		AttemptHistory: openapi.PipelineAttemptHistory(detail.Run.History), AttemptsTotal: summary.AttemptsTotal,
 		RetriedJobs: summary.RetriedJobs, AllowedFailures: summary.AllowedFailures,
+		Coverage: &openapi.PipelineCoverage{
+			Line:   metricValue("ratio", &detail.Metrics.LineCoverage.Point),
+			Branch: metricValue("ratio", &detail.Metrics.BranchCoverage.Point),
+		},
 	}
-	pipelineReports(&out, detail.Reports)
+	pipelineReports(&out, detail.Reports, &detail.Metrics.Tests)
 	return openapi.GetPipeline200JSONResponse(out), nil
 }
 
-func pipelineReports(out *openapi.Pipeline, reports []entity.PipelineReport) {
+func pipelineReports(out *openapi.Pipeline, reports []entity.PipelineReport, tests *entity.TestMetric) {
 	type reportItem = struct {
 		AnalysisKind openapi.AnalysisKind         `json:"analysis_kind"`
 		State        openapi.PipelineReportsState `json:"state"`
 	}
 	out.Reports = make([]reportItem, 0, len(reports))
-	out.Tests.State = openapi.DataState(entity.StateNotEvaluated)
 	for _, report := range reports {
 		kind := openapi.AnalysisKind(report.Kind)
 		if !kind.Valid() {
 			continue
 		}
-		state := openapi.PipelineReportsStateReceived
-		if report.Partial {
-			state = openapi.PipelineReportsStatePartial
-		}
-		out.Reports = append(out.Reports, reportItem{AnalysisKind: kind, State: state})
-		if report.Kind != entity.AnalysisJUnit {
-			continue
-		}
-		tests := &out.Tests
-		tests.State = openapi.DataState(entity.StateProvisional)
-		if report.Complete && !report.Partial {
-			tests.State = openapi.DataState(entity.StateAssessed)
-		}
-		passed, failed, errs, skipped := int(report.Passed), int(report.Failed), int(report.Errors), int(report.Skipped)
-		tests.Passed, tests.Failed, tests.Error, tests.Skipped = &passed, &failed, &errs, &skipped
+		out.Reports = append(out.Reports, reportItem{AnalysisKind: kind, State: openapi.PipelineReportsState(report.State)})
 	}
+	out.Tests.State = openapi.DataState(tests.State)
+	if c := tests.Counts; c != nil {
+		out.Tests.Passed, out.Tests.Failed, out.Tests.Error, out.Tests.Skipped = &c.Passed, &c.Failed, &c.Errors, &c.Skipped
+		out.Tests.DistinctCases, out.Tests.Executions = &c.DistinctCases, &c.Executions
+	}
+}
+
+func (h *codeDetails) ListTestExecutions(ctx context.Context, req openapi.ListTestExecutionsRequestObject) (openapi.ListTestExecutionsResponseObject, error) {
+	s, scope, err := subjectScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := pageLimit(req.Params.Limit)
+	if err != nil {
+		return nil, err
+	}
+	q := entity.TestExecutionQuery{Limit: limit}
+	if req.Params.Outcome != nil {
+		if !req.Params.Outcome.Valid() {
+			return nil, errMalformedPage
+		}
+		q.Outcome = string(*req.Params.Outcome)
+	}
+	filter := s.OrganizationID.String() + ":" + s.UserID.String() + ":" + req.PipelineId.String() + ":" + q.Outcome
+	if req.Params.Cursor != nil {
+		c, ok := decodeCursor(*req.Params.Cursor)
+		if !ok || c.Kind != "test_execution" || c.Name != filter || c.ID == uuid.Nil || c.Seq == nil || c.At.IsZero() {
+			return nil, errMalformedPage
+		}
+		after := entity.ID(c.ID)
+		q.After, q.KnownSeq, q.IssuedAt = &after, c.Seq, &c.At
+	}
+	page, err := h.uc.TestExecutions(ctx, s, scope, entity.ID(req.PipelineId), q)
+	if err != nil {
+		return nil, err
+	}
+	out := openapi.TestExecutionPage{Data: make([]openapi.TestExecution, len(page.Items))}
+	for i := range page.Items {
+		x, dst := &page.Items[i], &out.Data[i]
+		dst.TestCase.Id, dst.TestCase.Key = uuid.UUID(x.CaseID), x.CaseKey
+		dst.AttemptId, dst.ConfigFingerprint = uuidPtr(x.AttemptID), hex.EncodeToString(x.ConfigFingerprint)
+		dst.Outcome = openapi.TestExecutionOutcome(x.Outcome)
+		if x.DurationMS != nil {
+			dst.DurationMs = new(int(*x.DurationMS))
+		}
+	}
+	if page.Next != nil {
+		next := encodeCursor(cursorData{Kind: "test_execution", Name: filter, At: page.IssuedAt, ID: uuid.UUID(*page.Next), Seq: &page.KnownSeq})
+		out.NextCursor = &next
+	}
+	return openapi.ListTestExecutions200JSONResponse(out), nil
 }
 
 func (h *codeDetails) ListPipelineAttempts(ctx context.Context, req openapi.ListPipelineAttemptsRequestObject) (openapi.ListPipelineAttemptsResponseObject, error) {

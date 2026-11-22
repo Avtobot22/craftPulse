@@ -13,6 +13,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const allRepositoryAreas = `-- name: AllRepositoryAreas :many
+SELECT area_id FROM normalize.area WHERE organization_id = $1 AND area_kind = 'repository' ORDER BY area_id
+`
+
+func (q *Queries) AllRepositoryAreas(ctx context.Context, organizationID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, allRepositoryAreas, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var area_id uuid.UUID
+		if err := rows.Scan(&area_id); err != nil {
+			return nil, err
+		}
+		items = append(items, area_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const areaChangeSeq = `-- name: AreaChangeSeq :one
 SELECT COALESCE(max(last_change_seq), 0)::bigint FROM normalize.area
 WHERE organization_id = $1 AND area_id = ANY ($2::uuid[])
@@ -1354,6 +1378,46 @@ func (q *Queries) InsertObjects(ctx context.Context, arg InsertObjectsParams) er
 	return err
 }
 
+const insertRejectedReport = `-- name: InsertRejectedReport :exec
+INSERT INTO normalize.rejected_report (organization_id, receipt_id, record_no, known_seq, area_id,
+    component_id, report_kind, language, sha, run_id, attempt_id, reason_code)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT (organization_id, receipt_id, record_no) DO NOTHING
+`
+
+type InsertRejectedReportParams struct {
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+	RecordNo       int32
+	KnownSeq       int64
+	AreaID         uuid.UUID
+	ComponentID    uuid.NullUUID
+	ReportKind     string
+	Language       string
+	Sha            pgtype.Text
+	RunID          uuid.NullUUID
+	AttemptID      uuid.NullUUID
+	ReasonCode     string
+}
+
+func (q *Queries) InsertRejectedReport(ctx context.Context, arg InsertRejectedReportParams) error {
+	_, err := q.db.Exec(ctx, insertRejectedReport,
+		arg.OrganizationID,
+		arg.ReceiptID,
+		arg.RecordNo,
+		arg.KnownSeq,
+		arg.AreaID,
+		arg.ComponentID,
+		arg.ReportKind,
+		arg.Language,
+		arg.Sha,
+		arg.RunID,
+		arg.AttemptID,
+		arg.ReasonCode,
+	)
+	return err
+}
+
 const insertReport = `-- name: InsertReport :one
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
@@ -1452,10 +1516,10 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uui
 
 const insertTestExecutions = `-- name: InsertTestExecutions :exec
 INSERT INTO normalize.test_execution (organization_id, report_id, test_case_id, attempt_id, config_fingerprint, ordinal, outcome,
-    duration_ms, run_started_at, known_seq)
+    duration_ms, run_started_at, known_seq, suite)
 SELECT $1, $2, unnest($3::uuid[]), $4,
     unnest($5::bytea[]), unnest($6::smallint[]), unnest($7::text[]),
-    NULLIF(unnest($8::bigint[]), 0) - 1, $9, $10
+    NULLIF(unnest($8::bigint[]), 0) - 1, $9, $10, unnest($11::text[])
 `
 
 type InsertTestExecutionsParams struct {
@@ -1469,6 +1533,7 @@ type InsertTestExecutionsParams struct {
 	DurationsMs        []int64
 	RunStartedAt       time.Time
 	KnownSeq           int64
+	Suites             []string
 }
 
 // A zero duration stands for NULL plus one: arrays of the statement carry no NULL elements, so a known duration is
@@ -1485,6 +1550,7 @@ func (q *Queries) InsertTestExecutions(ctx context.Context, arg InsertTestExecut
 		arg.DurationsMs,
 		arg.RunStartedAt,
 		arg.KnownSeq,
+		arg.Suites,
 	)
 	return err
 }
@@ -2390,67 +2456,139 @@ func (q *Queries) ReadMRVersions(ctx context.Context, arg ReadMRVersionsParams) 
 	return items, nil
 }
 
-const readPipelineReports = `-- name: ReadPipelineReports :many
-WITH reports AS (
-    SELECT r.organization_id, r.id, r.run_id, r.report_kind, r.completeness, r.exit_class, r.known_seq FROM normalize.report r
-    JOIN normalize.ci_run_version v ON v.organization_id = r.organization_id AND v.run_id = r.run_id
-        AND v.area_id = r.area_id AND (r.sha IS NULL OR r.sha = v.sha)
-    WHERE r.organization_id = $1 AND v.id = ANY($2::uuid[])
-        AND (r.attempt_id IS NULL OR r.attempt_id = ANY($3::uuid[]))
-), executions AS (
-    SELECT DISTINCT ON (r.run_id, t.attempt_id, t.test_case_id, t.config_fingerprint, t.ordinal) t.outcome
-    FROM reports r
-    JOIN normalize.test_execution t ON t.organization_id = r.organization_id AND t.report_id = r.id
-    WHERE r.report_kind = 'junit' AND (t.attempt_id IS NULL OR t.attempt_id = ANY($3::uuid[]))
-    ORDER BY r.run_id, t.attempt_id, t.test_case_id, t.config_fingerprint, t.ordinal, r.known_seq DESC, r.id DESC
-), counts AS (
-    SELECT count(*) FILTER (WHERE outcome = 'passed') AS passed,
-        count(*) FILTER (WHERE outcome = 'failed') AS failed,
-        count(*) FILTER (WHERE outcome = 'error') AS errors,
-        count(*) FILTER (WHERE outcome = 'skipped') AS skipped
-    FROM executions
-)
-SELECT r.report_kind, bool_or(r.completeness = 'partial' OR r.exit_class IN ('failed', 'timeout', 'partial')) AS partial,
-    bool_and(r.completeness = 'complete') AS complete,
-    c.passed, c.failed, c.errors, c.skipped
-FROM reports r CROSS JOIN counts c
-GROUP BY r.report_kind, c.passed, c.failed, c.errors, c.skipped
-ORDER BY r.report_kind
+const readReportCoverage = `-- name: ReadReportCoverage :many
+SELECT id, report_id, path, kind, covered, executable, line_map_key
+FROM normalize.coverage_fact
+WHERE organization_id = $1 AND report_id = ANY($2::uuid[])
+ORDER BY path, kind, id
 `
 
-type ReadPipelineReportsParams struct {
+type ReadReportCoverageParams struct {
 	OrganizationID uuid.UUID
-	RunVersionIds  []uuid.UUID
-	AttemptIds     []uuid.UUID
+	ReportIds      []uuid.UUID
 }
 
-type ReadPipelineReportsRow struct {
-	ReportKind string
-	Partial    bool
-	Complete   bool
-	Passed     int64
-	Failed     int64
-	Errors     int64
-	Skipped    int64
+type ReadReportCoverageRow struct {
+	ID         uuid.UUID
+	ReportID   uuid.UUID
+	Path       string
+	Kind       string
+	Covered    int32
+	Executable int32
+	LineMapKey pgtype.Text
 }
 
-func (q *Queries) ReadPipelineReports(ctx context.Context, arg ReadPipelineReportsParams) ([]ReadPipelineReportsRow, error) {
-	rows, err := q.db.Query(ctx, readPipelineReports, arg.OrganizationID, arg.RunVersionIds, arg.AttemptIds)
+func (q *Queries) ReadReportCoverage(ctx context.Context, arg ReadReportCoverageParams) ([]ReadReportCoverageRow, error) {
+	rows, err := q.db.Query(ctx, readReportCoverage, arg.OrganizationID, arg.ReportIds)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ReadPipelineReportsRow
+	var items []ReadReportCoverageRow
 	for rows.Next() {
-		var i ReadPipelineReportsRow
+		var i ReadReportCoverageRow
 		if err := rows.Scan(
+			&i.ID,
+			&i.ReportID,
+			&i.Path,
+			&i.Kind,
+			&i.Covered,
+			&i.Executable,
+			&i.LineMapKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const readReportEvidence = `-- name: ReadReportEvidence :many
+SELECT r.id, r.run_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language,
+    r.report_format, COALESCE(r.producer, '')::text AS producer, COALESCE(r.producer_version, '')::text AS producer_version,
+    COALESCE(encode(r.scope_hash, 'hex'), '')::text AS scope_hash,
+    r.exit_class, r.completeness, r.known_seq, ''::text AS rejected_reason, r.skipped_targets
+FROM normalize.report r
+WHERE r.organization_id = $1 AND r.area_id = $2
+    AND r.known_seq <= $3
+    AND (r.sha = $4::text OR (r.sha IS NULL AND r.report_kind NOT IN ('junit', 'coverage')
+        AND r.run_id = ANY($5::uuid[])))
+    AND (NOT $6::boolean OR (r.run_id = ANY($5::uuid[])
+        AND (r.attempt_id IS NULL OR r.attempt_id = ANY($7::uuid[]))))
+UNION ALL
+SELECT r.id, r.run_id, r.component_id, r.report_kind, r.language, '', '', '', '', '', '', r.known_seq, r.reason_code, '[]'::jsonb
+FROM normalize.rejected_report r
+WHERE r.organization_id = $1 AND r.area_id = $2
+    AND r.known_seq <= $3
+    AND (r.sha = $4::text OR (r.sha IS NULL AND r.report_kind NOT IN ('junit', 'coverage')
+        AND r.run_id = ANY($5::uuid[])))
+    AND (NOT $6::boolean OR (r.run_id = ANY($5::uuid[])
+        AND (r.attempt_id IS NULL OR r.attempt_id = ANY($7::uuid[]))))
+ORDER BY known_seq DESC, id DESC
+`
+
+type ReadReportEvidenceParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	KnownSeq       int64
+	Sha            string
+	RunIds         []uuid.UUID
+	Pipeline       bool
+	AttemptIds     []uuid.UUID
+}
+
+type ReadReportEvidenceRow struct {
+	ID              uuid.UUID
+	RunID           uuid.NullUUID
+	ComponentID     uuid.NullUUID
+	ReportKind      string
+	Language        string
+	ReportFormat    string
+	Producer        string
+	ProducerVersion string
+	ScopeHash       string
+	ExitClass       string
+	Completeness    string
+	KnownSeq        int64
+	RejectedReason  string
+	SkippedTargets  []byte
+}
+
+func (q *Queries) ReadReportEvidence(ctx context.Context, arg ReadReportEvidenceParams) ([]ReadReportEvidenceRow, error) {
+	rows, err := q.db.Query(ctx, readReportEvidence,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.KnownSeq,
+		arg.Sha,
+		arg.RunIds,
+		arg.Pipeline,
+		arg.AttemptIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReadReportEvidenceRow
+	for rows.Next() {
+		var i ReadReportEvidenceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RunID,
+			&i.ComponentID,
 			&i.ReportKind,
-			&i.Partial,
-			&i.Complete,
-			&i.Passed,
-			&i.Failed,
-			&i.Errors,
-			&i.Skipped,
+			&i.Language,
+			&i.ReportFormat,
+			&i.Producer,
+			&i.ProducerVersion,
+			&i.ScopeHash,
+			&i.ExitClass,
+			&i.Completeness,
+			&i.KnownSeq,
+			&i.RejectedReason,
+			&i.SkippedTargets,
 		); err != nil {
 			return nil, err
 		}
@@ -2497,6 +2635,93 @@ func (q *Queries) ReadRepositoryVersion(ctx context.Context, arg ReadRepositoryV
 		&i.WebUrl,
 	)
 	return i, err
+}
+
+const readTestExecutions = `-- name: ReadTestExecutions :many
+WITH ranked AS (
+    SELECT x.id, x.report_id, x.test_case_id, x.attempt_id, x.suite, x.config_fingerprint,
+        x.ordinal, x.outcome, x.duration_ms, x.run_started_at, c.case_key,
+        row_number() OVER (PARTITION BY COALESCE(r.run_id, x.attempt_id, r.id), x.attempt_id,
+            x.test_case_id, x.config_fingerprint, x.ordinal ORDER BY r.known_seq DESC, r.id DESC) AS position
+    FROM normalize.test_execution x
+    JOIN normalize.test_case c ON c.organization_id = x.organization_id AND c.id = x.test_case_id
+    JOIN normalize.report r ON r.organization_id = x.organization_id AND r.id = x.report_id
+    WHERE x.organization_id = $5 AND x.report_id = ANY($6::uuid[])
+)
+SELECT id, report_id, test_case_id, attempt_id, suite, config_fingerprint, ordinal, outcome, duration_ms, run_started_at,
+    case_key, (position > 1)::boolean AS superseded
+FROM ranked
+WHERE (NOT $1::boolean OR position = 1)
+    AND ($2::text = '' OR outcome = $2)
+    AND ($3::uuid IS NULL OR id > $3::uuid)
+ORDER BY id
+LIMIT NULLIF($4::integer, 0)
+`
+
+type ReadTestExecutionsParams struct {
+	CurrentOnly    bool
+	Outcome        string
+	AfterID        uuid.NullUUID
+	PageSize       int32
+	OrganizationID uuid.UUID
+	ReportIds      []uuid.UUID
+}
+
+type ReadTestExecutionsRow struct {
+	ID                uuid.UUID
+	ReportID          uuid.UUID
+	TestCaseID        uuid.UUID
+	AttemptID         uuid.NullUUID
+	Suite             pgtype.Text
+	ConfigFingerprint []byte
+	Ordinal           int16
+	Outcome           string
+	DurationMs        pgtype.Int8
+	RunStartedAt      time.Time
+	CaseKey           string
+	Superseded        bool
+}
+
+// Re-uploads of the same execution replace its earlier observation. Without a run or attempt there is
+// no identity across reports. Apply the outcome filter after choosing the current observation.
+func (q *Queries) ReadTestExecutions(ctx context.Context, arg ReadTestExecutionsParams) ([]ReadTestExecutionsRow, error) {
+	rows, err := q.db.Query(ctx, readTestExecutions,
+		arg.CurrentOnly,
+		arg.Outcome,
+		arg.AfterID,
+		arg.PageSize,
+		arg.OrganizationID,
+		arg.ReportIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReadTestExecutionsRow
+	for rows.Next() {
+		var i ReadTestExecutionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReportID,
+			&i.TestCaseID,
+			&i.AttemptID,
+			&i.Suite,
+			&i.ConfigFingerprint,
+			&i.Ordinal,
+			&i.Outcome,
+			&i.DurationMs,
+			&i.RunStartedAt,
+			&i.CaseKey,
+			&i.Superseded,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const receiptCodeScopes = `-- name: ReceiptCodeScopes :many

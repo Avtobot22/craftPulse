@@ -246,3 +246,13 @@ func (u *UseCase) RepositoryAreas(ctx context.Context, orgID entity.ID, ids []en
 	})
 	return out, err
 }
+
+func (u *UseCase) AllRepositoryAreas(ctx context.Context, org entity.ID) ([]entity.ID, error) {
+	var areas []entity.ID
+	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		areas, err = u.d.Repo.AllRepositoryAreas(ctx, org)
+		return err
+	})
+	return areas, err
+}

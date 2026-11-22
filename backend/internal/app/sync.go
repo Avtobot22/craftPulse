@@ -8,11 +8,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
+	changerepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/change"
 	linkrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/link"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
 	syncrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/sync"
 	viewrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/view"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/change"
 	linkuc "github.com/Avtobot22/craftPulse/backend/internal/usecase/link"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/sync"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/view"
@@ -98,18 +100,21 @@ type viewModules struct {
 		view.Authorizer
 		view.SourceRights
 	}
-	code          view.CodeFacts
-	actors        view.ActorAccounts
-	runCalculator view.RunCalculator
+	code             view.CodeFacts
+	reviewCalculator view.ReviewCalculator
+	projectAreas     view.ProjectAreas
+	runCalculator    view.RunCalculator
 }
 
 // newView keeps the descriptors of the runs users ask for and reads the reports; the access module checks their
 // action again.
 func newView(pool *pgxpool.Pool, m viewModules, c clock.Clock) *view.UseCase {
+	tx := persistent.NewTransactor(pool)
 	return view.New(view.Deps{
-		Code: m.code, Actors: m.actors, RunCalculator: m.runCalculator, SourceRights: m.rights,
-		CodeLinks: linkuc.New(linkuc.Deps{Repo: linkrepo.NewRepo(pool), Tx: persistent.NewTransactor(pool)}),
-		Repo:      viewrepo.NewRepo(pool), Tx: persistent.NewTransactor(pool), Sync: m.collection, Series: m.series, Reports: m.reports,
+		Code: m.code, ReviewCalculator: m.reviewCalculator, ProjectAreas: m.projectAreas, RunCalculator: m.runCalculator, SourceRights: m.rights,
+		PipelineChecks: change.New(change.Deps{Repo: changerepo.NewRepo(pool), Tx: tx}),
+		CodeLinks:      linkuc.New(linkuc.Deps{Repo: linkrepo.NewRepo(pool), Tx: tx}),
+		Repo:           viewrepo.NewRepo(pool), Tx: tx, Sync: m.collection, Series: m.series, Reports: m.reports,
 		Instances: m.instances, Access: m.rights, Clock: c, NewID: newID,
 	})
 }

@@ -394,6 +394,67 @@ func (q *Queries) LockCurrentBaseline(ctx context.Context, arg LockCurrentBaseli
 	return i, err
 }
 
+const pipelineExpectedReports = `-- name: PipelineExpectedReports :many
+WITH versions AS (
+    SELECT DISTINCT ON (v.project_id) v.id
+    FROM change.profile_version v
+    JOIN org.project_area a ON a.organization_id = v.organization_id AND a.project_id = v.project_id
+    WHERE v.organization_id = $1 AND a.area_id = $2
+        AND ($4::boolean OR a.project_id = ANY($5::uuid[]))
+        AND a.superseded_seq IS NULL AND a.valid @> $3::timestamptz
+        AND v.confirmed_at <= $3::timestamptz
+    ORDER BY v.project_id, v.version_no DESC
+)
+SELECT DISTINCT e.component_id, e.analysis_kind, e.language
+FROM versions v
+JOIN change.profile_entry e ON e.organization_id = $1 AND e.profile_version_id = v.id
+JOIN org.component c ON c.organization_id = e.organization_id AND c.id = e.component_id
+WHERE c.repository_area_id = $2 AND c.status = 'confirmed'
+    AND c.confirmed_at <= $3::timestamptz
+    AND (c.superseded_at IS NULL OR c.superseded_at > $3::timestamptz)
+ORDER BY e.analysis_kind, e.component_id, e.language
+`
+
+type PipelineExpectedReportsParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	RunAt          time.Time
+	Whole          bool
+	ProjectIds     []uuid.UUID
+}
+
+type PipelineExpectedReportsRow struct {
+	ComponentID  uuid.UUID
+	AnalysisKind string
+	Language     string
+}
+
+func (q *Queries) PipelineExpectedReports(ctx context.Context, arg PipelineExpectedReportsParams) ([]PipelineExpectedReportsRow, error) {
+	rows, err := q.db.Query(ctx, pipelineExpectedReports,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.RunAt,
+		arg.Whole,
+		arg.ProjectIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PipelineExpectedReportsRow
+	for rows.Next() {
+		var i PipelineExpectedReportsRow
+		if err := rows.Scan(&i.ComponentID, &i.AnalysisKind, &i.Language); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const profileEntries = `-- name: ProfileEntries :many
 SELECT organization_id, profile_version_id, component_id, language, analysis_kind, mode, profile_id, tool_versions, rules_hash FROM change.profile_entry WHERE organization_id = $1 AND profile_version_id = $2
 ORDER BY component_id, language, analysis_kind

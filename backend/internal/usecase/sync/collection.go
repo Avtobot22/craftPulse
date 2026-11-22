@@ -20,6 +20,11 @@ func (u *UseCase) CICollection(ctx context.Context, orgID entity.ID, areaIDs []e
 	return u.collectionFor(ctx, orgID, areaIDs, "ci")
 }
 
+// MRCollection reads merge request history independently of task and CI collection.
+func (u *UseCase) MRCollection(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaCollection, error) {
+	return u.collectionFor(ctx, orgID, areaIDs, "merge_requests")
+}
+
 func (u *UseCase) collectionFor(ctx context.Context, orgID entity.ID, areaIDs []entity.ID, dataKind string) ([]entity.AreaCollection, error) {
 	sources, err := u.d.Connect.AreaSources(ctx, orgID, areaIDs)
 	if err != nil || len(sources) == 0 {
@@ -47,7 +52,7 @@ func (u *UseCase) collectionFor(ctx context.Context, orgID entity.ID, areaIDs []
 	err = u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
 		for i := range sources {
 			src := &sources[i]
-			if !src.Active {
+			if !src.Active || (dataKind == "merge_requests" && src.Kind != entity.ScopeRepository) {
 				continue
 			}
 			if dataKind == "ci" && src.Kind != entity.ScopeRepository && src.Kind != entity.ScopeCIProject {

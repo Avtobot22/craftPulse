@@ -34,7 +34,8 @@ func codeEnv(t *testing.T) (*normalizeEnv, *browser) {
 	t.Helper()
 	e := newNormalizeEnv(t)
 	m := e.modules(t)
-	views := newView(e.app, viewModules{code: e.norm, actors: m.orgs, runCalculator: calc.New(calc.Deps{}), instances: e.connect, rights: m.access}, e.clock)
+	calculator := calc.New(calc.Deps{TestCoverage: e.norm, Facts: e.norm})
+	views := newView(e.app, viewModules{code: e.norm, projectAreas: m.orgs, reviewCalculator: calculator, runCalculator: calculator, instances: e.connect, rights: m.access}, e.clock)
 	m.code = views
 	reg := prometheus.NewRegistry()
 	deps := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, m)
@@ -163,7 +164,7 @@ func TestCodeAPI_MRLinksAndHiddenTask(t *testing.T) {
 	assert.Equal(t, _headA, mr.HeadSha)
 	require.NotNil(t, mr.BaseSha)
 	assert.Equal(t, strings.Repeat("b", 40), *mr.BaseSha)
-	assert.Nil(t, mr.ReviewWait)
+	require.NotNil(t, mr.ReviewWait)
 	require.NotNil(t, mr.ReadyAt)
 	assert.True(t, mr.ReadyAt.Equal(_t1))
 	assert.Equal(t, openapi.ActorRefKind("unknown"), mr.Author.Kind)
@@ -227,6 +228,7 @@ func TestCodeAPI_SourceAccessRevokedWithinSixtySeconds(t *testing.T) {
 		{"/api/v1/merge-requests/" + mr.String(), "MergeRequest"},
 		{"/api/v1/pipelines/" + run.String(), "Pipeline"},
 		{"/api/v1/pipelines/" + run.String() + "/attempts", "AttemptPage"},
+		{"/api/v1/pipelines/" + run.String() + "/test-executions", "TestExecutionPage"},
 	}
 	for _, p := range paths {
 		codeRead(t, e.loginEnv, e.member, p.path, p.schema)

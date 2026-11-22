@@ -125,6 +125,7 @@ type ReportRows struct {
 // configurations of a matrix is two executions, not two attempts of one test. Ordinal counts the same case within
 // one report.
 type TestExecution struct {
+	Suite             *string
 	CaseKey           string
 	CaseKeyHash       []byte
 	AttemptID         *ID
