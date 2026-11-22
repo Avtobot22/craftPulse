@@ -21,10 +21,14 @@ func (u *UseCase) Repository(ctx context.Context, scope entity.Scope, orgID, are
 }
 
 func (u *UseCase) CurrentMR(ctx context.Context, scope entity.Scope, orgID, mrID entity.ID) (entity.MRVersion, error) {
+	return u.MRAt(ctx, scope, orgID, mrID, math.MaxInt64)
+}
+
+func (u *UseCase) MRAt(ctx context.Context, scope entity.Scope, orgID, mrID entity.ID, seq int64) (entity.MRVersion, error) {
 	var out []entity.MRVersion
 	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var err error
-		out, err = u.d.Repo.ReadMRVersions(ctx, orgID, scope.Areas(), scope.Objects(), []entity.ID{mrID}, math.MaxInt64)
+		out, err = u.d.Repo.ReadMRVersions(ctx, orgID, scope.Areas(), scope.Objects(), []entity.ID{mrID}, seq)
 		return err
 	})
 	if err != nil {
@@ -124,17 +128,29 @@ func (u *UseCase) MREventsAt(ctx context.Context, scope entity.Scope, orgID, mrI
 // ReviewFacts reads, for calc, the MRs of an area at the slice seq with their events, the events of its tasks and
 // the confirmed kinds of the accounts acting in them at seq; an account without a confirmed assignment is unknown.
 func (u *UseCase) ReviewFacts(ctx context.Context, orgID, areaID entity.ID, seq int64) (entity.ReviewFacts, error) {
+	return u.readReviewFacts(ctx, orgID, areaID, seq, nil, true)
+}
+
+// MRReviewFactsAt reads only visible MR facts, without loading task events for the review queue.
+func (u *UseCase) MRReviewFactsAt(ctx context.Context, scope entity.Scope, orgID, areaID entity.ID, seq int64) (entity.ReviewFacts, error) {
+	if !scope.Area(areaID) {
+		return entity.ReviewFacts{}, entity.ErrNotFound
+	}
+	return u.readReviewFacts(ctx, orgID, areaID, seq, scope.Objects(), false)
+}
+
+func (u *UseCase) readReviewFacts(ctx context.Context, orgID, areaID entity.ID, seq int64, allowed []entity.ID, tasks bool) (entity.ReviewFacts, error) {
 	out := entity.ReviewFacts{AreaID: areaID, ActorKinds: map[entity.ID]entity.PersonKind{}}
 	area := []entity.ID{areaID}
 	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
-		ids, err := u.d.Repo.FindMRIDs(ctx, orgID, area, nil, entity.SourceKey{}, "", seq)
+		ids, err := u.d.Repo.FindMRIDs(ctx, orgID, area, allowed, entity.SourceKey{}, "", seq)
 		if err != nil {
 			return err
 		}
-		if out.MRs, err = u.d.Repo.ReadMRVersions(ctx, orgID, area, nil, ids, seq); err != nil {
+		if out.MRs, err = u.d.Repo.ReadMRVersions(ctx, orgID, area, allowed, ids, seq); err != nil {
 			return err
 		}
-		if out.MREvents, err = u.d.Repo.ReadMREvents(ctx, orgID, area, nil, ids, seq); err != nil {
+		if out.MREvents, err = u.d.Repo.ReadMREvents(ctx, orgID, area, allowed, ids, seq); err != nil || !tasks {
 			return err
 		}
 		restricted, err := u.d.Repo.RestrictedObjects(ctx, orgID, area)
@@ -151,7 +167,12 @@ func (u *UseCase) ReviewFacts(ctx context.Context, orgID, areaID entity.ID, seq 
 	if err != nil {
 		return entity.ReviewFacts{}, err
 	}
-	actors := make([]*entity.ID, 0, len(out.MREvents)+len(out.TaskEvents))
+	actors := make([]*entity.ID, 0, len(out.MRs)+len(out.MREvents)+len(out.TaskEvents))
+	if !tasks {
+		for i := range out.MRs {
+			actors = append(actors, out.MRs[i].AuthorAccountID)
+		}
+	}
 	for i := range out.MREvents {
 		e := &out.MREvents[i]
 		out.ReviewsGiven = out.ReviewsGiven || e.Kind == "review" || e.Kind == "approval"

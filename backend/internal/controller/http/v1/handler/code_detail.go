@@ -22,25 +22,33 @@ func (h *codeDetails) GetMergeRequest(ctx context.Context, req openapi.GetMergeR
 	if err != nil {
 		return nil, err
 	}
-	v := &detail.Version
 	links := make([]openapi.Link, len(detail.Links))
 	for i := range detail.Links {
 		link := &detail.Links[i]
 		links[i] = openapi.Link{
-			Id: uuid.UUID(link.Edge.ID), FromObjectId: uuid.UUID(v.MRID), LinkType: openapi.LinkLinkType(link.Edge.Type),
+			Id: uuid.UUID(link.Edge.ID), FromObjectId: uuid.UUID(detail.Version.MRID), LinkType: openapi.LinkLinkType(link.Edge.Type),
 			Method: openapi.LinkMethod(link.Edge.Method), Status: openapi.LinkStatus(link.Edge.Status), DecidedAt: link.Edge.DecidedAt,
 			To: openapi.ObjectRef{Id: uuid.UUID(link.To.ID), Kind: openapi.ObjectRefKindTask, DisplayKey: link.To.DisplayKey, Title: link.To.Title},
 		}
 	}
 	limited, notes := len(detail.Notes) > 0, accessNotes(detail.Notes)
+	out := mergeRequestBody(&detail)
+	out.Links, out.AccessLimited, out.AccessNotes = &links, &limited, &notes
+	return openapi.GetMergeRequest200JSONResponse(out), nil
+}
+
+func mergeRequestBody(detail *entity.MRDetail) openapi.MergeRequest {
+	v := &detail.Version
 	out := openapi.MergeRequest{
 		Id: uuid.UUID(v.MRID), Iid: v.IID, Title: optional(v.Title), State: openapi.MergeRequestState(v.State), Draft: v.Draft,
 		Area:    openapi.AreaRef{Id: uuid.UUID(v.AreaID), Kind: openapi.AreaRefKindRepository, DisplayName: detail.Repository.Name},
 		Author:  openapi.ActorRef{Kind: openapi.ActorRefKind(detail.AuthorKind), AccountId: uuidPtr(v.AuthorAccountID)},
 		HeadSha: v.HeadSHA, BaseSha: optional(v.BaseSHA), OpenedAt: v.OpenedAt, ReadyAt: v.ReadyAt, SourceUrl: detail.SourceURL,
-		Links: &links, AccessLimited: &limited, AccessNotes: &notes,
 	}
-	return openapi.GetMergeRequest200JSONResponse(out), nil
+	if w := detail.ReviewWait; w != nil {
+		out.ReviewWait = &openapi.ReviewWait{Kind: openapi.ReviewWaitKind(w.Kind), Since: w.Since, WaitSeconds: int(w.WaitSeconds), FallbackOpen: w.FallbackOpen}
+	}
+	return out
 }
 
 func (h *codeDetails) GetPipeline(ctx context.Context, req openapi.GetPipelineRequestObject) (openapi.GetPipelineResponseObject, error) {

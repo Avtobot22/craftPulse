@@ -46,21 +46,22 @@ type Authorizer interface {
 }
 
 type Deps struct {
-	Code           CodeFacts
-	SourceRights   SourceRights
-	CodeLinks      CodeLinks
-	Actors         ActorAccounts
-	RunCalculator  RunCalculator
-	PipelineChecks PipelineChecks
-	Repo           repo.ViewRepo
-	Tx             repo.Transactor
-	Sync           Sync
-	Series         Series
-	Reports        Reports
-	Instances      Instances
-	Access         Authorizer
-	Clock          clock.Clock
-	NewID          func() (entity.ID, error)
+	ReviewCalculator ReviewCalculator
+	ProjectAreas     ProjectAreas
+	Code             CodeFacts
+	SourceRights     SourceRights
+	CodeLinks        CodeLinks
+	RunCalculator    RunCalculator
+	PipelineChecks   PipelineChecks
+	Repo             repo.ViewRepo
+	Tx               repo.Transactor
+	Sync             Sync
+	Series           Series
+	Reports          Reports
+	Instances        Instances
+	Access           Authorizer
+	Clock            clock.Clock
+	NewID            func() (entity.ID, error)
 }
 
 type UseCase struct {

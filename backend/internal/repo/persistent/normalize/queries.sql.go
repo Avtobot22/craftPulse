@@ -13,6 +13,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const allRepositoryAreas = `-- name: AllRepositoryAreas :many
+SELECT area_id FROM normalize.area WHERE organization_id = $1 AND area_kind = 'repository' ORDER BY area_id
+`
+
+func (q *Queries) AllRepositoryAreas(ctx context.Context, organizationID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, allRepositoryAreas, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var area_id uuid.UUID
+		if err := rows.Scan(&area_id); err != nil {
+			return nil, err
+		}
+		items = append(items, area_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const areaChangeSeq = `-- name: AreaChangeSeq :one
 SELECT COALESCE(max(last_change_seq), 0)::bigint FROM normalize.area
 WHERE organization_id = $1 AND area_id = ANY ($2::uuid[])

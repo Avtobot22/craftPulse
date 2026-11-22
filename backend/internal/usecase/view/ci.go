@@ -15,10 +15,13 @@ import (
 )
 
 type CodeFacts interface {
+	MRAt(context.Context, entity.Scope, entity.ID, entity.ID, int64) (entity.MRVersion, error)
+	AllRepositoryAreas(context.Context, entity.ID) ([]entity.ID, error)
+	RepositoryAreas(context.Context, entity.ID, []entity.ID) ([]entity.ID, error)
+	RestrictedObjects(context.Context, entity.Scope, entity.ID, []entity.ID) ([]entity.RestrictedObject, error)
 	ReportKnowledge(context.Context, entity.ID, *int64) (int64, error)
 	PipelineTestExecutions(context.Context, entity.ID, entity.ReportScope, entity.TestExecutionQuery) (entity.TestExecutionList, error)
 	CurrentObjects(context.Context, entity.ID, []entity.ID) ([]entity.LinkEnd, error)
-	CurrentMR(context.Context, entity.Scope, entity.ID, entity.ID) (entity.MRVersion, error)
 	Repository(context.Context, entity.Scope, entity.ID, entity.ID) (entity.RepositoryVersion, error)
 	RunAt(context.Context, entity.Scope, entity.ID, entity.ID, int64) (entity.CIRun, error)
 }
@@ -29,10 +32,6 @@ type SourceRights interface {
 
 type CodeLinks interface {
 	TaskMREdgesAt(context.Context, entity.ID, []entity.ID, int64) ([]entity.LinkEdge, error)
-}
-
-type ActorAccounts interface {
-	AssignmentAt(context.Context, entity.ID, entity.ID, int64) (entity.AccountAssignment, bool, error)
 }
 
 type RunCalculator interface {
@@ -82,7 +81,12 @@ func (u *UseCase) MergeRequest(ctx context.Context, s entity.Subject, scope enti
 	if !ok || end.Kind != entity.ObjectMergeRequest {
 		return entity.MRDetail{}, entity.ErrNotFound
 	}
-	v, err := u.d.Code.CurrentMR(ctx, scope, s.OrganizationID, id)
+	asOf := u.d.Clock.Now()
+	seq, err := u.d.Code.ReportKnowledge(ctx, s.OrganizationID, nil)
+	if err != nil {
+		return entity.MRDetail{}, err
+	}
+	v, err := u.d.Code.MRAt(ctx, scope, s.OrganizationID, id, seq)
 	if err != nil {
 		return entity.MRDetail{}, err
 	}
@@ -98,13 +102,14 @@ func (u *UseCase) MergeRequest(ctx context.Context, s entity.Subject, scope enti
 		}
 		out.SourceURL = mergeRequestURL(repository.WebURL, instance.Provider, *v.IID)
 	}
-	if v.AuthorAccountID != nil {
-		assignment, found, err := u.d.Actors.AssignmentAt(ctx, s.OrganizationID, *v.AuthorAccountID, math.MaxInt64)
-		if err != nil {
-			return entity.MRDetail{}, err
-		}
-		if found {
-			out.AuthorKind = assignment.ActorKind
+	reviews, err := u.d.ReviewCalculator.MRReviewsAt(ctx, scope, s.OrganizationID, v.AreaID, seq, asOf)
+	if err != nil {
+		return entity.MRDetail{}, err
+	}
+	for i := range reviews {
+		if reviews[i].Version.MRID == v.MRID {
+			out.ReviewWait, out.AuthorKind = reviews[i].Wait, reviews[i].AuthorKind
+			break
 		}
 	}
 	edges, err := u.d.CodeLinks.TaskMREdgesAt(ctx, s.OrganizationID, []entity.ID{id}, math.MaxInt64)

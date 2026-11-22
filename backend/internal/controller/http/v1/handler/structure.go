@@ -194,13 +194,15 @@ func (h *organization) list(ctx context.Context, s entity.Subject, scope entity.
 
 // cursorData is opaque to the client; it binds the position to the list and the order it came from.
 type cursorData struct {
-	Kind string    `json:"k"`
-	Sort string    `json:"s,omitempty"`
-	Desc bool      `json:"d"`
-	Name string    `json:"n,omitempty"`
-	At   time.Time `json:"t,omitzero"`
-	ID   uuid.UUID `json:"i"`
-	Seq  *int64    `json:"q,omitempty"`
+	WaitSeconds int64     `json:"w,omitempty"`
+	OpenedAt    time.Time `json:"o,omitzero"`
+	Kind        string    `json:"k"`
+	Sort        string    `json:"s,omitempty"`
+	Desc        bool      `json:"d"`
+	Name        string    `json:"n,omitempty"`
+	At          time.Time `json:"t,omitzero"`
+	ID          uuid.UUID `json:"i"`
+	Seq         *int64    `json:"q,omitempty"`
 }
 
 func pageLimit(limit *int) (int, error) {
