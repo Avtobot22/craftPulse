@@ -15,6 +15,7 @@ import (
 
 const (
 	_api              = "/rest/api/3/"
+	_oauthGateway     = "https://api.atlassian.com/ex/jira/"
 	_maxResponseBytes = 2 << 20
 	_pageSize         = 25
 )
@@ -67,8 +68,12 @@ func (s source) request(ctx context.Context, operation, path string, query url.V
 	if authenticated {
 		req.SetBasicAuth(s.creds.Email, s.creds.Token)
 	}
+	return doRequest(ctx, s.client, operation, req)
+}
+
+func doRequest(ctx context.Context, client *adaptersdk.SourceClient, operation string, req *http.Request) (*http.Response, error) {
 	start := time.Now()
-	resp, err := s.client.DoDirect(req, _maxResponseBytes)
+	resp, err := client.DoDirect(req, _maxResponseBytes)
 	log := adaptersdk.Call{}.Log(ctx).Debug().Str("source_operation", operation).Dur("elapsed", time.Since(start))
 	if e, ok := errors.AsType[*adaptersdk.Error](err); ok {
 		log.Str("reason", string(e.Code))

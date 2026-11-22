@@ -1,0 +1,9 @@
+{
+  "account": {"status": 200, "body": {"accountId": "fixture-account-123", "active": true}},
+  "project": {"status": 200, "body": {"id": "10000", "key": "DEMO"}},
+  "issue": {"status": 200, "body": {"id": "10006", "key": "DEMO-6", "fields": {}}},
+  "hidden": {"status": 404, "body": {"errorMessages": ["Issue does not exist or you do not have permission to see it."], "errors": {}}},
+  "forbidden": {"status": 403, "body": {"errorMessages": ["Forbidden"], "errors": {}}},
+  "source_failure": {"status": 500, "body": {"errorMessages": ["Internal server error"], "errors": {}}},
+  "expired": {"status": 401, "body": {"code": 401, "message": "Unauthorized"}}
+}

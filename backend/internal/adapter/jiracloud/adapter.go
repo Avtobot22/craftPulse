@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk"
@@ -14,12 +15,14 @@ import (
 // Adapter collects Jira Cloud facts using the adapter SDK.
 type Adapter struct {
 	adaptersdk.Unimplemented
-	client *adaptersdk.SourceClient
+	client      *adaptersdk.SourceClient
+	accessMu    sync.Mutex
+	accessGates map[accessConnection]*accessGate
 }
 
 // New creates a Jira Cloud adapter.
 func New(client *adaptersdk.SourceClient) *Adapter {
-	return &Adapter{client: client}
+	return &Adapter{client: client, accessGates: make(map[accessConnection]*accessGate)}
 }
 
 func (a *Adapter) bound(ctx context.Context, call adaptersdk.Call) (source, error) {
@@ -59,8 +62,7 @@ func (s source) serverInfo(ctx context.Context) (serverInfo, error) {
 }
 
 func (s source) instanceKey(ctx context.Context) (string, error) {
-	const gateway = "https://api.atlassian.com/ex/jira/"
-	if cloudID, ok := strings.CutPrefix(s.binding.BaseURL, gateway); ok && cloudID != "" && !strings.Contains(cloudID, "/") {
+	if cloudID, ok := strings.CutPrefix(s.binding.BaseURL, _oauthGateway); ok && cloudID != "" && !strings.Contains(cloudID, "/") {
 		return cloudID, nil
 	}
 	var tenant struct {
@@ -210,7 +212,7 @@ func (s source) probe(ctx context.Context, scopes []adaptersdk.ScopeRef) (adapte
 	}
 	out.Capabilities = append(out.Capabilities, adaptersdk.Capability{
 		Capability: adaptersdk.CapabilityCapabilityReadPermissions, State: adaptersdk.CapabilityStateMissing,
-		ReasonCode: new("jira_access_revocation_unverified"), CheckedAt: now,
+		ReasonCode: new(_revocationUnverified), CheckedAt: now,
 	})
 	return out, nil
 }
@@ -286,18 +288,6 @@ func (s source) probeScope(ctx context.Context, scope adaptersdk.ScopeRef) (adap
 		write = ""
 	}
 	return out, probeEvidence{"", history, history, history, links, write}, nil
-}
-
-func (*Adapter) CheckAccess(_ context.Context, _ adaptersdk.Call, in adaptersdk.CheckAccessInput) (adaptersdk.CheckAccessResult, error) {
-	now := time.Now().UTC()
-	out := adaptersdk.CheckAccessResult{Mode: adaptersdk.CheckAccessResultModeUserToken, CheckedAt: now, Decisions: make([]adaptersdk.AccessDecision, len(in.Items))}
-	for i := range out.Decisions {
-		out.Decisions[i] = adaptersdk.AccessDecision{
-			CheckedAt: now, Decision: adaptersdk.AccessDecisionDecisionUnknown,
-			ReasonCode: new("jira_access_revocation_unverified"),
-		}
-	}
-	return out, nil
 }
 
 func (s source) manifest(in adaptersdk.FetchInput) *envelope.Manifest {

@@ -21,10 +21,11 @@ const CurrentContractVersion = "1"
 // Error is a contract error (TZ 10.3): the core branches on Code. Detail is for diagnostics and never
 // carries credentials or a source body.
 type Error struct {
-	Code    AdapterErrorCode
-	Detail  string
-	RetryAt *time.Time
-	cause   error
+	Code         AdapterErrorCode
+	Detail       string
+	RetryAt      *time.Time
+	cause        error
+	sourceStatus int
 }
 
 func NewError(code AdapterErrorCode, detail string) *Error {
@@ -39,6 +40,9 @@ func Preparing(retryAt time.Time, detail string) *Error {
 func (e *Error) Error() string { return string(e.Code) + ": " + e.Detail }
 
 func (e *Error) Unwrap() error { return e.cause }
+
+// SourceStatusCode is the HTTP status from the source, or zero when no response was received.
+func (e *Error) SourceStatusCode() int { return e.sourceStatus }
 
 func (e *Error) status() int {
 	switch e.Code {
