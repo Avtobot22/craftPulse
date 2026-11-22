@@ -31,6 +31,7 @@ type Facts interface {
 	VisibleAreaFacts(ctx context.Context, scope entity.Scope, orgID, areaID entity.ID, seq int64) (entity.AreaFacts, error)
 	RestrictedObjects(ctx context.Context, scope entity.Scope, orgID entity.ID, areaIDs []entity.ID) ([]entity.RestrictedObject, error)
 	CurrentObjects(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.LinkEnd, error)
+	MRReviewFactsAt(ctx context.Context, scope entity.Scope, orgID, areaID entity.ID, seq int64) (entity.ReviewFacts, error)
 	ReviewFacts(ctx context.Context, orgID, areaID entity.ID, seq int64) (entity.ReviewFacts, error)
 	CIFacts(ctx context.Context, orgID, areaID entity.ID, seq int64) (entity.CIFacts, error)
 }
@@ -52,6 +53,7 @@ type Settings interface {
 // completeness of a calculation (T39, T40, T42) and the initial load of history.
 type Collection interface {
 	AreaCollection(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaCollection, error)
+	MRCollection(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaCollection, error)
 	CICollection(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaCollection, error)
 }
 

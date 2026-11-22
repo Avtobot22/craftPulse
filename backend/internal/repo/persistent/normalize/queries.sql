@@ -568,3 +568,6 @@ SELECT id, report_id, path, kind, covered, executable, line_map_key
 FROM normalize.coverage_fact
 WHERE organization_id = sqlc.arg(organization_id) AND report_id = ANY(sqlc.arg(report_ids)::uuid[])
 ORDER BY path, kind, id;
+
+-- name: AllRepositoryAreas :many
+SELECT area_id FROM normalize.area WHERE organization_id = $1 AND area_kind = 'repository' ORDER BY area_id;

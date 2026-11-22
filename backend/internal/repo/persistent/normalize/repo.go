@@ -244,3 +244,15 @@ func (r *Repo) RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entit
 	}
 	return out, nil
 }
+
+func (r *Repo) AllRepositoryAreas(ctx context.Context, org entity.ID) ([]entity.ID, error) {
+	rows, err := r.q(ctx).AllRepositoryAreas(ctx, uuid.UUID(org))
+	if err != nil {
+		return nil, fmt.Errorf("normalize: all repository areas: %w", err)
+	}
+	out := make([]entity.ID, len(rows))
+	for i := range rows {
+		out[i] = entity.ID(rows[i])
+	}
+	return out, nil
+}

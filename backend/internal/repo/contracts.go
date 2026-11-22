@@ -352,6 +352,7 @@ type NormalizeRepo interface {
 	LastBranchReports(ctx context.Context, orgID entity.ID, components []entity.ID, refs []string) ([]entity.ReportFindings, error)
 	DefaultBranches(ctx context.Context, orgID entity.ID, repositories []entity.ID) (map[entity.ID]string, error)
 
+	AllRepositoryAreas(context.Context, entity.ID) ([]entity.ID, error)
 	RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error)
 	// EnsureObjects creates the identities that are new with the knowledge number seq and returns all by key.
 	EnsureObjects(ctx context.Context, orgID entity.ID, keys []entity.SourceKey, quality entity.IdentityQuality, seq int64) (map[entity.SourceKey]entity.SourceObject, error)

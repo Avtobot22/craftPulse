@@ -8,6 +8,7 @@ import (
 var ErrInvalidCursor = errors.New("invalid or expired list cursor")
 
 type MRDetail struct {
+	ReviewWait *ReviewWait
 	Version    MRVersion
 	Repository RepositoryVersion
 	AuthorKind PersonKind

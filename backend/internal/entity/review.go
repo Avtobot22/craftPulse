@@ -56,3 +56,32 @@ type ReviewScope struct {
 	TeamID       ID
 	RepositoryID ID
 }
+
+// MRReview is the visible state and wait of a merge request at a consistent read cut.
+type MRReview struct {
+	Version    MRVersion
+	Wait       *ReviewWait
+	AuthorKind PersonKind
+}
+
+type MRQueueQuery struct {
+	Project, Area *ID
+	State, Sort   string
+	Wait          ReviewWaitKind
+	Limit         int
+	After         *MRQueueCursor
+}
+
+type MRQueueCursor struct {
+	AsOf        time.Time
+	Seq         int64
+	WaitSeconds int64
+	OpenedAt    time.Time
+	ID          ID
+}
+
+type MRQueuePage struct {
+	Items []MRDetail
+	Notes []AccessNote
+	Next  *MRQueueCursor
+}
