@@ -170,7 +170,7 @@ func observationReviews(f *entity.TaskObservationFacts) []reviewMR {
 }
 
 func taskReviewObservation(m *reviewMR, ref entity.ObjectRef, at time.Time) (entity.TaskObservation, bool) {
-	if !readyOpen(&m.version, m.events, at) || m.version.Draft {
+	if !taskReviewReady(m, at) {
 		return entity.TaskObservation{}, false
 	}
 	wait := m.wait(at)
@@ -184,9 +184,8 @@ func taskReviewObservation(m *reviewMR, ref entity.ObjectRef, at time.Time) (ent
 			o.SourceEventIDs = append(o.SourceEventIDs, e.ID)
 		}
 	}
-	reviewersKnown := snapshotKnownAt(m.version.SourceUpdatedAt, m.version.ObservedAt, at) || hasReviewerEvents(m.events)
 	switch {
-	case !m.version.ReviewerField || !reviewersKnown:
+	case !taskReviewerKnown(m, at):
 		o.Kind, o.Action, o.Question = entity.ObservationUnknown, entity.ObservationClarifyReason, entity.QuestionReviewerAssigned
 	case wait.Kind == entity.ReviewNoReviewer:
 		o.Kind, o.Action = entity.ObservationAwaitingReviewer, entity.ObservationAssignReviewer
@@ -196,6 +195,14 @@ func taskReviewObservation(m *reviewMR, ref entity.ObjectRef, at time.Time) (ent
 		return entity.TaskObservation{}, false
 	}
 	return o, true
+}
+
+func taskReviewReady(m *reviewMR, at time.Time) bool {
+	return !m.version.Draft && readyOpen(&m.version, m.events, at)
+}
+
+func taskReviewerKnown(m *reviewMR, at time.Time) bool {
+	return m.version.ReviewerField && (snapshotKnownAt(m.version.SourceUpdatedAt, m.version.ObservedAt, at) || hasReviewerEvents(m.events))
 }
 
 func hasReviewerEvents(events []entity.MREvent) bool {

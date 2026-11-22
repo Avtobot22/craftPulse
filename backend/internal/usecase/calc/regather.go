@@ -11,7 +11,11 @@ var _connectionMetrics = map[string]bool{"T40": true, "T42": true}
 // as the formula would over the tasks of that part (TZ 12.7). The roles and items are those the formula wrote:
 // item 1 is the task itself, item 2 its second contribution.
 func regather(sp *entity.SeriesPoint, cs []entity.Contribution) entity.Point {
-	t := newTally(period{start: sp.Start, end: sp.End})
+	p := period{start: sp.Start, end: sp.End}
+	if isCrossMetric(sp.MetricID) {
+		return crossRatio(p, cs)
+	}
+	t := newTally(p)
 	var (
 		sample           []float64
 		numerators, dens int
@@ -34,9 +38,19 @@ func regather(sp *entity.SeriesPoint, cs []entity.Contribution) entity.Point {
 		}
 	}
 	switch sp.MetricID {
-	case "T08", "T14":
+	case "T08", "T14", "A06":
 		return pick(t.distribution(sample, definition(sp.MetricID).Estimators), sp)
-	case "T13":
+	case "A07":
+		pt := pick(t.distribution(sample, definition(sp.MetricID).Estimators), sp)
+		for i := range cs {
+			if cs[i].ReasonCode == _eventComment && pt.ReasonCode == "" {
+				pt.ReasonCode = entity.ReasonExternalResponse
+			}
+		}
+		return pt
+	case "A22":
+		return activityCount(t)
+	case "T13", "A10":
 		return t.ratio(float64(numerators), float64(dens), dens, false)
 	case "T15":
 		return t.ratio(numSum, denSum, dens, true)

@@ -1201,6 +1201,12 @@ export interface paths {
          *     соответствуют фильтру (AC-18). Когорта ограничена правами:
          *     значения строятся по разрешённой части, `access_limited` без числа скрытых (FR-001).
          *
+         *     A05, A06, A07, A10, история событий A22 и показатели X01/X02 входят в ту же ревизию.
+         *     Шаг `day` даёт дневные точки. Для A22 группа содержит вид события и участника.
+         *     В X01/X02 `n` содержит размер доступного WIP, `denominator` - размер оценённой части,
+         *     `excluded_count` учитывает пробелы связи и неприменимые задачи, `missing_count` - неизвестные.
+         *     Задача с совпавшим признаком учитывается в числителе и знаменателе, в когорте имеет роль `numerator`.
+         *
          *     UC-15 использует этот отчёт и listRevisionCohort: T23 - переоткрытия в M0; T24 и T25
          *     выдаются отдельно с M1, только при заданном этапе приёмки и подтверждённом production origin.
          *     Для T23 видны зрелая когорта, окно наблюдения и незрелые задачи; виды возвратов не суммируются.
@@ -4159,7 +4165,7 @@ export interface components {
             metric_id: string;
             definition_version: number;
             unit: string;
-            /** @description Оценка показателя с несколькими рядами: `p50` и `p85` у T08 и T14, поле у T38 (`size`, `type`, `team`, `start`), вид у T40 (`lag`, `last_success_age`), T41 (`tasks`, `transitions`) и T42 (`missing`, `changed`). Отсутствует у показателя с одним рядом. */
+            /** @description Оценка показателя с несколькими рядами: `p50` и `p85` у T08 и T14, поле у T38 (`size`, `type`, `team`, `start`), вид у T40 (`lag`, `last_success_age`), T41 (`tasks`, `transitions`) и T42 (`missing`, `changed`). X01 использует `no_reviewer` и `no_first_response`, X02 - `failed`, `passed_after_retry` и `missing_report`. У A22 ключ `actor_kind:event_kind` выбирает когорту группы. Отсутствует у показателя с одним рядом. */
             estimator?: string;
             /** @description Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для отчёта команды - тип или размер задачи. */
             group?: {
@@ -4300,6 +4306,10 @@ export interface components {
              * @description Для attempt-оснований I18 передаётся ID доступного pipeline для UI-55/UI-56; закрытый pipeline и его вклад не выдаются.
              */
             pipeline_id?: string;
+            /** @description Доступные MR и текущие pipelines, проверенные для вклада задачи в X01 или X02. */
+            basis?: components["schemas"]["ObjectRef"][];
+            /** @description Признаки ожидания ревью и состояния CI, найденные среди доступных оснований X01 или X02. */
+            signals?: string[];
         };
         CohortPage: {
             data: components["schemas"]["CohortItem"][];

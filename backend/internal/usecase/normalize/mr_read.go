@@ -143,6 +143,16 @@ func (u *UseCase) readReviewFacts(ctx context.Context, orgID, areaID entity.ID, 
 	out := entity.ReviewFacts{AreaID: areaID, ActorKinds: map[entity.ID]entity.PersonKind{}}
 	area := []entity.ID{areaID}
 	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if tasks {
+			restricted, err := u.d.Repo.RestrictedObjects(ctx, orgID, area)
+			if err != nil {
+				return err
+			}
+			allowed = make([]entity.ID, len(restricted))
+			for i := range restricted {
+				allowed[i] = restricted[i].ID
+			}
+		}
 		ids, err := u.d.Repo.FindMRIDs(ctx, orgID, area, allowed, entity.SourceKey{}, "", seq)
 		if err != nil {
 			return err
@@ -153,15 +163,12 @@ func (u *UseCase) readReviewFacts(ctx context.Context, orgID, areaID entity.ID, 
 		if out.MREvents, err = u.d.Repo.ReadMREvents(ctx, orgID, area, allowed, ids, seq); err != nil || !tasks {
 			return err
 		}
-		restricted, err := u.d.Repo.RestrictedObjects(ctx, orgID, area)
-		if err != nil {
-			return err
+		if len(ids) > 0 {
+			if out.MRRevisions, err = u.d.Repo.ReadMRRevisions(ctx, orgID, area, allowed, ids, seq); err != nil {
+				return err
+			}
 		}
-		all := make([]entity.ID, len(restricted))
-		for i := range restricted {
-			all[i] = restricted[i].ID
-		}
-		out.TaskEvents, err = u.d.Repo.TaskEventsAt(ctx, orgID, areaID, seq, all)
+		out.TaskEvents, err = u.d.Repo.TaskEventsAt(ctx, orgID, areaID, seq, allowed)
 		return err
 	})
 	if err != nil {

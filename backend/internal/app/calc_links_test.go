@@ -26,6 +26,12 @@ var _linkMerged = time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC)
 
 func (e *seriesEnv) mrImporter(t *testing.T, admin entity.Subject) func(...*envelope.Record) entity.Receipt {
 	t.Helper()
+	submit := e.codeImporter(t, admin)
+	return func(recs ...*envelope.Record) entity.Receipt { return submit(mrManifest("42"), recs...) }
+}
+
+func (e *seriesEnv) codeImporter(t *testing.T, admin entity.Subject) func(*envelope.Manifest, ...*envelope.Record) entity.Receipt {
+	t.Helper()
 	caller, err := adapterapi.NewCaller(adapterapi.Config{Resolver: mapResolver{}})
 	require.NoError(t, err)
 	conn, err := newConnect(e.app, e.keyring, caller, e.clock)
@@ -34,8 +40,8 @@ func (e *seriesEnv) mrImporter(t *testing.T, admin entity.Subject) func(...*enve
 	require.NoError(t, err)
 	intake, err := newIngest(e.app, sharedStore(t), conn, e.connectionsEnv.rights, orgs, e.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
-	return func(recs ...*envelope.Record) entity.Receipt {
-		rc, err := intake.SubmitImport(t.Context(), admin, entity.ID(e.project), bytes.NewReader(pack(t, mrManifest("42"), recs...)))
+	return func(manifest *envelope.Manifest, recs ...*envelope.Record) entity.Receipt {
+		rc, err := intake.SubmitImport(t.Context(), admin, entity.ID(e.project), bytes.NewReader(pack(t, manifest, recs...)))
 		require.NoError(t, err)
 		if rc.Status == entity.ReceiptQuarantined {
 			require.NoError(t, intake.ProcessPackage(t.Context(), e.orgID, rc.ID))

@@ -82,6 +82,13 @@ func (u *UseCase) reportRevision(ctx context.Context, org entity.ID, q *entity.R
 		if team != q.TeamID || rev.PublishedAt == nil {
 			return entity.CalcRevision{}, entity.ErrNotFound
 		}
+		rev.Window.Step = q.Step
+		series, err := u.d.Reports.ReportSeries(ctx, org, rev.SeriesID)
+		if err == nil {
+			rev.Window.Step = series.Step
+		} else if !errors.Is(err, entity.ErrNotFound) {
+			return entity.CalcRevision{}, err
+		}
 		return rev, nil
 	}
 	series, err := u.d.Reports.TeamSeries(ctx, org, q.TeamID, q.Step)
@@ -89,6 +96,7 @@ func (u *UseCase) reportRevision(ctx context.Context, org entity.ID, q *entity.R
 		return entity.CalcRevision{}, err
 	}
 	rev, err := u.d.Reports.Revision(ctx, org, series.ID, nil)
+	rev.Window.Step = series.Step
 	if errors.Is(err, entity.ErrNotFound) {
 		if err := u.d.Reports.RequestTeamRevision(ctx, org, q.TeamID, entity.ID(logger.CorrelationID(ctx))); err != nil {
 			return entity.CalcRevision{}, err
@@ -102,8 +110,8 @@ func checkReport(q *entity.ReportQuery) error {
 	if !q.From.Before(q.To) {
 		v.Add("to", entity.FieldOutOfRange, "must be later than from")
 	}
-	if q.Step != entity.StepWeek && q.Step != entity.StepMonth {
-		v.Add("step", entity.FieldNotAllowedValue, "the series of a team are weekly or monthly")
+	if q.Step != entity.StepDay && q.Step != entity.StepWeek && q.Step != entity.StepMonth {
+		v.Add("step", entity.FieldNotAllowedValue, "the series of a team are daily, weekly or monthly")
 	}
 	if len(v.Fields) > 0 {
 		return v

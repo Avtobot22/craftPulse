@@ -57,10 +57,13 @@ type CohortObject struct {
 // the interval of the task open at the end of a point of a state.
 type CohortItem struct {
 	Contribution
-	Object    CohortObject
-	TaskType  *string
-	SizeLabel *string
-	Interval  *WorkflowInterval
+	Object         CohortObject
+	TaskType       *string
+	SizeLabel      *string
+	Interval       *WorkflowInterval
+	TaskAgeSeconds *int64
+	Basis          []ObjectRef
+	Signals        []ObservationKind
 }
 
 // CohortPage is a page of the visible cohort of a point; Next is set when more follow.

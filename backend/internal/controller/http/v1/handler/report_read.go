@@ -56,7 +56,7 @@ func (h *reports) GetTeamReport(ctx context.Context, req openapi.GetTeamReportRe
 func teamReport(r *entity.TeamReport, q *entity.ReportQuery) openapi.TeamReport {
 	rev := &r.Revision
 	out := openapi.TeamReport{
-		TeamId: uuid.UUID(q.TeamID), Period: openapi.Period{From: q.From, To: q.To}, Step: openapi.TeamReportStep(q.Step),
+		TeamId: uuid.UUID(q.TeamID), Period: openapi.Period{From: q.From, To: q.To}, Step: openapi.TeamReportStep(rev.Window.Step),
 		Revision: openapi.RevisionSummary{
 			Id: uuid.UUID(rev.ID), SeriesId: uuid.UUID(rev.SeriesID), RevisionNo: rev.RevisionNo, AsOf: rev.AsOf, PublishedAt: rev.PublishedAt,
 			Loading: rev.Loading,
@@ -85,7 +85,11 @@ func metricSeries(s *entity.Series) openapi.MetricSeries {
 			EventKind *string            `json:"event_kind,omitempty"`
 			SizeLabel *string            `json:"size_label,omitempty"`
 			TaskType  *string            `json:"task_type,omitempty"`
-		}{SizeLabel: g.SizeLabel, TaskType: g.TaskType}
+		}{SizeLabel: g.SizeLabel, TaskType: g.TaskType, EventKind: optional(g.EventKind)}
+		if g.ActorKind != "" {
+			actor := openapi.ActorKind(g.ActorKind)
+			out.Group.ActorKind = &actor
+		}
 	}
 	for i := range s.Points {
 		p := &s.Points[i]
@@ -236,6 +240,29 @@ func cohortItem(it *entity.CohortItem, url string) openapi.CohortItem {
 	}
 	if !it.Object.Deleted {
 		out.Object.DisplayKey, out.Object.Title = it.Object.DisplayKey, it.Object.Title
+	}
+	if it.TaskAgeSeconds != nil {
+		age := int(*it.TaskAgeSeconds)
+		out.TaskAgeSeconds = &age
+	}
+	if len(it.Basis) > 0 {
+		basis := make([]openapi.ObjectRef, 0, len(it.Basis))
+		for i := range it.Basis {
+			ref := &it.Basis[i]
+			kind := openapi.ObjectRefKind(ref.Kind)
+			if ref.Kind == entity.ObjectCIRun {
+				kind = openapi.ObjectRefKind("pipeline")
+			}
+			basis = append(basis, openapi.ObjectRef{Kind: kind, Id: uuid.UUID(ref.ID), DisplayKey: ref.DisplayKey, Title: ref.Title, SourceUrl: ref.SourceURL})
+		}
+		out.Basis = &basis
+	}
+	if len(it.Signals) > 0 {
+		signals := make([]string, len(it.Signals))
+		for i, signal := range it.Signals {
+			signals[i] = string(signal)
+		}
+		out.Signals = &signals
 	}
 	if iv := it.Interval; iv != nil {
 		to := iv.To

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -247,7 +248,13 @@ func TestCalcSeries_BuildsAndPublishesRevisionInParts(t *testing.T) {
 			assert.Equal(t, p.End, got.End, s.MetricID)
 		}
 	}
-	assert.Len(t, stored, want, "every point of the formula is stored once")
+	flowPoints := 0
+	for i := range stored {
+		if strings.HasPrefix(stored[i].MetricID, "T") {
+			flowPoints++
+		}
+	}
+	assert.Equal(t, want, flowPoints, "every point of the flow formula is stored once")
 
 	wip := res.Series[indexSeries(res.Series, "T12", "")].Points[37]
 	page, err := e.calc.PointContributions(t.Context(), e.orgID, first.ID, entity.ContributionQuery{MetricID: "T12", PointStart: wip.Start, Limit: 1})
