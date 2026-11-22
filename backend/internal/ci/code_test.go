@@ -102,12 +102,13 @@ func TestStripClones_KeepsCoordinatesWithoutCode(t *testing.T) {
 	writeFiles(t, dir, map[string]string{"in.json": `{"duplicates":[{"format":"go","lines":12,"tokens":120,"fragment":"password := \"x\"",
 		"firstFile":{"name":"b.go","start":3,"end":14},"secondFile":{"name":"a.go","start":5,"end":16}}],"statistics":{"total":{"clones":1}}}`})
 
-	require.NoError(t, stripClones(src, dst))
+	require.NoError(t, stripClones(src, dst, []string{"vendor"}))
 
 	data, err := os.ReadFile(dst)
 	require.NoError(t, err)
 	assert.NotContains(t, string(data), "fragment")
 	assert.NotContains(t, string(data), "password")
+	assert.Contains(t, string(data), `"scope_excluded_paths":["vendor"]`)
 	f, err := os.Open(dst)
 	require.NoError(t, err)
 	defer f.Close()

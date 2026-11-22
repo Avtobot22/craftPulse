@@ -41,6 +41,8 @@ type reportSpec struct {
 	testTargets                              *[]string
 	formatVersion                            string
 	profileID, language                      string
+	mode                                     envelope.ScanToolRunMode
+	excludedTargets                          *[]envelope.ScanExcludedTarget
 }
 
 func reportFixture(t *testing.T, name string) []byte {
@@ -115,6 +117,10 @@ func reportPackageOf(t *testing.T, instance, sha string, specs ...reportSpec) []
 		if s.exit != "" {
 			tool.ExitClass, tool.Completeness = envelope.ScanToolRunExitClass(s.exit), envelope.ScanToolRunCompleteness(s.completeness)
 		}
+		if s.mode != "" {
+			tool.Mode = s.mode
+		}
+		tool.ExcludedTargets = s.excludedTargets
 		if s.completeness == "complete" {
 			tool.SkippedTargets, tool.SkippedCount, tool.History = []envelope.ScanSkippedTarget{}, ptr(0), nil
 		}

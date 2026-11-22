@@ -116,12 +116,18 @@ func parseJscpd(r io.Reader, in parseInput) (*parsedReport, error) {
 	dec := json.NewDecoder(r)
 	grouping := cloneGrouping{indices: map[cloneMember]int{}}
 	facts := &entity.CodeFacts{}
+	out := &parsedReport{formatVersion: "1", code: facts}
 	var pairs bool
 	err := object(dec, func(key string) error {
 		switch key {
 		case "duplicates":
 			pairs = true
 			return array(dec, func() error { return grouping.readPair(dec, in) })
+		case "scope_excluded_paths":
+			out.formatVersion = "2"
+			excluded, err := readCloneScope(dec)
+			out.cloneExcluded = excluded
+			return err
 		case "statistics":
 			var stats struct {
 				Total struct {
@@ -147,7 +153,26 @@ func parseJscpd(r io.Reader, in parseInput) (*parsedReport, error) {
 		return nil, errors.New("missing duplicates or invalid statistics.total.lines")
 	}
 	facts.Groups = grouping.groups()
-	return &parsedReport{formatVersion: "1", code: facts}, nil
+	return out, nil
+}
+
+func readCloneScope(dec *json.Decoder) (map[string]bool, error) {
+	var paths []string
+	if err := dec.Decode(&paths); err != nil {
+		return nil, err
+	}
+	if paths == nil {
+		return nil, errors.New("scope_excluded_paths must be an array")
+	}
+	out := make(map[string]bool, len(paths))
+	for _, raw := range paths {
+		p := codePath(raw, parseInput{})
+		if p == "" {
+			return nil, errors.New("invalid excluded path in clone report scope")
+		}
+		out[p] = true
+	}
+	return out, nil
 }
 
 // cloneGrouping joins pairs that share the same occurrence. Overlapping but different ranges are
@@ -218,25 +243,32 @@ func (g *cloneGrouping) groups() []entity.CloneGroup {
 	return out
 }
 
-// scopeCodeFacts applies the manifest of the report candidate. A native CSV without
-// an inventory still supplies function metrics.
-func scopeCodeFacts(code *entity.CodeFacts, tool *envelope.ScanToolRun) *entity.CodeFacts {
-	if code == nil || tool == nil {
+// scopedCodeFacts applies the manifest of the report candidate to parsed code facts.
+func (p *parsedReport) scopedCodeFacts(tool *envelope.ScanToolRun) *entity.CodeFacts {
+	code := p.code
+	if code == nil || (tool == nil && len(p.cloneExcluded) == 0) {
 		return code
 	}
 	out := *code
-	if t := tool.FunctionThresholds; t != nil {
-		out.Thresholds = &entity.CodeThresholds{CCN: t.CcnThreshold, NLOC: t.NlocThreshold}
-	}
-
 	excluded := map[string]bool{}
-	if tool.ExcludedTargets != nil {
-		for _, target := range *tool.ExcludedTargets {
+	unlistedSkips := false
+	if tool != nil {
+		if tool.ExcludedTargets != nil {
+			for _, target := range *tool.ExcludedTargets {
+				excluded[target.Path] = true
+			}
+		}
+		for _, target := range tool.SkippedTargets {
 			excluded[target.Path] = true
 		}
+		unlistedSkips = tool.SkippedCount != nil && *tool.SkippedCount > len(tool.SkippedTargets)
 	}
-	for _, target := range tool.SkippedTargets {
-		excluded[target.Path] = true
+	if out.PhysicalLines != nil {
+		p.scopeCloneFacts(&out, excluded, unlistedSkips)
+		return &out
+	}
+	if t := tool.FunctionThresholds; t != nil {
+		out.Thresholds = &entity.CodeThresholds{CCN: t.CcnThreshold, NLOC: t.NlocThreshold}
 	}
 	if len(excluded) > 0 {
 		out.Functions = slices.DeleteFunc(slices.Clone(code.Functions), func(fn entity.CodeFunction) bool {
@@ -260,6 +292,35 @@ func scopeCodeFacts(code *entity.CodeFacts, tool *envelope.ScanToolRun) *entity.
 		out.Files = &files
 	}
 	return &out
+}
+
+func (p *parsedReport) scopeCloneFacts(out *entity.CodeFacts, excluded map[string]bool, unlistedSkips bool) {
+	unverified := unlistedSkips
+	for name := range excluded {
+		if !excludedCodePath(name, p.cloneExcluded) {
+			unverified = true
+		}
+	}
+	for name := range p.cloneExcluded {
+		excluded[name] = true
+	}
+	if len(excluded) > 0 {
+		groups := make([]entity.CloneGroup, 0, len(out.Groups))
+		for _, group := range out.Groups {
+			members := slices.DeleteFunc(slices.Clone(group.Members), func(m entity.CodeRange) bool {
+				return excludedCodePath(m.Path, excluded)
+			})
+			unverified = unverified || len(members) != len(group.Members)
+			if len(members) >= 2 {
+				groups = append(groups, entity.CloneGroup{Language: group.Language, Members: members})
+			}
+		}
+		out.Groups = groups
+	}
+	if unverified {
+		// A native jscpd total has no per-file line counts to subtract from it.
+		out.PhysicalLines = nil
+	}
 }
 
 func excludedCodePath(p string, excluded map[string]bool) bool {

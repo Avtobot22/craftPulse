@@ -61,6 +61,7 @@ type parsedReport struct {
 	tests         []parsedTest
 	coverage      []parsedCoverage
 	code          *entity.CodeFacts
+	cloneExcluded map[string]bool
 	// excluded are the files of a coverage report outside the repository.
 	excluded []entity.SkippedTarget
 }
@@ -74,8 +75,8 @@ var _parsers = []reportParser{
 		parse: parseLizard,
 	},
 	{
-		format: entity.CodeFormatJscpd, version: "jscpd-json/1",
-		kinds: []string{entity.AnalysisCode}, accepts: func(v string) bool { return v == "1" },
+		format: entity.CodeFormatJscpd, version: "jscpd-json/2",
+		kinds: []string{entity.AnalysisCode}, accepts: func(v string) bool { return v == "1" || v == "2" },
 		parse: parseJscpd,
 	},
 	{

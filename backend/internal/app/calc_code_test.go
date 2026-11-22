@@ -81,7 +81,18 @@ func TestCalcCode_ReceiptsPublishSeparateCommitAndProducerRevisions(t *testing.T
 	functions.ci, clones.ci = ci, ci
 	alternative := functions
 	alternative.name, alternative.producer, alternative.exit, alternative.completeness = "alternate.csv", "other-lizard", "partial", "partial"
-	rc := e.imported(t, e.admin, reportPackage(t, secondSHA, lint, clones, functions, alternative))
+	foreign := clones
+	foreign.name, foreign.producer, foreign.mode = "imported-clones.json", "foreign-jscpd", envelope.ScanToolRunModeImport
+	foreign.exit, foreign.completeness = "partial", "partial"
+	foreign.excludedTargets = new([]envelope.ScanExcludedTarget{{Path: "vendor", Reason: envelope.ScanExcludedTargetReasonVendor}})
+	foreign.content = []byte(`{
+		"duplicates":[
+			{"firstFile":{"name":"a.go","start":1,"end":10},"secondFile":{"name":"b.go","start":1,"end":10},"format":"go"},
+			{"firstFile":{"name":"b.go","start":1,"end":10},"secondFile":{"name":"vendor/a.go","start":1,"end":10},"format":"go"},
+			{"firstFile":{"name":"c.go","start":1,"end":10},"secondFile":{"name":"app/generated.go","start":1,"end":10},"format":"go"}
+		],"statistics":{"total":{"lines":50}}
+	}`)
+	rc := e.imported(t, e.admin, reportPackage(t, secondSHA, lint, clones, functions, alternative, foreign))
 	require.Equal(t, entity.ReceiptAccepted, rc.Status)
 	e.drain(t)
 	e.build(t)
@@ -94,6 +105,8 @@ func TestCalcCode_ReceiptsPublishSeparateCommitAndProducerRevisions(t *testing.T
 	codeValue(t, e, second, "C06", "above_threshold", 0, entity.StateAssessed)
 	secondScope.Format, secondScope.Producer = entity.CodeFormatJscpd, "jscpd"
 	codeValue(t, e, codeRevision(t, e, secondScope), "C08", "", 56.0/62, entity.StateAssessed)
+	secondScope.Producer = foreign.producer
+	checkImportedCloneScope(t, e, codeRevision(t, e, secondScope))
 	secondScope.Format, secondScope.Producer = entity.CodeFormatLizard, alternative.producer
 	partial := codeRevision(t, e, secondScope)
 	assert.NotEqual(t, second.SeriesID, partial.SeriesID)
@@ -104,6 +117,29 @@ func TestCalcCode_ReceiptsPublishSeparateCommitAndProducerRevisions(t *testing.T
 	assert.Equal(t, 2, e.n(t, `SELECT count(*) FROM calc.revision_input
 		WHERE revision_id = $1 AND input_kind = 'profile_threshold' AND (input_id, version) IN (('ccn_threshold','13'),('nloc_threshold','58'))`,
 		uuid.UUID(second.ID)))
+}
+
+func checkImportedCloneScope(t *testing.T, e *reviewEnv, rev entity.CalcRevision) {
+	t.Helper()
+	coverage := e.point(t, rev.ID, "C08", "", rev.Window.From)
+	assert.Equal(t, entity.StateNotEvaluated, coverage.State)
+	assert.Equal(t, "clone_scope_unverified", coverage.ReasonCode)
+	assert.Nil(t, coverage.Value)
+	count := codeValue(t, e, rev, "C09", "", 1, entity.StateProvisional)
+	page, err := e.calc.PointContributions(t.Context(), e.orgID, rev.ID, entity.ContributionQuery{MetricID: "C09", PointStart: count.Start})
+	require.NoError(t, err)
+	for i := range page.Items {
+		item := &page.Items[i]
+		if item.ObjectKind == entity.ObjectCloneGroup {
+			evidence := string(item.Evidence)
+			assert.Contains(t, evidence, "a.go")
+			assert.Contains(t, evidence, "b.go")
+			assert.NotContains(t, evidence, "vendor/")
+			assert.NotContains(t, evidence, "generated.go")
+			return
+		}
+	}
+	t.Fatal("missing clone group contribution")
 }
 
 func checkCodeFindingBaseline(t *testing.T, e *reviewEnv, receipt, component entity.ID, branch string) {

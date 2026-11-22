@@ -16,6 +16,7 @@ const (
 	_reasonFileInventory = "file_inventory_missing"
 	_reasonNoFunctions   = "no_analyzed_functions"
 	_reasonNoLines       = "no_analyzed_lines"
+	_reasonCloneScope    = "clone_scope_unverified"
 	_reasonInvalidLines  = "clone_lines_exceed_scope"
 )
 
@@ -151,7 +152,7 @@ func (s *codeSource) clones(p *entity.Point, ratio bool) {
 		return
 	}
 	if facts.PhysicalLines == nil {
-		p.State, p.ReasonCode = entity.StateNotEvaluated, _reasonNoLines
+		p.State, p.ReasonCode = entity.StateNotEvaluated, _reasonCloneScope
 		return
 	}
 	lines := *facts.PhysicalLines

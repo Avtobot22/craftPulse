@@ -124,6 +124,7 @@ func TestCode_RecordsThreeToolsWithVersionsScopeAndNoCode(t *testing.T) {
 			assert.Equal(t, fileHash(t, "golangci.yml"), *run.ConfigHash)
 		case "jscpd":
 			assert.Equal(t, fileHash(t, "jscpd.json"), *run.ConfigHash)
+			assert.Equal(t, "2", run.Reports[0].FormatVersion)
 		case "lizard":
 			assert.Equal(t, fileHash(t, "profile.json"), *run.ConfigHash)
 			assert.Equal(t, "2", run.Reports[0].FormatVersion)

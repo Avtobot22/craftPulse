@@ -44,9 +44,8 @@ func mergeSARIF(parts []string, dst string) error {
 	return os.WriteFile(dst, data, 0o600)
 }
 
-// stripClones copies the jscpd JSON report without the code of the copies: the report keeps files,
-// lines and tokens of every clone.
-func stripClones(src, dst string) error {
+// stripClones omits source snippets and records the paths excluded before jscpd counted lines.
+func stripClones(src, dst string, excluded []string) error {
 	data, err := os.ReadFile(src) //nolint:gosec // the step names its own report
 	if err != nil {
 		return fmt.Errorf("read clone report: %w", err)
@@ -64,6 +63,7 @@ func stripClones(src, dst string) error {
 			delete(clone, "fragment")
 		}
 	}
+	report["scope_excluded_paths"] = excluded
 	if data, err = json.Marshal(report); err != nil {
 		return fmt.Errorf("encode clone report: %w", err)
 	}

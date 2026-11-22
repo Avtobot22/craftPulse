@@ -247,7 +247,9 @@ func (p *CodeProfile) clonesStep(root string, s *Scope, prefix, work, report str
 	for _, dir := range s.Hidden {
 		ignore = append(ignore, dir+"/**")
 	}
+	excluded := make([]string, 0, len(s.Excluded))
 	for _, e := range s.Excluded {
+		excluded = append(excluded, e.Path)
 		if e.Reason == envelope.ScanExcludedTargetReasonGenerated {
 			ignore = append(ignore, e.Path)
 			continue
@@ -263,11 +265,11 @@ func (p *CodeProfile) clonesStep(root string, s *Scope, prefix, work, report str
 		return codeStep{}, fmt.Errorf("write clone configuration: %w", err)
 	}
 	output := filepath.Join(work, "clones")
-	step := codeStep{tool: p.tool(ToolClones, string(envelope.ScanReportReportFormatJscpdJson), "1", report, base)}
+	step := codeStep{tool: p.tool(ToolClones, string(envelope.ScanReportReportFormatJscpdJson), "2", report, base)}
 	step.tool.FindingsCodes = nil
 	step.commands = []Tool{{Command: []string{ToolClones, "--config", generated, "--no-gitignore", "--no-colors", "--reporters", "json", "--output", output, "."}, Dir: root}}
 	step.finish = func() ([]envelope.ScanSkippedTarget, error) {
-		return nil, stripClones(filepath.Join(output, "jscpd-report.json"), report)
+		return nil, stripClones(filepath.Join(output, "jscpd-report.json"), report, excluded)
 	}
 	return step, nil
 }

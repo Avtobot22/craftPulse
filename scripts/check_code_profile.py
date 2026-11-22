@@ -159,14 +159,27 @@ def check_job(image, platform, root, p):
         raise RuntimeError("eslint run does not name the TypeScript parser")
     reports = {producer: files[tool["reports"][0]["file"]["path"]] for producer, tool in runs.items()}
     for producer, report in reports.items():
+        if producer == "jscpd":
+            continue
         for path, _ in excluded:
             if (path + "/").encode() in report or path.encode() + b'"' in report:
                 raise RuntimeError(producer + " report covers the excluded path " + path)
         if b".hidden" in report or b".venv" in report:
             raise RuntimeError(producer + " report covers a hidden directory")
+    clone_report = runs["jscpd"]["reports"][0]
+    if clone_report["report_format"] != "jscpd_json" or clone_report["format_version"] != "2":
+        raise RuntimeError("unexpected jscpd report format")
     clones = json.loads(reports["jscpd"])
+    if set(clones.get("scope_excluded_paths", [])) != {path for path, _ in excluded}:
+        raise RuntimeError("jscpd report scope differs from the scan manifest")
     if len(clones["duplicates"]) != 1 or b"fragment" in reports["jscpd"]:
         raise RuntimeError("clone report must keep the copy coordinates without its code")
+    for clone in clones["duplicates"]:
+        for member in (clone["firstFile"]["name"], clone["secondFile"]["name"]):
+            if any(member == path or member.startswith(path + "/") for path, _ in excluded):
+                raise RuntimeError("jscpd clone covers an excluded path: " + member)
+            if ".hidden" in member or ".venv" in member:
+                raise RuntimeError("jscpd clone covers a hidden directory: " + member)
     lizard = runs["lizard"]
     report = lizard["reports"][0]
     if report["report_format"] != "lizard_csv" or report["format_version"] != "2":

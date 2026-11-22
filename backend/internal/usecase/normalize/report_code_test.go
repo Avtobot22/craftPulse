@@ -33,7 +33,7 @@ func TestCodeReportParsers_ProfileFixtures(t *testing.T) {
 
 			scope := readCodeFixture(t, tt.language+"-scope.csv", entity.CodeFormatLizard)
 			manifest := &envelope.ScanToolRun{TestTargets: new([]string{tt.testPath})}
-			scoped := scopeCodeFacts(scope, manifest)
+			scoped := (&parsedReport{code: scope}).scopedCodeFacts(manifest)
 			assert.Contains(t, *scoped.Files, entity.CodeFile{Path: tt.testPath, NLOC: tt.testVolume, Test: true})
 			assert.Contains(t, *scope.Files, entity.CodeFile{Path: tt.testPath, NLOC: tt.testVolume})
 			assert.Len(t, *scope.Files, 3)
@@ -98,7 +98,7 @@ func TestLizard_ManifestExcludesFilesAndDirectories(t *testing.T) {
 		"file,src/gen.go,30\nfile,vendor/lib/a.go,40\nfile,build/out.go,50\n"+
 		"7,3,20,1,8,Gen@3-10@src/gen.go,src/gen.go,Gen,Gen,3,10\n"), parseInput{kind: entity.AnalysisCode})
 	require.NoError(t, err)
-	facts := scopeCodeFacts(out.code, &envelope.ScanToolRun{
+	facts := out.scopedCodeFacts(&envelope.ScanToolRun{
 		TestTargets: new([]string{"src/app_test.go"}),
 		ExcludedTargets: new([]envelope.ScanExcludedTarget{
 			{Path: "src/gen.go", Reason: envelope.ScanExcludedTargetReasonGenerated},
@@ -129,4 +129,47 @@ func TestJscpd_ConnectedPairs(t *testing.T) {
 		{Path: "src/b.go", Start: 1, End: 6},
 		{Path: "src/c.go", Start: 1, End: 6},
 	}, out.code.Groups[0].Members)
+}
+
+func TestJscpd_ManifestScope(t *testing.T) {
+	t.Parallel()
+	p, _ := parserOf(entity.CodeFormatJscpd)
+	const raw = `{
+		"duplicates":[
+			{"firstFile":{"name":"src/a.go","start":1,"end":6},"secondFile":{"name":"src/b.go","start":1,"end":6},"format":"go"}
+		],"statistics":{"total":{"lines":40}}`
+	for _, tt := range []struct {
+		name, scope, exclusion string
+		unlistedSkips          bool
+		trustedTotal           bool
+		groups                 int
+	}{
+		{"native without exclusions", "", "", false, true, 1},
+		{"native with excluded directory", "", "vendor", false, false, 1},
+		{"declared file already excluded", `,"scope_excluded_paths":["vendor"]`, "vendor/lib.go", false, true, 1},
+		{"declared directory present in pair", `,"scope_excluded_paths":["src"]`, "src", false, false, 0},
+		{"unlisted skipped files", `,"scope_excluded_paths":[]`, "", true, false, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := p.read(strings.NewReader(raw+tt.scope+"}"), parseInput{kind: entity.AnalysisCode})
+			require.NoError(t, err)
+			tool := &envelope.ScanToolRun{Mode: envelope.ScanToolRunModeImport}
+			if tt.exclusion != "" {
+				tool.ExcludedTargets = new([]envelope.ScanExcludedTarget{{Path: tt.exclusion, Reason: envelope.ScanExcludedTargetReasonVendor}})
+			}
+			if tt.unlistedSkips {
+				tool.SkippedCount = new(1)
+			}
+			got := parsed.scopedCodeFacts(tool)
+			assert.Len(t, got.Groups, tt.groups)
+			if tt.trustedTotal {
+				require.NotNil(t, got.PhysicalLines)
+				assert.Equal(t, int64(40), *got.PhysicalLines)
+			} else {
+				assert.Nil(t, got.PhysicalLines)
+			}
+			assert.Len(t, parsed.code.Groups, 1)
+			assert.NotNil(t, parsed.code.PhysicalLines)
+		})
+	}
 }
