@@ -44,9 +44,10 @@ type sarifResult struct {
 		ID    string `json:"id"`
 		Index *int   `json:"index"`
 	} `json:"rule"`
-	Kind      string `json:"kind"`
-	Level     string `json:"level"`
-	GUID      string `json:"guid"`
+	Message   sarifText `json:"message"`
+	Kind      string    `json:"kind"`
+	Level     string    `json:"level"`
+	GUID      string    `json:"guid"`
 	Locations []struct {
 		PhysicalLocation *struct {
 			ArtifactLocation *struct {
@@ -230,10 +231,15 @@ func (run *sarifRun) findings(kind string, out *[]entity.FindingOccurrence) erro
 		}
 		ev.SecuritySeverity = bounded(ev.SecuritySeverity, _maxSeverity)
 		ev.CWE = cwes(append(tags, res.Properties.texts("cwe")...)...)
+		ev.Link = docsLinkEvidence(run.tool.Driver.Name, &f, res)
 		if f.Evidence, err = ev.encode(); err != nil {
 			return err
 		}
-		f.Fingerprint = sarifFingerprint(kind, &f, res.PartialFingerprints)
+		if ev.Link == nil {
+			f.Fingerprint = sarifFingerprint(kind, &f, res.PartialFingerprints)
+		} else {
+			f.Fingerprint = fingerprint("docs-link/1", kind, f.RuleID, f.Path, ev.Link.TargetPath, ev.Link.Anchor)
+		}
 		f.ContentFingerprint = sarifContent(kind, f.RuleID, res.Fingerprints, res.PartialFingerprints)
 		*out = append(*out, f)
 	}

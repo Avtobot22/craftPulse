@@ -95,6 +95,8 @@ type Deps struct {
 	Collection Collection
 	Activity   ActivityCollection
 	Code       CodeReports
+	Docs       Documentation
+	DocReports DocumentationReports
 	Rights     Rights
 	// Links is nil where the coverage of links is not computed; its series then get no links.
 	Links   Links

@@ -38,6 +38,7 @@ const (
 const (
 	RuleMissingFile   = "missing-file"
 	RuleMissingAnchor = "missing-anchor"
+	_unreadableLink   = "unreadable-link"
 )
 
 const _maxDocBytes = 5 << 20
@@ -116,31 +117,11 @@ func LoadDocsProfile(dir string) (*DocsProfile, error) {
 // RulesHash is the SHA-256 of profile.json and spectral.yaml.
 func (p *DocsProfile) RulesHash() string { return p.rulesHash }
 
-// DocsInventory is the docs_json report of a run: the documents of the root as DocumentV1 records with the
-// owner and the validity of a specification, and the counts of local links.
-type DocsInventory struct {
-	FormatVersion string        `json:"format_version"`
-	RootID        *uuid.UUID    `json:"root_id"`
-	PathPrefix    string        `json:"path_prefix"`
-	AnchorRule    string        `json:"anchor_rule"`
-	Documents     []DocsEntry   `json:"documents"`
-	Links         *DocsLinkStat `json:"links"`
-}
-
-// DocsEntry is one document of the inventory.
-type DocsEntry struct {
-	Document  envelope.DocumentV1 `json:"document"`
-	Owner     *string             `json:"owner"`
-	SpecValid *bool               `json:"spec_valid"`
-}
-
-// DocsLinkStat counts the links of the Markdown documents: checked local links, broken ones among them and
-// external links left unchecked.
-type DocsLinkStat struct {
-	Checked  int `json:"checked"`
-	Broken   int `json:"broken"`
-	External int `json:"external"`
-}
+type (
+	DocsInventory = envelope.DocsInventory
+	DocsEntry     = envelope.DocsEntry
+	DocsLinkStat  = envelope.DocsLinkStat
+)
 
 // docsRoot is what a root holds: Markdown files and OpenAPI specifications, paths from the repository root.
 type docsRoot struct {
@@ -178,10 +159,14 @@ func (p *DocsProfile) walkRoot(root, prefix string) (docsRoot, error) {
 			r.skipped = append(r.skipped, envelope.ScanSkippedTarget{Path: rel, Reason: envelope.ScanSkippedTargetReasonLimit})
 			return nil //nolint:nilerr // a file that cannot be read is skipped, not a failed walk
 		}
-		switch {
-		case markdown:
+		if markdown {
 			r.markdown = append(r.markdown, rel)
-		case isOpenAPI(name):
+			return nil
+		}
+		spec, err := isOpenAPI(name)
+		if err != nil {
+			r.skipped = append(r.skipped, envelope.ScanSkippedTarget{Path: rel, Reason: envelope.ScanSkippedTargetReasonUnavailable})
+		} else if spec {
 			r.specs = append(r.specs, rel)
 		}
 		return nil
@@ -193,25 +178,26 @@ func (p *DocsProfile) walkRoot(root, prefix string) (docsRoot, error) {
 }
 
 // isOpenAPI tells whether a YAML or JSON file is an OpenAPI or Swagger document by its top-level key.
-func isOpenAPI(name string) bool {
+func isOpenAPI(name string) (bool, error) {
 	f, err := os.Open(name) //nolint:gosec // a file of the documentation root
 	if err != nil {
-		return false
+		return false, err
 	}
 	defer f.Close()
-	head := make([]byte, 4096)
-	n, _ := io.ReadFull(f, head)
-	head = head[:n]
-	if strings.HasSuffix(name, ".json") {
-		return _jsonAPIKey.Match(head)
+	head, err := io.ReadAll(io.LimitReader(f, 4096))
+	if err != nil {
+		return false, err
+	}
+	if strings.EqualFold(filepath.Ext(name), ".json") {
+		return _jsonAPIKey.Match(head), nil
 	}
 	sc := bufio.NewScanner(bytes.NewReader(head))
 	for sc.Scan() {
 		if _openAPIKey.MatchString(sc.Text()) {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, sc.Err()
 }
 
 // docsCheck checks the links of the Markdown files: a file that does not exist with exactly that name, or an
@@ -220,13 +206,21 @@ type docsCheck struct {
 	root    string
 	profile *DocsProfile
 	parsed  map[string]markdownDoc
-	names   map[string][]string
+	entries map[string][]fs.DirEntry
 }
 
 func (c *docsCheck) markdown(rel string) (markdownDoc, []byte, error) {
-	data, err := os.ReadFile(filepath.Join(c.root, filepath.FromSlash(rel))) //nolint:gosec // a file of the repository
+	f, err := os.Open(filepath.Join(c.root, filepath.FromSlash(rel))) //nolint:gosec // a file of the repository
 	if err != nil {
 		return markdownDoc{}, nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, _maxDocBytes+1))
+	if err != nil {
+		return markdownDoc{}, nil, err
+	}
+	if len(data) > _maxDocBytes {
+		return markdownDoc{}, nil, fmt.Errorf("markdown file exceeds %d bytes", _maxDocBytes)
 	}
 	if doc, ok := c.parsed[rel]; ok {
 		return doc, data, nil
@@ -236,28 +230,35 @@ func (c *docsCheck) markdown(rel string) (markdownDoc, []byte, error) {
 	return doc, data, nil
 }
 
-// exists tells whether the path names a file or directory of the repository with exactly that case.
-func (c *docsCheck) exists(rel string) bool {
-	if rel == "." {
-		return true
-	}
-	dir, name := path.Split(rel)
-	dir = strings.TrimSuffix(dir, "/")
-	if dir == "" {
-		dir = "."
-	}
-	if !c.exists(dir) {
-		return false
-	}
-	names, ok := c.names[dir]
-	if !ok {
-		entries, _ := os.ReadDir(filepath.Join(c.root, filepath.FromSlash(dir)))
-		for _, e := range entries {
-			names = append(names, e.Name())
+// lookup resolves the exact case of a path. An unreadable directory or a symlink is an unknown target.
+func (c *docsCheck) lookup(rel string) (fs.DirEntry, error) {
+	dir, name := path.Dir(rel), path.Base(rel)
+	if dir != "." {
+		parent, err := c.lookup(dir)
+		if err != nil || parent == nil || !parent.IsDir() {
+			return nil, err
 		}
-		c.names[dir] = names
 	}
-	return slices.Contains(names, name)
+	entries, ok := c.entries[dir]
+	if !ok {
+		var err error
+		entries, err = os.ReadDir(filepath.Join(c.root, filepath.FromSlash(dir)))
+		if err != nil {
+			return nil, err
+		}
+		c.entries[dir] = entries
+	}
+	at, found := slices.BinarySearchFunc(entries, name, func(e fs.DirEntry, name string) int {
+		return strings.Compare(e.Name(), name)
+	})
+	if !found {
+		return nil, nil
+	}
+	entry := entries[at]
+	if entry.Type()&fs.ModeSymlink != 0 {
+		return nil, fs.ErrPermission
+	}
+	return entry, nil
 }
 
 // link resolves a link of the document: external links are not checked; a path starting with "/" is from the
@@ -280,8 +281,17 @@ func (c *docsCheck) link(from, target string) (rule, resolved string, external b
 	default:
 		resolved = path.Join(path.Dir(from), file)
 	}
-	if resolved == ".." || strings.HasPrefix(resolved, "../") || !c.exists(resolved) {
+	if resolved == ".." || strings.HasPrefix(resolved, "../") {
 		return RuleMissingFile, resolved, false
+	}
+	if resolved != "." {
+		entry, err := c.lookup(resolved)
+		if err != nil {
+			return _unreadableLink, resolved, false
+		}
+		if entry == nil {
+			return RuleMissingFile, resolved, false
+		}
 	}
 	if anchor == "" || !slices.Contains(c.profile.MarkdownExtensions, strings.ToLower(path.Ext(resolved))) {
 		return "", resolved, false
@@ -290,7 +300,10 @@ func (c *docsCheck) link(from, target string) (rule, resolved string, external b
 		anchor = unescaped
 	}
 	doc, _, err := c.markdown(resolved)
-	if err != nil || !slices.Contains(doc.anchors, anchor) {
+	if err != nil {
+		return _unreadableLink, resolved, false
+	}
+	if !slices.Contains(doc.anchors, anchor) {
 		return RuleMissingAnchor, resolved, false
 	}
 	return "", resolved, false
@@ -306,7 +319,7 @@ type docsResult struct {
 
 // checkDocs builds the inventory of the root and checks the local links of its Markdown documents.
 func (p *DocsProfile) checkDocs(root string, r docsRoot, doc func(path, format string, data []byte) envelope.DocumentV1) docsResult {
-	c := &docsCheck{root: root, profile: p, parsed: map[string]markdownDoc{}, names: map[string][]string{}}
+	c := &docsCheck{root: root, profile: p, parsed: map[string]markdownDoc{}, entries: map[string][]fs.DirEntry{}}
 	out := docsResult{skipped: r.skipped, inventory: DocsInventory{Links: &DocsLinkStat{}}}
 	for _, rel := range r.markdown {
 		md, data, err := c.markdown(rel)
@@ -328,6 +341,9 @@ func (p *DocsProfile) checkDocs(root string, r docsRoot, doc func(path, format s
 				continue
 			case resolved == "":
 				continue
+			case rule == _unreadableLink:
+				out.skipped = append(out.skipped, envelope.ScanSkippedTarget{Path: resolved, Reason: envelope.ScanSkippedTargetReasonUnavailable})
+				continue
 			}
 			out.inventory.Links.Checked++
 			if rule == "" {
@@ -338,7 +354,14 @@ func (p *DocsProfile) checkDocs(root string, r docsRoot, doc func(path, format s
 			if rule == RuleMissingAnchor {
 				message = "link target " + l.target + ": no heading of " + resolved + " has this anchor"
 			}
-			out.results = append(out.results, lintResult{rule: rule, level: "error", message: message, file: rel, line: l.line})
+			_, anchor, _ := strings.Cut(l.target, "#")
+			if decoded, err := url.PathUnescape(anchor); err == nil {
+				anchor = decoded
+			}
+			out.results = append(out.results, lintResult{
+				rule: rule, level: "error", message: message, file: rel, line: l.line,
+				linkTarget: &envelope.DocsLinkTarget{TargetPath: resolved, Anchor: anchor},
+			})
 		}
 	}
 	for _, rel := range r.specs {
@@ -463,7 +486,14 @@ func (d *DocsRunner) Run(ctx context.Context, rows []Entry, roots []DocsRoot) ([
 		if i < 0 {
 			continue
 		}
-		run, err := d.root(ctx, rows[i], root, deadline)
+		var checks []string
+		for _, other := range roots {
+			if other.ID == root.ID && slices.ContainsFunc(rows, func(e Entry) bool { return e.Kind == other.Kind }) {
+				checks = append(checks, other.Kind)
+			}
+		}
+		slices.Sort(checks)
+		run, err := d.root(ctx, rows[i], root, slices.Compact(checks), deadline)
 		if err != nil {
 			return runs, err
 		}
@@ -475,7 +505,7 @@ func (d *DocsRunner) Run(ctx context.Context, rows []Entry, roots []DocsRoot) ([
 	return runs, nil
 }
 
-func (d *DocsRunner) root(ctx context.Context, row Entry, root DocsRoot, deadline time.Time) (*envelope.ScanToolRun, error) {
+func (d *DocsRunner) root(ctx context.Context, row Entry, root DocsRoot, checks []string, deadline time.Time) (*envelope.ScanToolRun, error) {
 	p := d.Docs
 	if row.ImageDigest == nil {
 		return nil, fmt.Errorf("profile row of %s has no image digest", p.ID)
@@ -507,6 +537,10 @@ func (d *DocsRunner) root(ctx context.Context, row Entry, root DocsRoot, deadlin
 	}
 	run.FinishedAt = d.Now().UTC()
 	run.ExitClass, run.Completeness = o.exit, o.completeness
+	res.inventory.Checks = checks
+	if o.finished() && len(res.skipped) != 0 {
+		run.Completeness = envelope.ScanToolRunCompletenessPartial
+	}
 	if res.skipped == nil {
 		res.skipped = []envelope.ScanSkippedTarget{}
 	}
@@ -567,6 +601,7 @@ func (p *DocsProfile) analyze(ctx context.Context, r *Runner, root string, dr Do
 	if dr.Kind != string(envelope.ScanReportReportKindOpenapi) {
 		res := p.checkDocs(root, walked, doc)
 		res.inventory.FormatVersion, res.inventory.PathPrefix, res.inventory.AnchorRule = "1", dr.PathPrefix, p.AnchorRule
+		res.inventory.OwnerRule = p.OwnerKey
 		if dr.ID != uuid.Nil {
 			res.inventory.RootID = &dr.ID
 		}
@@ -584,6 +619,7 @@ func (p *DocsProfile) analyze(ctx context.Context, r *Runner, root string, dr Do
 	for _, rel := range walked.specs {
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))) //nolint:gosec // a file of the root
 		if err != nil {
+			res.skipped = append(res.skipped, envelope.ScanSkippedTarget{Path: rel, Reason: envelope.ScanSkippedTargetReasonUnavailable})
 			continue
 		}
 		res.scanned++

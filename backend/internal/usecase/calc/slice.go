@@ -150,6 +150,13 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		}
 		inputs = append(inputs, codeInputs(report)...)
 	}
+	if scope.Kind == _scopeDocumentation {
+		src, err := u.documentationSource(ctx, org, &rev, &series, scope.Documentation)
+		if err != nil {
+			return err
+		}
+		inputs = append(inputs, src.inputs()...)
+	}
 	if !team.IsZero() {
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindStructure, ID: team.String(), Version: entity.GroupingCurrentStructure})
 	}
@@ -164,7 +171,7 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindTarget, ID: t.ID.String(), Version: strconv.Itoa(t.VersionNo)})
 	}
 	var structure int64
-	if scope.Kind != _scopeConnection && scope.Kind != _scopeCode {
+	if scope.Kind != _scopeConnection && scope.Kind != _scopeCode && scope.Kind != _scopeDocumentation {
 		if structure, err = u.d.Structure.StructureVersion(ctx, org); err != nil {
 			return err
 		}
@@ -342,6 +349,9 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 		if code, ok := src.(*codeSource); ok {
 			return u.againCode(ctx, job, &rev, scope.CodeScope, code.report)
 		}
+		if docs, ok := src.(*documentationSource); ok {
+			return u.againDocumentation(ctx, job, &rev, &series, scope.Documentation, docs)
+		}
 		return u.again(ctx, job, &rev, scope, areas, collection, now, series.MetricSet == entity.MetricSetActivity)
 	})
 	if err != nil {
@@ -385,7 +395,7 @@ func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entit
 		}
 	}
 	var structure int64
-	if scope.Kind != _scopeConnection && scope.Kind != _scopeCode {
+	if scope.Kind != _scopeConnection && scope.Kind != _scopeCode && scope.Kind != _scopeDocumentation {
 		if structure, err = u.d.Structure.StructureVersion(ctx, job.OrganizationID); err != nil {
 			return err
 		}
@@ -530,6 +540,9 @@ func (u *UseCase) collectionOf(ctx context.Context, org entity.ID, areas []entit
 }
 
 func (u *UseCase) seriesCollection(ctx context.Context, org entity.ID, areas []entity.ID, set string, connection entity.ID) ([]entity.AreaCollection, error) {
+	if set == entity.MetricSetDocumentation {
+		return nil, nil
+	}
 	if set == entity.MetricSetActivity {
 		return u.d.Activity.ActivityCollection(ctx, org, areas, connection)
 	}

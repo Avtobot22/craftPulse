@@ -40,6 +40,7 @@ type Deps struct {
 	Access     usecase.Access
 	References References
 	Areas      Areas
+	Documents  Documents
 	Auditor    Auditor
 	Clock      clock.Clock
 	NewID      func() (entity.ID, error)

@@ -68,9 +68,10 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 		Clock:    c,
 		SiteURL:  siteURL,
 	})
+	documents, _ := m.documentationAreas.(docs.Documents)
 	documentation := docs.New(docs.Deps{
 		Repo: docsrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx,
-		Access: decisions, References: orgs, Areas: m.documentationAreas, Auditor: auditor, Clock: c, NewID: newID,
+		Access: decisions, References: orgs, Areas: m.documentationAreas, Documents: documents, Auditor: auditor, Clock: c, NewID: newID,
 	})
 	checks := change.New(change.Deps{
 		Repo: changerepo.NewRepo(pool), Reports: m.findingReports, Tenants: platform.NewRepo(pool), Tx: tx, Components: orgs, Roots: documentation,

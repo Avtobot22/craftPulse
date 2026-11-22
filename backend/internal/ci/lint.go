@@ -22,6 +22,7 @@ type lintResult struct {
 	rule, level, message, file string
 	line, column, endLine      int
 	endColumn                  int
+	linkTarget                 *envelope.DocsLinkTarget
 }
 
 // lintChunks runs the linter command on the files of the scope, at most _lintChunk files a command; each
@@ -224,7 +225,8 @@ type sarifResult struct {
 	Message struct {
 		Text string `json:"text"`
 	} `json:"message"`
-	Locations []sarifLocation `json:"locations"`
+	Locations  []sarifLocation          `json:"locations"`
+	Properties *envelope.DocsLinkTarget `json:"properties,omitempty"`
 }
 
 type sarifLocation struct {
@@ -248,7 +250,7 @@ func writeLintSARIF(dst, tool, version, uri string, results []lintResult) error 
 	out := make([]sarifResult, 0, len(results))
 	var ruleIDs []string
 	for _, r := range results {
-		res := sarifResult{RuleID: r.rule, Level: r.level}
+		res := sarifResult{RuleID: r.rule, Level: r.level, Properties: r.linkTarget}
 		res.Message.Text = r.message
 		var loc sarifLocation
 		loc.PhysicalLocation.ArtifactLocation.URI = r.file
