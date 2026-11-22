@@ -1,0 +1,7 @@
+craftpulse-lizard,2
+file,service.py,3
+2,1,7,1,2,remove@4-5@service.py,service.py,remove,remove( path ),4,5
+file,test_service.py,4
+2,1,11,0,2,test_remove@6-7@test_service.py,test_service.py,test_remove,test_remove( ),6,7
+file,tests/helpers.py,2
+2,1,6,0,2,sample@1-2@tests/helpers.py,tests/helpers.py,sample,sample( ),1,2

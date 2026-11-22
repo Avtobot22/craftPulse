@@ -20,8 +20,8 @@ const (
 type seriesScope struct {
 	Kind         string    `json:"kind"`
 	TeamID       entity.ID `json:"team_id"`
-	RepositoryID entity.ID `json:"repository_id"`
 	ConnectionID entity.ID `json:"connection_id"`
+	entity.CodeScope
 }
 
 type repositoryScope struct {
@@ -43,7 +43,7 @@ func scopeOf(raw []byte) (seriesScope, bool, error) {
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return seriesScope{}, false, fmt.Errorf("calc: scope of the series: %w", err)
 	}
-	return s, s.Kind == _scopeTeam || s.Kind == _scopeRepository || s.Kind == _scopeConnection, nil
+	return s, s.Kind == _scopeTeam || s.Kind == _scopeRepository || s.Kind == _scopeConnection || s.Kind == _scopeCode, nil
 }
 
 // ReviewSeries finds the series of a set of the review of MRs, of the events or of the coverage of links of a team or
@@ -101,7 +101,7 @@ func validReviewStep(set string, step entity.Step) bool {
 
 // scopeAreas are the source areas of a scope: of the projects of a team by the current structure, or the repository.
 func (u *UseCase) scopeAreas(ctx context.Context, org entity.ID, s seriesScope) ([]entity.ID, error) {
-	if s.Kind == _scopeRepository {
+	if s.Kind == _scopeRepository || s.Kind == _scopeCode {
 		return []entity.ID{s.RepositoryID}, nil
 	}
 	if s.Kind == _scopeConnection {
@@ -197,6 +197,10 @@ func (u *UseCase) source(ctx context.Context, job entity.CalcSliceJob, rev *enti
 	scope, err := parseScope(series.Scope)
 	if err != nil {
 		return nil, scope, err
+	}
+	if series.MetricSet == entity.MetricSetCode {
+		src, err := u.codeSource(ctx, job.OrganizationID, rev, series, scope.CodeScope)
+		return src, scope, err
 	}
 	w := entity.Window{From: rev.Window.From, To: rev.Window.To, Step: series.Step}
 	if series.MetricSet == entity.MetricSetFlow {

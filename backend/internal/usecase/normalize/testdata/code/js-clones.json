@@ -1,0 +1,22 @@
+{
+  "duplicates": [
+    {
+      "firstFile": {
+        "end": 25,
+        "name": "invoices.ts",
+        "start": 3
+      },
+      "format": "typescript",
+      "secondFile": {
+        "end": 25,
+        "name": "orders.ts",
+        "start": 3
+      }
+    }
+  ],
+  "statistics": {
+    "total": {
+      "lines": 50
+    }
+  }
+}

@@ -345,6 +345,7 @@ type CalcRecountJob struct {
 	AreaID         ID `json:"area_id,omitzero" river:"unique"`
 	TeamID         ID `json:"team_id,omitzero" river:"unique"`
 	ConnectionID   ID `json:"connection_id,omitzero" river:"unique"`
+	CodeReceiptID  ID `json:"code_receipt_id,omitzero" river:"unique"`
 	CorrelationID  ID `json:"correlation_id"`
 }
 

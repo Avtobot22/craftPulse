@@ -40,6 +40,9 @@ type due struct {
 // a chain over its extended window after the delay that gathers the facts; while the areas load their history a
 // series gets one chain in 5 minutes at most (TZ 10.6).
 func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, complete Complete) error {
+	if !job.CodeReceiptID.IsZero() {
+		return u.recountCode(ctx, job, complete)
+	}
 	org := job.OrganizationID
 	var connectionAreas []entity.ID
 	if u.d.Activity != nil && (!job.TeamID.IsZero() || !job.ConnectionID.IsZero()) {
@@ -65,6 +68,9 @@ func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, com
 	var plans []due
 	for i := range all {
 		s := &all[i]
+		if s.MetricSet == entity.MetricSetCode {
+			continue
+		}
 		if !job.ConnectionID.IsZero() && s.MetricSet != entity.MetricSetActivity {
 			continue
 		}
@@ -130,6 +136,9 @@ func (u *UseCase) RunExtend(ctx context.Context, job entity.CalcExtendJob, compl
 	var plans []due
 	for i := range all {
 		s := &all[i]
+		if s.MetricSet == entity.MetricSetCode {
+			continue
+		}
 		scope, ok, err := scopeOf(s.Scope)
 		if err != nil {
 			return err

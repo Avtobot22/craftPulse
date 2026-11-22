@@ -1,0 +1,7 @@
+craftpulse-lizard,2
+file,complex.go,30
+29,13,75,1,29,StatusText@4-32@complex.go,complex.go,StatusText,StatusText code int,4,32
+file,long.go,59
+58,1,230,1,58,Accumulate@4-61@long.go,long.go,Accumulate,Accumulate input int,4,61
+file,simple.go,4
+3,1,13,1,3,Double@4-6@simple.go,simple.go,Double,Double n int,4,6

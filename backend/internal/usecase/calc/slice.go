@@ -138,7 +138,18 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		ID: id, SeriesID: series.ID, Window: entity.Window{From: job.From, To: job.To, Step: series.Step}, AsOf: job.AsOf,
 		KnowledgeSeq: seq, Timezone: "UTC", StartedAt: now, PreviousRevisionID: series.CurrentRevisionID,
 	}
-	inputs := definitionInputs(series.MetricSet)
+	defs := definitionsOf(series.MetricSet)
+	if scope.Kind == _scopeCode {
+		defs = codeDefinitions(scope.Format)
+	}
+	inputs := definitionInputs(defs)
+	if scope.Kind == _scopeCode {
+		report, err := u.d.Code.CodeReportAt(ctx, org, scope.CodeScope, seq)
+		if err != nil {
+			return err
+		}
+		inputs = append(inputs, codeInputs(report)...)
+	}
 	if !team.IsZero() {
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindStructure, ID: team.String(), Version: entity.GroupingCurrentStructure})
 	}
@@ -153,7 +164,7 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindTarget, ID: t.ID.String(), Version: strconv.Itoa(t.VersionNo)})
 	}
 	var structure int64
-	if scope.Kind != _scopeConnection {
+	if scope.Kind != _scopeConnection && scope.Kind != _scopeCode {
 		if structure, err = u.d.Structure.StructureVersion(ctx, org); err != nil {
 			return err
 		}
@@ -328,6 +339,9 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 			return err
 		}
 		published = true
+		if code, ok := src.(*codeSource); ok {
+			return u.againCode(ctx, job, &rev, scope.CodeScope, code.report)
+		}
 		return u.again(ctx, job, &rev, scope, areas, collection, now, series.MetricSet == entity.MetricSetActivity)
 	})
 	if err != nil {
@@ -371,7 +385,7 @@ func (u *UseCase) again(ctx context.Context, job entity.CalcSliceJob, rev *entit
 		}
 	}
 	var structure int64
-	if scope.Kind != _scopeConnection {
+	if scope.Kind != _scopeConnection && scope.Kind != _scopeCode {
 		if structure, err = u.d.Structure.StructureVersion(ctx, job.OrganizationID); err != nil {
 			return err
 		}
@@ -458,8 +472,7 @@ func storedPart(r entity.CalcResult, hash []byte, from, to time.Time) *entity.St
 	return out
 }
 
-func definitionInputs(set string) []entity.RevisionInput {
-	defs := definitionsOf(set)
+func definitionInputs(defs []Definition) []entity.RevisionInput {
 	out := make([]entity.RevisionInput, len(defs))
 	for i := range defs {
 		out[i] = entity.RevisionInput{Kind: entity.InputKindDefinition, ID: defs[i].ID, Version: strconv.Itoa(defs[i].Version)}

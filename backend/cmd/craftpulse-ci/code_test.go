@@ -25,8 +25,10 @@ while [ $# -gt 0 ]; do [ "$1" = --output.sarif.path ] && out=$2; shift; done
 [ -n "$FAKE_SLEEP" ] && sleep "$FAKE_SLEEP"
 printf '%s' '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"golangci-lint"}},"results":[{"ruleId":"errcheck","locations":[{"physicalLocation":{"artifactLocation":{"uri":"services/billing/main.go"},"region":{"startLine":7}}}]}]}]}' > "$out"
 exit 1`,
-	"lizard": `while [ $# -gt 0 ]; do case "$1" in -o) out=$2;; -f) cp "$2" "$FAKE_LOG/files.txt";; esac; shift; done
-echo '3,1,10,1,3,"Run@5-7@services/billing/main.go","services/billing/main.go","Run","Run name",5,7' > "$out"`,
+	"python3": `cp "$4" "$FAKE_LOG/files.txt"
+out=$5
+printf 'craftpulse-lizard,2\nfile,services/billing/main.go,3\n' > "$out"
+echo '3,1,10,1,3,"Run@5-7@services/billing/main.go","services/billing/main.go","Run","Run name",5,7' >> "$out"`,
 	"jscpd": `while [ $# -gt 0 ]; do case "$1" in --output) out=$2;; --config) cp "$2" "$FAKE_LOG/jscpd.json";; esac; shift; done
 mkdir -p "$out"
 printf '%s' '{"duplicates":[{"format":"go","lines":12,"tokens":120,"fragment":"FIXTURE_CODE_FRAGMENT","firstFile":{"name":"services/billing/a.go","start":1,"end":12},"secondFile":{"name":"services/billing/b.go","start":1,"end":12}}],"statistics":{}}' > "$out/jscpd-report.json"`,
@@ -122,8 +124,10 @@ func TestCode_RecordsThreeToolsWithVersionsScopeAndNoCode(t *testing.T) {
 			assert.Equal(t, fileHash(t, "golangci.yml"), *run.ConfigHash)
 		case "jscpd":
 			assert.Equal(t, fileHash(t, "jscpd.json"), *run.ConfigHash)
-		default:
-			assert.Nil(t, run.ConfigHash)
+		case "lizard":
+			assert.Equal(t, fileHash(t, "profile.json"), *run.ConfigHash)
+			assert.Equal(t, "2", run.Reports[0].FormatVersion)
+			assert.Equal(t, &envelope.ScanFunctionThresholds{CcnThreshold: 10, NlocThreshold: 50}, run.FunctionThresholds)
 		}
 	}
 	assert.Equal(t, map[string]envelope.ScanReportReportFormat{

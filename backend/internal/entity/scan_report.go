@@ -118,6 +118,7 @@ type ReportRows struct {
 	Findings []FindingOccurrence
 	Tests    []TestExecution
 	Coverage []CoverageFact
+	Code     *CodeFacts
 }
 
 // TestExecution is a test case of a JUnit report in the configuration of its attempt (DR-006): the same case in two

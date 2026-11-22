@@ -1,0 +1,22 @@
+{
+  "duplicates": [
+    {
+      "firstFile": {
+        "end": 31,
+        "name": "invoices.go",
+        "start": 4
+      },
+      "format": "go",
+      "secondFile": {
+        "end": 31,
+        "name": "orders.go",
+        "start": 4
+      }
+    }
+  ],
+  "statistics": {
+    "total": {
+      "lines": 62
+    }
+  }
+}

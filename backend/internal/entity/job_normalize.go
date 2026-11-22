@@ -14,6 +14,7 @@ type NormalizeBatchJob struct {
 	ObservedVia    ObservedVia `json:"observed_via,omitempty"`
 	ResolvedNo     int         `json:"resolved_no,omitempty"`
 	Reports        bool        `json:"reports,omitempty"`
+	CodeReports    bool        `json:"code_reports,omitempty"`
 	CorrelationID  ID          `json:"correlation_id"`
 }
 

@@ -153,6 +153,62 @@ func (q *Queries) AreaProvider(ctx context.Context, arg AreaProviderParams) (str
 	return provider, err
 }
 
+const codeReportAt = `-- name: CodeReportAt :one
+SELECT r.id, r.completeness, r.skipped_count, r.skipped_targets, f.facts
+FROM normalize.report r
+JOIN normalize.code_report_fact f ON f.organization_id = r.organization_id AND f.report_id = r.id
+WHERE r.organization_id = $1
+  AND r.area_id = $2 AND r.component_id IS NOT DISTINCT FROM $3::uuid
+  AND r.sha = $4 AND r.report_format = $5
+  AND r.producer IS NOT DISTINCT FROM $6::text AND r.profile_id IS NOT DISTINCT FROM $7::text
+  AND r.known_seq <= $8
+  AND r.exit_class NOT IN ('timeout', 'failed')
+  AND r.report_format IN ('lizard_csv', 'jscpd_json')
+ORDER BY r.known_seq DESC, r.record_no DESC, r.id DESC
+LIMIT 1
+`
+
+type CodeReportAtParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	ComponentID    uuid.NullUUID
+	Sha            pgtype.Text
+	Format         string
+	Producer       pgtype.Text
+	ProfileID      pgtype.Text
+	KnownSeq       int64
+}
+
+type CodeReportAtRow struct {
+	ID             uuid.UUID
+	Completeness   string
+	SkippedCount   pgtype.Int4
+	SkippedTargets []byte
+	Facts          []byte
+}
+
+func (q *Queries) CodeReportAt(ctx context.Context, arg CodeReportAtParams) (CodeReportAtRow, error) {
+	row := q.db.QueryRow(ctx, codeReportAt,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.ComponentID,
+		arg.Sha,
+		arg.Format,
+		arg.Producer,
+		arg.ProfileID,
+		arg.KnownSeq,
+	)
+	var i CodeReportAtRow
+	err := row.Scan(
+		&i.ID,
+		&i.Completeness,
+		&i.SkippedCount,
+		&i.SkippedTargets,
+		&i.Facts,
+	)
+	return i, err
+}
+
 const currentCIAttemptVersions = `-- name: CurrentCIAttemptVersions :many
 SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, attempt_id, run_id, job_key, config_fingerprint, attempt_no, native_status, outcome, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_s FROM normalize.ci_attempt_version WHERE organization_id = $1 AND attempt_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
 `
@@ -1164,6 +1220,22 @@ func (q *Queries) InsertAreas(ctx context.Context, arg InsertAreasParams) error 
 	return err
 }
 
+const insertCodeFacts = `-- name: InsertCodeFacts :exec
+INSERT INTO normalize.code_report_fact (organization_id, report_id, facts)
+VALUES ($1, $2, $3)
+`
+
+type InsertCodeFactsParams struct {
+	OrganizationID uuid.UUID
+	ReportID       uuid.UUID
+	Facts          []byte
+}
+
+func (q *Queries) InsertCodeFacts(ctx context.Context, arg InsertCodeFactsParams) error {
+	_, err := q.db.Exec(ctx, insertCodeFacts, arg.OrganizationID, arg.ReportID, arg.Facts)
+	return err
+}
+
 const insertCoverageFacts = `-- name: InsertCoverageFacts :exec
 INSERT INTO normalize.coverage_fact (organization_id, report_id, path, path_hash, kind, covered, executable, line_map_key, known_seq)
 SELECT $1, $2, unnest($3::text[]), unnest($4::bytea[]),
@@ -1658,6 +1730,7 @@ SELECT DISTINCT ON (r.component_id, COALESCE(r.language, ''), r.report_kind, r.r
 FROM normalize.report r
 WHERE r.organization_id = $1 AND r.component_id = ANY ($2::uuid[])
     AND r.ref_name = ANY ($3::text[])
+    AND r.report_format NOT IN ('lizard_csv', 'jscpd_json')
 ORDER BY r.component_id, COALESCE(r.language, ''), r.report_kind, r.ref_name, COALESCE(r.finished_at, r.started_at) DESC NULLS LAST, r.known_seq DESC
 `
 
@@ -2426,6 +2499,55 @@ func (q *Queries) ReadRepositoryVersion(ctx context.Context, arg ReadRepositoryV
 	return i, err
 }
 
+const receiptCodeScopes = `-- name: ReceiptCodeScopes :many
+SELECT DISTINCT r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id
+FROM normalize.report r
+JOIN normalize.code_report_fact f ON f.organization_id = r.organization_id AND f.report_id = r.id
+WHERE r.organization_id = $1 AND r.receipt_id = $2 AND r.sha IS NOT NULL
+ORDER BY r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id
+`
+
+type ReceiptCodeScopesParams struct {
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+}
+
+type ReceiptCodeScopesRow struct {
+	AreaID       uuid.UUID
+	ComponentID  uuid.NullUUID
+	Sha          pgtype.Text
+	ReportFormat string
+	Producer     pgtype.Text
+	ProfileID    pgtype.Text
+}
+
+func (q *Queries) ReceiptCodeScopes(ctx context.Context, arg ReceiptCodeScopesParams) ([]ReceiptCodeScopesRow, error) {
+	rows, err := q.db.Query(ctx, receiptCodeScopes, arg.OrganizationID, arg.ReceiptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReceiptCodeScopesRow
+	for rows.Next() {
+		var i ReceiptCodeScopesRow
+		if err := rows.Scan(
+			&i.AreaID,
+			&i.ComponentID,
+			&i.Sha,
+			&i.ReportFormat,
+			&i.Producer,
+			&i.ProfileID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const receiptReports = `-- name: ReceiptReports :many
 SELECT r.id, r.area_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language, COALESCE(r.ref_name, '')::text AS ref_name,
     COALESCE(r.sha, '')::text AS sha, r.exit_class, r.completeness, r.started_at, r.finished_at, r.known_seq,
@@ -2434,6 +2556,7 @@ FROM normalize.report r
 LEFT JOIN normalize.ci_attempt_version a ON a.organization_id = r.organization_id AND a.attempt_id = r.attempt_id AND a.superseded_seq IS NULL
 LEFT JOIN normalize.repository_version v ON v.organization_id = r.organization_id AND v.repository_id = r.area_id AND v.superseded_seq IS NULL
 WHERE r.organization_id = $1 AND r.receipt_id = $2
+    AND r.report_format NOT IN ('lizard_csv', 'jscpd_json')
 ORDER BY r.record_no
 `
 

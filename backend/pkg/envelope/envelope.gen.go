@@ -1812,6 +1812,12 @@ type ScanExcludedTarget struct {
 // ScanExcludedTargetReason defines model for ScanExcludedTarget.Reason.
 type ScanExcludedTargetReason string
 
+// ScanFunctionThresholds defines model for ScanFunctionThresholds.
+type ScanFunctionThresholds struct {
+	CcnThreshold  int `json:"ccn_threshold"`
+	NlocThreshold int `json:"nloc_threshold"`
+}
+
 // ScanHistory defines model for ScanHistory.
 type ScanHistory struct {
 	FromSha   string `json:"from_sha"`
@@ -1863,26 +1869,27 @@ type ScanToolRun struct {
 	DbVersion      *string                 `json:"db_version"`
 
 	// ExcludedTargets Пути, которые область профиля не анализирует (vendor, сгенерированный код, каталоги сборки). Исключение задаёт границу области и не делает запуск неполным, в отличие от skipped_targets.
-	ExcludedTargets    *[]ScanExcludedTarget `json:"excluded_targets,omitempty"`
-	ExitClass          ScanToolRunExitClass  `json:"exit_class"`
-	FinishedAt         time.Time             `json:"finished_at"`
-	History            *ScanHistory          `json:"history"`
-	Id                 string                `json:"id"`
-	Language           *string               `json:"language"`
-	Mode               ScanToolRunMode       `json:"mode"`
-	ParserVersion      *string               `json:"parser_version"`
-	Producer           string                `json:"producer"`
-	ProducerVersion    string                `json:"producer_version"`
-	ProfileId          *string               `json:"profile_id"`
-	ProfileImageDigest *string               `json:"profile_image_digest"`
-	ReportKind         ScanToolRunReportKind `json:"report_kind"`
-	Reports            []ScanReport          `json:"reports"`
-	RulesHash          *string               `json:"rules_hash"`
-	ScannedCount       *int                  `json:"scanned_count"`
-	ScopeHash          string                `json:"scope_hash"`
-	Sha                *string               `json:"sha"`
-	SkippedCount       *int                  `json:"skipped_count"`
-	SkippedTargets     []ScanSkippedTarget   `json:"skipped_targets"`
+	ExcludedTargets    *[]ScanExcludedTarget   `json:"excluded_targets,omitempty"`
+	ExitClass          ScanToolRunExitClass    `json:"exit_class"`
+	FinishedAt         time.Time               `json:"finished_at"`
+	FunctionThresholds *ScanFunctionThresholds `json:"function_thresholds,omitempty"`
+	History            *ScanHistory            `json:"history"`
+	Id                 string                  `json:"id"`
+	Language           *string                 `json:"language"`
+	Mode               ScanToolRunMode         `json:"mode"`
+	ParserVersion      *string                 `json:"parser_version"`
+	Producer           string                  `json:"producer"`
+	ProducerVersion    string                  `json:"producer_version"`
+	ProfileId          *string                 `json:"profile_id"`
+	ProfileImageDigest *string                 `json:"profile_image_digest"`
+	ReportKind         ScanToolRunReportKind   `json:"report_kind"`
+	Reports            []ScanReport            `json:"reports"`
+	RulesHash          *string                 `json:"rules_hash"`
+	ScannedCount       *int                    `json:"scanned_count"`
+	ScopeHash          string                  `json:"scope_hash"`
+	Sha                *string                 `json:"sha"`
+	SkippedCount       *int                    `json:"skipped_count"`
+	SkippedTargets     []ScanSkippedTarget     `json:"skipped_targets"`
 
 	// SourceDir Каталог от корня репозитория, от которого отчёт отсчитывает относительные пути, например src/main/java для JaCoCo XML. Без него относительные пути отсчитываются от корня.
 	SourceDir *string `json:"source_dir,omitempty"`

@@ -84,8 +84,9 @@ func newCalc(pool *pgxpool.Pool, m calcModules, c clock.Clock, reg prometheus.Re
 	tx := persistent.NewTransactor(pool)
 	// calc only reads links; their decisions stay with normalize (TZ 10.3).
 	links := linkuc.New(linkuc.Deps{Repo: linkrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Clock: c, NewID: newID})
+	code, _ := m.facts.(calc.CodeReports)
 	return calc.New(calc.Deps{
-		Structure: m.structure, Facts: m.facts, Settings: m.settings, Collection: m.collection, Activity: m.activity, Rights: m.rights, Links: links,
+		Structure: m.structure, Facts: m.facts, Settings: m.settings, Collection: m.collection, Activity: m.activity, Code: code, Rights: m.rights, Links: links,
 		Repo: calcrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Queue: queue.New(jobs), Tx: tx,
 		Metrics: metrics, Clock: c, NewID: newID,
 	}), nil

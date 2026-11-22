@@ -77,7 +77,7 @@ RUN --mount=from=jscpd,target=/mnt/jscpd \
     /opt/lizard/bin/pip install --no-cache-dir --no-deps --require-hashes --only-binary=:all: \
       -r /opt/craftpulse/profiles/go-default/lizard-requirements.txt && \
     ln -s /opt/lizard/bin/lizard /usr/local/bin/lizard
-ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local CGO_ENABLED=0 \
+ENV PATH=/usr/local/go/bin:/opt/lizard/bin:$PATH GOTOOLCHAIN=local CGO_ENABLED=0 \
     GOPATH=/tmp/go GOCACHE=/tmp/go-cache GOLANGCI_LINT_CACHE=/tmp/golangci-lint-cache \
     CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/go-default
 LABEL org.opencontainers.image.title="craftpulse-ci-go-default" \
@@ -97,7 +97,7 @@ RUN --mount=from=jscpd,target=/mnt/jscpd \
     /opt/code-tools/bin/pip install --no-cache-dir --no-deps --require-hashes --only-binary=:all: \
       -r /opt/craftpulse/profiles/python-default/requirements.txt && \
     ln -s /opt/code-tools/bin/lizard /usr/local/bin/lizard && ln -s /opt/code-tools/bin/ruff /usr/local/bin/ruff
-ENV CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/python-default HOME=/tmp
+ENV PATH=/opt/code-tools/bin:$PATH CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/python-default HOME=/tmp
 LABEL org.opencontainers.image.title="craftpulse-ci-python-default" \
       io.craftpulse.profile="python-default"
 USER 65532:65532
@@ -124,7 +124,7 @@ RUN --mount=from=jscpd,target=/mnt/jscpd \
       -r /opt/craftpulse/profiles/js-default/lizard-requirements.txt && \
     ln -s /opt/code-tools/bin/lizard /usr/local/bin/lizard && \
     ln -s /opt/craftpulse/profiles/js-default/node_modules/eslint/bin/eslint.js /usr/local/bin/eslint
-ENV CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/js-default HOME=/tmp
+ENV PATH=/opt/code-tools/bin:$PATH CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/js-default HOME=/tmp
 LABEL org.opencontainers.image.title="craftpulse-ci-js-default" \
       io.craftpulse.profile="js-default"
 USER 65532:65532

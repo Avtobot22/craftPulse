@@ -3,6 +3,7 @@ package ci
 import (
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -45,23 +46,21 @@ const _lintChunk = 500
 type codeLanguage struct {
 	config string
 	tools  []string
-	// lizard are the languages of Lizard.
-	lizard []string
 	step   func(p *CodeProfile, root string, s *Scope, work, report string) (codeStep, error)
 }
 
 var _codeLanguages = map[string]*codeLanguage{
 	LanguageGo: {
 		config: "golangci.yml", tools: []string{ToolGolangci},
-		lizard: []string{"go"}, step: (*CodeProfile).golangciStep,
+		step: (*CodeProfile).golangciStep,
 	},
 	LanguagePython: {
 		config: "ruff.toml", tools: []string{ToolRuff},
-		lizard: []string{"python"}, step: (*CodeProfile).ruffStep,
+		step: (*CodeProfile).ruffStep,
 	},
 	LanguageJavaScript: {
 		config: "eslint.config.mjs", tools: []string{ToolESLint, ToolTypeScriptESLint, ToolTypeScript},
-		lizard: []string{"javascript", "typescript", "tsx"}, step: (*CodeProfile).eslintStep,
+		step: (*CodeProfile).eslintStep,
 	},
 }
 
@@ -146,8 +145,6 @@ type codeStep struct {
 	// finish writes the report from the output of the commands and lists the files the tool could not
 	// analyze.
 	finish func() ([]envelope.ScanSkippedTarget, error)
-	// emptyOK accepts an empty report: a component without functions gives an empty Lizard CSV.
-	emptyOK bool
 }
 
 func (p *CodeProfile) steps(root string, s *Scope, prefix, work string, out CodeReports) ([]codeStep, error) {
@@ -208,19 +205,18 @@ func (p *CodeProfile) golangciStep(root string, s *Scope, work, report string) (
 	return step, nil
 }
 
+//go:embed lizard_report.py
+var lizardReport string
+
 // functionsStep runs Lizard on the files of the scope from the repository root.
 func (p *CodeProfile) functionsStep(root string, s *Scope, work, report string) (codeStep, error) {
 	list := filepath.Join(work, "functions.txt")
 	if err := os.WriteFile(list, []byte(strings.Join(s.Files, "\n")+"\n"), 0o600); err != nil {
 		return codeStep{}, fmt.Errorf("write file list: %w", err)
 	}
-	step := codeStep{tool: p.tool(ToolFunctions, string(envelope.ScanReportReportFormatLizardCsv), "1", report, ""), emptyOK: true}
+	step := codeStep{tool: p.tool(ToolFunctions, string(envelope.ScanReportReportFormatLizardCsv), "2", report, filepath.Join(p.dir, CodeProfileFile))}
 	step.tool.FindingsCodes = nil
-	cmd := []string{ToolFunctions, "--csv", "--no-gitignore"}
-	for _, l := range p.lang.lizard {
-		cmd = append(cmd, "-l", l)
-	}
-	step.commands = []Tool{{Command: append(cmd, "-f", list, "-o", report), Dir: root}}
+	step.commands = []Tool{{Command: []string{"python3", "-I", "-c", lizardReport, list, report}, Dir: root}}
 	return step, nil
 }
 
@@ -308,7 +304,7 @@ func (r *Runner) execute(ctx context.Context, step *codeStep, deadline time.Time
 		}
 	}
 	info, err := os.Stat(step.tool.Report)
-	finished := err == nil && info.Mode().IsRegular() && (info.Size() > 0 || step.emptyOK)
+	finished := err == nil && info.Mode().IsRegular() && info.Size() > 0
 	code := 0
 	if findings {
 		code = 1
@@ -390,6 +386,9 @@ func (c *CodeRunner) component(ctx context.Context, row Entry, suffix string, de
 		}
 		run.FinishedAt = c.Now().UTC()
 		setScope(run, scope, skipped)
+		if step.tool.Producer == ToolFunctions {
+			run.FunctionThresholds = &envelope.ScanFunctionThresholds{CcnThreshold: c.Code.Functions.CCN, NlocThreshold: c.Code.Functions.NLOC}
+		}
 		if err := c.record(run, &step.tool, o); err != nil {
 			return runs, err
 		}

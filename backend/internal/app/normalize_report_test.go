@@ -37,6 +37,10 @@ type reportSpec struct {
 	content                                  []byte
 	ci                                       *envelope.ScanCiCoordinates
 	component                                *envelope.ScanComponent
+	thresholds                               *envelope.ScanFunctionThresholds
+	testTargets                              *[]string
+	formatVersion                            string
+	profileID, language                      string
 }
 
 func reportFixture(t *testing.T, name string) []byte {
@@ -81,10 +85,21 @@ func reportPackageOf(t *testing.T, instance, sha string, specs ...reportSpec) []
 		path := "files/reports/" + s.kind + "-" + name
 		ref, err := w.AddFile(path, "application/json", content)
 		require.NoError(t, err)
+		formatVersion := s.formatVersion
+		if formatVersion == "" {
+			formatVersion = "1"
+		}
+		profileID, language := s.profileID, s.language
+		if profileID == "" {
+			profileID = "go-default"
+		}
+		if language == "" {
+			language = "go"
+		}
 		tool := envelope.ScanToolRun{
 			Id: s.kind + "-" + name, Producer: s.producer, ProducerVersion: s.version, Mode: envelope.ScanToolRunModeBuiltin,
-			ProfileId: ptr("go-default"), ProfileImageDigest: ptr(_imageHash), ReportKind: envelope.ScanToolRunReportKind(s.kind),
-			Component: s.component, Language: ptr("go"), RulesHash: ptr(_rulesHash), ConfigHash: ptr(_configHash), DbVersion: ptr("2026-11-16"),
+			ProfileId: &profileID, ProfileImageDigest: ptr(_imageHash), ReportKind: envelope.ScanToolRunReportKind(s.kind),
+			Component: s.component, Language: &language, RulesHash: ptr(_rulesHash), ConfigHash: ptr(_configHash), DbVersion: ptr("2026-11-16"),
 			DbPublishedAt: ptr(started.Add(-24 * time.Hour)), ScopeHash: _scopeHash, Sha: &sha, Ci: s.ci,
 			StartedAt: started.Add(time.Duration(i) * time.Minute), FinishedAt: started.Add(time.Duration(i)*time.Minute + 10*time.Second),
 			ExitClass: envelope.ScanToolRunExitClassFindings, Completeness: envelope.ScanToolRunCompletenessPartial,
@@ -92,8 +107,9 @@ func reportPackageOf(t *testing.T, instance, sha string, specs ...reportSpec) []
 			SkippedTargets: []envelope.ScanSkippedTarget{{Path: "app/generated.go", Reason: envelope.ScanSkippedTargetReasonUnsupported}},
 			History:        &envelope.ScanHistory{FromSha: strings.Repeat("b", 40), ToSha: sha, Truncated: true},
 			SourceRoot:     nonEmpty(s.sourceRoot), SourceDir: nonEmpty(s.sourceDir),
+			TestTargets: s.testTargets, FunctionThresholds: s.thresholds,
 			Reports: []envelope.ScanReport{{
-				File: ref, ReportKind: envelope.ScanReportReportKind(s.kind), ReportFormat: envelope.ScanReportReportFormat(s.format), FormatVersion: "1",
+				File: ref, ReportKind: envelope.ScanReportReportKind(s.kind), ReportFormat: envelope.ScanReportReportFormat(s.format), FormatVersion: formatVersion,
 			}},
 		}
 		if s.exit != "" {
