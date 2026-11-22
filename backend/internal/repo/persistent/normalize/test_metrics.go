@@ -43,6 +43,7 @@ func (r *Repo) ReadReportEvidence(ctx context.Context, org entity.ID, scope enti
 			ID: entity.ID(row.ID), RunID: idPtr(row.RunID), ComponentID: idPtr(row.ComponentID), Kind: row.ReportKind,
 			Language: row.Language, Format: row.ReportFormat, Producer: row.Producer, ProducerVersion: row.ProducerVersion,
 			ScopeHash: row.ScopeHash, ExitClass: row.ExitClass, Completeness: row.Completeness, KnownSeq: row.KnownSeq, RejectedReason: row.RejectedReason,
+			DependencyDelta: row.DependencyDelta, SecretScope: row.SecretScope,
 		}
 		if err := json.Unmarshal(row.SkippedTargets, &e.SkippedTargets); err != nil {
 			return nil, fmt.Errorf("normalize: decode skipped report targets: %w", err)

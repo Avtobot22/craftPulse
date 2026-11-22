@@ -59,6 +59,7 @@ type ScanReport struct {
 	SkippedCount    *int
 	SkippedTargets  []SkippedTarget
 	History         *ScanHistory
+	DependencyDelta string
 	// RefName is the branch or tag of the run and Language the language of the check; empty when unknown.
 	RefName  string
 	Language string
@@ -79,16 +80,18 @@ type ScanHistory struct {
 // FindingOccurrence is a finding in one report. Empty texts and nil lines are unknown; Evidence keeps safe
 // coordinates and the description of the rule only, never code or the value of a secret (BR-017).
 type FindingOccurrence struct {
-	NativeID         string
-	RuleID           string
-	Kind             string
-	Path             string
-	LineStart        *int
-	LineEnd          *int
-	PackagePURL      string
-	NativeSeverity   string
-	NativeConfidence string
-	Fingerprint      []byte
+	NativeID               string
+	RuleID                 string
+	Kind                   string
+	Path                   string
+	LineStart              *int
+	LineEnd                *int
+	PackagePURL            string
+	NativeSeverity         string
+	NativeConfidence       string
+	MappedSeverity         string
+	SeverityMappingVersion int
+	Fingerprint            []byte
 	// ContentFingerprint leaves the path and the lines out, so the same content at another place is found moved;
 	// nil when the tool says nothing of the content.
 	ContentFingerprint []byte

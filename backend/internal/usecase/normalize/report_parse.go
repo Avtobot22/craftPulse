@@ -55,13 +55,14 @@ type parseInput struct {
 }
 
 type parsedReport struct {
-	formatVersion string
-	findings      []entity.FindingOccurrence
-	execution     *envelope.JenkinsExecutionManifestV1
-	tests         []parsedTest
-	coverage      []parsedCoverage
-	code          *entity.CodeFacts
-	cloneExcluded map[string]bool
+	formatVersion   string
+	findings        []entity.FindingOccurrence
+	execution       *envelope.JenkinsExecutionManifestV1
+	tests           []parsedTest
+	coverage        []parsedCoverage
+	code            *entity.CodeFacts
+	cloneExcluded   map[string]bool
+	dependencyDelta string
 	// excluded are the files of a coverage report outside the repository.
 	excluded []entity.SkippedTarget
 }
@@ -80,7 +81,7 @@ var _parsers = []reportParser{
 		parse: parseJscpd,
 	},
 	{
-		format: "sarif", version: "sarif-2.1.0/1",
+		format: "sarif", version: "sarif-2.1.0/2",
 		kinds: []string{
 			entity.AnalysisCode, entity.AnalysisSAST, entity.AnalysisSecrets, entity.AnalysisSCA, entity.AnalysisImage, entity.AnalysisIaC,
 			entity.AnalysisDocs, entity.AnalysisOpenAPI,
@@ -89,7 +90,19 @@ var _parsers = []reportParser{
 		parse:   parseSARIF,
 	},
 	{
-		format: "gitlab_security", version: "gitlab-security-15/1",
+		format: "trivy_json", version: "trivy-json-2/1",
+		kinds:   []string{entity.AnalysisSCA, entity.AnalysisIaC},
+		accepts: func(v string) bool { return v == "2" },
+		parse:   parseTrivy,
+	},
+	{
+		format: "gitleaks_json", version: "gitleaks-json/1",
+		kinds:   []string{entity.AnalysisSecrets},
+		accepts: func(v string) bool { return v == "1" },
+		parse:   parseGitleaks,
+	},
+	{
+		format: "gitlab_security", version: "gitlab-security-15/2",
 		kinds:   []string{entity.AnalysisSAST, entity.AnalysisSecrets, entity.AnalysisSCA},
 		accepts: regexp.MustCompile(`^15\.[012]\.\d+$`).MatchString,
 		parse:   parseGitLabSecurity,
@@ -364,14 +377,12 @@ func bounded(s string, limit int) string {
 // evidence is what a finding keeps besides its coordinates: names and descriptions of the rule and the tool,
 // weaknesses and packages, never a fragment of code or the value of a secret (BR-017).
 type evidence struct {
+	entity.SecurityEvidence
 	Tool             *toolRef     `json:"tool,omitempty"`
 	RuleName         string       `json:"rule_name,omitempty"`
 	RuleDescription  string       `json:"rule_description,omitempty"`
-	CWE              []string     `json:"cwe,omitempty"`
 	SecuritySeverity string       `json:"security_severity,omitempty"`
 	Identifiers      []identifier `json:"identifiers,omitempty"`
-	Package          *packageRef  `json:"package,omitempty"`
-	Suppressed       bool         `json:"suppressed,omitempty"`
 }
 
 type toolRef struct {
@@ -383,11 +394,6 @@ type identifier struct {
 	Type  string `json:"type"`
 	Name  string `json:"name,omitempty"`
 	Value string `json:"value"`
-}
-
-type packageRef struct {
-	Name    string `json:"name"`
-	Version string `json:"version,omitempty"`
 }
 
 func (e *evidence) encode() (json.RawMessage, error) {

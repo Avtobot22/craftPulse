@@ -90,6 +90,7 @@ type Deps struct {
 	Structure    Structure
 	Facts        Facts
 	TestCoverage TestCoverageFacts
+	Security     SecurityFacts
 	Settings     Settings
 	// Collection is nil where no source is collected; then only the history of the facts tells completeness.
 	Collection Collection

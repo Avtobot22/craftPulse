@@ -97,6 +97,9 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 	}
 	reports := job.Reports || in != nil && len(in.reports) > 0
 	codeReports := job.CodeReports || in != nil && hasCodeReports(in.reports)
+	securityReports := job.SecurityReports || in != nil && slices.ContainsFunc(in.reports, func(c *reportCandidate) bool {
+		return c.parser != nil && c.report.SHA != "" && securityReportKind(c.report.Kind)
+	})
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		areas := job.Areas
 		if in != nil {
@@ -125,6 +128,7 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 			next := job
 			next.AfterNo, next.Areas, next.Reports = part[len(part)-1].No, areas, reports
 			next.CodeReports = codeReports
+			next.SecurityReports = securityReports
 			if err := u.d.Queue.Enqueue(ctx, next, queueOf(rc)); err != nil {
 				return err
 			}
@@ -135,6 +139,12 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 		}
 		if codeReports {
 			recount := entity.CalcRecountJob{OrganizationID: org, CodeReceiptID: job.ReceiptID, CorrelationID: job.CorrelationID}
+			if err := u.d.Queue.Enqueue(ctx, recount, entity.QueueBulk); err != nil {
+				return err
+			}
+		}
+		if securityReports {
+			recount := entity.CalcRecountJob{OrganizationID: org, SecurityReceiptID: job.ReceiptID, CorrelationID: job.CorrelationID}
 			if err := u.d.Queue.Enqueue(ctx, recount, entity.QueueBulk); err != nil {
 				return err
 			}

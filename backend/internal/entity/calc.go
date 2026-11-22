@@ -341,12 +341,13 @@ const (
 // of every series of the organization when neither is set; normalize, process and org queue it without depending
 // on calc (TZ 10.3, rule 6).
 type CalcRecountJob struct {
-	OrganizationID ID `json:"organization_id" river:"unique"`
-	AreaID         ID `json:"area_id,omitzero" river:"unique"`
-	TeamID         ID `json:"team_id,omitzero" river:"unique"`
-	ConnectionID   ID `json:"connection_id,omitzero" river:"unique"`
-	CodeReceiptID  ID `json:"code_receipt_id,omitzero" river:"unique"`
-	CorrelationID  ID `json:"correlation_id"`
+	OrganizationID    ID `json:"organization_id" river:"unique"`
+	AreaID            ID `json:"area_id,omitzero" river:"unique"`
+	TeamID            ID `json:"team_id,omitzero" river:"unique"`
+	ConnectionID      ID `json:"connection_id,omitzero" river:"unique"`
+	CodeReceiptID     ID `json:"code_receipt_id,omitzero" river:"unique"`
+	SecurityReceiptID ID `json:"security_receipt_id,omitzero" river:"unique"`
+	CorrelationID     ID `json:"correlation_id"`
 }
 
 func (CalcRecountJob) Kind() string { return KindCalcRecount }

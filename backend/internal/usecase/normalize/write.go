@@ -139,7 +139,8 @@ func (u *UseCase) placeAreas(ctx context.Context, org entity.ID, in *input, obje
 		o := objects[k]
 		switch k.Kind {
 		case entity.ObjectTask, entity.ObjectCIAttempt, entity.ObjectCIJob,
-			entity.ObjectCodeFile, entity.ObjectCodeFunction, entity.ObjectCloneGroup, entity.ObjectCodeReport:
+			entity.ObjectCodeFile, entity.ObjectCodeFunction, entity.ObjectCloneGroup, entity.ObjectCodeReport,
+			entity.ObjectSecurityFinding, entity.ObjectAffectedPackage, entity.ObjectSecurityAdvisory:
 			continue
 		case entity.ObjectMergeRequest, entity.ObjectCIRun:
 			if o.CurrentAreaID == nil {

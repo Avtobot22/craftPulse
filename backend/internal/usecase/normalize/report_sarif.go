@@ -5,6 +5,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -53,8 +54,10 @@ type sarifResult struct {
 				URI string `json:"uri"`
 			} `json:"artifactLocation"` //nolint:tagliatelle // SARIF wire format.
 			Region *struct {
-				StartLine int `json:"startLine"` //nolint:tagliatelle // SARIF wire format.
-				EndLine   int `json:"endLine"`   //nolint:tagliatelle // SARIF wire format.
+				StartLine   int `json:"startLine"`   //nolint:tagliatelle // SARIF wire format.
+				EndLine     int `json:"endLine"`     //nolint:tagliatelle // SARIF wire format.
+				StartColumn int `json:"startColumn"` //nolint:tagliatelle // SARIF wire format.
+				EndColumn   int `json:"endColumn"`   //nolint:tagliatelle // SARIF wire format.
 			} `json:"region"`
 		} `json:"physicalLocation"` //nolint:tagliatelle // SARIF wire format.
 	} `json:"locations"`
@@ -200,6 +203,7 @@ func (run *sarifRun) findings(kind string, out *[]entity.FindingOccurrence) erro
 		}
 		f.NativeSeverity = bounded(res.level(rule), _maxSeverity)
 		f.NativeConfidence = bounded(res.Properties.text("confidence"), _maxSeverity)
+		var startColumn, endColumn int
 		if len(res.Locations) > 0 && res.Locations[0].PhysicalLocation != nil {
 			loc := res.Locations[0].PhysicalLocation
 			if loc.ArtifactLocation != nil {
@@ -207,9 +211,11 @@ func (run *sarifRun) findings(kind string, out *[]entity.FindingOccurrence) erro
 			}
 			if loc.Region != nil {
 				f.LineStart, f.LineEnd = lines(loc.Region.StartLine, loc.Region.EndLine)
+				startColumn, endColumn = loc.Region.StartColumn, loc.Region.EndColumn
 			}
 		}
-		ev := evidence{Tool: tool, Suppressed: len(res.Suppressions) > 0}
+		ev := evidence{Tool: tool}
+		ev.Suppressed = len(res.Suppressions) > 0
 		tags := res.Properties.texts("tags")
 		if rule != nil {
 			if f.NativeConfidence == "" {
@@ -230,14 +236,52 @@ func (run *sarifRun) findings(kind string, out *[]entity.FindingOccurrence) erro
 		}
 		ev.SecuritySeverity = bounded(ev.SecuritySeverity, _maxSeverity)
 		ev.CWE = cwes(append(tags, res.Properties.texts("cwe")...)...)
+		if kind == entity.AnalysisSAST {
+			if f.NativeConfidence == "" && strings.HasPrefix(strings.ToLower(tool.Name), "opengrep") {
+				f.NativeConfidence = sarifConfidenceTag(tags)
+			}
+			ev.MappedConfidence = mappedConfidence(f.NativeConfidence)
+			if ev.MappedConfidence != "" {
+				ev.ConfidenceMappingVersion = 1
+			}
+		}
+		if kind == entity.AnalysisSecrets {
+			ev = evidence{Tool: tool}
+			ev.Suppressed = len(res.Suppressions) > 0
+		}
 		if f.Evidence, err = ev.encode(); err != nil {
 			return err
 		}
-		f.Fingerprint = sarifFingerprint(kind, &f, res.PartialFingerprints)
-		f.ContentFingerprint = sarifContent(kind, f.RuleID, res.Fingerprints, res.PartialFingerprints)
+		if kind == entity.AnalysisSecrets && strings.EqualFold(tool.Name, "gitleaks") {
+			f.Fingerprint = fingerprint("gitleaks/sarif/1", f.RuleID, f.Path, lineText(f.LineStart), lineText(f.LineEnd),
+				strconv.Itoa(startColumn), strconv.Itoa(endColumn), commitHash(res.PartialFingerprints["commitSha"]))
+		} else {
+			f.Fingerprint = sarifFingerprint(kind, &f, res.PartialFingerprints)
+			f.ContentFingerprint = sarifContent(kind, f.RuleID, res.Fingerprints, res.PartialFingerprints)
+		}
 		*out = append(*out, f)
 	}
 	return nil
+}
+
+func sarifConfidenceTag(tags []string) string {
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		value, suffix, ok := strings.Cut(tag, " ")
+		if ok && strings.EqualFold(suffix, "CONFIDENCE") && mappedConfidence(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func mappedConfidence(native string) string {
+	switch confidence := strings.ToLower(strings.TrimSpace(native)); confidence {
+	case "high", "medium", "low":
+		return confidence
+	default:
+		return ""
+	}
 }
 
 // rule finds the rule of a result by its index, then by its ID.

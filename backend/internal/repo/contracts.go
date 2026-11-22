@@ -327,6 +327,8 @@ type NormalizeRepo interface {
 	ReadReportEvidence(ctx context.Context, orgID entity.ID, scope entity.ReportScope) ([]entity.ReportEvidence, error)
 	ReadTestExecutions(ctx context.Context, orgID entity.ID, reportIDs []entity.ID, q entity.TestExecutionQuery) ([]entity.ReportExecution, error)
 	ReadReportCoverage(ctx context.Context, orgID entity.ID, reportIDs []entity.ID) ([]entity.ReportCoverage, error)
+	ReadSecurityFindings(ctx context.Context, orgID entity.ID, reportIDs []entity.ID) ([]entity.SecurityFinding, error)
+	ReceiptSecurityScopes(ctx context.Context, orgID, receiptID entity.ID) ([]entity.SecurityScope, error)
 	CurrentCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.CIRunVersion, error)
 	KnownCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.Revision, error)
 	SupersedeCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error

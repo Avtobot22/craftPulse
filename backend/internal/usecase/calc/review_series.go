@@ -43,7 +43,7 @@ func scopeOf(raw []byte) (seriesScope, bool, error) {
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return seriesScope{}, false, fmt.Errorf("calc: scope of the series: %w", err)
 	}
-	return s, s.Kind == _scopeTeam || s.Kind == _scopeRepository || s.Kind == _scopeConnection || s.Kind == _scopeCode, nil
+	return s, s.Kind == _scopeTeam || s.Kind == _scopeRepository || s.Kind == _scopeConnection || s.Kind == _scopeCode || s.Kind == _scopeSecurity, nil
 }
 
 // ReviewSeries finds the series of a set of the review of MRs, of the events or of the coverage of links of a team or
@@ -103,6 +103,9 @@ func validReviewStep(set string, step entity.Step) bool {
 func (u *UseCase) scopeAreas(ctx context.Context, org entity.ID, s seriesScope) ([]entity.ID, error) {
 	if s.Kind == _scopeRepository || s.Kind == _scopeCode {
 		return []entity.ID{s.RepositoryID}, nil
+	}
+	if s.Kind == _scopeSecurity {
+		return nil, nil
 	}
 	if s.Kind == _scopeConnection {
 		return u.d.Activity.ActivityConnectionAreas(ctx, org, s.ConnectionID)
@@ -200,6 +203,10 @@ func (u *UseCase) source(ctx context.Context, job entity.CalcSliceJob, rev *enti
 	}
 	if series.MetricSet == entity.MetricSetCode {
 		src, err := u.codeSource(ctx, job.OrganizationID, rev, series, scope.CodeScope)
+		return src, scope, err
+	}
+	if series.MetricSet == entity.MetricSetSecurity {
+		src, err := u.securitySource(ctx, job.OrganizationID, rev, series, scope.securityAt(rev.KnowledgeSeq))
 		return src, scope, err
 	}
 	w := entity.Window{From: rev.Window.From, To: rev.Window.To, Step: series.Step}

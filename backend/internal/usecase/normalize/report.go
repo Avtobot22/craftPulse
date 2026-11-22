@@ -217,6 +217,7 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 			}
 			c.findings, c.tests, c.coverage = parsed.findings, parsed.tests, coverage
 			c.code = parsed.scopedCodeFacts(c.tool)
+			c.report.DependencyDelta = parsed.dependencyDelta
 			c.report.SkippedTargets = append(c.report.SkippedTargets, parsed.excluded...)
 			c.report.SchemaVersion, c.report.ParserVersion = parsed.formatVersion, first.parser.version
 		}

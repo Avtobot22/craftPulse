@@ -28,6 +28,8 @@ type ReportEvidence struct {
 	KnownSeq        int64
 	RejectedReason  string
 	SkippedTargets  []SkippedTarget
+	DependencyDelta string
+	SecretScope     string
 }
 
 func (r *ReportEvidence) Partial() bool {
