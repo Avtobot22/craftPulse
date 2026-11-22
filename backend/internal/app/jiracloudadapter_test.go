@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
 	"encoding/json"
 	"io"
 	"net"
@@ -213,25 +212,38 @@ type jiraTestEnv struct {
 
 func newJiraTestEnv(t *testing.T) jiraTestEnv {
 	t.Helper()
+	return newJiraTestEnvWithAccess(t, nil, 500*time.Millisecond)
+}
+
+func newJiraTestEnvWithAccess(t *testing.T, access http.Handler, timeout time.Duration) jiraTestEnv {
+	t.Helper()
 	fixture := readJiraFixture(t)
-	upstream := httptest.NewTLSServer(fixture)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == "api.atlassian.com" && access != nil {
+			access.ServeHTTP(w, r)
+			return
+		}
+		fixture.ServeHTTP(w, r)
+	})
+	upstream := httptest.NewUnstartedServer(handler)
+	ca := newTestCA(t, "Jira Cloud test")
+	upstream.TLS, _ = ca.serverTLS(t, time.Now().Add(time.Hour), "example.com", "api.atlassian.com")
+	upstream.StartTLS()
 	t.Cleanup(upstream.Close)
-	roots := x509.NewCertPool()
-	roots.AddCert(upstream.Certificate())
 	client := adaptersdk.NewSourceClient(adaptersdk.ClientConfig{
-		RootCAs: roots, Resolver: mapResolver{"example.com": _gitPublic}, Timeout: 500 * time.Millisecond,
+		RootCAs: ca.pool, Resolver: mapResolver{"example.com": _gitPublic, "api.atlassian.com": _gitPublic}, Timeout: timeout,
 		Connect: func(ctx context.Context, network, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, network, upstream.Listener.Addr().String())
 		},
 	})
 	logs := &lockedBuffer{}
 	db := newAdapterDB(t, true)
-	handler, err := adaptersdk.NewHandler(adaptersdk.Options{
+	sdkHandler, err := adaptersdk.NewHandler(adaptersdk.Options{
 		Source: jiracloud.New(client), Store: adaptersdk.NewStore(db.pool(t, "app"), adapterKeyring(t)),
 		ServiceKeys: []string{_adapterKey}, Log: zerolog.New(logs), SpoolDir: t.TempDir(),
 	})
 	require.NoError(t, err)
-	server := httptest.NewServer(handler)
+	server := httptest.NewServer(sdkHandler)
 	t.Cleanup(server.Close)
 	scope := adaptersdk.ScopeRef{Kind: adaptersdk.ScopeRefKindTrackerProject, NativeScopeId: "10000"}
 	area := adaptersdk.AccessItemAreaKindTrackerProject
@@ -249,7 +261,7 @@ func newJiraTestEnv(t *testing.T) jiraTestEnv {
 	}
 }
 
-func (e jiraTestEnv) call(t *testing.T, method, operation string, input any) (status int, headers http.Header, response []byte) {
+func (e jiraTestEnv) request(t *testing.T, method, operation string, input any) *http.Request {
 	t.Helper()
 	body, err := json.Marshal(input)
 	require.NoError(t, err)
@@ -262,7 +274,12 @@ func (e jiraTestEnv) call(t *testing.T, method, operation string, input any) (st
 	req.Header.Set("X-Craftpulse-Organization", target.Organization)
 	req.Header.Set("X-Craftpulse-Contract-Version", adaptersdk.CurrentContractVersion)
 	req.Header.Set("X-Correlation-Id", "jira-fixture-"+operation)
-	resp, err := http.DefaultClient.Do(req)
+	return req
+}
+
+func (e jiraTestEnv) call(t *testing.T, method, operation string, input any) (status int, headers http.Header, response []byte) {
+	t.Helper()
+	resp, err := http.DefaultClient.Do(e.request(t, method, operation, input))
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	out, err := io.ReadAll(resp.Body)

@@ -81,7 +81,9 @@ func (c *SourceClient) send(client *http.Client, req *http.Request, maxBody int6
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		_, _ = io.CopyN(io.Discard, resp.Body, _drainBytes)
 		_ = resp.Body.Close()
-		return nil, classifyStatus(resp, c.now())
+		err := classifyStatus(resp, c.now())
+		err.sourceStatus = resp.StatusCode
+		return nil, err
 	}
 	resp.Body = &limitedBody{rc: resp.Body, left: maxBody}
 	return resp, nil
