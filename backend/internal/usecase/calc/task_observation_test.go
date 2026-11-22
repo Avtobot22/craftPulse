@@ -13,7 +13,7 @@ import (
 
 func observationFixture() entity.TaskObservationFacts {
 	in := task("J1/P/A", d(0), _intake, status(d(1), _active)).input()
-	in.version.TypeNativeID = "story"
+	in.version.TypeNativeID, in.version.TaskKey = "story", "A"
 	mapping := m1()
 	mapping.TeamID = _team
 	mapping.Rules = append(mapping.Rules, entity.MappingRule{
@@ -74,6 +74,14 @@ func TestTaskObservations_ReviewAndLinkQuestions(t *testing.T) {
 			f.Reviews[0].MRs[0].ReviewerAccountIDs = []entity.ID{idOf("reviewer")}
 			addObservationReview(f, "human", entity.PersonHuman, d(10), 1)
 		}, entity.ObservationAwaitingFirst, entity.ObservationRequestReview, "", entity.ObjectMergeRequest},
+		{"future reviewer snapshot without assignment history", func(f *entity.TaskObservationFacts) {
+			updated := d(10)
+			mr := &f.Reviews[0].MRs[0]
+			mr.SourceUpdatedAt, mr.ReviewerAccountIDs = &updated, []entity.ID{idOf("reviewer")}
+			f.Reviews[0].MREvents = append(f.Reviews[0].MREvents, entity.MREvent{
+				ID: idOf("future assignment"), MRID: mr.MRID, Kind: _eventAssigned, EventTime: updated,
+			})
+		}, entity.ObservationUnknown, entity.ObservationClarifyReason, entity.QuestionReviewerAssigned, entity.ObjectMergeRequest},
 		{"hidden links", func(f *entity.TaskObservationFacts) {
 			f.Links = nil
 			f.TaskMRsUnavailable = true
@@ -262,4 +270,59 @@ func TestTaskObservations_CurrentPipeline(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTaskObservations_OldHeadAndTerminalStateWithoutFinishTime(t *testing.T) {
+	t.Parallel()
+	f := observationFixture()
+	mr := &f.Reviews[0].MRs[0]
+	future, start := d(10), d(4)
+	mr.SourceUpdatedAt, mr.HeadSHA = &future, "new-head"
+	f.MRRevisions = []entity.MRRevision{
+		{MRID: mr.MRID, HeadSHA: "new-head", CreatedAt: future},
+		{MRID: mr.MRID, HeadSHA: "old-head", CreatedAt: d(2)},
+		{MRID: mr.MRID, HeadSHA: "unseen-head", CreatedAt: d(3), Knowledge: entity.Knowledge{KnownSeq: 6}},
+	}
+	run := entity.CIRunVersion{
+		RunID: idOf("historic run"), AreaID: mr.AreaID, SHA: "old-head", StartedAt: &start,
+		SourceUpdatedAt: &future, Outcome: entity.CIFailed,
+	}
+	f.Links = append(f.Links, entity.LinkEdge{Type: entity.LinkMRRun, Status: entity.LinkConfirmed, From: mr.MRID, To: run.RunID})
+	f.CI.Runs = []entity.CIRunVersion{run}
+	got := TaskObservations(&f)
+	require.Len(t, got, 1)
+	assert.Equal(t, entity.QuestionReviewerAssigned, got[0].Question)
+
+	finish := d(7)
+	f.CI.Runs[0].FinishedAt = &finish
+	got = TaskObservations(&f)
+	require.Len(t, got, 2)
+	assert.Equal(t, entity.ObservationCIFailed, got[1].Kind)
+	assert.Equal(t, run.RunID, got[1].Basis[0].ID)
+	assert.Equal(t, &finish, got[1].Since)
+}
+
+func TestTaskObservations_RetryWithoutKnownDuration(t *testing.T) {
+	t.Parallel()
+	f := observationFixture()
+	mr := &f.Reviews[0].MRs[0]
+	start, finish, future := d(4), d(7), d(10)
+	run := idOf("pipeline")
+	f.Links = append(f.Links, entity.LinkEdge{Type: entity.LinkMRRun, Status: entity.LinkConfirmed, From: mr.MRID, To: run})
+	f.CI.Runs = []entity.CIRunVersion{{
+		RunID: run, AreaID: mr.AreaID, SHA: mr.HeadSHA, StartedAt: &start,
+		FinishedAt: &finish, Outcome: entity.CISuccess, AttemptHistory: entity.AttemptHistoryComplete,
+	}}
+	duration := int64(45)
+	f.CI.Attempts = []entity.CIAttemptVersion{
+		{RunID: run, AttemptID: idOf("success"), AttemptNo: 1, JobKey: "tests", Outcome: entity.CISuccess, StartedAt: &start},
+		{
+			RunID: run, AttemptID: idOf("second try"), AttemptNo: 2, JobKey: "tests", Outcome: entity.CISuccess, StartedAt: &start,
+			ObservedAt: future, DurationS: &duration,
+		},
+	}
+	got := TaskObservations(&f)
+	require.Len(t, got, 2)
+	require.Equal(t, entity.ObservationCIRetried, got[1].Kind)
+	assert.Equal(t, &entity.TaskRetry{Attempts: 1, SecondsLowerBound: true}, got[1].Retry)
 }

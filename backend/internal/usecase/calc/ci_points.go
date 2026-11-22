@@ -186,17 +186,9 @@ func (c *ciSource) logical(metric string, p period) entity.Point {
 			}
 			pass := firstClass == "success"
 			if metric == "I03" {
-				pass = false
-				failed := false
-				known := true
-				for k := range job.attempts {
-					a := &job.attempts[k]
-					cl := c.attemptClass(a)
-					known = known && ciTerminal(cl)
-					pass = pass || failed && cl == "success"
-					failed = failed || ciFailure(cl)
-				}
-				if !known {
+				var allTerminal bool
+				pass, allTerminal = c.retryFlip(job)
+				if !allTerminal {
 					ciAdd(t, r, first, job, entity.RoleExcluded, nil, "outcomes_not_comparable")
 					continue
 				}
@@ -210,6 +202,17 @@ func (c *ciSource) logical(metric string, p period) entity.Point {
 		}
 	}
 	return t.ratio(numerator, denominator, int(denominator), true)
+}
+
+func (c *ciSource) retryFlip(job *ciJob) (flipped, allTerminal bool) {
+	failed, allTerminal := false, true
+	for i := range job.attempts {
+		class := c.attemptClass(&job.attempts[i])
+		allTerminal = allTerminal && ciTerminal(class)
+		flipped = flipped || failed && class == "success"
+		failed = failed || ciFailure(class)
+	}
+	return flipped, allTerminal
 }
 
 func (c *ciSource) overhead(est string, p period) entity.Point {

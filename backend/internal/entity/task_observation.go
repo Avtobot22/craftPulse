@@ -22,6 +22,7 @@ type TaskObservationFacts struct {
 	Targets          []TargetVersion
 	Links            []LinkEdge
 	Reviews          []ReviewFacts
+	MRRevisions      []MRRevision
 	ReviewCollection []AreaCollection
 	CI               CIFacts
 	Refs             map[ID]ObjectRef

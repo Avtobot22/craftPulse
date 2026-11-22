@@ -29,7 +29,11 @@ func observationCI(f *entity.TaskObservationFacts, links map[entity.ID]entity.ID
 	for i := range f.CI.Attempts {
 		attempt := &f.CI.Attempts[i]
 		if kept[attempt.RunID] && knownOnCut(attempt.Knowledge, f.KnowledgeSeq) && attemptKnownBy(attempt, f.AsOf) {
-			selected.Attempts = append(selected.Attempts, *attempt)
+			version := *attempt
+			if version.FinishedAt == nil && version.ObservedAt.After(f.AsOf) {
+				version.NativeStatus, version.FailureKind, version.Outcome, version.DurationS = "", "", entity.CIUnknown, nil
+			}
+			selected.Attempts = append(selected.Attempts, version)
 		}
 	}
 	out.source.runs = ciRunsOf(selected)
@@ -51,15 +55,22 @@ func attemptKnownBy(a *entity.CIAttemptVersion, at time.Time) bool {
 	}
 }
 
-func (c *taskCI) forMR(mr *entity.MRVersion) *ciRun {
-	if mr.HeadSHA == "" {
+func (c *taskCI) forMR(mr *entity.MRVersion, rev *entity.MRRevision) *ciRun {
+	head := mr.HeadSHA
+	if !snapshotKnownAt(mr.SourceUpdatedAt, mr.ObservedAt, c.source.asOf) {
+		if rev == nil {
+			return nil
+		}
+		head = rev.HeadSHA
+	}
+	if head == "" {
 		return nil
 	}
 	var newest *ciRun
 	for _, i := range c.byMR[mr.MRID] {
 		run := &c.source.runs[i]
 		v := &run.version
-		if v.AreaID == mr.AreaID && v.SHA == mr.HeadSHA && (newest == nil || newerRun(v, &newest.version)) {
+		if v.AreaID == mr.AreaID && v.SHA == head && (newest == nil || newerRun(v, &newest.version)) {
 			newest = run
 		}
 	}
@@ -87,6 +98,9 @@ func runOrderTime(run *entity.CIRunVersion) time.Time {
 func taskPipelineObservation(f *entity.TaskObservationFacts, c *taskCI, run *ciRun, ref entity.ObjectRef) (entity.TaskObservation, bool) {
 	v := &run.version
 	o := entity.TaskObservation{Basis: []entity.ObjectRef{ref}, Action: entity.ObservationCheckPipeline}
+	if v.FinishedAt == nil && !snapshotKnownAt(v.SourceUpdatedAt, v.ObservedAt, f.AsOf) {
+		return entity.TaskObservation{}, false
+	}
 	class := c.source.runClass(run)
 	switch {
 	case v.FinishedAt != nil && v.FinishedAt.After(f.AsOf), v.Outcome == entity.CIRunning && class == "unknown":
@@ -121,13 +135,9 @@ func taskRetry(run *ciRun, at time.Time) *entity.TaskRetry {
 	attempts, attemptsLower := retryValue(&count)
 	seconds, secondsLower := retryValue(&usage)
 	out := &entity.TaskRetry{Attempts: attempts, Seconds: seconds, AttemptsLowerBound: attemptsLower, SecondsLowerBound: secondsLower}
-	for _, job := range run.jobs {
-		var failed bool
-		for i := range job.attempts {
-			class := src.attemptClass(&job.attempts[i])
-			out.ObservedOutcomeFlip = out.ObservedOutcomeFlip || failed && class == "success"
-			failed = failed || ciFailure(class)
-		}
+	for i := range run.jobs {
+		flipped, _ := src.retryFlip(&run.jobs[i])
+		out.ObservedOutcomeFlip = out.ObservedOutcomeFlip || flipped
 	}
 	return out
 }

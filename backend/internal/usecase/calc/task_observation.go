@@ -22,6 +22,7 @@ func TaskObservations(facts *entity.TaskObservationFacts, rules ...TaskObservati
 	checked := []entity.ObjectRef{task}
 	if ep != nil {
 		ci := observationCI(facts, runIDs)
+		heads := observationRevisions(facts, mrs)
 		reviews := observationReviews(facts)
 		for i := range reviews {
 			m := &reviews[i]
@@ -33,7 +34,7 @@ func TaskObservations(facts *entity.TaskObservationFacts, rules ...TaskObservati
 			if o, ok := taskReviewObservation(m, ref, facts.AsOf); ok {
 				out = append(out, o)
 			}
-			if result := ci.forMR(&m.version); result != nil {
+			if result := ci.forMR(&m.version, heads[m.version.MRID]); result != nil {
 				ref := observationRef(facts, entity.ObjectCIRun, result.version.RunID)
 				checked = append(checked, ref)
 				if o, ok := taskPipelineObservation(facts, &ci, result, ref); ok {
@@ -183,8 +184,9 @@ func taskReviewObservation(m *reviewMR, ref entity.ObjectRef, at time.Time) (ent
 			o.SourceEventIDs = append(o.SourceEventIDs, e.ID)
 		}
 	}
+	reviewersKnown := snapshotKnownAt(m.version.SourceUpdatedAt, m.version.ObservedAt, at) || hasReviewerEvents(m.events)
 	switch {
-	case !m.version.ReviewerField:
+	case !m.version.ReviewerField || !reviewersKnown:
 		o.Kind, o.Action, o.Question = entity.ObservationUnknown, entity.ObservationClarifyReason, entity.QuestionReviewerAssigned
 	case wait.Kind == entity.ReviewNoReviewer:
 		o.Kind, o.Action = entity.ObservationAwaitingReviewer, entity.ObservationAssignReviewer
@@ -194,6 +196,34 @@ func taskReviewObservation(m *reviewMR, ref entity.ObjectRef, at time.Time) (ent
 		return entity.TaskObservation{}, false
 	}
 	return o, true
+}
+
+func hasReviewerEvents(events []entity.MREvent) bool {
+	return slices.ContainsFunc(events, func(e entity.MREvent) bool {
+		return e.Kind == _eventAssigned || e.Kind == _eventRemoved
+	})
+}
+
+func observationRevisions(f *entity.TaskObservationFacts, mrs map[entity.ID]bool) map[entity.ID]*entity.MRRevision {
+	heads := map[entity.ID]*entity.MRRevision{}
+	for i := range f.MRRevisions {
+		r := &f.MRRevisions[i]
+		if !mrs[r.MRID] || r.CreatedAt.IsZero() || r.CreatedAt.After(f.AsOf) || !knownOnCut(r.Knowledge, f.KnowledgeSeq) {
+			continue
+		}
+		prev := heads[r.MRID]
+		if prev == nil || r.CreatedAt.After(prev.CreatedAt) || r.CreatedAt.Equal(prev.CreatedAt) && bytes.Compare(r.ID[:], prev.ID[:]) > 0 {
+			heads[r.MRID] = r
+		}
+	}
+	return heads
+}
+
+func snapshotKnownAt(updated *time.Time, observed, at time.Time) bool {
+	if updated != nil {
+		return !updated.After(at)
+	}
+	return !observed.After(at)
 }
 
 func noMRObservation(ep *episode, task []entity.ObjectRef, candidate bool) entity.TaskObservation {
