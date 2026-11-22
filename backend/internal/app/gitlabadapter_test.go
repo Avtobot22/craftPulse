@@ -157,7 +157,14 @@ type gitLabTestEnv struct {
 func newGitLabTestEnv(t *testing.T) gitLabTestEnv {
 	t.Helper()
 	fixture := &gitLabFixture{}
-	upstream := httptest.NewTLSServer(fixture)
+	env := newGitLabTestEnvWithSource(t, fixture)
+	env.fixture = fixture
+	return env
+}
+
+func newGitLabTestEnvWithSource(t *testing.T, handler http.Handler) gitLabTestEnv {
+	t.Helper()
+	upstream := httptest.NewTLSServer(handler)
 	t.Cleanup(upstream.Close)
 	roots := x509.NewCertPool()
 	roots.AddCert(upstream.Certificate())
@@ -178,7 +185,7 @@ func newGitLabTestEnv(t *testing.T) gitLabTestEnv {
 	t.Cleanup(srv.Close)
 	scope := adaptersdk.ScopeRef{Kind: adaptersdk.ScopeRefKindRepository, NativeScopeId: "7"}
 	areaKind := adaptersdk.AccessItemAreaKindRepository
-	return gitLabTestEnv{logs: logs, fixture: fixture, target: contracttest.Target{
+	return gitLabTestEnv{logs: logs, target: contracttest.Target{
 		BaseURL: srv.URL, ServiceKey: _adapterKey, Organization: uuid.NewString(), Connection: uuid.NewString(), Secret: _gitLabSecret,
 		Probe:    adaptersdk.ProbeInput{BaseUrl: "https://example.com/", Scopes: []adaptersdk.ScopeRef{scope}},
 		Fetch:    adaptersdk.FetchInput{SchemaId: adaptersdk.FetchInputSchemaIdMergeRequests, Scope: scope, Limit: 1, ObjectKeys: []adaptersdk.ObjectKey{}},
@@ -224,7 +231,7 @@ func (e gitLabTestEnv) fetch(t *testing.T, in adaptersdk.FetchInput) (*envelope.
 	t.Helper()
 	status, body := e.call(t, http.MethodPost, "fetch", in)
 	require.Equal(t, http.StatusOK, status, string(body))
-	result := envelope.Check(bytes.NewReader(body), envelope.DefaultLimits)
+	result := envelope.CheckPage(bytes.NewReader(body), envelope.DefaultLimits)
 	require.Nil(t, result.Envelope)
 	for _, record := range result.Records {
 		require.Nil(t, record.Rejection, "record %d, %s/%s", record.No, record.Kind, record.NativeID)

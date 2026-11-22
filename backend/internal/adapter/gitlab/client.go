@@ -51,7 +51,11 @@ func tokenFrom(secret string) (string, error) {
 }
 
 func (s source) request(ctx context.Context, operation, path string, query url.Values) (*http.Response, error) {
-	address := s.binding.BaseURL + "/api/v4/" + path
+	return s.requestURL(ctx, operation, "/api/v4/"+path, query, "application/json", _maxSourcePageBytes)
+}
+
+func (s source) requestURL(ctx context.Context, operation, path string, query url.Values, accept string, size int64) (*http.Response, error) {
+	address := s.binding.BaseURL + path
 	if len(query) != 0 {
 		address += "?" + query.Encode()
 	}
@@ -59,10 +63,10 @@ func (s source) request(ctx context.Context, operation, path string, query url.V
 	if err != nil {
 		return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidRequest, "cannot construct the GitLab request")
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", accept)
 	req.Header.Set("PRIVATE-TOKEN", s.token)
 	start := time.Now()
-	res, err := s.client.DoDirect(req, _maxSourcePageBytes)
+	res, err := s.client.DoDirect(req, size)
 	log := adaptersdk.Call{}.Log(ctx).Debug().Str("source_operation", operation).Dur("elapsed", time.Since(start))
 	if e, ok := errors.AsType[*adaptersdk.Error](err); ok {
 		log.Str("reason", string(e.Code))

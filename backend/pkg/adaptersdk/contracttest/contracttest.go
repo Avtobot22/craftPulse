@@ -282,7 +282,7 @@ func (s *suite) fetch() {
 			s.fail(step, "want 200 application/gzip, got %d %s", a.status, a.header.Get("Content-Type"))
 			return
 		}
-		res := envelope.Check(bytes.NewReader(a.body), envelope.DefaultLimits)
+		res := envelope.CheckPage(bytes.NewReader(a.body), envelope.DefaultLimits)
 		if res.Envelope != nil {
 			s.fail(step, "the package is rejected: %s", res.Envelope.Error())
 			return

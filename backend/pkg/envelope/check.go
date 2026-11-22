@@ -156,7 +156,16 @@ type pendingFile struct {
 
 // Check reads a package as a stream and validates the manifest, every entry and every record.
 func Check(r io.Reader, limits Limits) *Result {
-	c := &checker{limits: limits, files: map[string]fileEntry{}, entries: map[string]bool{}}
+	return checkPackage(r, limits, false)
+}
+
+// CheckPage checks an adapter Fetch page, whose CI artifacts can arrive without a scan manifest.
+func CheckPage(r io.Reader, limits Limits) *Result {
+	return checkPackage(r, limits, true)
+}
+
+func checkPackage(r io.Reader, limits Limits, page bool) *Result {
+	c := &checker{limits: limits, files: map[string]fileEntry{}, entries: map[string]bool{}, page: page}
 	counted := &countingReader{r: r, limit: limits.MaxPackageBytes}
 	if rejection := c.read(counted); rejection != nil {
 		if counted.exceeded {

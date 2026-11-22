@@ -91,6 +91,57 @@ func (e CiAttemptV1Outcome) Valid() bool {
 	}
 }
 
+// Defines values for CiAttemptV2ArtifactStatus.
+const (
+	CiAttemptV2ArtifactStatusExpired     CiAttemptV2ArtifactStatus = "expired"
+	CiAttemptV2ArtifactStatusSizeLimit   CiAttemptV2ArtifactStatus = "size_limit"
+	CiAttemptV2ArtifactStatusUnavailable CiAttemptV2ArtifactStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the CiAttemptV2ArtifactStatus enum.
+func (e CiAttemptV2ArtifactStatus) Valid() bool {
+	switch e {
+	case CiAttemptV2ArtifactStatusExpired:
+		return true
+	case CiAttemptV2ArtifactStatusSizeLimit:
+		return true
+	case CiAttemptV2ArtifactStatusUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiAttemptV2Outcome.
+const (
+	CiAttemptV2OutcomeCanceled CiAttemptV2Outcome = "canceled"
+	CiAttemptV2OutcomeFailed   CiAttemptV2Outcome = "failed"
+	CiAttemptV2OutcomeRunning  CiAttemptV2Outcome = "running"
+	CiAttemptV2OutcomeSkipped  CiAttemptV2Outcome = "skipped"
+	CiAttemptV2OutcomeSuccess  CiAttemptV2Outcome = "success"
+	CiAttemptV2OutcomeUnknown  CiAttemptV2Outcome = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the CiAttemptV2Outcome enum.
+func (e CiAttemptV2Outcome) Valid() bool {
+	switch e {
+	case CiAttemptV2OutcomeCanceled:
+		return true
+	case CiAttemptV2OutcomeFailed:
+		return true
+	case CiAttemptV2OutcomeRunning:
+		return true
+	case CiAttemptV2OutcomeSkipped:
+		return true
+	case CiAttemptV2OutcomeSuccess:
+		return true
+	case CiAttemptV2OutcomeUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CiRunV1Outcome.
 const (
 	CiRunV1OutcomeCanceled CiRunV1Outcome = "canceled"
@@ -115,6 +166,36 @@ func (e CiRunV1Outcome) Valid() bool {
 	case CiRunV1OutcomeSuccess:
 		return true
 	case CiRunV1OutcomeUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiRunV2Outcome.
+const (
+	CiRunV2OutcomeCanceled CiRunV2Outcome = "canceled"
+	CiRunV2OutcomeFailed   CiRunV2Outcome = "failed"
+	CiRunV2OutcomeRunning  CiRunV2Outcome = "running"
+	CiRunV2OutcomeSkipped  CiRunV2Outcome = "skipped"
+	CiRunV2OutcomeSuccess  CiRunV2Outcome = "success"
+	CiRunV2OutcomeUnknown  CiRunV2Outcome = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the CiRunV2Outcome enum.
+func (e CiRunV2Outcome) Valid() bool {
+	switch e {
+	case CiRunV2OutcomeCanceled:
+		return true
+	case CiRunV2OutcomeFailed:
+		return true
+	case CiRunV2OutcomeRunning:
+		return true
+	case CiRunV2OutcomeSkipped:
+		return true
+	case CiRunV2OutcomeSuccess:
+		return true
+	case CiRunV2OutcomeUnknown:
 		return true
 	default:
 		return false
@@ -1275,6 +1356,35 @@ type CiAttemptV1 struct {
 // CiAttemptV1Outcome defines model for CiAttemptV1.Outcome.
 type CiAttemptV1Outcome string
 
+// CiAttemptV2 Попытка job (`normalize.ci_attempt_version`). Логический job задают `job_key` и
+// `config_fingerprint` матрицы; повторная попытка получает новый ID и `attempt_no`.
+type CiAttemptV2 struct {
+	AllowFailure      bool                       `json:"allow_failure"`
+	ArtifactStatus    *CiAttemptV2ArtifactStatus `json:"artifact_status,omitempty"`
+	AttemptNo         int                        `json:"attempt_no"`
+	ConfigFingerprint string                     `json:"config_fingerprint"`
+	CreatedAt         *time.Time                 `json:"created_at,omitempty"`
+	DurationS         *int                       `json:"duration_s,omitempty"`
+	DurationSeconds   *float64                   `json:"duration_seconds,omitempty"`
+	FailureKind       *string                    `json:"failure_kind,omitempty"`
+	FailureReason     *string                    `json:"failure_reason,omitempty"`
+	FinishedAt        *time.Time                 `json:"finished_at,omitempty"`
+	JobKey            string                     `json:"job_key"`
+	JobName           string                     `json:"job_name"`
+	NativeStatus      string                     `json:"native_status"`
+	Outcome           CiAttemptV2Outcome         `json:"outcome"`
+	ParentRunNativeId *string                    `json:"parent_run_native_id,omitempty"`
+	RunNativeId       string                     `json:"run_native_id"`
+	RunnerClass       *string                    `json:"runner_class,omitempty"`
+	StartedAt         *time.Time                 `json:"started_at,omitempty"`
+}
+
+// CiAttemptV2ArtifactStatus defines model for CiAttemptV2.ArtifactStatus.
+type CiAttemptV2ArtifactStatus string
+
+// CiAttemptV2Outcome defines model for CiAttemptV2.Outcome.
+type CiAttemptV2Outcome string
+
 // CiRunV1 Запуск pipeline или workflow (`normalize.ci_run_version`). `native_id` - ID запуска.
 type CiRunV1 struct {
 	DefinitionVersion *string        `json:"definition_version,omitempty"`
@@ -1292,6 +1402,27 @@ type CiRunV1 struct {
 
 // CiRunV1Outcome defines model for CiRunV1.Outcome.
 type CiRunV1Outcome string
+
+// CiRunV2 Запуск pipeline или workflow (`normalize.ci_run_version`). `native_id` - ID запуска.
+type CiRunV2 struct {
+	AttemptHistoryTruncated *bool          `json:"attempt_history_truncated,omitempty"`
+	DefinitionVersion       *string        `json:"definition_version,omitempty"`
+	FinishedAt              *time.Time     `json:"finished_at,omitempty"`
+	MrNativeId              *string        `json:"mr_native_id,omitempty"`
+	NativeStatus            string         `json:"native_status"`
+	Outcome                 CiRunV2Outcome `json:"outcome"`
+	ParentRunNativeId       *string        `json:"parent_run_native_id,omitempty"`
+	ProjectNativeId         string         `json:"project_native_id"`
+	RefName                 string         `json:"ref_name"`
+	Sha                     string         `json:"sha"`
+	Source                  *string        `json:"source,omitempty"`
+	StartedAt               *time.Time     `json:"started_at,omitempty"`
+	TriggerJobNativeId      *string        `json:"trigger_job_native_id,omitempty"`
+	UpdatedAt               *time.Time     `json:"updated_at,omitempty"`
+}
+
+// CiRunV2Outcome defines model for CiRunV2.Outcome.
+type CiRunV2Outcome string
 
 // Cursor Курсор приращения - пара «время изменения, исходный ID»; адаптер читает с перекрытием окна назад.
 type Cursor struct {
