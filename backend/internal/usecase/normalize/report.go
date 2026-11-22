@@ -293,13 +293,15 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 	}
 	reasons := map[int]string{}
 	var (
-		valid []*reportCandidate
-		nos   []int
+		valid    []*reportCandidate
+		rejected []*reportCandidate
+		nos      []int
 	)
 	for _, c := range in.reports {
 		switch {
 		case c.rejected != "":
 			reasons[c.report.Record.RecordNo] = c.rejected
+			rejected = append(rejected, c)
 		case c.parser != nil:
 			valid = append(valid, c)
 			nos = append(nos, c.report.Record.RecordNo)
@@ -307,6 +309,9 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 	}
 	if len(reasons) > 0 {
 		if err := w.u.d.Ingest.RejectRecords(ctx, w.org, in.receipt, reasons); err != nil {
+			return err
+		}
+		if err := w.rejectedReports(ctx, in, rejected); err != nil {
 			return err
 		}
 	}
@@ -350,6 +355,32 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 		}
 		rows := entity.ReportRows{Findings: c.findings, Tests: w.executions(c, r.AttemptID, attempts), Coverage: c.coverage}
 		if err := w.u.d.Repo.InsertReport(ctx, w.org, &r, rows); err != nil {
+			return err
+		}
+		w.changes.add(area, _factReport, changedAt(r.StartedAt, r.FinishedAt))
+	}
+	return nil
+}
+
+func (w *writer) rejectedReports(ctx context.Context, in *input, reports []*reportCandidate) error {
+	area := w.objects[in.area].ID
+	components, err := w.components(ctx, reports, area)
+	if err != nil {
+		return err
+	}
+	for _, c := range reports {
+		r := c.report
+		r.KnownSeq, r.AreaID = w.seq, area
+		r.ComponentID = componentOf(components, c.component)
+		if c.run != nil {
+			id := w.objects[*c.run].ID
+			r.RunID = &id
+		}
+		if c.attempt != nil {
+			id := w.objects[*c.attempt].ID
+			r.AttemptID = &id
+		}
+		if err := w.u.d.Repo.InsertRejectedReport(ctx, w.org, r, c.rejected); err != nil {
 			return err
 		}
 		w.changes.add(area, _factReport, changedAt(r.StartedAt, r.FinishedAt))
@@ -432,7 +463,7 @@ func (w *writer) executions(c *reportCandidate, attempt *entity.ID, attempts map
 		t := &c.tests[i]
 		out[i] = entity.TestExecution{
 			CaseKey: t.key, CaseKeyHash: t.keyHash, AttemptID: attempt, ConfigFingerprint: config, Ordinal: t.ordinal,
-			Outcome: t.outcome, DurationMS: t.durationMS, RunStartedAt: started,
+			Outcome: t.outcome, DurationMS: t.durationMS, RunStartedAt: started, Suite: &t.suite,
 		}
 	}
 	return out

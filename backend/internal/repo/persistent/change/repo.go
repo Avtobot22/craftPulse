@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -22,6 +23,24 @@ type Repo struct{ pool *pgxpool.Pool }
 func NewRepo(pool *pgxpool.Pool) *Repo { return &Repo{pool: pool} }
 
 func (r *Repo) q(ctx context.Context) *Queries { return New(postgres.Conn(ctx, r.pool)) }
+
+func (r *Repo) ExpectedPipelineReports(ctx context.Context, org, area entity.ID, at time.Time, whole bool, projects []entity.ID) ([]entity.ExpectedReport, error) {
+	projectIDs := make([]uuid.UUID, len(projects))
+	for i, project := range projects {
+		projectIDs[i] = uuid.UUID(project)
+	}
+	rows, err := r.q(ctx).PipelineExpectedReports(ctx, PipelineExpectedReportsParams{
+		OrganizationID: uuid.UUID(org), AreaID: uuid.UUID(area), RunAt: at, Whole: whole, ProjectIds: projectIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("change: read pipeline expectations: %w", err)
+	}
+	out := make([]entity.ExpectedReport, len(rows))
+	for i, row := range rows {
+		out[i] = entity.ExpectedReport{ComponentID: entity.ID(row.ComponentID), Kind: row.AnalysisKind, Language: row.Language}
+	}
+	return out, nil
+}
 
 // LatestProfileVersion is the last version of the matrix of a project with its rows; entity.ErrNotFound without one.
 func (r *Repo) LatestProfileVersion(ctx context.Context, orgID, projectID entity.ID) (entity.CheckProfileVersion, error) {

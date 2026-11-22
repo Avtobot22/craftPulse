@@ -4754,9 +4754,16 @@ export interface components {
                 failed: number | null;
                 error: number | null;
                 skipped: number | null;
+                distinct_cases?: number | null;
+                executions?: number | null;
             };
+            coverage?: components["schemas"]["PipelineCoverage"];
             /** Format: uri */
             source_url: string | null;
+        };
+        PipelineCoverage: {
+            line: components["schemas"]["MetricValue"];
+            branch: components["schemas"]["MetricValue"];
         };
         Attempt: {
             /** Format: uuid */
@@ -11027,7 +11034,9 @@ export interface operations {
                      *         "passed": 412,
                      *         "failed": 0,
                      *         "error": 0,
-                     *         "skipped": 3
+                     *         "skipped": 3,
+                     *         "distinct_cases": 415,
+                     *         "executions": 415
                      *       },
                      *       "source_url": "https://gitlab.example/core/-/pipelines/7781"
                      *     }

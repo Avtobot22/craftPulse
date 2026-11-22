@@ -142,7 +142,7 @@ func (r *Repo) insertTests(ctx context.Context, orgID entity.ID, id uuid.UUID, r
 	p := InsertTestExecutionsParams{
 		OrganizationID: org, ReportID: id, AttemptID: nullID(tests[0].AttemptID), RunStartedAt: tests[0].RunStartedAt, KnownSeq: rep.KnownSeq,
 		TestCaseIds: make([]uuid.UUID, len(tests)), ConfigFingerprints: make([][]byte, len(tests)), Ordinals: make([]int16, len(tests)),
-		Outcomes: make([]string, len(tests)), DurationsMs: make([]int64, len(tests)),
+		Outcomes: make([]string, len(tests)), DurationsMs: make([]int64, len(tests)), Suites: make([]string, len(tests)),
 	}
 	for i := range tests {
 		t := &tests[i]
@@ -150,6 +150,9 @@ func (r *Repo) insertTests(ctx context.Context, orgID entity.ID, id uuid.UUID, r
 			return fmt.Errorf("normalize: ordinal %d of a test does not fit its column", t.Ordinal)
 		}
 		p.TestCaseIds[i], p.ConfigFingerprints[i], p.Ordinals[i], p.Outcomes[i] = ids[string(t.CaseKeyHash)], t.ConfigFingerprint, int16(t.Ordinal), t.Outcome
+		if t.Suite != nil {
+			p.Suites[i] = *t.Suite
+		}
 		if t.DurationMS != nil && *t.DurationMS < math.MaxInt64 {
 			p.DurationsMs[i] = *t.DurationMS + 1
 		}
@@ -304,21 +307,4 @@ func reportFindings(row ReportsByIDRow) entity.ReportFindings {
 		RefName: row.RefName, SHA: row.Sha, ExitClass: row.ExitClass, Completeness: row.Completeness, StartedAt: timePtr(row.StartedAt),
 		FinishedAt: timePtr(row.FinishedAt), KnownSeq: row.KnownSeq,
 	}
-}
-
-func (r *Repo) ReadPipelineReports(ctx context.Context, orgID entity.ID, runVersions, attempts []entity.ID) ([]entity.PipelineReport, error) {
-	rows, err := r.q(ctx).ReadPipelineReports(ctx, ReadPipelineReportsParams{
-		OrganizationID: uuid.UUID(orgID), RunVersionIds: ids(runVersions), AttemptIds: ids(attempts),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("normalize: read pipeline reports: %w", err)
-	}
-	out := make([]entity.PipelineReport, len(rows))
-	for i, row := range rows {
-		out[i] = entity.PipelineReport{
-			Kind: row.ReportKind, Partial: row.Partial, Complete: row.Complete,
-			Passed: row.Passed, Failed: row.Failed, Errors: row.Errors, Skipped: row.Skipped,
-		}
-	}
-	return out, nil
 }

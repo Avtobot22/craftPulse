@@ -323,7 +323,10 @@ type NormalizeRepo interface {
 	FindMRIDs(ctx context.Context, orgID entity.ID, areas, allowed []entity.ID, key entity.SourceKey, sha string, seq int64) ([]entity.ID, error)
 	ReadRepositoryVersion(ctx context.Context, orgID, repositoryID entity.ID) (entity.RepositoryVersion, error)
 
-	ReadPipelineReports(ctx context.Context, orgID entity.ID, runVersions, attempts []entity.ID) ([]entity.PipelineReport, error)
+	InsertRejectedReport(ctx context.Context, orgID entity.ID, report entity.ScanReport, reason string) error
+	ReadReportEvidence(ctx context.Context, orgID entity.ID, scope entity.ReportScope) ([]entity.ReportEvidence, error)
+	ReadTestExecutions(ctx context.Context, orgID entity.ID, reportIDs []entity.ID, q entity.TestExecutionQuery) ([]entity.ReportExecution, error)
+	ReadReportCoverage(ctx context.Context, orgID entity.ID, reportIDs []entity.ID) ([]entity.ReportCoverage, error)
 	CurrentCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.CIRunVersion, error)
 	KnownCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.Revision, error)
 	SupersedeCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
@@ -491,6 +494,7 @@ type ViewRepo interface {
 
 // ChangeRepo keeps the versions of the matrix of checks of projects.
 type ChangeRepo interface {
+	ExpectedPipelineReports(ctx context.Context, orgID, areaID entity.ID, at time.Time, whole bool, projects []entity.ID) ([]entity.ExpectedReport, error)
 	LatestProfileVersion(ctx context.Context, orgID, projectID entity.ID) (entity.CheckProfileVersion, error)
 	ProfileVersionByConfirmation(ctx context.Context, orgID, confirmationID entity.ID) (entity.CheckProfileVersion, error)
 	InsertProfileVersion(ctx context.Context, orgID entity.ID, v entity.CheckProfileVersion) error

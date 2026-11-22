@@ -85,9 +85,10 @@ type Metrics interface {
 }
 
 type Deps struct {
-	Structure Structure
-	Facts     Facts
-	Settings  Settings
+	Structure    Structure
+	Facts        Facts
+	TestCoverage TestCoverageFacts
+	Settings     Settings
 	// Collection is nil where no source is collected; then only the history of the facts tells completeness.
 	Collection Collection
 	Activity   ActivityCollection
