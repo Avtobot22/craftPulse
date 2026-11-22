@@ -118,9 +118,10 @@ type partSource interface {
 }
 
 type flowSource struct {
-	in     input
-	pr     *prepared
-	series *entity.CalcSeries
+	in      input
+	pr      *prepared
+	series  *entity.CalcSeries
+	signals *reportSignals
 }
 
 func (f *flowSource) periods() []period { return periods(f.in.window, f.in.asOf, f.in.location) }
@@ -129,14 +130,17 @@ func (f *flowSource) hash(from, to time.Time) []byte {
 	if f.pr == nil {
 		f.pr = prepare(f.in)
 	}
-	return f.pr.partHash(f.series.ScopeHash, f.series.Step, from, to)
+	base := f.pr.partHash(f.series.ScopeHash, f.series.Step, from, to)
+	return f.signals.hash(base, from, to)
 }
 
 func (f *flowSource) stored(c []period, hash []byte, from, to time.Time) *entity.StoredPart {
 	if f.pr == nil {
 		f.pr = prepare(f.in)
 	}
-	return storedPart(f.pr.calculate(c), hash, from, to)
+	part := storedPart(f.pr.calculate(c), hash, from, to)
+	f.signals.points(part, f.pr, c)
+	return part
 }
 
 type reviewSource struct {
@@ -207,7 +211,11 @@ func (u *UseCase) source(ctx context.Context, job entity.CalcSliceJob, rev *enti
 		in, err := u.input(ctx, entity.CalcRequest{
 			OrganizationID: job.OrganizationID, TeamID: scope.TeamID, KnowledgeSeq: rev.KnowledgeSeq, Window: w, AsOf: rev.AsOf, Sources: job.Sources,
 		})
-		return &flowSource{in: in, series: series}, scope, err
+		if err != nil {
+			return nil, scope, err
+		}
+		signals, err := u.reportSignals(ctx, job.OrganizationID, scope, rev.KnowledgeSeq, &in)
+		return &flowSource{in: in, series: series, signals: signals}, scope, err
 	}
 	if series.MetricSet == entity.MetricSetLinks {
 		src, err := u.linkSourceOf(ctx, job, rev, series, scope)

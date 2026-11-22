@@ -46,6 +46,7 @@ type ReviewFacts struct {
 	AreaID       ID
 	MRs          []MRVersion
 	MREvents     []MREvent
+	MRRevisions  []MRRevision
 	TaskEvents   []TaskEvent
 	ActorKinds   map[ID]PersonKind
 	ReviewsGiven bool

@@ -98,12 +98,9 @@ func runOrderTime(run *entity.CIRunVersion) time.Time {
 func taskPipelineObservation(f *entity.TaskObservationFacts, c *taskCI, run *ciRun, ref entity.ObjectRef) (entity.TaskObservation, bool) {
 	v := &run.version
 	o := entity.TaskObservation{Basis: []entity.ObjectRef{ref}, Action: entity.ObservationCheckPipeline}
-	if v.FinishedAt == nil && !snapshotKnownAt(v.SourceUpdatedAt, v.ObservedAt, f.AsOf) {
-		return entity.TaskObservation{}, false
-	}
-	class := c.source.runClass(run)
+	class := taskPipelineClass(c, run)
 	switch {
-	case v.FinishedAt != nil && v.FinishedAt.After(f.AsOf), v.Outcome == entity.CIRunning && class == "unknown":
+	case class == "running":
 		start := runOrderTime(v)
 		o.Kind, o.Since = entity.ObservationCIRunning, utc(&start)
 	case ciFailure(class):
@@ -126,6 +123,18 @@ func taskPipelineObservation(f *entity.TaskObservationFacts, c *taskCI, run *ciR
 		}
 	}
 	return o, true
+}
+
+func taskPipelineClass(c *taskCI, run *ciRun) string {
+	v, at := &run.version, c.source.asOf
+	if v.FinishedAt == nil && !snapshotKnownAt(v.SourceUpdatedAt, v.ObservedAt, at) {
+		return "unknown"
+	}
+	class := c.source.runClass(run)
+	if v.FinishedAt != nil && v.FinishedAt.After(at) || v.Outcome == entity.CIRunning && class == "unknown" {
+		return "running"
+	}
+	return class
 }
 
 func taskRetry(run *ciRun, at time.Time) *entity.TaskRetry {

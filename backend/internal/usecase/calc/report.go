@@ -3,6 +3,8 @@ package calc
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -41,15 +43,18 @@ type cohort struct {
 	points  []entity.SeriesPoint
 	rows    map[pointKey][]entity.CohortRow
 	objects map[entity.ID]entity.LinkEnd
+	tasks   map[entity.ID]entity.CohortRow
+	cross   map[crossKey]crossEvidence
 }
 
 // visibility is what the sources and the roles let a reader see of a cohort now.
 type visibility struct {
-	whole    bool
-	projects []entity.ID
-	areas    []entity.ID
-	objects  []entity.ID
-	notes    []entity.AccessNote
+	whole        bool
+	projects     []entity.ID
+	areas        []entity.ID
+	objects      []entity.ID
+	notes        []entity.AccessNote
+	areaProjects map[entity.ID][]entity.ID
 }
 
 type report struct {
@@ -125,7 +130,18 @@ func (u *UseCase) VisibleCohort(ctx context.Context, s entity.Subject, scope ent
 			hidden = true
 			continue
 		}
-		if (q.Role != "" && row.Role != q.Role) || (q.After != nil && !after(&row.Contribution, q.After)) || page.Next != nil {
+		contribution := row.Contribution
+		var basis crossEvidence
+		if isCrossMetric(q.MetricID) {
+			var restricted bool
+			basis, restricted = c.crossBasis(row, &v)
+			if restricted {
+				crossScore(&contribution, q.Estimator, &basis)
+				hidden = true
+			}
+			contribution.Evidence = nil
+		}
+		if (q.Role != "" && contribution.Role != q.Role) || (q.After != nil && !after(&contribution, q.After)) || page.Next != nil {
 			continue
 		}
 		if len(page.Items) == q.Limit {
@@ -133,7 +149,12 @@ func (u *UseCase) VisibleCohort(ctx context.Context, s entity.Subject, scope ent
 			page.Next = &entity.ContributionKey{ObjectID: last.ObjectID, ItemNo: last.ItemNo}
 			continue
 		}
-		page.Items = append(page.Items, c.item(row))
+		it := c.item(row)
+		it.Contribution = contribution
+		if isCrossMetric(q.MetricID) && !it.Object.Deleted {
+			c.crossItem(&it, &basis)
+		}
+		page.Items = append(page.Items, it)
 	}
 	page.Notes = notesOf(&v, hidden)
 	if _stateMetrics[q.MetricID] && len(page.Items) > 0 {
@@ -151,7 +172,10 @@ func (u *UseCase) cohortOf(ctx context.Context, org, revisionID entity.ID) (*coh
 		return c, nil
 	}
 	out, err, _ := u.flight.Do("cohort:"+revisionID.String(), func() (any, error) {
-		c := &cohort{at: u.d.Clock.Now(), rows: map[pointKey][]entity.CohortRow{}, objects: map[entity.ID]entity.LinkEnd{}}
+		c := &cohort{
+			at: u.d.Clock.Now(), rows: map[pointKey][]entity.CohortRow{}, objects: map[entity.ID]entity.LinkEnd{},
+			tasks: map[entity.ID]entity.CohortRow{}, cross: map[crossKey]crossEvidence{},
+		}
 		var rows []entity.CohortRow
 		err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 			var err error
@@ -164,14 +188,9 @@ func (u *UseCase) cohortOf(ctx context.Context, org, revisionID entity.ID) (*coh
 		if err != nil {
 			return nil, err
 		}
-		var ids []entity.ID
-		for i := range rows {
-			r := &rows[i]
-			k := keyOf(r.MetricID, r.Estimator, r.PointStart)
-			c.rows[k] = append(c.rows[k], *r)
-			if r.ObjectKind == entity.ObjectTask && !slices.Contains(ids, r.ObjectID) {
-				ids = append(ids, r.ObjectID)
-			}
+		ids, err := c.index(rows)
+		if err != nil {
+			return nil, err
 		}
 		objects, err := u.d.Facts.CurrentObjects(ctx, org, ids)
 		if err != nil {
@@ -190,6 +209,49 @@ func (u *UseCase) cohortOf(ctx context.Context, org, revisionID entity.ID) (*coh
 	return c, nil
 }
 
+func (c *cohort) index(rows []entity.CohortRow) ([]entity.ID, error) {
+	seen := map[entity.ID]bool{}
+	for i := range rows {
+		r := &rows[i]
+		k := keyOf(r.MetricID, r.Estimator, r.PointStart)
+		c.rows[k] = append(c.rows[k], *r)
+		switch r.ObjectKind {
+		case entity.ObjectTask:
+			seen[r.ObjectID] = true
+			if r.ProjectID != nil {
+				c.tasks[r.ObjectID] = *r
+			}
+		case entity.ObjectMergeRequest:
+			seen[r.ObjectID] = true
+		default:
+		}
+		if !isCrossMetric(r.MetricID) {
+			continue
+		}
+		key := crossKey{start: r.PointStart.UnixNano(), task: r.ObjectID}
+		if _, ok := c.cross[key]; ok {
+			continue
+		}
+		var b crossEvidence
+		if err := json.Unmarshal(r.Evidence, &b); err != nil {
+			return nil, fmt.Errorf("calc: read cross-metric evidence: %w", err)
+		}
+		c.cross[key] = b
+		for i := range b.MRs {
+			m := &b.MRs[i]
+			seen[m.ID] = true
+			if m.PipelineID != nil {
+				seen[*m.PipelineID] = true
+			}
+		}
+	}
+	ids := make([]entity.ID, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 // visibility decides the areas of the team and the areas the objects of the cohort are in now, then the
 // objects with their own restriction in the open ones (TZ 13.4, 13.5).
 func (u *UseCase) visibility(ctx context.Context, s entity.Subject, scope entity.Scope, teamID entity.ID, c *cohort) (visibility, error) {
@@ -204,8 +266,10 @@ func (u *UseCase) visibility(ctx context.Context, s entity.Subject, scope entity
 			areas = append(areas, a)
 		}
 	}
+	areaProjects := map[entity.ID][]entity.ID{}
 	for _, l := range links {
 		add(l.To)
+		areaProjects[l.To] = append(areaProjects[l.To], l.From)
 	}
 	for _, o := range c.objects {
 		add(o.AreaID)
@@ -227,7 +291,7 @@ func (u *UseCase) visibility(ctx context.Context, s entity.Subject, scope entity
 			return visibility{}, err
 		}
 	}
-	v := visibility{whole: scope.Whole(), projects: sortedIDs(scope.Projects()), objects: sortedIDs(scope.Objects()), notes: scope.Notes()}
+	v := visibility{whole: scope.Whole(), projects: sortedIDs(scope.Projects()), objects: sortedIDs(scope.Objects()), notes: scope.Notes(), areaProjects: areaProjects}
 	for _, a := range areas {
 		if scope.Area(a) {
 			v.areas = append(v.areas, a)
@@ -240,14 +304,22 @@ func (u *UseCase) visibility(ctx context.Context, s entity.Subject, scope entity
 // visible tells whether a reader sees a contribution: by the current area of the object and its own
 // restriction, a deleted object by the project it was counted in, a connection always.
 func (c *cohort) visible(v *visibility, r *entity.CohortRow) bool {
-	if r.ObjectKind != entity.ObjectTask {
+	switch r.ObjectKind {
+	case entity.ObjectTask:
+		if _, ok := c.objects[r.ObjectID]; !ok {
+			return r.ProjectID != nil && (v.whole || slices.Contains(v.projects, *r.ProjectID))
+		}
+		return c.objectVisible(v, r.ObjectID)
+	case entity.ObjectMergeRequest:
+		return c.objectVisible(v, r.ObjectID)
+	default:
 		return true
 	}
-	o, ok := c.objects[r.ObjectID]
-	if !ok {
-		return r.ProjectID != nil && (v.whole || slices.Contains(v.projects, *r.ProjectID))
-	}
-	return slices.Contains(v.areas, o.AreaID) && (!o.Restricted || slices.Contains(v.objects, o.ID))
+}
+
+func (c *cohort) objectVisible(v *visibility, id entity.ID) bool {
+	o, ok := c.objects[id]
+	return ok && slices.Contains(v.areas, o.AreaID) && (!o.Restricted || slices.Contains(v.objects, o.ID))
 }
 
 // series are the series of the cohort over what the reader sees and the filter selects, split by group; a
@@ -266,7 +338,16 @@ func (c *cohort) series(v *visibility, f *entity.ReportFilter) (out []entity.Ser
 				if def, ok := lookup(sp.MetricID); ok {
 					version = def.Version
 				}
-				out = append(out, entity.Series{MetricID: sp.MetricID, DefinitionVersion: version, Unit: sp.Unit, Estimator: sp.Estimator, Group: g})
+				group := g
+				if sp.MetricID == "A22" {
+					if events := eventGroup(sp.Estimator); events != nil {
+						if g != nil {
+							events.TaskType, events.SizeLabel = g.TaskType, g.SizeLabel
+						}
+						group = events
+					}
+				}
+				out = append(out, entity.Series{MetricID: sp.MetricID, DefinitionVersion: version, Unit: sp.Unit, Estimator: sp.Estimator, Group: group})
 				cur = &out[len(out)-1]
 			}
 			pt, h := c.point(v, f, g, sp)
@@ -274,6 +355,9 @@ func (c *cohort) series(v *visibility, f *entity.ReportFilter) (out []entity.Ser
 			cur.Points = append(cur.Points, pt)
 		}
 	}
+	out = slices.DeleteFunc(out, func(s entity.Series) bool {
+		return s.MetricID == "A22" && !slices.ContainsFunc(s.Points, func(p entity.Point) bool { return p.N != nil && *p.N > 0 })
+	})
 	return out, hidden
 }
 
@@ -287,12 +371,21 @@ func (c *cohort) point(v *visibility, f *entity.ReportFilter, g *entity.SeriesGr
 			hidden = true
 			continue
 		}
-		if selected(r, f, g) {
-			kept = append(kept, r.Contribution)
+		if !selected(r, f, g) || r.ObjectKind == entity.ObjectMergeRequest && !c.mrSelected(v, r, f, g) {
+			continue
 		}
+		row := r.Contribution
+		if isCrossMetric(sp.MetricID) {
+			b, restricted := c.crossBasis(r, v)
+			if restricted {
+				hidden = true
+				crossScore(&row, sp.Estimator, &b)
+			}
+		}
+		kept = append(kept, row)
 	}
 	pt := sp.Point
-	if regathered(sp) && len(kept) < len(rows) {
+	if regathered(sp) && (hidden || len(kept) < len(rows)) {
 		pt = regather(sp, kept)
 	}
 	pt.Contributions = nil
@@ -361,7 +454,7 @@ func (c *cohort) groups(v *visibility, f *entity.ReportFilter) []*entity.SeriesG
 func (c *cohort) item(r *entity.CohortRow) entity.CohortItem {
 	it := entity.CohortItem{Contribution: r.Contribution, TaskType: r.TaskType, SizeLabel: r.SizeLabel}
 	it.Object = entity.CohortObject{ID: r.ObjectID, Kind: r.ObjectKind}
-	if r.ObjectKind != entity.ObjectTask {
+	if r.ObjectKind != entity.ObjectTask && r.ObjectKind != entity.ObjectMergeRequest {
 		return it
 	}
 	o, ok := c.objects[r.ObjectID]
