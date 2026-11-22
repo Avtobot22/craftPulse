@@ -259,7 +259,7 @@ func TestGitLabAdapterReadsHistoryAndManifest(t *testing.T) {
 	assert.Equal(t, "https://example.com", probe.InstanceKey)
 	assert.Equal(t, adaptersdk.ScopeCheckStateMissing, probe.Scopes[1].State)
 	assert.NotNil(t, probe.Scopes[1].ReasonCode)
-	for _, capability := range probe.Capabilities {
+	for _, capability := range probe.Capabilities[:3] {
 		assert.Equal(t, adaptersdk.CapabilityStatePartial, capability.State)
 	}
 	in := e.target.Fetch

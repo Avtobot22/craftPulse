@@ -11,10 +11,13 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 )
 
-// Adapter implements the read operations for a GitLab self-managed instance.
+// Adapter implements the adapter contract for a GitLab self-managed instance.
 type Adapter struct {
 	adaptersdk.Unimplemented
 	client *adaptersdk.SourceClient
+
+	accessLimits  requestLimits
+	publishLimits requestLimits
 }
 
 // New constructs the GitLab adapter around the SDK source client.
@@ -57,13 +60,15 @@ func (v serverVersion) binding(base string) (adaptersdk.SourceBinding, error) {
 }
 
 type project struct {
-	ID            int64      `json:"id"`
-	Name          string     `json:"name"`
-	Path          string     `json:"path_with_namespace"`
-	DefaultBranch string     `json:"default_branch"`
-	Visibility    string     `json:"visibility"`
-	WebURL        string     `json:"web_url"`
-	UpdatedAt     *time.Time `json:"updated_at"`
+	ID                  int64      `json:"id"`
+	Name                string     `json:"name"`
+	Path                string     `json:"path_with_namespace"`
+	DefaultBranch       string     `json:"default_branch"`
+	Archived            bool       `json:"archived"`
+	MergeRequestsAccess string     `json:"merge_requests_access_level"`
+	Visibility          string     `json:"visibility"`
+	WebURL              string     `json:"web_url"`
+	UpdatedAt           *time.Time `json:"updated_at"`
 }
 
 func (s source) project(ctx context.Context, projectID int64) (project, error) {
@@ -120,14 +125,17 @@ func (a *Adapter) Probe(ctx context.Context, call adaptersdk.Call, in adaptersdk
 			outcomes[i].add(reason)
 		}
 	}
+	if err := call.BindSource(ctx, secret, binding); err != nil {
+		return adaptersdk.ProbeResult{}, err
+	}
 	now := time.Now().UTC()
+	webhook := probeWebhook(ctx, call, now)
 	out.Capabilities = []adaptersdk.Capability{
 		outcomes[0].capability(adaptersdk.CapabilityCapabilityReadCurrent, now),
 		outcomes[1].capability(adaptersdk.CapabilityCapabilityReadLinks, now),
 		outcomes[2].capability(adaptersdk.CapabilityCapabilityReadPermissions, now),
-	}
-	if err := call.BindSource(ctx, secret, binding); err != nil {
-		return adaptersdk.ProbeResult{}, err
+		a.probeBot(ctx, call, binding, collector, token, out.Scopes, now),
+		webhook,
 	}
 	return out, nil
 }

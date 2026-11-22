@@ -1,0 +1,172 @@
+{
+  "/api/v4/projects/7": {
+    "id": 7,
+    "name": "Source Checks",
+    "path_with_namespace": "org/source-checks",
+    "visibility": "private",
+    "default_branch": "main",
+    "merge_requests_access_level": "enabled"
+  },
+  "/api/v4/projects/8": {
+    "id": 8,
+    "name": "No Write",
+    "path_with_namespace": "org/no-write",
+    "visibility": "private",
+    "default_branch": "main",
+    "merge_requests_access_level": "enabled"
+  },
+  "/api/v4/projects/12": {
+    "id": 12,
+    "path_with_namespace": "org/public-fixture",
+    "visibility": "public"
+  },
+  "/api/v4/projects/13": {
+    "id": 13,
+    "path_with_namespace": "org/internal-fixture",
+    "visibility": "internal"
+  },
+  "/api/v4/projects/7/members/all/4": {
+    "id": 4,
+    "state": "blocked",
+    "access_level": 40
+  },
+  "/api/v4/projects/7/members/all/7": {
+    "id": 7,
+    "state": "active",
+    "access_level": 20,
+    "membership_state": "active"
+  },
+  "/api/v4/projects/7/members/all/8": {
+    "id": 8,
+    "state": "active",
+    "access_level": 20
+  },
+  "/api/v4/projects/7/members/all/11": {
+    "id": 11,
+    "state": "active",
+    "access_level": 10
+  },
+  "/api/v4/projects/13/members/all/7": {
+    "id": 7,
+    "state": "active",
+    "access_level": 20
+  },
+  "/api/v4/users/4": {
+    "id": 4,
+    "state": "blocked"
+  },
+  "/api/v4/users/10": {
+    "id": 10,
+    "state": "active"
+  },
+  "bot": {
+    "id": 9,
+    "username": "mr-bot",
+    "state": "active"
+  },
+  "write_scope": {
+    "scopes": [
+      "api"
+    ],
+    "active": true
+  },
+  "bot_membership": {
+    "id": 9,
+    "state": "active",
+    "access_level": 20
+  },
+  "note": {
+    "id": 1234,
+    "author": {
+      "id": 9
+    },
+    "system": false,
+    "noteable_id": 10,
+    "noteable_type": "MergeRequest",
+    "noteable_iid": 1,
+    "project_id": 7
+  },
+  "other_note": [
+    {
+      "id": 1235,
+      "author": {
+        "id": 2
+      },
+      "body": "A regular note"
+    }
+  ],
+  "merge_request": {
+    "id": 10,
+    "iid": 1,
+    "project_id": 7,
+    "sha": "1111111111111111111111111111111111111111",
+    "web_url": "https://example.com/demo/project-7/-/merge_requests/1"
+  },
+  "mr_webhook": {
+    "object_kind": "merge_request",
+    "project": {
+      "id": 7
+    },
+    "object_attributes": {
+      "id": 10,
+      "iid": 1,
+      "target_project_id": 7,
+      "action": "update"
+    }
+  },
+  "note_webhook": {
+    "object_kind": "note",
+    "project_id": 7,
+    "object_attributes": {
+      "id": 25,
+      "noteable_type": "MergeRequest",
+      "noteable_id": 10
+    },
+    "merge_request": {
+      "id": 10,
+      "iid": 1
+    }
+  },
+  "pipeline_webhook": {
+    "object_kind": "pipeline",
+    "project": {
+      "id": 7
+    },
+    "object_attributes": {
+      "id": 32,
+      "iid": 2
+    },
+    "merge_request": {
+      "id": 10,
+      "iid": 1
+    }
+  },
+  "job_webhook": {
+    "object_kind": "build",
+    "project_id": 7,
+    "build_id": 36,
+    "pipeline_id": 32,
+    "commit": {
+      "id": 32
+    }
+  },
+  "issue_note_webhook": {
+    "object_kind": "note",
+    "object_attributes": {
+      "id": 26,
+      "noteable_type": "Issue"
+    }
+  },
+  "other_webhook": {
+    "object_kind": "push"
+  },
+  "merge_requests": [
+    {
+      "id": 10,
+      "iid": 1,
+      "project_id": 7,
+      "sha": "1111111111111111111111111111111111111111",
+      "web_url": "https://example.com/demo/project-7/-/merge_requests/1"
+    }
+  ]
+}
