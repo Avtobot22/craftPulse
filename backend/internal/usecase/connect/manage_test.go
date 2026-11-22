@@ -26,6 +26,7 @@ func TestGitLabConnectionCredentials(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []entity.CredentialsInput{{Purpose: "webhook_secret", Secret: "rotated"}}, in)
 }
+
 func TestGitLabConnectionCredentialsSkipsBlankOptionalFields(t *testing.T) {
 	t.Parallel()
 	c := entity.Connection{Provider: entity.ProviderGitLab, AdapterKind: entity.AdapterBuiltin}
