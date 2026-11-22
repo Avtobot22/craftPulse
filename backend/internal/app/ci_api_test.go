@@ -280,26 +280,34 @@ func TestCIUpload_PartialChannelAndRepository(t *testing.T) {
 	m.SchemaId = envelope.ManifestSchemaIdCiRuns
 	m.Source.Provider, m.Source.InstanceKey = envelope.SourceProviderGitlab, "gitlab.example"
 	m.Area.Kind, m.Area.NativeId = envelope.AreaRefKindRepository, "42"
-	recs := []*envelope.Record{}
-	for _, repo := range []string{"42", "99"} {
-		for _, schema := range envelope.RecordSchemas() {
-			if schema.Kind == "ci_run" {
-				var p map[string]any
-				require.NoError(t, json.Unmarshal(schema.Example, &p))
-				p["project_native_id"] = repo
-				recs = append(recs, &envelope.Record{RecordClass: envelope.RecordRecordClassObject, RecordKind: "ci_run", PayloadSchema: "ci_run/1", NativeId: repo, Payload: mustMarshal(t, p)})
-			}
+	for _, schema := range envelope.RecordSchemas() {
+		if schema.Kind != "ci_run" {
+			continue
 		}
+		t.Run(schema.Version, func(t *testing.T) {
+			recs := make([]*envelope.Record, 0, 2)
+			for _, repo := range []string{"42", "99"} {
+				var payload map[string]any
+				require.NoError(t, json.Unmarshal(schema.Example, &payload))
+				payload["project_native_id"] = repo
+				recs = append(recs, &envelope.Record{
+					RecordClass: envelope.RecordRecordClassObject, RecordKind: "ci_run",
+					PayloadSchema: "ci_run/" + schema.Version, NativeId: repo + schema.Version, Payload: mustMarshal(t, payload),
+				})
+			}
+			resp := e.uploadCI(t, e.token.Value, pack(t, m, recs...))
+			require.Equal(t, http.StatusAccepted, resp.Code, resp.Body.String())
+			id := decode[acceptedBody](t, resp).ReceiptID
+			require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(id)))
+			rc := e.readCI(t, id, e.token.Value)
+			assert.Equal(t, "partial", rc.Status)
+			assert.Equal(t, 1, rc.AcceptedCount)
+			assert.Equal(t, 1, rc.RejectedCount)
+			rows := e.records(t, entity.ID(id))
+			require.Len(t, rows, 2)
+			assert.Equal(t, entity.RecordOutsideScope, rows[1].ReasonCode)
+		})
 	}
-	resp = e.uploadCI(t, e.token.Value, pack(t, m, recs...))
-	require.Equal(t, http.StatusAccepted, resp.Code, resp.Body.String())
-	id = decode[acceptedBody](t, resp).ReceiptID
-	require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(id)))
-	rc = e.readCI(t, id, e.token.Value)
-	assert.Equal(t, "partial", rc.Status)
-	assert.Equal(t, 1, rc.AcceptedCount)
-	assert.Equal(t, 1, rc.RejectedCount)
-	assert.Equal(t, entity.RecordOutsideScope, e.records(t, entity.ID(id))[1].ReasonCode)
 }
 
 func mustMarshal(t *testing.T, value any) []byte {
