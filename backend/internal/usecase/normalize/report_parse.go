@@ -60,6 +60,8 @@ type parsedReport struct {
 	execution     *envelope.JenkinsExecutionManifestV1
 	tests         []parsedTest
 	coverage      []parsedCoverage
+	code          *entity.CodeFacts
+	cloneExcluded map[string]bool
 	// excluded are the files of a coverage report outside the repository.
 	excluded []entity.SkippedTarget
 }
@@ -67,6 +69,16 @@ type parsedReport struct {
 // _parsers is the registry of report parsers; a format without a parser here is not read yet, and its record
 // stays accepted without a report.
 var _parsers = []reportParser{
+	{
+		format: entity.CodeFormatLizard, version: "lizard-csv/1",
+		kinds: []string{entity.AnalysisCode}, accepts: func(v string) bool { return v == "1" || v == "2" },
+		parse: parseLizard,
+	},
+	{
+		format: entity.CodeFormatJscpd, version: "jscpd-json/2",
+		kinds: []string{entity.AnalysisCode}, accepts: func(v string) bool { return v == "1" || v == "2" },
+		parse: parseJscpd,
+	},
 	{
 		format: "sarif", version: "sarif-2.1.0/1",
 		kinds: []string{

@@ -724,6 +724,20 @@ components:
       description: Версия 1 файла scan-manifest.json. Один элемент tools описывает один запуск инструмента; значения
         секретов и выдержки evidence не передаются.
 
+    ScanFunctionThresholds:
+      type: object
+      additionalProperties: false
+      required: [ccn_threshold, nloc_threshold]
+      properties:
+        ccn_threshold:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        nloc_threshold:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+
     ScanToolRun:
       type: object
       required:
@@ -895,6 +909,8 @@ components:
             $ref: "#/components/schemas/ScanExcludedTarget"
           description: Пути, которые область профиля не анализирует (vendor, сгенерированный код, каталоги сборки).
             Исключение задаёт границу области и не делает запуск неполным, в отличие от skipped_targets.
+        function_thresholds:
+          $ref: "#/components/schemas/ScanFunctionThresholds"
         test_targets:
           type: array
           maxItems: 10000

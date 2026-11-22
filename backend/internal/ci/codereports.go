@@ -44,9 +44,8 @@ func mergeSARIF(parts []string, dst string) error {
 	return os.WriteFile(dst, data, 0o600)
 }
 
-// stripClones copies the jscpd JSON report without the code of the copies: the report keeps files,
-// lines and tokens of every clone.
-func stripClones(src, dst string) error {
+// stripClones omits source snippets and records the paths excluded before jscpd counted lines.
+func stripClones(src, dst string, excluded []string) error {
 	data, err := os.ReadFile(src) //nolint:gosec // the step names its own report
 	if err != nil {
 		return fmt.Errorf("read clone report: %w", err)
@@ -64,6 +63,7 @@ func stripClones(src, dst string) error {
 			delete(clone, "fragment")
 		}
 	}
+	report["scope_excluded_paths"] = excluded
 	if data, err = json.Marshal(report); err != nil {
 		return fmt.Errorf("encode clone report: %w", err)
 	}
@@ -74,7 +74,7 @@ func stripClones(src, dst string) error {
 // cyclomatic complexity and NLOC.
 func functionFacts(r io.Reader) ([]string, error) {
 	cr := csv.NewReader(r)
-	cr.FieldsPerRecord = 11
+	cr.FieldsPerRecord = -1
 	var out []string
 	for {
 		rec, err := cr.Read()
@@ -83,6 +83,12 @@ func functionFacts(r io.Reader) ([]string, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("function report is not Lizard CSV: %w", err)
+		}
+		if (len(rec) == 2 && rec[0] == "craftpulse-lizard") || (len(rec) == 3 && rec[0] == "file") {
+			continue
+		}
+		if len(rec) != 11 {
+			return nil, errors.New("function report has an invalid CSV record")
 		}
 		nloc, ccn, file, name, start := rec[0], rec[1], rec[6], rec[7], rec[9]
 		out = append(out, functionFact(path.Clean(file), start, name, ccn, nloc))

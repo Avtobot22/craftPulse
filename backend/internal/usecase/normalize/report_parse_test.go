@@ -293,7 +293,7 @@ func TestParseSARIF_VersionAfterRuns(t *testing.T) {
 
 func TestFormatsWithoutParser(t *testing.T) {
 	t.Parallel()
-	for _, format := range []string{"trivy_json", "gitleaks_json", "lizard_csv"} {
+	for _, format := range []string{"trivy_json", "gitleaks_json"} {
 		_, ok := parserOf(format)
 		assert.False(t, ok, format)
 	}

@@ -1,0 +1,22 @@
+{
+  "duplicates": [
+    {
+      "firstFile": {
+        "end": 25,
+        "name": "invoices.py",
+        "start": 1
+      },
+      "format": "python",
+      "secondFile": {
+        "end": 25,
+        "name": "orders.py",
+        "start": 1
+      }
+    }
+  ],
+  "statistics": {
+    "total": {
+      "lines": 50
+    }
+  }
+}

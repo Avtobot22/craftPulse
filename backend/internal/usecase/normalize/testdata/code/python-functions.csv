@@ -1,0 +1,7 @@
+craftpulse-lizard,2
+file,complex.py,26
+26,14,95,1,26,status_text@1-26@complex.py,complex.py,status_text,status_text( code ),1,26
+file,long.py,59
+59,1,458,1,59,accumulate@1-59@long.py,long.py,accumulate,accumulate( values ),1,59
+file,simple.py,2
+2,1,9,1,2,double@1-2@simple.py,simple.py,double,double( value ),1,2

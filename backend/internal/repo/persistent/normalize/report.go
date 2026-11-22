@@ -75,7 +75,10 @@ func (r *Repo) InsertReport(ctx context.Context, orgID entity.ID, rep *entity.Sc
 	if err := r.insertTests(ctx, orgID, id, rep, rows.Tests); err != nil {
 		return err
 	}
-	return r.insertCoverage(ctx, orgID, id, rep.KnownSeq, rows.Coverage)
+	if err := r.insertCoverage(ctx, orgID, id, rep.KnownSeq, rows.Coverage); err != nil {
+		return err
+	}
+	return r.insertCodeFacts(ctx, orgID, id, rows.Code)
 }
 
 func (r *Repo) insertFindings(ctx context.Context, orgID entity.ID, id uuid.UUID, seq int64, findings []entity.FindingOccurrence) error {

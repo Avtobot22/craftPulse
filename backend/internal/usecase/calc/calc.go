@@ -94,6 +94,7 @@ type Deps struct {
 	// Collection is nil where no source is collected; then only the history of the facts tells completeness.
 	Collection Collection
 	Activity   ActivityCollection
+	Code       CodeReports
 	Rights     Rights
 	// Links is nil where the coverage of links is not computed; its series then get no links.
 	Links   Links

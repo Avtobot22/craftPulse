@@ -1,0 +1,7 @@
+craftpulse-lizard,2
+file,service.go,5
+3,1,14,1,3,Remove@6-8@service.go,service.go,Remove,Remove name string,6,8
+file,service_test.go,9
+4,1,29,1,4,TestRemove@8-11@service_test.go,service_test.go,TestRemove,TestRemove t * testing . T,8,11
+file,testdata/sample.go,4
+3,1,9,0,3,Sample@4-6@testdata/sample.go,testdata/sample.go,Sample,Sample,4,6

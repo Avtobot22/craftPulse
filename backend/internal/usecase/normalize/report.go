@@ -35,6 +35,8 @@ type reportCandidate struct {
 	findings  []entity.FindingOccurrence
 	tests     []parsedTest
 	coverage  []entity.CoverageFact
+	code      *entity.CodeFacts
+	tool      *envelope.ScanToolRun
 	rejected  string
 }
 
@@ -77,10 +79,12 @@ func (in *input) reportFile(rec *envelope.Record, b baseFact, scan *envelope.Sca
 
 // provenance fills a report from its run of the scan manifest (DR-009).
 func (in *input) provenance(c *reportCandidate, t *envelope.ScanToolRun) error {
+	c.tool = t
 	r := &c.report
 	r.Mode, r.Producer, r.ProducerVersion = string(t.Mode), t.Producer, t.ProducerVersion
 	r.ProfileID, r.DBVersion, r.DBPublishedAt = deref(t.ProfileId), deref(t.DbVersion), t.DbPublishedAt
 	r.SHA, r.ArtifactDigest = deref(t.Sha), deref(t.ArtifactDigest)
+	c.paths.sha = r.SHA
 	started, finished := t.StartedAt, t.FinishedAt
 	if !started.IsZero() {
 		r.StartedAt = &started
@@ -212,6 +216,7 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 				continue
 			}
 			c.findings, c.tests, c.coverage = parsed.findings, parsed.tests, coverage
+			c.code = parsed.scopedCodeFacts(c.tool)
 			c.report.SkippedTargets = append(c.report.SkippedTargets, parsed.excluded...)
 			c.report.SchemaVersion, c.report.ParserVersion = parsed.formatVersion, first.parser.version
 		}
@@ -353,7 +358,7 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 			id := w.objects[*c.attempt].ID
 			r.AttemptID = &id
 		}
-		rows := entity.ReportRows{Findings: c.findings, Tests: w.executions(c, r.AttemptID, attempts), Coverage: c.coverage}
+		rows := entity.ReportRows{Findings: c.findings, Tests: w.executions(c, r.AttemptID, attempts), Coverage: c.coverage, Code: c.code}
 		if err := w.u.d.Repo.InsertReport(ctx, w.org, &r, rows); err != nil {
 			return err
 		}

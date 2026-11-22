@@ -1,0 +1,7 @@
+craftpulse-lizard,2
+file,__tests__/helper.js,3
+3,1,7,0,3,sample@1-3@__tests__/helper.js,__tests__/helper.js,sample,sample ( ),1,3
+file,service.test.ts,5
+4,1,19,0,4,testRemove@3-6@service.test.ts,service.test.ts,testRemove,testRemove ( ),3,6
+file,service.ts,4
+4,1,17,1,4,remove@1-4@service.ts,service.ts,remove,remove ( path ),1,4

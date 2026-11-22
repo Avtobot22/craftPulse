@@ -138,7 +138,8 @@ func (u *UseCase) placeAreas(ctx context.Context, org entity.ID, in *input, obje
 	for _, k := range in.keys() {
 		o := objects[k]
 		switch k.Kind {
-		case entity.ObjectTask, entity.ObjectCIAttempt, entity.ObjectCIJob:
+		case entity.ObjectTask, entity.ObjectCIAttempt, entity.ObjectCIJob,
+			entity.ObjectCodeFile, entity.ObjectCodeFunction, entity.ObjectCloneGroup, entity.ObjectCodeReport:
 			continue
 		case entity.ObjectMergeRequest, entity.ObjectCIRun:
 			if o.CurrentAreaID == nil {

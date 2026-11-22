@@ -2,6 +2,7 @@
 """Exercise a code profile image without a network: tool versions, rule fixtures, a job run with dependency,
 build and broken files, a timeout and the base and head commits of a fixture project."""
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -139,7 +140,7 @@ def check_job(image, platform, root, p):
         raise RuntimeError("scan manifest does not have one run per tool")
     excluded = {(path, reason) for path, reason in p.expected("scope", "excluded")} | extra["excluded"]
     tests = sorted(path for (path,) in p.expected("scope", "test"))
-    configs = {p.linter: p.dir / p.config, "jscpd": p.dir / "jscpd.json"}
+    configs = {p.linter: p.dir / p.config, "jscpd": p.dir / "jscpd.json", "lizard": p.dir / "profile.json"}
     for producer, tool in runs.items():
         config = hashlib.sha256(configs[producer].read_bytes()).hexdigest() if producer in configs else None
         complete = "partial" if producer == p.linter and extra["broken"] else "complete"
@@ -158,16 +159,50 @@ def check_job(image, platform, root, p):
         raise RuntimeError("eslint run does not name the TypeScript parser")
     reports = {producer: files[tool["reports"][0]["file"]["path"]] for producer, tool in runs.items()}
     for producer, report in reports.items():
+        if producer == "jscpd":
+            continue
         for path, _ in excluded:
             if (path + "/").encode() in report or path.encode() + b'"' in report:
                 raise RuntimeError(producer + " report covers the excluded path " + path)
         if b".hidden" in report or b".venv" in report:
             raise RuntimeError(producer + " report covers a hidden directory")
+    clone_report = runs["jscpd"]["reports"][0]
+    if clone_report["report_format"] != "jscpd_json" or clone_report["format_version"] != "2":
+        raise RuntimeError("unexpected jscpd report format")
     clones = json.loads(reports["jscpd"])
+    if set(clones.get("scope_excluded_paths", [])) != {path for path, _ in excluded}:
+        raise RuntimeError("jscpd report scope differs from the scan manifest")
     if len(clones["duplicates"]) != 1 or b"fragment" in reports["jscpd"]:
         raise RuntimeError("clone report must keep the copy coordinates without its code")
-    if not [line for line in reports["lizard"].decode().splitlines() if line]:
-        raise RuntimeError("function report is empty")
+    for clone in clones["duplicates"]:
+        for member in (clone["firstFile"]["name"], clone["secondFile"]["name"]):
+            if any(member == path or member.startswith(path + "/") for path, _ in excluded):
+                raise RuntimeError("jscpd clone covers an excluded path: " + member)
+            if ".hidden" in member or ".venv" in member:
+                raise RuntimeError("jscpd clone covers a hidden directory: " + member)
+    lizard = runs["lizard"]
+    report = lizard["reports"][0]
+    if report["report_format"] != "lizard_csv" or report["format_version"] != "2":
+        raise RuntimeError("unexpected Lizard report format")
+    if lizard.get("function_thresholds") != p.spec["functions"]:
+        raise RuntimeError("Lizard run thresholds differ from the profile")
+    rows = csv.reader(reports["lizard"].decode().splitlines())
+    if next(rows, None) != ["craftpulse-lizard", "2"]:
+        raise RuntimeError("Lizard report has no version 2 header")
+    inventory, functions = set(), set()
+    for row in rows:
+        if len(row) == 3 and row[0] == "file":
+            if int(row[2]) < 0:
+                raise RuntimeError("negative file NLOC")
+            inventory.add(row[1])
+        elif len(row) == 11:
+            functions.add(row[6])
+        else:
+            raise RuntimeError("unexpected record in Lizard report")
+    if not functions or not (functions | set(tests)) <= inventory:
+        raise RuntimeError("Lizard file inventory does not cover the reported functions and test files")
+    if any(file == path or file.startswith(path + "/") for file in inventory for path, _ in excluded):
+        raise RuntimeError("Lizard file inventory contains an excluded path")
     lint = json.loads(reports[p.linter])
     if lint["version"] != "2.1.0" or (extra["broken"] and extra["broken"].encode() in reports[p.linter]):
         raise RuntimeError("unexpected linter report")

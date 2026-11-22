@@ -347,6 +347,8 @@ type NormalizeRepo interface {
 	ReportedRecords(ctx context.Context, orgID, receiptID entity.ID, nos []int) ([]int, error)
 	// InsertReport writes a report with its findings, test executions or coverage; the cases of the tests are kept per area.
 	InsertReport(ctx context.Context, orgID entity.ID, rep *entity.ScanReport, rows entity.ReportRows) error
+	CodeReportAt(ctx context.Context, orgID entity.ID, scope entity.CodeScope, seq int64) (*entity.CodeReport, error)
+	ReceiptCodeScopes(ctx context.Context, orgID, receiptID entity.ID) ([]entity.CodeScope, error)
 	ReceiptReports(ctx context.Context, orgID, receiptID entity.ID) ([]entity.ReportFindings, error)
 	ReportsByID(ctx context.Context, orgID entity.ID, reportIDs []entity.ID) ([]entity.ReportFindings, error)
 	LastBranchReports(ctx context.Context, orgID entity.ID, components []entity.ID, refs []string) ([]entity.ReportFindings, error)

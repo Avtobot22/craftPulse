@@ -4140,6 +4140,41 @@
                 }
               },
               {
+                "name": "function_thresholds",
+                "schema": {
+                  "types": [
+                    "object"
+                  ],
+                  "properties": [
+                    {
+                      "name": "ccn_threshold",
+                      "schema": {
+                        "types": [
+                          "integer"
+                        ],
+                        "minimum": 1,
+                        "maximum": 2147483647
+                      }
+                    },
+                    {
+                      "name": "nloc_threshold",
+                      "schema": {
+                        "types": [
+                          "integer"
+                        ],
+                        "minimum": 1,
+                        "maximum": 2147483647
+                      }
+                    }
+                  ],
+                  "required": [
+                    "ccn_threshold",
+                    "nloc_threshold"
+                  ],
+                  "closed": true
+                }
+              },
+              {
                 "name": "test_targets",
                 "schema": {
                   "types": [

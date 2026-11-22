@@ -468,6 +468,31 @@ SELECT sqlc.arg(organization_id), sqlc.arg(report_id), unnest(sqlc.arg(paths)::t
     unnest(sqlc.arg(kinds)::text[]), unnest(sqlc.arg(covered)::integer[]), unnest(sqlc.arg(executable)::integer[]),
     NULLIF(unnest(sqlc.arg(line_map_keys)::text[]), ''), sqlc.arg(known_seq);
 
+-- name: InsertCodeFacts :exec
+INSERT INTO normalize.code_report_fact (organization_id, report_id, facts)
+VALUES (sqlc.arg(organization_id), sqlc.arg(report_id), sqlc.arg(facts));
+
+-- name: CodeReportAt :one
+SELECT r.id, r.completeness, r.skipped_count, r.skipped_targets, f.facts
+FROM normalize.report r
+JOIN normalize.code_report_fact f ON f.organization_id = r.organization_id AND f.report_id = r.id
+WHERE r.organization_id = sqlc.arg(organization_id)
+  AND r.area_id = sqlc.arg(area_id) AND r.component_id IS NOT DISTINCT FROM sqlc.narg(component_id)::uuid
+  AND r.sha = sqlc.arg(sha) AND r.report_format = sqlc.arg(format)
+  AND r.producer IS NOT DISTINCT FROM sqlc.narg(producer)::text AND r.profile_id IS NOT DISTINCT FROM sqlc.narg(profile_id)::text
+  AND r.known_seq <= sqlc.arg(known_seq)
+  AND r.exit_class NOT IN ('timeout', 'failed')
+  AND r.report_format IN ('lizard_csv', 'jscpd_json')
+ORDER BY r.known_seq DESC, r.record_no DESC, r.id DESC
+LIMIT 1;
+
+-- name: ReceiptCodeScopes :many
+SELECT DISTINCT r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id
+FROM normalize.report r
+JOIN normalize.code_report_fact f ON f.organization_id = r.organization_id AND f.report_id = r.id
+WHERE r.organization_id = $1 AND r.receipt_id = $2 AND r.sha IS NOT NULL
+ORDER BY r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id;
+
 -- name: ReceiptReports :many
 SELECT r.id, r.area_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language, COALESCE(r.ref_name, '')::text AS ref_name,
     COALESCE(r.sha, '')::text AS sha, r.exit_class, r.completeness, r.started_at, r.finished_at, r.known_seq,
@@ -476,6 +501,7 @@ FROM normalize.report r
 LEFT JOIN normalize.ci_attempt_version a ON a.organization_id = r.organization_id AND a.attempt_id = r.attempt_id AND a.superseded_seq IS NULL
 LEFT JOIN normalize.repository_version v ON v.organization_id = r.organization_id AND v.repository_id = r.area_id AND v.superseded_seq IS NULL
 WHERE r.organization_id = sqlc.arg(organization_id) AND r.receipt_id = sqlc.arg(receipt_id)
+    AND r.report_format NOT IN ('lizard_csv', 'jscpd_json')
 ORDER BY r.record_no;
 
 -- name: ReportOccurrences :many
@@ -500,6 +526,7 @@ SELECT DISTINCT ON (r.component_id, COALESCE(r.language, ''), r.report_kind, r.r
 FROM normalize.report r
 WHERE r.organization_id = sqlc.arg(organization_id) AND r.component_id = ANY (sqlc.arg(component_ids)::uuid[])
     AND r.ref_name = ANY (sqlc.arg(ref_names)::text[])
+    AND r.report_format NOT IN ('lizard_csv', 'jscpd_json')
 ORDER BY r.component_id, COALESCE(r.language, ''), r.report_kind, r.ref_name, COALESCE(r.finished_at, r.started_at) DESC NULLS LAST, r.known_seq DESC;
 
 -- name: DefaultBranches :many
