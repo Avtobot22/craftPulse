@@ -64,12 +64,13 @@ func (m calcMetrics) ChainPublished(d time.Duration) { m.chain.Observe(d.Seconds
 // settings and the confirmation of a target from process, the state of collection from sync and the rights of a
 // reader from access. None of them depends on calc.
 type calcModules struct {
-	structure  calc.Structure
-	facts      calc.Facts
-	settings   calc.Settings
-	collection calc.Collection
-	activity   calc.ActivityCollection
-	rights     calc.Rights
+	structure    calc.Structure
+	facts        calc.Facts
+	testCoverage calc.TestCoverageFacts
+	settings     calc.Settings
+	collection   calc.Collection
+	activity     calc.ActivityCollection
+	rights       calc.Rights
 }
 
 func newCalc(pool *pgxpool.Pool, m calcModules, c clock.Clock, reg prometheus.Registerer) (*calc.UseCase, error) {
@@ -85,7 +86,7 @@ func newCalc(pool *pgxpool.Pool, m calcModules, c clock.Clock, reg prometheus.Re
 	// calc only reads links; their decisions stay with normalize (TZ 10.3).
 	links := linkuc.New(linkuc.Deps{Repo: linkrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Clock: c, NewID: newID})
 	return calc.New(calc.Deps{
-		Structure: m.structure, Facts: m.facts, Settings: m.settings, Collection: m.collection, Activity: m.activity, Rights: m.rights, Links: links,
+		Structure: m.structure, Facts: m.facts, TestCoverage: m.testCoverage, Settings: m.settings, Collection: m.collection, Activity: m.activity, Rights: m.rights, Links: links,
 		Repo: calcrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Queue: queue.New(jobs), Tx: tx,
 		Metrics: metrics, Clock: c, NewID: newID,
 	}), nil

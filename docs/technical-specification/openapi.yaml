@@ -2997,7 +2997,7 @@ paths:
                 allowed_failures: 0
                 attempt_history: complete
                 reports: [{analysis_kind: junit, state: received}, {analysis_kind: coverage, state: missing}]
-                tests: {state: ASSESSED, passed: 412, failed: 0, error: 0, skipped: 3}
+                tests: {state: ASSESSED, passed: 412, failed: 0, error: 0, skipped: 3, distinct_cases: 415, executions: 415}
                 source_url: 'https://gitlab.example/core/-/pipelines/7781'
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -7321,7 +7321,16 @@ components:
             failed: {type: [integer, 'null']}
             error: {type: [integer, 'null']}
             skipped: {type: [integer, 'null']}
+            distinct_cases: {type: [integer, 'null'], minimum: 0}
+            executions: {type: [integer, 'null'], minimum: 0}
+        coverage: {$ref: '#/components/schemas/PipelineCoverage'}
         source_url: {type: [string, 'null'], format: uri}
+    PipelineCoverage:
+      type: object
+      required: [line, branch]
+      properties:
+        line: {$ref: '#/components/schemas/MetricValue'}
+        branch: {$ref: '#/components/schemas/MetricValue'}
     Attempt:
       type: object
       required: [id, job_key, config_fingerprint, attempt_no, outcome, native_status, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_seconds, source_url]

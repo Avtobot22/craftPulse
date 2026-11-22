@@ -26,6 +26,7 @@ const (
 
 // parsedTest is a test case of a JUnit report; ordinal counts the same case within the report.
 type parsedTest struct {
+	suite      string
 	key        string
 	keyHash    []byte
 	ordinal    int
@@ -132,7 +133,7 @@ func (c *junitCase) test(seen map[string]int) (parsedTest, error) {
 	if n > _maxOrdinal {
 		return parsedTest{}, invalidReport("junit_xml: case %.32q is repeated more than %d times", c.name, _maxOrdinal)
 	}
-	t := parsedTest{key: caseKey(c.suite, c.class, c.name), keyHash: hash, ordinal: n, outcome: entity.TestPassed, durationMS: c.duration}
+	t := parsedTest{suite: c.suite, key: caseKey(c.suite, c.class, c.name), keyHash: hash, ordinal: n, outcome: entity.TestPassed, durationMS: c.duration}
 	switch {
 	case c.failed:
 		t.outcome = entity.TestFailed

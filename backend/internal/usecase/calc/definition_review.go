@@ -80,5 +80,5 @@ func SetDefinitions(set string) []Definition {
 
 // registry is every definition in force.
 func registry() []Definition {
-	return slices.Concat(_definitions, _reviewDefinitions, _eventDefinitions, _linkDefinitions, _ciDefinitions, _activityDefinitions)
+	return slices.Concat(_definitions, _reviewDefinitions, _eventDefinitions, _linkDefinitions, _ciDefinitions, _activityDefinitions, _testCoverageDefinitions)
 }

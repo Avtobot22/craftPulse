@@ -457,10 +457,10 @@ WHERE organization_id = sqlc.arg(organization_id) AND area_id = sqlc.arg(area_id
 -- shifted by one.
 -- name: InsertTestExecutions :exec
 INSERT INTO normalize.test_execution (organization_id, report_id, test_case_id, attempt_id, config_fingerprint, ordinal, outcome,
-    duration_ms, run_started_at, known_seq)
+    duration_ms, run_started_at, known_seq, suite)
 SELECT sqlc.arg(organization_id), sqlc.arg(report_id), unnest(sqlc.arg(test_case_ids)::uuid[]), sqlc.narg(attempt_id),
     unnest(sqlc.arg(config_fingerprints)::bytea[]), unnest(sqlc.arg(ordinals)::smallint[]), unnest(sqlc.arg(outcomes)::text[]),
-    NULLIF(unnest(sqlc.arg(durations_ms)::bigint[]), 0) - 1, sqlc.arg(run_started_at), sqlc.arg(known_seq);
+    NULLIF(unnest(sqlc.arg(durations_ms)::bigint[]), 0) - 1, sqlc.arg(run_started_at), sqlc.arg(known_seq), unnest(sqlc.arg(suites)::text[]);
 
 -- name: InsertCoverageFacts :exec
 INSERT INTO normalize.coverage_fact (organization_id, report_id, path, path_hash, kind, covered, executable, line_map_key, known_seq)
@@ -512,29 +512,59 @@ SELECT DISTINCT run_id FROM normalize.ci_attempt_version
 WHERE organization_id = sqlc.arg(organization_id) AND run_id = ANY (sqlc.arg(run_ids)::uuid[]) AND superseded_seq IS NULL
     AND job_key <> sqlc.arg(except_job_key);
 
--- name: ReadPipelineReports :many
-WITH reports AS (
-    SELECT r.organization_id, r.id, r.run_id, r.report_kind, r.completeness, r.exit_class, r.known_seq FROM normalize.report r
-    JOIN normalize.ci_run_version v ON v.organization_id = r.organization_id AND v.run_id = r.run_id
-        AND v.area_id = r.area_id AND (r.sha IS NULL OR r.sha = v.sha)
-    WHERE r.organization_id = sqlc.arg(organization_id) AND v.id = ANY(sqlc.arg(run_version_ids)::uuid[])
-        AND (r.attempt_id IS NULL OR r.attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[]))
-), executions AS (
-    SELECT DISTINCT ON (r.run_id, t.attempt_id, t.test_case_id, t.config_fingerprint, t.ordinal) t.outcome
-    FROM reports r
-    JOIN normalize.test_execution t ON t.organization_id = r.organization_id AND t.report_id = r.id
-    WHERE r.report_kind = 'junit' AND (t.attempt_id IS NULL OR t.attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[]))
-    ORDER BY r.run_id, t.attempt_id, t.test_case_id, t.config_fingerprint, t.ordinal, r.known_seq DESC, r.id DESC
-), counts AS (
-    SELECT count(*) FILTER (WHERE outcome = 'passed') AS passed,
-        count(*) FILTER (WHERE outcome = 'failed') AS failed,
-        count(*) FILTER (WHERE outcome = 'error') AS errors,
-        count(*) FILTER (WHERE outcome = 'skipped') AS skipped
-    FROM executions
+-- name: InsertRejectedReport :exec
+INSERT INTO normalize.rejected_report (organization_id, receipt_id, record_no, known_seq, area_id,
+    component_id, report_kind, language, sha, run_id, attempt_id, reason_code)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT (organization_id, receipt_id, record_no) DO NOTHING;
+
+-- name: ReadReportEvidence :many
+SELECT r.id, r.run_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language,
+    r.report_format, COALESCE(r.producer, '')::text AS producer, COALESCE(r.producer_version, '')::text AS producer_version,
+    COALESCE(encode(r.scope_hash, 'hex'), '')::text AS scope_hash,
+    r.exit_class, r.completeness, r.known_seq, ''::text AS rejected_reason, r.skipped_targets
+FROM normalize.report r
+WHERE r.organization_id = sqlc.arg(organization_id) AND r.area_id = sqlc.arg(area_id)
+    AND r.known_seq <= sqlc.arg(known_seq)
+    AND (r.sha = sqlc.arg(sha)::text OR (r.sha IS NULL AND r.report_kind NOT IN ('junit', 'coverage')
+        AND r.run_id = ANY(sqlc.arg(run_ids)::uuid[])))
+    AND (NOT sqlc.arg(pipeline)::boolean OR (r.run_id = ANY(sqlc.arg(run_ids)::uuid[])
+        AND (r.attempt_id IS NULL OR r.attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[]))))
+UNION ALL
+SELECT r.id, r.run_id, r.component_id, r.report_kind, r.language, '', '', '', '', '', '', r.known_seq, r.reason_code, '[]'::jsonb
+FROM normalize.rejected_report r
+WHERE r.organization_id = sqlc.arg(organization_id) AND r.area_id = sqlc.arg(area_id)
+    AND r.known_seq <= sqlc.arg(known_seq)
+    AND (r.sha = sqlc.arg(sha)::text OR (r.sha IS NULL AND r.report_kind NOT IN ('junit', 'coverage')
+        AND r.run_id = ANY(sqlc.arg(run_ids)::uuid[])))
+    AND (NOT sqlc.arg(pipeline)::boolean OR (r.run_id = ANY(sqlc.arg(run_ids)::uuid[])
+        AND (r.attempt_id IS NULL OR r.attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[]))))
+ORDER BY known_seq DESC, id DESC;
+
+-- Re-uploads of the same execution replace its earlier observation. Without a run or attempt there is
+-- no identity across reports. Apply the outcome filter after choosing the current observation.
+-- name: ReadTestExecutions :many
+WITH ranked AS (
+    SELECT x.id, x.report_id, x.test_case_id, x.attempt_id, x.suite, x.config_fingerprint,
+        x.ordinal, x.outcome, x.duration_ms, x.run_started_at, c.case_key,
+        row_number() OVER (PARTITION BY COALESCE(r.run_id, x.attempt_id, r.id), x.attempt_id,
+            x.test_case_id, x.config_fingerprint, x.ordinal ORDER BY r.known_seq DESC, r.id DESC) AS position
+    FROM normalize.test_execution x
+    JOIN normalize.test_case c ON c.organization_id = x.organization_id AND c.id = x.test_case_id
+    JOIN normalize.report r ON r.organization_id = x.organization_id AND r.id = x.report_id
+    WHERE x.organization_id = sqlc.arg(organization_id) AND x.report_id = ANY(sqlc.arg(report_ids)::uuid[])
 )
-SELECT r.report_kind, bool_or(r.completeness = 'partial' OR r.exit_class IN ('failed', 'timeout', 'partial')) AS partial,
-    bool_and(r.completeness = 'complete') AS complete,
-    c.passed, c.failed, c.errors, c.skipped
-FROM reports r CROSS JOIN counts c
-GROUP BY r.report_kind, c.passed, c.failed, c.errors, c.skipped
-ORDER BY r.report_kind;
+SELECT id, report_id, test_case_id, attempt_id, suite, config_fingerprint, ordinal, outcome, duration_ms, run_started_at,
+    case_key, (position > 1)::boolean AS superseded
+FROM ranked
+WHERE (NOT sqlc.arg(current_only)::boolean OR position = 1)
+    AND (sqlc.arg(outcome)::text = '' OR outcome = sqlc.arg(outcome))
+    AND (sqlc.narg(after_id)::uuid IS NULL OR id > sqlc.narg(after_id)::uuid)
+ORDER BY id
+LIMIT NULLIF(sqlc.arg(page_size)::integer, 0);
+
+-- name: ReadReportCoverage :many
+SELECT id, report_id, path, kind, covered, executable, line_map_key
+FROM normalize.coverage_fact
+WHERE organization_id = sqlc.arg(organization_id) AND report_id = ANY(sqlc.arg(report_ids)::uuid[])
+ORDER BY path, kind, id;

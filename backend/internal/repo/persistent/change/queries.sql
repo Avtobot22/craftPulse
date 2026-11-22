@@ -75,3 +75,22 @@ VALUES (sqlc.arg(organization_id), sqlc.arg(component_id), sqlc.arg(language), s
 SELECT * FROM change.baseline
 WHERE organization_id = sqlc.arg(organization_id) AND component_id = ANY (sqlc.arg(component_ids)::uuid[]) AND superseded_at IS NULL
 ORDER BY component_id, language, analysis_kind;
+-- name: PipelineExpectedReports :many
+WITH versions AS (
+    SELECT DISTINCT ON (v.project_id) v.id
+    FROM change.profile_version v
+    JOIN org.project_area a ON a.organization_id = v.organization_id AND a.project_id = v.project_id
+    WHERE v.organization_id = sqlc.arg(organization_id) AND a.area_id = sqlc.arg(area_id)
+        AND (sqlc.arg(whole)::boolean OR a.project_id = ANY(sqlc.arg(project_ids)::uuid[]))
+        AND a.superseded_seq IS NULL AND a.valid @> sqlc.arg(run_at)::timestamptz
+        AND v.confirmed_at <= sqlc.arg(run_at)::timestamptz
+    ORDER BY v.project_id, v.version_no DESC
+)
+SELECT DISTINCT e.component_id, e.analysis_kind, e.language
+FROM versions v
+JOIN change.profile_entry e ON e.organization_id = sqlc.arg(organization_id) AND e.profile_version_id = v.id
+JOIN org.component c ON c.organization_id = e.organization_id AND c.id = e.component_id
+WHERE c.repository_area_id = sqlc.arg(area_id) AND c.status = 'confirmed'
+    AND c.confirmed_at <= sqlc.arg(run_at)::timestamptz
+    AND (c.superseded_at IS NULL OR c.superseded_at > sqlc.arg(run_at)::timestamptz)
+ORDER BY e.analysis_kind, e.component_id, e.language;

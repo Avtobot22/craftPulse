@@ -200,6 +200,7 @@ type cursorData struct {
 	Name string    `json:"n,omitempty"`
 	At   time.Time `json:"t,omitzero"`
 	ID   uuid.UUID `json:"i"`
+	Seq  *int64    `json:"q,omitempty"`
 }
 
 func pageLimit(limit *int) (int, error) {

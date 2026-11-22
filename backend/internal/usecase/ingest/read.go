@@ -18,7 +18,7 @@ var _affected = map[string][]string{
 	"relations":      {"T13", "T15", "A18", "A20", "T28"},
 	"merge_requests": {"A05", "A06", "A07", "A10", "A18", "A20", "A22", "A23", "A24", "A28", "A30", "T28"},
 	"ci_runs":        {"I01", "I02", "I03", "I04", "I05", "I06", "I07", "I08", "I09", "I19"},
-	"junit":          {"I03", "I04", "I05", "I07", "I08", "I09"},
+	"junit":          {"I03", "I04", "I05", "I07", "I08", "I09", "I19"},
 	"coverage":       {"I25", "I26"},
 	"documents":      {"D01", "D03", "D10", "D24", "D30"},
 }

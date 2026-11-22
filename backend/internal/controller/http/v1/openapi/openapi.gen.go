@@ -6991,6 +6991,7 @@ type Pipeline struct {
 	// AttemptHistory `truncated` - внутренние повторы известны не все (например, Jenkins без манифеста).
 	AttemptHistory PipelineAttemptHistory `json:"attempt_history"`
 	AttemptsTotal  int                    `json:"attempts_total"`
+	Coverage       *PipelineCoverage      `json:"coverage,omitempty"`
 	FinishedAt     *time.Time             `json:"finished_at"`
 	Id             openapi_types.UUID     `json:"id"`
 	MergeRequestId *openapi_types.UUID    `json:"merge_request_id"`
@@ -7006,10 +7007,12 @@ type Pipeline struct {
 	SourceUrl   *string    `json:"source_url"`
 	StartedAt   *time.Time `json:"started_at"`
 	Tests       struct {
-		Error   *int `json:"error"`
-		Failed  *int `json:"failed"`
-		Passed  *int `json:"passed"`
-		Skipped *int `json:"skipped"`
+		DistinctCases *int `json:"distinct_cases,omitempty"`
+		Error         *int `json:"error"`
+		Executions    *int `json:"executions,omitempty"`
+		Failed        *int `json:"failed"`
+		Passed        *int `json:"passed"`
+		Skipped       *int `json:"skipped"`
 
 		// State Состояние данных показателя по модели метрик (раздел 4.3 ТЗ).
 		State DataState `json:"state"`
@@ -7024,6 +7027,19 @@ type PipelineOutcome string
 
 // PipelineReportsState defines model for Pipeline.Reports.State.
 type PipelineReportsState string
+
+// PipelineCoverage defines model for PipelineCoverage.
+type PipelineCoverage struct {
+	// Branch Значение точки ряда. `value` есть только у `ASSESSED` и `PROVISIONAL`, `bound` - только у
+	// `BOUNDED`; у остальных состояний значения нет. Процент без известного знаменателя не
+	// выдаётся (FR-003).
+	Branch MetricValue `json:"branch"`
+
+	// Line Значение точки ряда. `value` есть только у `ASSESSED` и `PROVISIONAL`, `bound` - только у
+	// `BOUNDED`; у остальных состояний значения нет. Процент без известного знаменателя не
+	// выдаётся (FR-003).
+	Line MetricValue `json:"line"`
+}
 
 // PolicyBypass defines model for PolicyBypass.
 type PolicyBypass struct {
