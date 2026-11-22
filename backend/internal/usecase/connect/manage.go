@@ -63,6 +63,7 @@ func (u *UseCase) Create(ctx context.Context, s entity.Subject, in entity.Connec
 	}
 	if len(in.Credentials) > 0 {
 		if err := u.sendCredentials(ctx, c, in.Credentials); err != nil {
+			u.dropCredentials(ctx, c)
 			return entity.ConnectionState{}, err
 		}
 		c.CredentialsSetAt = &now
@@ -382,20 +383,50 @@ func (u *UseCase) adapterKey(c entity.Connection) (entity.Secret, error) {
 	return entity.Secret(key), nil
 }
 
-// sendCredentials sends the fields of the form as one JSON value of the collect purpose: the adapter knows
-// its fields, the core does not keep them.
+// sendCredentials forwards the form fields to encrypted adapter storage.
 func (u *UseCase) sendCredentials(ctx context.Context, c entity.Connection, fields map[string]entity.Secret) error {
+	inputs, err := connectionCredentials(c, fields)
+	if err != nil {
+		return err
+	}
+	return u.invoke(ctx, c, entity.OpPutCredentials, func(ctx context.Context, t entity.AdapterTarget) error {
+		for _, in := range inputs {
+			if err := u.d.Adapters.PutCredentials(ctx, t, in); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func connectionCredentials(c entity.Connection, fields map[string]entity.Secret) ([]entity.CredentialsInput, error) {
+	if c.Provider == entity.ProviderGitLab && c.AdapterKind == entity.AdapterBuiltin {
+		var out []entity.CredentialsInput
+		if read, ok := fields["read_token"]; ok {
+			raw, err := json.Marshal(map[string]string{"token": read.Value()})
+			if err != nil {
+				return nil, fmt.Errorf("connect: encode GitLab credentials: %w", err)
+			}
+			out = append(out, entity.CredentialsInput{Purpose: "collect", Secret: entity.Secret(raw)})
+		}
+		if bot := fields["write_token"]; bot != "" {
+			out = append(out, entity.CredentialsInput{Purpose: "write_bot", Secret: bot})
+		}
+		if hook := fields["webhook_secret"]; hook != "" {
+			out = append(out, entity.CredentialsInput{Purpose: "webhook_secret", Secret: hook})
+		}
+		return out, nil
+	}
+
 	plain := make(map[string]string, len(fields))
 	for k, v := range fields {
 		plain[k] = v.Value()
 	}
 	raw, err := json.Marshal(plain)
 	if err != nil {
-		return fmt.Errorf("connect: encode credentials: %w", err)
+		return nil, fmt.Errorf("connect: encode credentials: %w", err)
 	}
-	return u.invoke(ctx, c, entity.OpPutCredentials, func(ctx context.Context, t entity.AdapterTarget) error {
-		return u.d.Adapters.PutCredentials(ctx, t, entity.CredentialsInput{Purpose: "collect", Secret: entity.Secret(raw)})
-	})
+	return []entity.CredentialsInput{{Purpose: "collect", Secret: entity.Secret(raw)}}, nil
 }
 
 // dropCredentials removes credentials of a connection that was not written; the request may be gone.

@@ -9,8 +9,11 @@ import (
 )
 
 const (
-	_reporter      = 20
-	_accessTimeout = 2 * time.Second
+	_planner         = 15
+	_reporter        = 20
+	_accessTimeout   = 2 * time.Second
+	_accessFreshness = 60
+	_accessParallel  = 8
 )
 
 type account struct {
@@ -43,14 +46,18 @@ func (s source) collector(ctx context.Context) (account, error) {
 func (s source) member(ctx context.Context, projectID, userID int64) (membership, error) {
 	var m membership
 	err := s.get(ctx, "member", projectPath(projectID)+"/members/all/"+id(userID), &m)
-	if err == nil && m.ID != userID {
-		err = adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidResponse, "GitLab membership returned a different account")
+	if err == nil && (m.ID != userID || m.State == "") {
+		err = adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidResponse, "GitLab membership account identity or state is invalid")
 	}
 	return m, err
 }
 
 func (m membership) reporter() bool {
-	return m.State == "active" && (m.MembershipState == "" || m.MembershipState == "active") && m.AccessLevel >= _reporter
+	return m.active() && m.AccessLevel >= _reporter
+}
+
+func (m membership) active() bool {
+	return m.State == "active" && (m.MembershipState == "" || m.MembershipState == "active")
 }
 
 func (s source) requireReporter(ctx context.Context, projectID, userID int64) error {
@@ -67,22 +74,41 @@ func (s source) requireReporter(ctx context.Context, projectID, userID int64) er
 func (a *Adapter) CheckAccess(ctx context.Context, call adaptersdk.Call, in adaptersdk.CheckAccessInput) (adaptersdk.CheckAccessResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, _accessTimeout)
 	defer cancel()
-	s, err := a.bound(ctx, call)
-	if err != nil {
-		return adaptersdk.CheckAccessResult{}, err
-	}
+
 	now := time.Now().UTC()
-	userID, _ := numericID(in.AccountNativeId)
+	freshness := _accessFreshness
 	out := adaptersdk.CheckAccessResult{
-		Mode: adaptersdk.CheckAccessResultModeServiceAccount, CheckedAt: now,
+		Mode: adaptersdk.CheckAccessResultModeServiceAccount, CheckedAt: now, MaxAgeSeconds: &freshness,
 		Decisions: make([]adaptersdk.AccessDecision, len(in.Items)),
 	}
+	s, err := a.bound(ctx, call)
+	if err != nil {
+		reason := "source_not_verified"
+		if ctx.Err() != nil {
+			reason = "access_timeout"
+		}
+		for i := range out.Decisions {
+			out.Decisions[i] = accessDecision(now, adaptersdk.AccessDecisionDecisionUnknown, reason)
+		}
+		return out, nil
+	}
+
+	userID, valid := numericID(in.AccountNativeId)
+	if !valid && in.AccountNativeId != "" {
+		for i := range out.Decisions {
+			out.Decisions[i] = accessDecision(now, adaptersdk.AccessDecisionDecisionUnknown, "invalid_account_id")
+		}
+		return out, nil
+	}
+
+	limit, release := a.accessLimits.share(call.Organization.String()+"/"+call.Connection.String(), _accessParallel)
+	defer release()
 	var workers sync.WaitGroup
-	count := min(8, len(in.Items))
+	count := min(_accessParallel, len(in.Items))
 	for worker := range count {
 		workers.Go(func() {
 			for i := worker; i < len(in.Items); i += count {
-				out.Decisions[i] = s.access(ctx, userID, in.Items[i], now)
+				out.Decisions[i] = s.limitedAccess(ctx, limit, userID, in.Items[i], now)
 			}
 		})
 	}
@@ -90,10 +116,28 @@ func (a *Adapter) CheckAccess(ctx context.Context, call adaptersdk.Call, in adap
 	return out, nil
 }
 
+func accessDecision(at time.Time, state adaptersdk.AccessDecisionDecision, reason string) adaptersdk.AccessDecision {
+	return adaptersdk.AccessDecision{Decision: state, ReasonCode: optional(reason), CheckedAt: at}
+}
+
+func (s source) limitedAccess(ctx context.Context, limit *requestLimit, userID int64, item adaptersdk.AccessItem, now time.Time) adaptersdk.AccessDecision {
+	expired := accessDecision(now, adaptersdk.AccessDecisionDecisionUnknown, "access_timeout")
+	if err := limit.acquire(ctx); err != nil {
+		return expired
+	}
+	defer limit.release()
+	out := s.access(ctx, userID, item, now)
+	if ctx.Err() != nil {
+		return expired
+	}
+	return out
+}
+
 func (s source) access(ctx context.Context, userID int64, item adaptersdk.AccessItem, now time.Time) adaptersdk.AccessDecision {
 	decision := func(state adaptersdk.AccessDecisionDecision, reason string) adaptersdk.AccessDecision {
-		return adaptersdk.AccessDecision{Decision: state, ReasonCode: optional(reason), CheckedAt: now}
+		return accessDecision(now, state, reason)
 	}
+
 	projectID, ok := numericID(item.NativeId)
 	if !ok || item.ItemKind != adaptersdk.AccessItemItemKindArea || item.AreaKind == nil ||
 		*item.AreaKind != adaptersdk.AccessItemAreaKindRepository {
@@ -107,6 +151,9 @@ func (s source) access(ctx context.Context, userID int64, item adaptersdk.Access
 		if userID != 0 {
 			var user account
 			if err := s.get(ctx, "user", "users/"+id(userID), &user); err != nil || user.ID != userID {
+				return decision(adaptersdk.AccessDecisionDecisionUnknown, "account_not_verified")
+			}
+			if user.State == "" {
 				return decision(adaptersdk.AccessDecisionDecisionUnknown, "account_not_verified")
 			}
 			if user.State != "active" {

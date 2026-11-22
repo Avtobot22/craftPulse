@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -42,12 +43,15 @@ func normalizeBase(raw string) (string, error) {
 
 func tokenFrom(secret string) (string, error) {
 	var creds struct {
-		Token string `json:"token"`
+		Token     string `json:"token"`
+		ReadToken string `json:"read_token"`
 	}
-	if err := json.Unmarshal([]byte(secret), &creds); err != nil || strings.TrimSpace(creds.Token) == "" {
-		return "", adaptersdk.NewError(adaptersdk.AdapterErrorCodeAuth, "GitLab collect credentials require a token")
+	err := json.Unmarshal([]byte(secret), &creds)
+	token := strings.TrimSpace(cmp.Or(creds.Token, creds.ReadToken))
+	if err != nil || token == "" {
+		return "", adaptersdk.NewError(adaptersdk.AdapterErrorCodeAuth, "GitLab credentials require a token")
 	}
-	return creds.Token, nil
+	return token, nil
 }
 
 func (s source) request(ctx context.Context, operation, path string, query url.Values) (*http.Response, error) {
@@ -55,15 +59,22 @@ func (s source) request(ctx context.Context, operation, path string, query url.V
 }
 
 func (s source) requestURL(ctx context.Context, operation, path string, query url.Values, accept string, size int64) (*http.Response, error) {
+	return s.send(ctx, operation, http.MethodGet, path, query, accept, size, http.NoBody)
+}
+
+func (s source) send(ctx context.Context, operation, method, path string, query url.Values, accept string, size int64, body io.Reader) (*http.Response, error) {
 	address := s.binding.BaseURL + path
 	if len(query) != 0 {
 		address += "?" + query.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, method, address, body)
 	if err != nil {
 		return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidRequest, "cannot construct the GitLab request")
 	}
 	req.Header.Set("Accept", accept)
+	if body != http.NoBody {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("PRIVATE-TOKEN", s.token)
 	start := time.Now()
 	res, err := s.client.DoDirect(req, size)
