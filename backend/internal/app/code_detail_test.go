@@ -116,6 +116,27 @@ func TestCodeAPI_V28PaginationAndTruncatedHistory(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, e.do(t, b, http.MethodGet, path+"/attempts?cursor="+*first.NextCursor, nil).Code)
 }
 
+func TestCodeAPI_NormalizedPipelineReports(t *testing.T) {
+	t.Parallel()
+	e, b := codeEnv(t)
+	e.imported(t, e.admin, pack(t, ciManifest("42"), v28(t)...))
+	e.drain(t)
+	specs := v40()[:2]
+	require.Equal(t, entity.ReceiptAccepted, e.imported(t, e.admin, reportPackage(t, _headA, specs...)).Status)
+	// Same run coordinates with a different SHA do not make an analysis belong to this pipeline.
+	require.Equal(t, entity.ReceiptAccepted, e.imported(t, e.admin, reportPackage(t, _reportSHA, sarifSpecs()[0])).Status)
+	e.drain(t)
+	pipeline := decode[openapi.Pipeline](t, codeRead(t, e.loginEnv, b, "/api/v1/pipelines/"+runID(t, e, "5001").String(), "Pipeline"))
+	require.Len(t, pipeline.Reports, 1)
+	assert.Equal(t, openapi.AnalysisKindJunit, pipeline.Reports[0].AnalysisKind)
+	assert.Equal(t, openapi.PipelineReportsStatePartial, pipeline.Reports[0].State)
+	assert.Equal(t, openapi.DataState(entity.StateProvisional), pipeline.Tests.State)
+	assert.Equal(t, ptr(10), pipeline.Tests.Passed)
+	assert.Equal(t, ptr(2), pipeline.Tests.Failed)
+	assert.Equal(t, ptr(0), pipeline.Tests.Error)
+	assert.Equal(t, ptr(2), pipeline.Tests.Skipped)
+}
+
 func TestCodeAPI_MRLinksAndHiddenTask(t *testing.T) {
 	t.Parallel()
 	e, b := codeEnv(t)
@@ -194,8 +215,8 @@ func TestCodeAPI_SourceAccessRevokedWithinSixtySeconds(t *testing.T) {
  VALUES ($1,1,$2,1,'v1',decode(repeat('00',32),'hex'),$3,$4,$5,7,'Visible MR','open',false,'feature','main',$6,false,'{}',$3)`, uuid.UUID(e.orgID), uuid.New(), e.clock.Now(), mr, e.area, _headA)
 	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `INSERT INTO normalize.ci_run_version
- (organization_id,known_seq,receipt_id,record_no,source_revision,content_hash,observed_at,run_id,area_id,mr_id,ref_name,sha,native_status,outcome,started_at,finished_at,attempt_history)
- VALUES ($1,1,$2,1,'v1',decode(repeat('00',32),'hex'),$3,$4,$5,$6,'main',$7,'success','success',$3,$3,'complete')`, uuid.UUID(e.orgID), uuid.New(), e.clock.Now(), run, e.area, mr, _headA)
+ (organization_id,known_seq,receipt_id,record_no,source_revision,content_hash,observed_at,run_id,area_id,mr_id,ref_name,sha,native_status,outcome,started_at,finished_at,attempt_history,allow_failure_semantics)
+ VALUES ($1,1,$2,1,'v1',decode(repeat('00',32),'hex'),$3,$4,$5,$6,'main',$7,'success','success',$3,$3,'complete',true)`, uuid.UUID(e.orgID), uuid.New(), e.clock.Now(), run, e.area, mr, _headA)
 	require.NoError(t, err)
 	paths := []struct{ path, schema string }{
 		{"/api/v1/merge-requests/" + mr.String(), "MergeRequest"},

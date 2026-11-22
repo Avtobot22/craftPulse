@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 )
 
 type CodeFacts interface {
+	PipelineReports(context.Context, entity.ID, *entity.CIRun) ([]entity.PipelineReport, error)
 	CurrentObjects(context.Context, entity.ID, []entity.ID) ([]entity.LinkEnd, error)
 	CurrentMR(context.Context, entity.Scope, entity.ID, entity.ID) (entity.MRVersion, error)
 	Repository(context.Context, entity.Scope, entity.ID, entity.ID) (entity.RepositoryVersion, error)
@@ -33,7 +35,7 @@ type ActorAccounts interface {
 }
 
 type RunCalculator interface {
-	SummarizeRun(entity.CIRun, entity.Provider) entity.RunSummary
+	SummarizeRun(entity.CIRun) entity.RunSummary
 }
 
 // codeScope resolves only the authorization metadata before consulting the source. Facts are read afterwards.
@@ -74,7 +76,8 @@ func (u *UseCase) MergeRequest(ctx context.Context, s entity.Subject, scope enti
 	if err != nil {
 		return entity.MRDetail{}, err
 	}
-	if end, ok := ends[id]; !ok || end.Kind != entity.ObjectMergeRequest {
+	end, ok := ends[id]
+	if !ok || end.Kind != entity.ObjectMergeRequest {
 		return entity.MRDetail{}, entity.ErrNotFound
 	}
 	v, err := u.d.Code.CurrentMR(ctx, scope, s.OrganizationID, id)
@@ -87,8 +90,11 @@ func (u *UseCase) MergeRequest(ctx context.Context, s entity.Subject, scope enti
 	}
 	out := entity.MRDetail{Version: v, Repository: repository, AuthorKind: entity.PersonUnknown, Links: []entity.LinkResult{}}
 	if repository.WebURL != "" && v.IID != nil {
-		url := strings.TrimRight(repository.WebURL, "/") + "/-/merge_requests/" + strconv.Itoa(*v.IID)
-		out.SourceURL = &url
+		instance, err := u.d.Instances.Instance(ctx, s.OrganizationID, end.InstanceID)
+		if err != nil {
+			return entity.MRDetail{}, err
+		}
+		out.SourceURL = mergeRequestURL(repository.WebURL, instance.Provider, *v.IID)
 	}
 	if v.AuthorAccountID != nil {
 		assignment, found, err := u.d.Actors.AssignmentAt(ctx, s.OrganizationID, *v.AuthorAccountID, math.MaxInt64)
@@ -131,8 +137,32 @@ func (u *UseCase) MergeRequest(ctx context.Context, s entity.Subject, scope enti
 	return out, nil
 }
 
+func mergeRequestURL(base string, provider entity.Provider, iid int) *string {
+	u, err := url.Parse(base)
+	if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		return nil
+	}
+	var route string
+	switch provider {
+	case entity.ProviderGitLab:
+		route = "/-/merge_requests/"
+	case entity.ProviderGitHub:
+		route = "/pull/"
+	default:
+		return nil
+	}
+	u.RawQuery, u.Fragment, u.ForceQuery = "", "", false
+	result := strings.TrimRight(u.String(), "/") + route + strconv.Itoa(iid)
+	return &result
+}
+
 func (u *UseCase) Pipeline(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID) (entity.PipelineDetail, error) {
-	return u.readPipeline(ctx, s, scope, id, "getPipeline")
+	out, err := u.readPipeline(ctx, s, scope, id, "getPipeline")
+	if err != nil {
+		return entity.PipelineDetail{}, err
+	}
+	out.Reports, err = u.d.Code.PipelineReports(ctx, s.OrganizationID, &out.Run)
+	return out, err
 }
 
 func (u *UseCase) readPipeline(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID, op string) (entity.PipelineDetail, error) {
@@ -140,8 +170,7 @@ func (u *UseCase) readPipeline(ctx context.Context, s entity.Subject, scope enti
 	if err != nil {
 		return entity.PipelineDetail{}, err
 	}
-	end, ok := ends[id]
-	if !ok || end.Kind != entity.ObjectCIRun {
+	if end, ok := ends[id]; !ok || end.Kind != entity.ObjectCIRun {
 		return entity.PipelineDetail{}, entity.ErrNotFound
 	}
 	run, err := u.d.Code.RunAt(ctx, scope, s.OrganizationID, id, math.MaxInt64)
@@ -157,11 +186,7 @@ func (u *UseCase) readPipeline(ctx context.Context, s entity.Subject, scope enti
 			run.Run.MRID = nil
 		}
 	}
-	instance, err := u.d.Instances.Instance(ctx, s.OrganizationID, end.InstanceID)
-	if err != nil {
-		return entity.PipelineDetail{}, err
-	}
-	return entity.PipelineDetail{Run: run, Summary: u.d.RunCalculator.SummarizeRun(run, instance.Provider)}, nil
+	return entity.PipelineDetail{Run: run, Summary: u.d.RunCalculator.SummarizeRun(run)}, nil
 }
 
 func (u *UseCase) PipelineAttempts(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID, q entity.AttemptQuery) (entity.AttemptList, error) {

@@ -59,13 +59,38 @@ func (h *codeDetails) GetPipeline(ctx context.Context, req openapi.GetPipelineRe
 		AttemptHistory: openapi.PipelineAttemptHistory(detail.Run.History), AttemptsTotal: summary.AttemptsTotal,
 		RetriedJobs: summary.RetriedJobs, AllowedFailures: summary.AllowedFailures,
 	}
-	// Parsed reports are not available in normalize yet; an unexamined run has no synthetic test counts.
-	out.Reports = make([]struct {
+	pipelineReports(&out, detail.Reports)
+	return openapi.GetPipeline200JSONResponse(out), nil
+}
+
+func pipelineReports(out *openapi.Pipeline, reports []entity.PipelineReport) {
+	type reportItem = struct {
 		AnalysisKind openapi.AnalysisKind         `json:"analysis_kind"`
 		State        openapi.PipelineReportsState `json:"state"`
-	}, 0)
+	}
+	out.Reports = make([]reportItem, 0, len(reports))
 	out.Tests.State = openapi.DataState(entity.StateNotEvaluated)
-	return openapi.GetPipeline200JSONResponse(out), nil
+	for _, report := range reports {
+		kind := openapi.AnalysisKind(report.Kind)
+		if !kind.Valid() {
+			continue
+		}
+		state := openapi.PipelineReportsStateReceived
+		if report.Partial {
+			state = openapi.PipelineReportsStatePartial
+		}
+		out.Reports = append(out.Reports, reportItem{AnalysisKind: kind, State: state})
+		if report.Kind != entity.AnalysisJUnit {
+			continue
+		}
+		tests := &out.Tests
+		tests.State = openapi.DataState(entity.StateProvisional)
+		if report.Complete && !report.Partial {
+			tests.State = openapi.DataState(entity.StateAssessed)
+		}
+		passed, failed, errs, skipped := int(report.Passed), int(report.Failed), int(report.Errors), int(report.Skipped)
+		tests.Passed, tests.Failed, tests.Error, tests.Skipped = &passed, &failed, &errs, &skipped
+	}
 }
 
 func (h *codeDetails) ListPipelineAttempts(ctx context.Context, req openapi.ListPipelineAttemptsRequestObject) (openapi.ListPipelineAttemptsResponseObject, error) {

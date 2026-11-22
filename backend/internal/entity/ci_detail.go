@@ -23,7 +23,16 @@ type RunSummary struct {
 	UsageSeconds    Point
 }
 
+// PipelineReport summarizes normalized reports of one analysis kind.
+type PipelineReport struct {
+	Kind                            string
+	Partial                         bool
+	Complete                        bool
+	Passed, Failed, Errors, Skipped int64
+}
+
 type PipelineDetail struct {
+	Reports []PipelineReport
 	Run     CIRun
 	Summary RunSummary
 }

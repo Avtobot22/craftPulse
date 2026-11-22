@@ -305,3 +305,20 @@ func reportFindings(row ReportsByIDRow) entity.ReportFindings {
 		FinishedAt: timePtr(row.FinishedAt), KnownSeq: row.KnownSeq,
 	}
 }
+
+func (r *Repo) ReadPipelineReports(ctx context.Context, orgID entity.ID, runs, attempts []entity.ID) ([]entity.PipelineReport, error) {
+	rows, err := r.q(ctx).ReadPipelineReports(ctx, ReadPipelineReportsParams{
+		OrganizationID: uuid.UUID(orgID), RunIds: ids(runs), AttemptIds: ids(attempts),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: read pipeline reports: %w", err)
+	}
+	out := make([]entity.PipelineReport, len(rows))
+	for i, row := range rows {
+		out[i] = entity.PipelineReport{
+			Kind: row.ReportKind, Partial: row.Partial, Complete: row.Complete,
+			Passed: row.Passed, Failed: row.Failed, Errors: row.Errors, Skipped: row.Skipped,
+		}
+	}
+	return out, nil
+}

@@ -2317,6 +2317,78 @@ func (q *Queries) ReadMRVersions(ctx context.Context, arg ReadMRVersionsParams) 
 	return items, nil
 }
 
+const readPipelineReports = `-- name: ReadPipelineReports :many
+WITH reports AS (
+    SELECT r.organization_id, r.id, r.receipt_id, r.record_no, r.known_seq, r.area_id, r.component_id, r.report_kind, r.mode, r.producer, r.producer_version, r.report_format, r.schema_version, r.parser_version, r.profile_id, r.rules_hash, r.config_hash, r.db_version, r.db_published_at, r.scope_hash, r.sha, r.artifact_digest, r.run_id, r.attempt_id, r.started_at, r.finished_at, r.exit_class, r.completeness, r.scanned_count, r.skipped_count, r.skipped_targets, r.history_from_sha, r.history_to_sha, r.history_truncated, r.ref_name, r.language FROM normalize.report r
+    JOIN normalize.ci_run_version v ON v.organization_id = r.organization_id AND v.run_id = r.run_id
+        AND v.superseded_seq IS NULL AND v.area_id = r.area_id AND (r.sha IS NULL OR r.sha = v.sha)
+    WHERE r.organization_id = $1 AND r.run_id = ANY($2::uuid[])
+        AND (r.attempt_id IS NULL OR r.attempt_id = ANY($3::uuid[]))
+), executions AS (
+    SELECT DISTINCT ON (r.run_id, t.attempt_id, t.test_case_id, t.config_fingerprint, t.ordinal) t.outcome
+    FROM reports r
+    JOIN normalize.test_execution t ON t.organization_id = r.organization_id AND t.report_id = r.id
+    WHERE r.report_kind = 'junit' AND (t.attempt_id IS NULL OR t.attempt_id = ANY($3::uuid[]))
+    ORDER BY r.run_id, t.attempt_id, t.test_case_id, t.config_fingerprint, t.ordinal, r.known_seq DESC, r.id DESC
+), counts AS (
+    SELECT count(*) FILTER (WHERE outcome = 'passed') AS passed,
+        count(*) FILTER (WHERE outcome = 'failed') AS failed,
+        count(*) FILTER (WHERE outcome = 'error') AS errors,
+        count(*) FILTER (WHERE outcome = 'skipped') AS skipped
+    FROM executions
+)
+SELECT r.report_kind, bool_or(r.completeness = 'partial' OR r.exit_class IN ('failed', 'timeout', 'partial')) AS partial,
+    bool_and(r.completeness = 'complete') AS complete,
+    c.passed, c.failed, c.errors, c.skipped
+FROM reports r CROSS JOIN counts c
+GROUP BY r.report_kind, c.passed, c.failed, c.errors, c.skipped
+ORDER BY r.report_kind
+`
+
+type ReadPipelineReportsParams struct {
+	OrganizationID uuid.UUID
+	RunIds         []uuid.UUID
+	AttemptIds     []uuid.UUID
+}
+
+type ReadPipelineReportsRow struct {
+	ReportKind string
+	Partial    bool
+	Complete   bool
+	Passed     int64
+	Failed     int64
+	Errors     int64
+	Skipped    int64
+}
+
+func (q *Queries) ReadPipelineReports(ctx context.Context, arg ReadPipelineReportsParams) ([]ReadPipelineReportsRow, error) {
+	rows, err := q.db.Query(ctx, readPipelineReports, arg.OrganizationID, arg.RunIds, arg.AttemptIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReadPipelineReportsRow
+	for rows.Next() {
+		var i ReadPipelineReportsRow
+		if err := rows.Scan(
+			&i.ReportKind,
+			&i.Partial,
+			&i.Complete,
+			&i.Passed,
+			&i.Failed,
+			&i.Errors,
+			&i.Skipped,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const readRepositoryVersion = `-- name: ReadRepositoryVersion :one
 SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.repository_id, v.source_updated_at, v.path, v.name, v.default_branch, v.visibility, v.web_url FROM normalize.repository_version v
 JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.repository_id

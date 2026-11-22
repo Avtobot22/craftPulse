@@ -258,6 +258,10 @@ func (c *ciSource) overheadOf(est string, p period, all bool) entity.Point {
 	return pt
 }
 
+func isAllowedFailure(attempt *entity.CIAttemptVersion, class string) bool {
+	return attempt.AllowFailure && ciFailure(class)
+}
+
 func (c *ciSource) allowed(p period) entity.Point {
 	t := ciTally(p)
 	var numerator, denominator float64
@@ -279,7 +283,7 @@ func (c *ciSource) allowed(p period) entity.Point {
 			a := &j.attempts[len(j.attempts)-1]
 			cl := c.attemptClass(a)
 			known = known && cl != "unknown"
-			allowed = allowed || a.AllowFailure && ciFailure(cl)
+			allowed = allowed || isAllowedFailure(a, cl)
 		}
 		if !known {
 			ciAdd(t, r, nil, nil, entity.RoleMissing, nil, "final_outcome_unknown")
