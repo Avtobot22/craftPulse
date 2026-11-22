@@ -409,10 +409,10 @@ func connectionCredentials(c entity.Connection, fields map[string]entity.Secret)
 			}
 			out = append(out, entity.CredentialsInput{Purpose: "collect", Secret: entity.Secret(raw)})
 		}
-		if bot, ok := fields["write_token"]; ok {
+		if bot := fields["write_token"]; bot != "" {
 			out = append(out, entity.CredentialsInput{Purpose: "write_bot", Secret: bot})
 		}
-		if hook, ok := fields["webhook_secret"]; ok {
+		if hook := fields["webhook_secret"]; hook != "" {
 			out = append(out, entity.CredentialsInput{Purpose: "webhook_secret", Secret: hook})
 		}
 		return out, nil
