@@ -2,6 +2,7 @@
 """Exercise a code profile image without a network: tool versions, rule fixtures, a job run with dependency,
 build and broken files, a timeout and the base and head commits of a fixture project."""
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -139,7 +140,7 @@ def check_job(image, platform, root, p):
         raise RuntimeError("scan manifest does not have one run per tool")
     excluded = {(path, reason) for path, reason in p.expected("scope", "excluded")} | extra["excluded"]
     tests = sorted(path for (path,) in p.expected("scope", "test"))
-    configs = {p.linter: p.dir / p.config, "jscpd": p.dir / "jscpd.json"}
+    configs = {p.linter: p.dir / p.config, "jscpd": p.dir / "jscpd.json", "lizard": p.dir / "profile.json"}
     for producer, tool in runs.items():
         config = hashlib.sha256(configs[producer].read_bytes()).hexdigest() if producer in configs else None
         complete = "partial" if producer == p.linter and extra["broken"] else "complete"
@@ -166,8 +167,29 @@ def check_job(image, platform, root, p):
     clones = json.loads(reports["jscpd"])
     if len(clones["duplicates"]) != 1 or b"fragment" in reports["jscpd"]:
         raise RuntimeError("clone report must keep the copy coordinates without its code")
-    if not [line for line in reports["lizard"].decode().splitlines() if line]:
-        raise RuntimeError("function report is empty")
+    lizard = runs["lizard"]
+    report = lizard["reports"][0]
+    if report["report_format"] != "lizard_csv" or report["format_version"] != "2":
+        raise RuntimeError("unexpected Lizard report format")
+    if lizard.get("function_thresholds") != p.spec["functions"]:
+        raise RuntimeError("Lizard run thresholds differ from the profile")
+    rows = csv.reader(reports["lizard"].decode().splitlines())
+    if next(rows, None) != ["craftpulse-lizard", "2"]:
+        raise RuntimeError("Lizard report has no version 2 header")
+    inventory, functions = set(), set()
+    for row in rows:
+        if len(row) == 3 and row[0] == "file":
+            if int(row[2]) < 0:
+                raise RuntimeError("negative file NLOC")
+            inventory.add(row[1])
+        elif len(row) == 11:
+            functions.add(row[6])
+        else:
+            raise RuntimeError("unexpected record in Lizard report")
+    if not functions or not (functions | set(tests)) <= inventory:
+        raise RuntimeError("Lizard file inventory does not cover the reported functions and test files")
+    if any(file == path or file.startswith(path + "/") for file in inventory for path, _ in excluded):
+        raise RuntimeError("Lizard file inventory contains an excluded path")
     lint = json.loads(reports[p.linter])
     if lint["version"] != "2.1.0" or (extra["broken"] and extra["broken"].encode() in reports[p.linter]):
         raise RuntimeError("unexpected linter report")
