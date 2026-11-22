@@ -323,7 +323,7 @@ type NormalizeRepo interface {
 	FindMRIDs(ctx context.Context, orgID entity.ID, areas, allowed []entity.ID, key entity.SourceKey, sha string, seq int64) ([]entity.ID, error)
 	ReadRepositoryVersion(ctx context.Context, orgID, repositoryID entity.ID) (entity.RepositoryVersion, error)
 
-	ReadPipelineReports(ctx context.Context, orgID entity.ID, runs, attempts []entity.ID) ([]entity.PipelineReport, error)
+	ReadPipelineReports(ctx context.Context, orgID entity.ID, runVersions, attempts []entity.ID) ([]entity.PipelineReport, error)
 	CurrentCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.CIRunVersion, error)
 	KnownCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.Revision, error)
 	SupersedeCIRunVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error

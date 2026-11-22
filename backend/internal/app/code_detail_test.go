@@ -124,8 +124,13 @@ func TestCodeAPI_NormalizedPipelineReports(t *testing.T) {
 	specs := v40()[:2]
 	require.Equal(t, entity.ReceiptAccepted, e.imported(t, e.admin, reportPackage(t, _headA, specs...)).Status)
 	// Same run coordinates with a different SHA do not make an analysis belong to this pipeline.
-	require.Equal(t, entity.ReceiptAccepted, e.imported(t, e.admin, reportPackage(t, _reportSHA, sarifSpecs()[0])).Status)
+	other := e.imported(t, e.admin, reportPackage(t, _reportSHA, sarifSpecs()[0]))
+	require.Equal(t, entity.ReceiptAccepted, other.Status)
 	e.drain(t)
+	wrongSHA := e.report(t, other.ID, "code")
+	require.NotNil(t, wrongSHA.RunID)
+	assert.Equal(t, uuid.UUID(runID(t, e, "5001")), *wrongSHA.RunID)
+
 	pipeline := decode[openapi.Pipeline](t, codeRead(t, e.loginEnv, b, "/api/v1/pipelines/"+runID(t, e, "5001").String(), "Pipeline"))
 	require.Len(t, pipeline.Reports, 1)
 	assert.Equal(t, openapi.AnalysisKindJunit, pipeline.Reports[0].AnalysisKind)

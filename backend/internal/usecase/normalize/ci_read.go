@@ -92,10 +92,10 @@ func (u *UseCase) findRuns(ctx context.Context, scope entity.Scope, orgID entity
 
 // PipelineReports reads normalized reports only for runs and attempts already filtered by RunAt.
 func (u *UseCase) PipelineReports(ctx context.Context, orgID entity.ID, run *entity.CIRun) ([]entity.PipelineReport, error) {
-	runs := make([]entity.ID, 1, 1+len(run.Children))
-	runs[0] = run.Run.RunID
+	versions := make([]entity.ID, 1, 1+len(run.Children))
+	versions[0] = run.Run.ID
 	for i := range run.Children {
-		runs = append(runs, run.Children[i].RunID)
+		versions = append(versions, run.Children[i].ID)
 	}
 	attempts := make([]entity.ID, len(run.Attempts))
 	for i := range run.Attempts {
@@ -104,7 +104,7 @@ func (u *UseCase) PipelineReports(ctx context.Context, orgID entity.ID, run *ent
 	var reports []entity.PipelineReport
 	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var err error
-		reports, err = u.d.Repo.ReadPipelineReports(ctx, orgID, runs, attempts)
+		reports, err = u.d.Repo.ReadPipelineReports(ctx, orgID, versions, attempts)
 		return err
 	})
 	return reports, err

@@ -306,9 +306,9 @@ func reportFindings(row ReportsByIDRow) entity.ReportFindings {
 	}
 }
 
-func (r *Repo) ReadPipelineReports(ctx context.Context, orgID entity.ID, runs, attempts []entity.ID) ([]entity.PipelineReport, error) {
+func (r *Repo) ReadPipelineReports(ctx context.Context, orgID entity.ID, runVersions, attempts []entity.ID) ([]entity.PipelineReport, error) {
 	rows, err := r.q(ctx).ReadPipelineReports(ctx, ReadPipelineReportsParams{
-		OrganizationID: uuid.UUID(orgID), RunIds: ids(runs), AttemptIds: ids(attempts),
+		OrganizationID: uuid.UUID(orgID), RunVersionIds: ids(runVersions), AttemptIds: ids(attempts),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("normalize: read pipeline reports: %w", err)

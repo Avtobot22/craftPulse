@@ -514,10 +514,10 @@ WHERE organization_id = sqlc.arg(organization_id) AND run_id = ANY (sqlc.arg(run
 
 -- name: ReadPipelineReports :many
 WITH reports AS (
-    SELECT r.* FROM normalize.report r
+    SELECT r.organization_id, r.id, r.run_id, r.report_kind, r.completeness, r.exit_class, r.known_seq FROM normalize.report r
     JOIN normalize.ci_run_version v ON v.organization_id = r.organization_id AND v.run_id = r.run_id
-        AND v.superseded_seq IS NULL AND v.area_id = r.area_id AND (r.sha IS NULL OR r.sha = v.sha)
-    WHERE r.organization_id = sqlc.arg(organization_id) AND r.run_id = ANY(sqlc.arg(run_ids)::uuid[])
+        AND v.area_id = r.area_id AND (r.sha IS NULL OR r.sha = v.sha)
+    WHERE r.organization_id = sqlc.arg(organization_id) AND v.id = ANY(sqlc.arg(run_version_ids)::uuid[])
         AND (r.attempt_id IS NULL OR r.attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[]))
 ), executions AS (
     SELECT DISTINCT ON (r.run_id, t.attempt_id, t.test_case_id, t.config_fingerprint, t.ordinal) t.outcome

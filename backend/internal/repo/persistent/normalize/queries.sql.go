@@ -2319,10 +2319,10 @@ func (q *Queries) ReadMRVersions(ctx context.Context, arg ReadMRVersionsParams) 
 
 const readPipelineReports = `-- name: ReadPipelineReports :many
 WITH reports AS (
-    SELECT r.organization_id, r.id, r.receipt_id, r.record_no, r.known_seq, r.area_id, r.component_id, r.report_kind, r.mode, r.producer, r.producer_version, r.report_format, r.schema_version, r.parser_version, r.profile_id, r.rules_hash, r.config_hash, r.db_version, r.db_published_at, r.scope_hash, r.sha, r.artifact_digest, r.run_id, r.attempt_id, r.started_at, r.finished_at, r.exit_class, r.completeness, r.scanned_count, r.skipped_count, r.skipped_targets, r.history_from_sha, r.history_to_sha, r.history_truncated, r.ref_name, r.language FROM normalize.report r
+    SELECT r.organization_id, r.id, r.run_id, r.report_kind, r.completeness, r.exit_class, r.known_seq FROM normalize.report r
     JOIN normalize.ci_run_version v ON v.organization_id = r.organization_id AND v.run_id = r.run_id
-        AND v.superseded_seq IS NULL AND v.area_id = r.area_id AND (r.sha IS NULL OR r.sha = v.sha)
-    WHERE r.organization_id = $1 AND r.run_id = ANY($2::uuid[])
+        AND v.area_id = r.area_id AND (r.sha IS NULL OR r.sha = v.sha)
+    WHERE r.organization_id = $1 AND v.id = ANY($2::uuid[])
         AND (r.attempt_id IS NULL OR r.attempt_id = ANY($3::uuid[]))
 ), executions AS (
     SELECT DISTINCT ON (r.run_id, t.attempt_id, t.test_case_id, t.config_fingerprint, t.ordinal) t.outcome
@@ -2347,7 +2347,7 @@ ORDER BY r.report_kind
 
 type ReadPipelineReportsParams struct {
 	OrganizationID uuid.UUID
-	RunIds         []uuid.UUID
+	RunVersionIds  []uuid.UUID
 	AttemptIds     []uuid.UUID
 }
 
@@ -2362,7 +2362,7 @@ type ReadPipelineReportsRow struct {
 }
 
 func (q *Queries) ReadPipelineReports(ctx context.Context, arg ReadPipelineReportsParams) ([]ReadPipelineReportsRow, error) {
-	rows, err := q.db.Query(ctx, readPipelineReports, arg.OrganizationID, arg.RunIds, arg.AttemptIds)
+	rows, err := q.db.Query(ctx, readPipelineReports, arg.OrganizationID, arg.RunVersionIds, arg.AttemptIds)
 	if err != nil {
 		return nil, err
 	}
