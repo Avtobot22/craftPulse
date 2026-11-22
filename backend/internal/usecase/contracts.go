@@ -255,3 +255,25 @@ type CodeDetails interface {
 	Pipeline(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.PipelineDetail, error)
 	PipelineAttempts(context.Context, entity.Subject, entity.Scope, entity.ID, entity.AttemptQuery) (entity.AttemptList, error)
 }
+
+// ExceptionDrafts resolves and stores drafts of finding exceptions.
+type ExceptionDrafts interface {
+	CreateException(ctx context.Context, s entity.Subject, scope entity.Scope, cmd entity.ExceptionWrite) (entity.ExceptionView, error)
+}
+
+// Exceptions reads and reviews finding exceptions.
+type Exceptions interface {
+	Get(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID) (entity.ExceptionView, error)
+	List(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.ExceptionQuery) (entity.ExceptionPage, error)
+	Decide(ctx context.Context, s entity.Subject, cmd entity.ExceptionDecision) (entity.ExceptionView, error)
+}
+
+// DecisionExpiry runs the effective interval boundaries of an exception.
+type DecisionExpiry interface {
+	RunExpire(ctx context.Context, job entity.DecisionExpireJob, complete func(context.Context) error) error
+}
+
+// ExceptionProjector refreshes the active exception inputs of change.
+type ExceptionProjector interface {
+	RunExceptionRecount(ctx context.Context, job entity.ChangeRecountJob, complete func(context.Context) error) error
+}

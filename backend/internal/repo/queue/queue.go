@@ -50,3 +50,25 @@ func (q *Queue) insert(ctx context.Context, job entity.Job, opts *river.InsertOp
 	}
 	return nil
 }
+
+// EnqueueNearest inserts a unique scheduled job, advancing an existing timer when needed.
+func (q *Queue) EnqueueNearest(ctx context.Context, job entity.Job, queue string, at time.Time) error {
+	tx, ok := postgres.TxFrom(ctx)
+	if !ok {
+		return errNoTx
+	}
+	result, err := q.client.InsertTx(ctx, tx, job, &river.InsertOpts{
+		Queue: queue, ScheduledAt: at, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: _activeStates},
+	})
+	if err != nil {
+		return fmt.Errorf("queue: schedule %s: %w", job.Kind(), err)
+	}
+	if result.UniqueSkippedAsDuplicate {
+		_, err := tx.Exec(ctx, `UPDATE public.river_job SET scheduled_at = $2
+			WHERE id = $1 AND state = 'scheduled' AND scheduled_at > $2`, result.Job.ID, at)
+		if err != nil {
+			return fmt.Errorf("queue: advance %s: %w", job.Kind(), err)
+		}
+	}
+	return nil
+}

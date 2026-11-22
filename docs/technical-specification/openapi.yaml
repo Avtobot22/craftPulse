@@ -3449,6 +3449,7 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /exceptions/{exception_id}:
     get:
@@ -3525,6 +3526,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
         '428': {$ref: '#/components/responses/PreconditionRequired'}
   /exceptions/{exception_id}/decisions:
@@ -3533,6 +3535,7 @@ paths:
       summary: Подтвердить или отклонить ожидающую версию решения
       description: |
         Ревьюер подтверждает или отклоняет ожидающую версию (UC-28 A3, UI-48).
+        Автор с правом `exceptions.manage` отзывает свою версию через `withdraw`.
         Решение относится к версии из `If-Match`. Переход из конечного статуса - `409
         state_conflict`. Автор не подтверждает своё решение, если политика требует ревьюера
         (`403`).
@@ -7717,7 +7720,7 @@ components:
       additionalProperties: false
       required: [decision]
       properties:
-        decision: {type: string, enum: [approve, reject]}
+        decision: {type: string, enum: [approve, reject, withdraw]}
         comment: {type: string, maxLength: 2000}
     DocumentationRoot:
       type: object
