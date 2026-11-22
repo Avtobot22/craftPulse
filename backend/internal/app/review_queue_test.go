@@ -89,6 +89,41 @@ func TestReviewQueue_V15AndFallback(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, e.do(t, b, http.MethodGet, _reviewQueuePath+"?review_wait=awaiting_re_review", nil).Code)
 }
 
+func TestReviewQueue_ClosedAndRestrictedReviews(t *testing.T) {
+	t.Parallel()
+	e, b := codeEnv(t)
+	assigned := queueMR(t, "9001", "42", _created, ptr(true), []string{"3"}, false)
+	restricted := queueMR(t, "9005", "42", _created, ptr(true), []string{"3"}, false)
+	archived := queueMR(t, "9006", "42", _created, ptr(true), []string{}, false)
+	var payload envelope.MergeRequestV1
+	require.NoError(t, json.Unmarshal(archived.Payload, &payload))
+	payload.State, payload.ClosedAt = "closed", &_t1
+	archived.Payload = mustMarshal(t, &payload)
+	rc := e.imported(t, e.admin, pack(t, mrManifest("42"), assigned, restricted, archived, accountRecord(t, "3", "Reviewer"),
+		reviewEvent(t, "comment", "comment", "3", _t1)))
+	require.Equal(t, entity.ReceiptAccepted, rc.Status)
+	e.drain(t)
+	(&reviewEnv{normalizeEnv: e}).confirm(t, "3", entity.PersonHuman)
+	event := githubEvent(t, "9005", prEvent{id: "review", kind: "review", actor: "3"})
+	e.imported(t, e.admin, pack(t, mrManifest("42"), event))
+	e.drain(t)
+	area := mrArea(t, e, rc, "42")
+	_, err := e.owner.Exec(t.Context(), "UPDATE normalize.source_object SET restricted=true WHERE organization_id=$1 AND id=$2", uuid.UUID(e.orgID), uuid.UUID(mrID(t, e, "9005")))
+	require.NoError(t, err)
+	q := url.Values{"area_id": {area.String()}, "review_wait": {"awaiting_first_response"}}
+	page := reviewQueue(t, e.loginEnv, b, q)
+	require.Len(t, page.Data, 1)
+	id := mrID(t, e, "9001")
+	assert.Equal(t, uuid.UUID(id), page.Data[0].Id)
+	detail := decode[openapi.MergeRequest](t, codeRead(t, e.loginEnv, b, _reviewQueuePath+"/"+id.String(), "MergeRequest"))
+	assert.Equal(t, page.Data[0].ReviewWait, detail.ReviewWait)
+	q.Set("state", "closed")
+	q.Del("review_wait")
+	require.Len(t, reviewQueue(t, e.loginEnv, b, q).Data, 1)
+	q.Set("review_wait", "no_reviewer")
+	assert.Empty(t, reviewQueue(t, e.loginEnv, b, q).Data)
+}
+
 func TestReviewQueue_CursorPinsTimeAndKnowledge(t *testing.T) {
 	t.Parallel()
 	e, b := codeEnv(t)

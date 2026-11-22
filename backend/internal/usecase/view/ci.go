@@ -90,6 +90,9 @@ func (u *UseCase) MergeRequest(ctx context.Context, s entity.Subject, scope enti
 	if err != nil {
 		return entity.MRDetail{}, err
 	}
+	if !scope.Area(v.AreaID) {
+		return entity.MRDetail{}, entity.ErrNotFound
+	}
 	repository, err := u.d.Code.Repository(ctx, scope, s.OrganizationID, v.AreaID)
 	if err != nil && !errors.Is(err, entity.ErrNotFound) {
 		return entity.MRDetail{}, err
@@ -102,7 +105,11 @@ func (u *UseCase) MergeRequest(ctx context.Context, s entity.Subject, scope enti
 		}
 		out.SourceURL = mergeRequestURL(repository.WebURL, instance.Provider, *v.IID)
 	}
-	reviews, err := u.d.ReviewCalculator.MRReviewsAt(ctx, scope, s.OrganizationID, v.AreaID, seq, asOf)
+	reviewScope, _, err := u.reviewScope(ctx, s, scope, "getMergeRequest", []entity.ID{v.AreaID})
+	if err != nil {
+		return entity.MRDetail{}, err
+	}
+	reviews, err := u.d.ReviewCalculator.MRReviewsAt(ctx, reviewScope, s.OrganizationID, v.AreaID, seq, asOf)
 	if err != nil {
 		return entity.MRDetail{}, err
 	}

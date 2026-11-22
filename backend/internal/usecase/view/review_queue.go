@@ -40,7 +40,7 @@ func (u *UseCase) ListMergeRequests(ctx context.Context, s entity.Subject, scope
 	if err != nil || len(areas) == 0 {
 		return entity.MRQueuePage{}, err
 	}
-	scope, restricted, err := u.queueScope(ctx, s, scope, areas)
+	scope, restricted, err := u.reviewScope(ctx, s, scope, "listMergeRequests", areas)
 	if err != nil {
 		return entity.MRQueuePage{}, err
 	}
@@ -59,7 +59,10 @@ func (u *UseCase) ListMergeRequests(ctx context.Context, s entity.Subject, scope
 		}
 		for i := range list {
 			m := &list[i]
-			if m.Version.State != q.State || m.Version.OpenedAt.After(at) || (q.Wait != "" && (m.Wait == nil || m.Wait.Kind != q.Wait)) {
+			if !scope.Area(m.Version.AreaID) || m.Version.State != q.State || m.Version.OpenedAt.After(at) {
+				continue
+			}
+			if q.Wait != "" && (m.Version.State != "open" || m.Wait == nil || m.Wait.Kind != q.Wait) {
 				continue
 			}
 			if q.After == nil || compareQueue(queuePosition(m, at, seq), *q.After, q.Sort) > 0 {
@@ -109,8 +112,7 @@ func (u *UseCase) queueAreas(ctx context.Context, org entity.ID, scope entity.Sc
 	return u.d.Code.RepositoryAreas(ctx, org, ids)
 }
 
-func (u *UseCase) queueScope(ctx context.Context, s entity.Subject, scope entity.Scope, areas []entity.ID) (entity.Scope, bool, error) {
-	const op = "listMergeRequests"
+func (u *UseCase) reviewScope(ctx context.Context, s entity.Subject, scope entity.Scope, op string, areas []entity.ID) (entity.Scope, bool, error) {
 	scope, err := u.d.SourceRights.Decide(ctx, s, scope, entity.SourceQuery{Operation: op, Areas: areas})
 	if err != nil {
 		return scope, false, err
