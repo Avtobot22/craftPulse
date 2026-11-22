@@ -126,18 +126,21 @@ type flowSource struct {
 
 func (f *flowSource) periods() []period { return periods(f.in.window, f.in.asOf, f.in.location) }
 
-func (f *flowSource) hash(from, to time.Time) []byte {
+func (f *flowSource) prepare() {
 	if f.pr == nil {
 		f.pr = prepare(f.in)
+		f.signals.keepTeamEvents(f.pr.tls)
 	}
+}
+
+func (f *flowSource) hash(from, to time.Time) []byte {
+	f.prepare()
 	base := f.pr.partHash(f.series.ScopeHash, f.series.Step, from, to)
 	return f.signals.hash(base, from, to)
 }
 
 func (f *flowSource) stored(c []period, hash []byte, from, to time.Time) *entity.StoredPart {
-	if f.pr == nil {
-		f.pr = prepare(f.in)
-	}
+	f.prepare()
 	part := storedPart(f.pr.calculate(c), hash, from, to)
 	f.signals.points(part, f.pr, c)
 	return part

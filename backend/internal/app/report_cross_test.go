@@ -55,7 +55,8 @@ func TestReport_ReviewAndCIContextOnSameRevision(t *testing.T) {
 	}
 	submit(mrManifest("42"), mrRecordOf("9001", "42", _headA, "v1", true, ready),
 		mrRecordOf("9003", "42", _headA, "v1", false, ready), reviewEvent(t, "ready-cross", "ready", "1", ready))
-	submit(mrManifest("43"), mrRecordOf("9002", "43", _headA, "v1", true, ready))
+	submit(mrManifest("43"), mrRecordOf("9002", "43", _headA, "v1", true, ready),
+		mrEvent(t, "9002", "hidden-review", "r1", "review", e.day(3), false))
 	visibleMR, hiddenMR, unknownMR := e.objectID(t, "merge_request", "9001"), e.objectID(t, "merge_request", "9002"), e.objectID(t, "merge_request", "9003")
 	task, unknownTask := e.objectID(t, "task", "20004"), e.objectID(t, "task", "31003")
 	tx := persistent.NewTransactor(e.app)
@@ -149,6 +150,10 @@ func TestReport_ReviewAndCIContextOnSameRevision(t *testing.T) {
 	assert.True(t, narrowCohort.AccessLimited)
 	assert.ElementsMatch(t, []entity.ID{visibleMR, visibleRun}, crossBasisIDs(&narrowCohort.Data[0]))
 	assert.NotContains(t, *narrowCohort.Data[0].Signals, "ci_failed")
+	hiddenGroup := url.Values{"metric_id": {"A22"}, "estimator": {"unknown:mr:review"}, "point_start": {e.week.Format(time.RFC3339)}}
+	path := "/api/v1/revisions/" + r.Revision.ID.String() + "/cohort?" + hiddenGroup.Encode()
+	assert.Equal(t, http.StatusOK, e.checked(t, e.admin, path).Code)
+	assert.Equal(t, http.StatusNotFound, e.checked(t, e.member, path).Code)
 
 	submit(mrManifest("42"), mrRecordOf("9001", "42", _headB, "v2", true, e.day(5)))
 	e.recount(t)

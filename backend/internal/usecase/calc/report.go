@@ -118,6 +118,9 @@ func (u *UseCase) VisibleCohort(ctx context.Context, s entity.Subject, scope ent
 	if err != nil {
 		return entity.CohortPage{}, err
 	}
+	if q.MetricID == "A22" && eventGroup(q.Estimator) != nil && !c.visibleEventGroup(&v, q.Estimator) {
+		return entity.CohortPage{}, entity.ErrNotFound
+	}
 	if q.Limit <= 0 {
 		q.Limit = _cohortPage
 	}
@@ -320,6 +323,20 @@ func (c *cohort) visible(v *visibility, r *entity.CohortRow) bool {
 func (c *cohort) objectVisible(v *visibility, id entity.ID) bool {
 	o, ok := c.objects[id]
 	return ok && slices.Contains(v.areas, o.AreaID) && (!o.Restricted || slices.Contains(v.objects, o.ID))
+}
+
+func (c *cohort) visibleEventGroup(v *visibility, estimator string) bool {
+	for key, rows := range c.rows {
+		if key.metric != "A22" || key.estimator != estimator {
+			continue
+		}
+		for i := range rows {
+			if c.visible(v, &rows[i]) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // series are the series of the cohort over what the reader sees and the filter selects, split by group; a

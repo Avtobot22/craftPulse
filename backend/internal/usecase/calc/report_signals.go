@@ -84,6 +84,21 @@ func (u *UseCase) reportSignals(ctx context.Context, org entity.ID, scope series
 	return x, nil
 }
 
+func (x *reportSignals) keepTeamEvents(timelines []*timeline) {
+	teamTasks := make(map[entity.ID]bool, len(timelines))
+	for _, tl := range timelines {
+		teamTasks[tl.slice.TaskID] = true
+	}
+	for group, events := range x.events {
+		events = slices.DeleteFunc(events, func(a activity) bool { return a.kind == entity.ObjectTask && !teamTasks[a.object] })
+		if len(events) == 0 {
+			delete(x.events, group)
+		} else {
+			x.events[group] = events
+		}
+	}
+}
+
 func (u *UseCase) reportLinks(ctx context.Context, org entity.ID, seq int64, mrIDs []entity.ID, x *reportSignals) error {
 	edges, err := u.d.Links.MREdgesAt(ctx, org, mrIDs, seq)
 	if err != nil {

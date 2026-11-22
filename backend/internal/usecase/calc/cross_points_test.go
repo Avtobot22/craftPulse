@@ -100,3 +100,53 @@ func cardKinds(in []entity.TaskObservation) []entity.ObservationKind {
 	}
 	return out
 }
+
+func TestReportSignals_ActivityRespectsMappedTeam(t *testing.T) {
+	t.Parallel()
+	inTeam := task("team task", d(0), _active).input()
+	otherTeam := task("other team's task", d(0), _active).input()
+	const teamField = "team"
+	inTeam.version.TeamNative, otherTeam.version.TeamNative = "platform", "payments"
+	mapping := m1()
+	mapping.Rules = append(mapping.Rules,
+		entity.MappingRule{Kind: entity.RuleTeamField, InstanceID: _instance, NativeRef: teamField},
+		entity.MappingRule{Kind: entity.RuleTeamValue, InstanceID: _instance, NativeValue: "platform", Meaning: _team.String()},
+		entity.MappingRule{Kind: entity.RuleTeamValue, InstanceID: _instance, NativeValue: "payments", Meaning: idOf("payments").String()},
+	)
+	mr := idOf("repository MR")
+	signals := &reportSignals{events: map[string][]activity{
+		"human:task:field_change": {
+			{object: inTeam.version.TaskID, kind: entity.ObjectTask, at: d(1)},
+			{object: otherTeam.version.TaskID, kind: entity.ObjectTask, at: d(1)},
+		},
+		"bot:task:comment": {{object: otherTeam.version.TaskID, kind: entity.ObjectTask, at: d(1)}},
+		"human:mr:review":  {{object: mr, kind: entity.ObjectMergeRequest, at: d(1)}},
+	}}
+	w := entity.Window{Step: entity.StepDay, From: d(1), To: d(2)}
+	f := flowSource{
+		in:      input{tasks: []taskInput{inTeam, otherTeam}, mapping: mapping, team: _team, asOf: d(2), window: w},
+		signals: signals,
+	}
+	f.prepare()
+	assert.NotContains(t, signals.events, "bot:task:comment")
+	ev := countActivity(signals.events["human:task:field_change"], period{start: d(1), end: d(2)})
+	require.Len(t, ev.Contributions, 1)
+	assert.Equal(t, inTeam.version.TaskID, ev.Contributions[0].ObjectID)
+	assert.Contains(t, signals.events, "human:mr:review")
+}
+
+func TestCohort_VisibilityOfEventGroup(t *testing.T) {
+	t.Parallel()
+	mr, repo := idOf("MR"), idOf("repository")
+	const estimator = "unknown:mr:review"
+	c := cohort{
+		objects: map[entity.ID]entity.LinkEnd{mr: {ID: mr, AreaID: repo, Kind: entity.ObjectMergeRequest}},
+		rows: map[pointKey][]entity.CohortRow{
+			keyOf("A22", estimator, d(2)): {{Contribution: entity.Contribution{ObjectID: mr, ObjectKind: entity.ObjectMergeRequest}}},
+		},
+	}
+	assert.False(t, c.visibleEventGroup(&visibility{}, estimator))
+	v := visibility{areas: []entity.ID{repo}}
+	assert.True(t, c.visibleEventGroup(&v, estimator))
+	assert.False(t, c.visibleEventGroup(&v, "bot:mr:review"))
+}
