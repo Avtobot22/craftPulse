@@ -36,6 +36,12 @@ func (u *UseCase) RunAt(ctx context.Context, scope entity.Scope, orgID, runID en
 			}
 		}
 		out.History = entity.AttemptHistoryComplete
+		unknown := func(r entity.CIRunVersion) bool {
+			return r.AttemptHistory != entity.AttemptHistoryComplete && r.AttemptHistory != entity.AttemptHistoryTruncated
+		}
+		if unknown(out.Run) || slices.ContainsFunc(out.Children, unknown) {
+			out.History = entity.AttemptHistoryUnknown
+		}
 		truncated := func(r entity.CIRunVersion) bool { return r.AttemptHistory == entity.AttemptHistoryTruncated }
 		if truncated(out.Run) || slices.ContainsFunc(out.Children, truncated) {
 			out.History = entity.AttemptHistoryTruncated
@@ -82,4 +88,24 @@ func (u *UseCase) findRuns(ctx context.Context, scope entity.Scope, orgID entity
 		return err
 	})
 	return out, err
+}
+
+// PipelineReports reads normalized reports only for runs and attempts already filtered by RunAt.
+func (u *UseCase) PipelineReports(ctx context.Context, orgID entity.ID, run *entity.CIRun) ([]entity.PipelineReport, error) {
+	versions := make([]entity.ID, 1, 1+len(run.Children))
+	versions[0] = run.Run.ID
+	for i := range run.Children {
+		versions = append(versions, run.Children[i].ID)
+	}
+	attempts := make([]entity.ID, len(run.Attempts))
+	for i := range run.Attempts {
+		attempts[i] = run.Attempts[i].AttemptID
+	}
+	var reports []entity.PipelineReport
+	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		reports, err = u.d.Repo.ReadPipelineReports(ctx, orgID, versions, attempts)
+		return err
+	})
+	return reports, err
 }

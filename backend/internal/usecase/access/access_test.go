@@ -50,7 +50,7 @@ func TestDecide(t *testing.T) {
 			giveRequest: entity.AccessRequest{Action: "org.manage", Area: entity.AreaRef{Kind: entity.AreaTeam, ID: other}},
 		},
 		{
-			name: "action outside the table", giveProfile: admin, giveRequest: entity.AccessRequest{Action: "mr.read"},
+			name: "action outside the table", giveProfile: admin, giveRequest: entity.AccessRequest{Action: "unsupported.read"},
 			wantReason: ReasonNoPermission, wantErr: entity.ErrForbidden,
 		},
 	}

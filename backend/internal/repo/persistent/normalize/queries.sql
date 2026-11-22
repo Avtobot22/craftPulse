@@ -511,3 +511,30 @@ WHERE organization_id = sqlc.arg(organization_id) AND repository_id = ANY (sqlc.
 SELECT DISTINCT run_id FROM normalize.ci_attempt_version
 WHERE organization_id = sqlc.arg(organization_id) AND run_id = ANY (sqlc.arg(run_ids)::uuid[]) AND superseded_seq IS NULL
     AND job_key <> sqlc.arg(except_job_key);
+
+-- name: ReadPipelineReports :many
+WITH reports AS (
+    SELECT r.organization_id, r.id, r.run_id, r.report_kind, r.completeness, r.exit_class, r.known_seq FROM normalize.report r
+    JOIN normalize.ci_run_version v ON v.organization_id = r.organization_id AND v.run_id = r.run_id
+        AND v.area_id = r.area_id AND (r.sha IS NULL OR r.sha = v.sha)
+    WHERE r.organization_id = sqlc.arg(organization_id) AND v.id = ANY(sqlc.arg(run_version_ids)::uuid[])
+        AND (r.attempt_id IS NULL OR r.attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[]))
+), executions AS (
+    SELECT DISTINCT ON (r.run_id, t.attempt_id, t.test_case_id, t.config_fingerprint, t.ordinal) t.outcome
+    FROM reports r
+    JOIN normalize.test_execution t ON t.organization_id = r.organization_id AND t.report_id = r.id
+    WHERE r.report_kind = 'junit' AND (t.attempt_id IS NULL OR t.attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[]))
+    ORDER BY r.run_id, t.attempt_id, t.test_case_id, t.config_fingerprint, t.ordinal, r.known_seq DESC, r.id DESC
+), counts AS (
+    SELECT count(*) FILTER (WHERE outcome = 'passed') AS passed,
+        count(*) FILTER (WHERE outcome = 'failed') AS failed,
+        count(*) FILTER (WHERE outcome = 'error') AS errors,
+        count(*) FILTER (WHERE outcome = 'skipped') AS skipped
+    FROM executions
+)
+SELECT r.report_kind, bool_or(r.completeness = 'partial' OR r.exit_class IN ('failed', 'timeout', 'partial')) AS partial,
+    bool_and(r.completeness = 'complete') AS complete,
+    c.passed, c.failed, c.errors, c.skipped
+FROM reports r CROSS JOIN counts c
+GROUP BY r.report_kind, c.passed, c.failed, c.errors, c.skipped
+ORDER BY r.report_kind;

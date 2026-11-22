@@ -6568,15 +6568,22 @@ type MappingVersionPage struct {
 
 // MergeRequest defines model for MergeRequest.
 type MergeRequest struct {
+	// AccessLimited Часть связанных задач скрыта правами; число и имена не раскрываются.
+	AccessLimited *bool         `json:"access_limited,omitempty"`
+	AccessNotes   *[]AccessNote `json:"access_notes,omitempty"`
+
 	// Area Область источника - проект трекера, репозиторий, пространство wiki.
-	Area    AreaRef            `json:"area"`
-	Author  ActorRef           `json:"author"`
+	Area   AreaRef  `json:"area"`
+	Author ActorRef `json:"author"`
+
+	// BaseSha Базовая ревизия MR; null, если источник её не передал.
+	BaseSha *string            `json:"base_sha,omitempty"`
 	Draft   bool               `json:"draft"`
 	HeadSha GitSha             `json:"head_sha"`
 	Id      openapi_types.UUID `json:"id"`
 	Iid     *int               `json:"iid"`
 
-	// Links Связи MR с задачами, подтверждённые и кандидаты. Передаются в `getMergeRequest`; задача без доступа у пользователя не включается.
+	// Links Связи MR с задачами, подтверждённые и кандидаты. В `getMergeRequest` from_object_id содержит MR, to - связанную задачу; задача без доступа у пользователя не включается. ID, тип, метод и статус связи сохраняются независимо от направления показа.
 	Links      *[]Link           `json:"links,omitempty"`
 	OpenedAt   time.Time         `json:"opened_at"`
 	ReadyAt    *time.Time        `json:"ready_at"`
