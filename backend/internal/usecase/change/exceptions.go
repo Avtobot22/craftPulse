@@ -39,7 +39,7 @@ func (u *UseCase) CreateException(ctx context.Context, s entity.Subject, scope e
 	if err != nil {
 		return entity.ExceptionView{}, err
 	}
-	if err := u.existingExceptionAccess(ctx, s, scope, read, &cmd); err != nil {
+	if err := u.checkExceptionArea(ctx, s, read, &cmd); err != nil {
 		return entity.ExceptionView{}, err
 	}
 	kind, err := u.resolveExceptionScope(ctx, s, read, cmd.Draft.Scope, op)
@@ -54,7 +54,7 @@ func (u *UseCase) CreateException(ctx context.Context, s entity.Subject, scope e
 	return u.d.Decisions.Save(ctx, s, scope, cmd)
 }
 
-func (u *UseCase) existingExceptionAccess(ctx context.Context, s entity.Subject, scope, read entity.Scope, cmd *entity.ExceptionWrite) error {
+func (u *UseCase) checkExceptionArea(ctx context.Context, s entity.Subject, read entity.Scope, cmd *entity.ExceptionWrite) error {
 	if cmd.ID.IsZero() {
 		return nil
 	}
@@ -65,15 +65,24 @@ func (u *UseCase) existingExceptionAccess(ctx context.Context, s entity.Subject,
 	if old.Current.Scope.AreaID != cmd.Draft.Scope.AreaID {
 		return outsideExceptionScope("/scope/area_id")
 	}
-	return u.mayWriteException(ctx, s, scope, _exceptionVersion, old.Current.Access(true))
+	return nil
 }
 
 func (u *UseCase) mayWriteException(ctx context.Context, s entity.Subject, scope entity.Scope, op string, target entity.FindingAccess) error {
-	allowed, err := u.d.FindingRights.VisibleFindings(ctx, s, scope, op, []entity.FindingAccess{target})
+	narrow := target
+	narrow.WholeArea = false
+	targets := []entity.FindingAccess{target}
+	if target.WholeArea {
+		targets = append(targets, narrow)
+	}
+	allowed, err := u.d.FindingRights.VisibleFindings(ctx, s, scope, op, targets)
 	if err != nil {
 		return err
 	}
 	if !allowed[target] {
+		if target.WholeArea && allowed[narrow] {
+			return outsideExceptionScope("/scope")
+		}
 		return entity.ErrForbidden
 	}
 	return nil

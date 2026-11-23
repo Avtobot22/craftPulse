@@ -43,6 +43,10 @@ func TestExceptions_ApprovalRenewalExpiryAndPermissions(t *testing.T) {
 	finding := findings[0]
 	require.Equal(t, "security", e.findingKind(t, finding.identity))
 
+	// Exercise imported findings without a live GitLab connection.
+	_, err := e.owner.Exec(t.Context(), "DELETE FROM connect.connection_scope WHERE organization_id=$1 AND area_id=$2", uuid.UUID(e.orgID), repoID)
+	require.NoError(t, err)
+
 	now := e.clock.Now().UTC()
 	expires := now.Add(time.Hour)
 	draft := openapi.ExceptionDraft{
@@ -88,6 +92,7 @@ func TestExceptions_ApprovalRenewalExpiryAndPermissions(t *testing.T) {
 	assert.Contains(t, outside.Body.String(), entity.FieldOutsideScope)
 
 	key := uuid.New()
+	draft.Scope.ComponentId = nil
 	created := post(author, _exceptionsPath, "", key, draft, http.StatusCreated)
 	d := decode[openapi.ExceptionDetail](t, created)
 	require.Equal(t, entity.ExceptionPending, string(d.State))
@@ -130,6 +135,7 @@ func TestExceptions_ApprovalRenewalExpiryAndPermissions(t *testing.T) {
 	e.projectExceptionJobs(t, repoID, activeVersions[0].ID)
 
 	draft.Reason, draft.ExpiresAt = "Extend to the next review", now.Add(2*time.Hour)
+	draft.Scope.ComponentId = &e.goComponent
 	versionPath := path + "/versions"
 	extended := post(author, versionPath, etag, uuid.New(), draft, http.StatusCreated)
 	v2 := decode[openapi.ExceptionDetail](t, extended)
@@ -141,6 +147,18 @@ func TestExceptions_ApprovalRenewalExpiryAndPermissions(t *testing.T) {
 	etag2 := extended.Header().Get("ETag")
 	post(author, versionPath, etag, uuid.New(), draft, http.StatusPreconditionFailed)
 	post(reviewer, decide, etag, uuid.New(), approve, http.StatusPreconditionFailed)
+
+	// Another project now shares the repository, beyond the reviewers' project grants.
+	_, err = e.owner.Exec(t.Context(), `INSERT INTO org.project_area (organization_id,project_id,area_id,valid,known_seq)
+		VALUES ($1,$2,$3,tstzrange($4,NULL,'[)'),1)`, uuid.UUID(e.orgID), e.other, repoID, now)
+	require.NoError(t, err)
+	post(author, versionPath, etag2, uuid.New(), draft, http.StatusForbidden)
+	post(reviewer, decide, etag2, uuid.New(), approve, http.StatusForbidden)
+	bad = draft
+	bad.Scope.ComponentId = nil
+	outside = post(author, _exceptionsPath, "", uuid.New(), bad, http.StatusUnprocessableEntity)
+	assert.Contains(t, outside.Body.String(), entity.FieldOutsideScope)
+
 	assert.Equal(t, activeVersions[0].ID, e.activeExceptions(t, repoID, expires.Add(-time.Second))[0].ID)
 	assert.Empty(t, e.activeExceptions(t, repoID, expires))
 

@@ -32,6 +32,17 @@ func (u *UseCase) Save(ctx context.Context, s entity.Subject, scope entity.Scope
 		return entity.ExceptionView{}, &entity.ValidationError{Fields: []entity.FieldError{{Field: "Idempotency-Key", Code: entity.FieldRequired}}}
 	}
 	org := s.OrganizationID
+	checkedVersion := 0
+	if !cmd.ID.IsZero() {
+		r, cut, err := u.read(ctx, org, cmd.ID)
+		if err != nil {
+			return entity.ExceptionView{}, err
+		}
+		if err := u.writeHistoryAccess(ctx, s, scope, _versionOperation, &r, &cut); err != nil {
+			return entity.ExceptionView{}, err
+		}
+		checkedVersion = r.Versions[0].Number
+	}
 	var id entity.ID
 	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 		if err := u.d.Repo.LockConfirmation(ctx, org, cmd.Key); err != nil {
@@ -48,7 +59,7 @@ func (u *UseCase) Save(ctx context.Context, s entity.Subject, scope entity.Scope
 		case !errors.Is(err, entity.ErrNotFound):
 			return err
 		}
-		id, err = u.saveNew(ctx, s, &cmd)
+		id, err = u.saveNew(ctx, s, &cmd, checkedVersion)
 		return err
 	})
 	if err != nil {
@@ -62,7 +73,7 @@ func sameWrite(v *entity.ExceptionVersion, cmd *entity.ExceptionWrite, author en
 		v.FindingKind == cmd.FindingKind && v.ExceptionDraft == cmd.Draft
 }
 
-func (u *UseCase) saveNew(ctx context.Context, s entity.Subject, cmd *entity.ExceptionWrite) (entity.ID, error) {
+func (u *UseCase) saveNew(ctx context.Context, s entity.Subject, cmd *entity.ExceptionWrite, checkedVersion int) (entity.ID, error) {
 	org, now := s.OrganizationID, stamp(u.d.Clock.Now())
 	rec := entity.ExceptionRecord{}
 	op := _createOperation
@@ -77,7 +88,7 @@ func (u *UseCase) saveNew(ctx context.Context, s entity.Subject, cmd *entity.Exc
 		return entity.ID{}, err
 	}
 	base := len(rec.Versions)
-	if cmd.Base != base || base == math.MaxInt32 {
+	if cmd.Base != base || checkedVersion != base || base == math.MaxInt32 {
 		return entity.ID{}, entity.ErrVersionConflict
 	}
 	if base > 0 && rec.Versions[0].Scope.AreaID != cmd.Draft.Scope.AreaID {
@@ -118,7 +129,7 @@ func (u *UseCase) Decide(ctx context.Context, s entity.Subject, cmd entity.Excep
 	if err != nil {
 		return entity.ExceptionView{}, err
 	}
-	scope, err := u.reviewAccess(ctx, s, &cmd, action)
+	scope, checkedVersion, err := u.reviewAccess(ctx, s, &cmd, action)
 	if err != nil {
 		return entity.ExceptionView{}, err
 	}
@@ -137,7 +148,7 @@ func (u *UseCase) Decide(ctx context.Context, s entity.Subject, cmd entity.Excep
 		case !errors.Is(err, entity.ErrNotFound):
 			return err
 		}
-		return u.applyTransition(ctx, s, &cmd, state)
+		return u.applyTransition(ctx, s, &cmd, state, checkedVersion)
 	})
 	if err != nil {
 		return entity.ExceptionView{}, err
@@ -165,40 +176,59 @@ func transitionRequest(cmd *entity.ExceptionDecision) (status, action string, er
 	}
 }
 
-func (u *UseCase) reviewAccess(ctx context.Context, s entity.Subject, cmd *entity.ExceptionDecision, action string) (entity.Scope, error) {
+func (u *UseCase) reviewAccess(ctx context.Context, s entity.Subject, cmd *entity.ExceptionDecision, action string) (entity.Scope, int, error) {
 	readScope, err := u.d.Access.Authorize(ctx, s, entity.AccessRequest{Operation: _decideOperation, Action: _actionRead})
 	if err != nil {
-		return entity.Scope{}, err
+		return entity.Scope{}, 0, err
 	}
 	r, cut, err := u.read(ctx, s.OrganizationID, cmd.ID)
 	if err != nil {
-		return entity.Scope{}, err
+		return entity.Scope{}, 0, err
 	}
 	if _, err := u.readView(ctx, s, readScope, _decideOperation, &r, &cut); err != nil {
-		return entity.Scope{}, err
+		return entity.Scope{}, 0, err
 	}
 	scope, err := u.d.Access.Authorize(ctx, s, entity.AccessRequest{Operation: _decideOperation, Action: action})
 	if err != nil {
-		return entity.Scope{}, err
+		return entity.Scope{}, 0, err
 	}
-	current := r.Versions[0].Access(true)
-	visible, err := u.d.Access.VisibleFindings(ctx, s, scope, _decideOperation, []entity.FindingAccess{current})
-	if err != nil {
-		return entity.Scope{}, err
+	if err := u.writeHistoryAccess(ctx, s, scope, _decideOperation, &r, &cut); err != nil {
+		return entity.Scope{}, 0, err
 	}
-	if !visible[current] {
-		return entity.Scope{}, entity.ErrForbidden
-	}
-	return scope, nil
+	return scope, r.Versions[0].Number, nil
 }
 
-func (u *UseCase) applyTransition(ctx context.Context, s entity.Subject, cmd *entity.ExceptionDecision, status string) error {
+// A mutation can replace or expose an older approval that is still eligible to take effect.
+func (u *UseCase) writeHistoryAccess(ctx context.Context, s entity.Subject, scope entity.Scope, operation string,
+	r *entity.ExceptionRecord, cut *entity.ExceptionCursor,
+) error {
+	targets := []entity.FindingAccess{r.Versions[0].Access(true)}
+	status := statuses(r, cut.Seq, cut.At)
+	for i := 1; i < len(r.Versions); i++ {
+		v := &r.Versions[i]
+		if status[v.ID] == entity.ExceptionApproved && cut.At.Before(v.ExpiresAt) {
+			targets = append(targets, v.Access(true))
+		}
+	}
+	visible, err := u.d.Access.VisibleFindings(ctx, s, scope, operation, targets)
+	if err != nil {
+		return err
+	}
+	for _, target := range targets {
+		if !visible[target] {
+			return entity.ErrForbidden
+		}
+	}
+	return nil
+}
+
+func (u *UseCase) applyTransition(ctx context.Context, s entity.Subject, cmd *entity.ExceptionDecision, status string, checkedVersion int) error {
 	org := s.OrganizationID
 	r, err := u.d.Repo.Decision(ctx, org, cmd.ID, true)
 	if err != nil {
 		return err
 	}
-	if len(r.Versions) == 0 || r.Versions[0].Number != cmd.Base {
+	if len(r.Versions) == 0 || r.Versions[0].Number != cmd.Base || checkedVersion != cmd.Base {
 		return entity.ErrVersionConflict
 	}
 	current := &r.Versions[0]
