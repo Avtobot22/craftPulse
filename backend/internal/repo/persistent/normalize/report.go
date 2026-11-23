@@ -55,6 +55,7 @@ func (r *Repo) InsertReport(ctx context.Context, orgID entity.ID, rep *entity.Sc
 		ScopeHash: rep.ScopeHash, Sha: text(rep.SHA), ArtifactDigest: text(rep.ArtifactDigest), RunID: nullID(rep.RunID),
 		AttemptID: nullID(rep.AttemptID), StartedAt: tstz(rep.StartedAt), FinishedAt: tstz(rep.FinishedAt), ExitClass: rep.ExitClass,
 		Completeness: rep.Completeness, SkippedTargets: skipped, RefName: text(rep.RefName), Language: text(rep.Language),
+		DocsRunID: text(rep.DocsRunID), DocsFileHash: rep.DocsFileHash,
 	}
 	if p.ScannedCount, err = int4(rep.ScannedCount); err != nil {
 		return err
@@ -78,7 +79,10 @@ func (r *Repo) InsertReport(ctx context.Context, orgID entity.ID, rep *entity.Sc
 	if err := r.insertCoverage(ctx, orgID, id, rep.KnownSeq, rows.Coverage); err != nil {
 		return err
 	}
-	return r.insertCodeFacts(ctx, orgID, id, rows.Code)
+	if err := r.insertCodeFacts(ctx, orgID, id, rows.Code); err != nil {
+		return err
+	}
+	return r.insertDocsFacts(ctx, orgID, id, rep, rows.Docs)
 }
 
 func (r *Repo) insertFindings(ctx context.Context, orgID entity.ID, id uuid.UUID, seq int64, findings []entity.FindingOccurrence) error {

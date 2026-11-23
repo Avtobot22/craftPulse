@@ -418,18 +418,116 @@ WHERE obj.organization_id = $1 AND v.area_id = $2 AND obj.native_id = ANY($3::te
 SELECT record_no FROM normalize.report
 WHERE organization_id = sqlc.arg(organization_id) AND receipt_id = sqlc.arg(receipt_id) AND record_no = ANY (sqlc.arg(record_nos)::integer[]);
 
+-- name: InsertDocsReport :exec
+INSERT INTO normalize.docs_report (organization_id, report_id, root_id, path_prefix, owner_rule, checks, links, sarif_hash)
+VALUES (sqlc.arg(organization_id), sqlc.arg(report_id), sqlc.narg(root_id), sqlc.arg(path_prefix),
+    sqlc.narg(owner_rule), sqlc.arg(checks), sqlc.narg(links), sqlc.narg(sarif_hash));
+
+-- name: InsertDocsReportDocuments :execrows
+WITH input AS (
+    SELECT (doc.value->>'document_id')::uuid AS document_id, doc.value->>'path' AS path,
+        doc.value->>'version_ref' AS version_ref, doc.value->>'format' AS format, doc.value->>'title' AS title,
+        doc.value->>'owner' AS owner, doc.value->>'acl_state' AS acl_state, (doc.value->>'spec_valid')::boolean AS spec_valid,
+        decode(doc.value->>'content_hash', 'base64') AS hash
+    FROM jsonb_array_elements(sqlc.arg(documents)::jsonb) AS doc(value)
+), inserted AS (
+    INSERT INTO normalize.document_version
+        (organization_id, document_id, area_id, known_seq, version_ref, doc_format, path, title, content_hash, owner, acl_state)
+    SELECT sqlc.arg(organization_id), document_id, sqlc.arg(area_id), sqlc.arg(known_seq),
+        version_ref, format, path, title, hash, owner, acl_state
+    FROM input
+    ON CONFLICT (organization_id, document_id, version_ref) DO NOTHING
+    RETURNING id, document_id
+), versions AS (
+    SELECT id, document_id FROM inserted
+    UNION ALL
+    SELECT v.id, v.document_id FROM normalize.document_version v
+    JOIN input i ON i.document_id = v.document_id AND i.version_ref = v.version_ref
+        AND i.hash = v.content_hash AND i.format = v.doc_format
+    WHERE v.organization_id = sqlc.arg(organization_id) AND v.area_id = sqlc.arg(area_id)
+)
+INSERT INTO normalize.docs_report_document (organization_id, report_id, document_version_id, spec_valid)
+SELECT sqlc.arg(organization_id), sqlc.arg(report_id), v.id, i.spec_valid
+FROM versions v JOIN input i USING (document_id);
+
+-- name: DocumentsAt :many
+SELECT v.* FROM normalize.document_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.document_id
+WHERE v.organization_id = sqlc.arg(organization_id) AND v.area_id = sqlc.arg(area_id)
+    AND v.version_ref = sqlc.arg(version_ref) AND v.known_seq <= sqlc.arg(known_seq) AND v.acl_state = 'known'
+    AND NOT o.restricted AND o.deleted_at IS NULL
+    AND (sqlc.arg(path_prefix)::text IN ('', v.path) OR starts_with(v.path, sqlc.arg(path_prefix)::text || '/'))
+ORDER BY v.path, v.id;
+
+-- name: ReceiptDocumentationRoots :many
+SELECT DISTINCT r.area_id, d.root_id, d.path_prefix, r.profile_id, r.sha
+FROM normalize.docs_report d
+JOIN normalize.report r ON r.organization_id = d.organization_id AND r.id = d.report_id
+WHERE r.organization_id = sqlc.arg(organization_id) AND r.receipt_id = sqlc.arg(receipt_id)
+    AND r.sha IS NOT NULL AND r.profile_id IS NOT NULL
+ORDER BY r.area_id, d.root_id, d.path_prefix, r.profile_id, r.sha;
+
+-- name: DocumentationReportsAt :many
+SELECT DISTINCT ON (r.report_kind)
+    r.id, r.report_kind, r.completeness, r.skipped_count, d.owner_rule, d.checks, d.links, r.known_seq,
+    COALESCE(r.finished_at, r.started_at, uuid_extract_timestamp(r.id))::timestamptz AS observed_at,
+    COALESCE(sarif.id, '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS sarif_id
+FROM normalize.report r
+JOIN normalize.docs_report d ON d.organization_id = r.organization_id AND d.report_id = r.id
+LEFT JOIN LATERAL (
+    SELECT s.id FROM normalize.report s
+    WHERE s.organization_id = r.organization_id AND s.area_id = r.area_id AND s.sha = r.sha
+        AND s.report_kind = r.report_kind AND s.report_format = 'sarif' AND s.profile_id = r.profile_id
+        AND s.docs_run_id = r.docs_run_id AND s.docs_file_hash = d.sarif_hash
+        AND s.known_seq <= sqlc.arg(known_seq)
+    ORDER BY (s.receipt_id = r.receipt_id) DESC, s.known_seq DESC, s.id DESC
+    LIMIT 1
+) sarif ON true
+WHERE r.organization_id = sqlc.arg(organization_id) AND r.area_id = sqlc.arg(area_id)
+    AND r.sha = sqlc.arg(sha) AND r.profile_id = sqlc.arg(profile_id) AND r.known_seq <= sqlc.arg(known_seq)
+    AND d.path_prefix = sqlc.arg(path_prefix) AND (d.root_id = sqlc.arg(root_id) OR d.root_id IS NULL)
+ORDER BY r.report_kind, COALESCE(r.finished_at, r.started_at) DESC NULLS LAST, r.known_seq DESC, r.id DESC;
+
+-- name: DocumentationReportDocuments :many
+SELECT d.report_id, v.id, v.document_id, v.version_ref, v.doc_format, v.path, v.title, v.content_hash, v.owner, v.acl_state, d.spec_valid
+FROM normalize.docs_report_document d
+JOIN normalize.document_version v ON v.organization_id = d.organization_id AND v.id = d.document_version_id
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.document_id
+WHERE d.organization_id = sqlc.arg(organization_id) AND d.report_id = ANY(sqlc.arg(report_ids)::uuid[])
+    AND v.acl_state = 'known' AND NOT o.restricted AND o.deleted_at IS NULL
+ORDER BY d.report_id, v.path, v.id;
+
+-- name: DocumentationFindingsAt :many
+SELECT f.id, f.report_id, f.finding_kind, f.rule_id, f.path, f.line_start,
+    COALESCE(f.mapped_severity, f.native_severity, 'unknown')::text AS severity, f.evidence,
+    first_seen.first_seen_at, COALESCE(f.evidence ? 'link', false)::boolean AS has_link_target
+FROM normalize.finding_occurrence f
+JOIN LATERAL (
+    SELECT min(COALESCE(r.finished_at, r.started_at, rc.received_at, uuid_extract_timestamp(r.id)))::timestamptz AS first_seen_at
+    FROM normalize.finding_occurrence old
+    JOIN normalize.report r ON r.organization_id = old.organization_id AND r.id = old.report_id
+    LEFT JOIN ingest.receipt rc ON rc.organization_id = r.organization_id AND rc.id = r.receipt_id
+    WHERE old.organization_id = f.organization_id AND old.fingerprint = f.fingerprint
+        AND old.finding_kind IN ('docs', 'openapi') AND old.finding_kind = f.finding_kind
+        AND r.area_id = sqlc.arg(area_id) AND r.known_seq <= sqlc.arg(known_seq)
+) first_seen ON true
+WHERE f.organization_id = sqlc.arg(organization_id) AND f.report_id = ANY(sqlc.arg(report_ids)::uuid[])
+    AND f.finding_kind IN ('docs', 'openapi') AND (f.evidence->>'suppressed') IS DISTINCT FROM 'true'
+    AND (sqlc.arg(path_prefix)::text IN ('', f.path) OR f.path IS NULL OR starts_with(f.path, sqlc.arg(path_prefix)::text || '/'))
+ORDER BY f.finding_kind, f.path, f.line_start, f.rule_id, f.id;
+
 -- name: InsertReport :one
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
     scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
-    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language)
+    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash)
 VALUES (sqlc.arg(organization_id), sqlc.arg(receipt_id), sqlc.arg(record_no), sqlc.arg(known_seq), sqlc.arg(area_id), sqlc.narg(component_id),
     sqlc.arg(report_kind), sqlc.arg(mode), sqlc.narg(producer), sqlc.narg(producer_version), sqlc.arg(report_format), sqlc.arg(schema_version),
     sqlc.arg(parser_version), sqlc.narg(profile_id), sqlc.narg(rules_hash), sqlc.narg(config_hash), sqlc.narg(db_version),
     sqlc.narg(db_published_at), sqlc.narg(scope_hash), sqlc.narg(sha), sqlc.narg(artifact_digest), sqlc.narg(run_id), sqlc.narg(attempt_id),
     sqlc.narg(started_at), sqlc.narg(finished_at), sqlc.arg(exit_class), sqlc.arg(completeness), sqlc.narg(scanned_count),
     sqlc.narg(skipped_count), sqlc.arg(skipped_targets), sqlc.narg(history_from_sha), sqlc.narg(history_to_sha), sqlc.narg(history_truncated),
-    sqlc.narg(ref_name), sqlc.narg(language))
+    sqlc.narg(ref_name), sqlc.narg(language), sqlc.narg(docs_run_id), sqlc.narg(docs_file_hash))
 RETURNING id;
 
 -- An empty text and a zero line stand for NULL: arrays of the statement carry no NULL elements. Set-returning
