@@ -48,7 +48,7 @@ func TestExceptions_ApprovalRenewalExpiryAndPermissions(t *testing.T) {
 	require.NoError(t, err)
 
 	now := e.clock.Now().UTC()
-	expires := now.Add(time.Hour)
+	expires := now.Add(10 * time.Minute)
 	draft := openapi.ExceptionDraft{
 		DecisionType: openapi.ExceptionDraftDecisionType(entity.ExceptionAcceptedRisk), Reason: "Reviewed in the test project",
 		EffectiveFrom: now, ExpiresAt: expires,
@@ -104,7 +104,8 @@ func TestExceptions_ApprovalRenewalExpiryAndPermissions(t *testing.T) {
 	assert.Equal(t, d.Id, decode[openapi.ExceptionDetail](t, retry).Id)
 	bad = draft
 	bad.Reason = "Different request"
-	post(author, _exceptionsPath, "", key, bad, http.StatusConflict)
+	reused := post(author, _exceptionsPath, "", key, bad, http.StatusUnprocessableEntity)
+	assert.Contains(t, reused.Body.String(), "idempotency_key_reused")
 
 	before := e.activeExceptions(t, repoID, now)
 	assert.Empty(t, before)
@@ -134,7 +135,7 @@ func TestExceptions_ApprovalRenewalExpiryAndPermissions(t *testing.T) {
 	assert.False(t, activeVersions[0].Matches(coord))
 	e.projectExceptionJobs(t, repoID, activeVersions[0].ID)
 
-	draft.Reason, draft.ExpiresAt = "Extend to the next review", now.Add(2*time.Hour)
+	draft.Reason, draft.ExpiresAt = "Extend to the next review", now.Add(20*time.Minute)
 	draft.Scope.ComponentId = &e.goComponent
 	versionPath := path + "/versions"
 	extended := post(author, versionPath, etag, uuid.New(), draft, http.StatusCreated)
