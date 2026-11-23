@@ -94,3 +94,30 @@ WHERE c.repository_area_id = sqlc.arg(area_id) AND c.status = 'confirmed'
     AND c.confirmed_at <= sqlc.arg(run_at)::timestamptz
     AND (c.superseded_at IS NULL OR c.superseded_at > sqlc.arg(run_at)::timestamptz)
 ORDER BY e.analysis_kind, e.component_id, e.language;
+
+-- name: ExceptionFindingKinds :many
+SELECT DISTINCT f.finding_kind FROM change.finding_identity f
+JOIN change.occurrence_identity i ON i.organization_id = f.organization_id AND i.finding_identity_id = f.id
+JOIN normalize.finding_occurrence o ON o.organization_id = i.organization_id AND o.id = i.occurrence_id
+JOIN normalize.report r ON r.organization_id = o.organization_id AND r.id = o.report_id
+WHERE f.organization_id = sqlc.arg(organization_id) AND f.area_id = sqlc.arg(area_id)
+    AND (sqlc.narg(finding_id)::uuid IS NULL OR f.id = sqlc.narg(finding_id))
+    AND (sqlc.narg(rule_id)::text IS NULL OR f.rule_id = sqlc.narg(rule_id))
+    AND (sqlc.narg(component_id)::uuid IS NULL OR (r.component_id = sqlc.narg(component_id) AND EXISTS (
+        SELECT 1 FROM org.component c WHERE c.organization_id = f.organization_id AND c.id = r.component_id
+            AND c.repository_area_id = f.area_id AND c.superseded_seq IS NULL AND c.status = 'confirmed')))
+    AND (sqlc.narg(path_prefix)::text IS NULL OR o.path = sqlc.narg(path_prefix) OR starts_with(o.path, sqlc.narg(path_prefix) || '/'))
+    AND (sqlc.narg(package_purl)::text IS NULL OR o.package_purl = sqlc.narg(package_purl))
+ORDER BY f.finding_kind;
+
+-- name: LockExceptionProjection :exec
+SELECT pg_advisory_xact_lock(hashtextextended('change.exception_projection:' ||
+    sqlc.arg(organization_id)::uuid::text || ':' || sqlc.arg(area_id)::uuid::text, 0));
+
+-- name: StoreExceptionProjection :exec
+INSERT INTO change.exception_projection (organization_id, area_id, as_of, known_seq, active_version_ids)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (organization_id, area_id) DO UPDATE
+SET as_of = EXCLUDED.as_of, known_seq = EXCLUDED.known_seq, active_version_ids = EXCLUDED.active_version_ids
+WHERE change.exception_projection.as_of <= EXCLUDED.as_of
+    AND change.exception_projection.known_seq <= EXCLUDED.known_seq;

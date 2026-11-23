@@ -30,16 +30,18 @@ type Auditor interface {
 }
 
 type Deps struct {
-	Repo       repo.ChangeRepo
-	Reports    Reports
-	Tenants    repo.TenantRepo
-	Tx         repo.Transactor
-	Components Components
-	Roots      Roots
-	Auditor    Auditor
-	Catalog    entity.CheckCatalog
-	Clock      clock.Clock
-	NewID      func() (entity.ID, error)
+	Repo          repo.ChangeRepo
+	Reports       Reports
+	Decisions     Decisions
+	FindingRights FindingRights
+	Tenants       repo.TenantRepo
+	Tx            repo.Transactor
+	Components    Components
+	Roots         Roots
+	Auditor       Auditor
+	Catalog       entity.CheckCatalog
+	Clock         clock.Clock
+	NewID         func() (entity.ID, error)
 }
 
 type UseCase struct {

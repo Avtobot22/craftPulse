@@ -1975,6 +1975,7 @@ export interface paths {
         /**
          * Подтвердить или отклонить ожидающую версию решения
          * @description Ревьюер подтверждает или отклоняет ожидающую версию (UC-28 A3, UI-48).
+         *     Автор с правом `exceptions.manage` отзывает свою версию через `withdraw`.
          *     Решение относится к версии из `If-Match`. Переход из конечного статуса - `409
          *     state_conflict`. Автор не подтверждает своё решение, если политика требует ревьюера
          *     (`403`).
@@ -5111,7 +5112,7 @@ export interface components {
         };
         ExceptionDecision: {
             /** @enum {string} */
-            decision: "approve" | "reject";
+            decision: "approve" | "reject" | "withdraw";
             comment?: string;
         };
         DocumentationRoot: {

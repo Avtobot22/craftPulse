@@ -18,13 +18,15 @@ import (
 const _minSnooze = time.Second
 
 type Deps struct {
-	Probes     usecase.ProbeRunner
-	Packages   usecase.PackageProcessor
-	Collection usecase.Collector
-	Normalizer usecase.Normalizer
-	Calculator usecase.Calculator
-	Retention  usecase.Retention
-	Identifier usecase.Identifier
+	Probes             usecase.ProbeRunner
+	Packages           usecase.PackageProcessor
+	Collection         usecase.Collector
+	Normalizer         usecase.Normalizer
+	Calculator         usecase.Calculator
+	Retention          usecase.Retention
+	Identifier         usecase.Identifier
+	DecisionExpiry     usecase.DecisionExpiry
+	ExceptionProjector usecase.ExceptionProjector
 }
 
 // Register adds the handlers of the job kinds; the count matters: River refuses to fetch jobs without a
@@ -49,7 +51,16 @@ func Register(w *river.Workers, d Deps) int {
 	river.AddWorker(w, &extendTickWorker{calculator: d.Calculator})
 	river.AddWorker(w, &retentionWorker{retention: d.Retention})
 	river.AddWorker(w, &identifyWorker{identifier: d.Identifier})
-	return 19
+	count := 19
+	if d.DecisionExpiry != nil {
+		river.AddWorker(w, &decisionExpiryWorker{decisions: d.DecisionExpiry})
+		count++
+	}
+	if d.ExceptionProjector != nil {
+		river.AddWorker(w, &exceptionProjectorWorker{change: d.ExceptionProjector})
+		count++
+	}
+	return count
 }
 
 const (
@@ -286,4 +297,22 @@ type mrWorker struct {
 
 func (w *mrWorker) Work(ctx context.Context, job *river.Job[entity.SyncMRJob]) error {
 	return snooze(w.collector.RunMR(ctx, job.Args, holder(job.JobRow), completeIn(job)))
+}
+
+type decisionExpiryWorker struct {
+	river.WorkerDefaults[entity.DecisionExpireJob]
+	decisions usecase.DecisionExpiry
+}
+
+func (w *decisionExpiryWorker) Work(ctx context.Context, job *river.Job[entity.DecisionExpireJob]) error {
+	return w.decisions.RunExpire(ctx, job.Args, completeIn(job))
+}
+
+type exceptionProjectorWorker struct {
+	river.WorkerDefaults[entity.ChangeRecountJob]
+	change usecase.ExceptionProjector
+}
+
+func (w *exceptionProjectorWorker) Work(ctx context.Context, job *river.Job[entity.ChangeRecountJob]) error {
+	return w.change.RunExceptionRecount(ctx, job.Args, completeIn(job))
 }

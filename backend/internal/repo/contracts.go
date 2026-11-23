@@ -508,8 +508,26 @@ type ChangeRepo interface {
 	AssignedOccurrences(ctx context.Context, orgID entity.ID, occurrences []entity.ID) ([]entity.ID, error)
 	InsertOccurrenceIdentities(ctx context.Context, orgID entity.ID, list []entity.OccurrenceIdentity, at time.Time, seq int64) error
 	FindingIdentity(ctx context.Context, orgID, id entity.ID) (entity.FindingIdentity, error)
+	FindingKindsForException(ctx context.Context, org entity.ID, s entity.ExceptionScope) ([]string, error)
+	LockExceptionProjection(ctx context.Context, org, area entity.ID) error
+	ProjectExceptions(ctx context.Context, org, area entity.ID, seq int64, at time.Time, versions []entity.ID) error
 	OccurrenceIdentities(ctx context.Context, orgID entity.ID, occurrences []entity.ID) ([]entity.OccurrenceIdentity, error)
 	LockCurrentBaseline(ctx context.Context, orgID, componentID entity.ID, language, kind string) (entity.Baseline, error)
 	ReplaceBaseline(ctx context.Context, orgID entity.ID, old, b *entity.Baseline) error
 	CurrentBaselines(ctx context.Context, orgID entity.ID, components []entity.ID) ([]entity.Baseline, error)
+}
+
+// DecisionRepo owns the journal and the next scheduled boundary of each exception.
+type DecisionRepo interface {
+	LockConfirmation(ctx context.Context, org, key entity.ID) error
+	InsertDecision(ctx context.Context, org, actor entity.ID, at time.Time) (entity.ID, error)
+	Decision(ctx context.Context, org, id entity.ID, lock bool) (entity.ExceptionRecord, error)
+	SetWake(ctx context.Context, org, id entity.ID, at *time.Time) error
+	VersionByConfirmation(ctx context.Context, org, key entity.ID) (entity.ExceptionVersion, error)
+	TransitionByConfirmation(ctx context.Context, org, key entity.ID) (entity.ID, entity.ExceptionTransition, error)
+	InsertVersion(ctx context.Context, org entity.ID, v *entity.ExceptionVersion) (entity.ID, error)
+	InsertTransition(ctx context.Context, org entity.ID, t *entity.ExceptionTransition) error
+	Histories(ctx context.Context, org entity.ID, ids []entity.ID, seq int64) (map[entity.ID]*entity.ExceptionRecord, error)
+	AreaDecisionIDs(ctx context.Context, org, area entity.ID, seq int64, at time.Time) ([]entity.ID, error)
+	PageDecisions(ctx context.Context, org entity.ID, q *entity.ExceptionQuery, cut *entity.ExceptionCursor, limit int32) ([]entity.ExceptionCursor, error)
 }

@@ -84,6 +84,60 @@ func (q *Queries) CurrentBaselines(ctx context.Context, arg CurrentBaselinesPara
 	return items, nil
 }
 
+const exceptionFindingKinds = `-- name: ExceptionFindingKinds :many
+SELECT DISTINCT f.finding_kind FROM change.finding_identity f
+JOIN change.occurrence_identity i ON i.organization_id = f.organization_id AND i.finding_identity_id = f.id
+JOIN normalize.finding_occurrence o ON o.organization_id = i.organization_id AND o.id = i.occurrence_id
+JOIN normalize.report r ON r.organization_id = o.organization_id AND r.id = o.report_id
+WHERE f.organization_id = $1 AND f.area_id = $2
+    AND ($3::uuid IS NULL OR f.id = $3)
+    AND ($4::text IS NULL OR f.rule_id = $4)
+    AND ($5::uuid IS NULL OR (r.component_id = $5 AND EXISTS (
+        SELECT 1 FROM org.component c WHERE c.organization_id = f.organization_id AND c.id = r.component_id
+            AND c.repository_area_id = f.area_id AND c.superseded_seq IS NULL AND c.status = 'confirmed')))
+    AND ($6::text IS NULL OR o.path = $6 OR starts_with(o.path, $6 || '/'))
+    AND ($7::text IS NULL OR o.package_purl = $7)
+ORDER BY f.finding_kind
+`
+
+type ExceptionFindingKindsParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	FindingID      uuid.NullUUID
+	RuleID         pgtype.Text
+	ComponentID    uuid.NullUUID
+	PathPrefix     pgtype.Text
+	PackagePurl    pgtype.Text
+}
+
+func (q *Queries) ExceptionFindingKinds(ctx context.Context, arg ExceptionFindingKindsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, exceptionFindingKinds,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.FindingID,
+		arg.RuleID,
+		arg.ComponentID,
+		arg.PathPrefix,
+		arg.PackagePurl,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var finding_kind string
+		if err := rows.Scan(&finding_kind); err != nil {
+			return nil, err
+		}
+		items = append(items, finding_kind)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findingIdentity = `-- name: FindingIdentity :one
 SELECT organization_id, id, area_id, method_version, fingerprint, content_fingerprint, rule_id, finding_kind, first_report_id, first_seen_at FROM change.finding_identity WHERE organization_id = $1 AND id = $2
 `
@@ -394,6 +448,21 @@ func (q *Queries) LockCurrentBaseline(ctx context.Context, arg LockCurrentBaseli
 	return i, err
 }
 
+const lockExceptionProjection = `-- name: LockExceptionProjection :exec
+SELECT pg_advisory_xact_lock(hashtextextended('change.exception_projection:' ||
+    $1::uuid::text || ':' || $2::uuid::text, 0))
+`
+
+type LockExceptionProjectionParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+}
+
+func (q *Queries) LockExceptionProjection(ctx context.Context, arg LockExceptionProjectionParams) error {
+	_, err := q.db.Exec(ctx, lockExceptionProjection, arg.OrganizationID, arg.AreaID)
+	return err
+}
+
 const pipelineExpectedReports = `-- name: PipelineExpectedReports :many
 WITH versions AS (
     SELECT DISTINCT ON (v.project_id) v.id
@@ -558,6 +627,34 @@ func (q *Queries) ReportIdentities(ctx context.Context, arg ReportIdentitiesPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const storeExceptionProjection = `-- name: StoreExceptionProjection :exec
+INSERT INTO change.exception_projection (organization_id, area_id, as_of, known_seq, active_version_ids)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (organization_id, area_id) DO UPDATE
+SET as_of = EXCLUDED.as_of, known_seq = EXCLUDED.known_seq, active_version_ids = EXCLUDED.active_version_ids
+WHERE change.exception_projection.as_of <= EXCLUDED.as_of
+    AND change.exception_projection.known_seq <= EXCLUDED.known_seq
+`
+
+type StoreExceptionProjectionParams struct {
+	OrganizationID   uuid.UUID
+	AreaID           uuid.UUID
+	AsOf             time.Time
+	KnownSeq         int64
+	ActiveVersionIds []uuid.UUID
+}
+
+func (q *Queries) StoreExceptionProjection(ctx context.Context, arg StoreExceptionProjectionParams) error {
+	_, err := q.db.Exec(ctx, storeExceptionProjection,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.AsOf,
+		arg.KnownSeq,
+		arg.ActiveVersionIds,
+	)
+	return err
 }
 
 const supersedeBaseline = `-- name: SupersedeBaseline :exec

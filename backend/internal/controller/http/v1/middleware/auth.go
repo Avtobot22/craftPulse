@@ -112,8 +112,8 @@ func Authorize(access usecase.Access, metrics *Metrics) gin.HandlerFunc {
 			response.Write(c, response.AuthRequired)
 			return
 		}
-		// Management handlers authorize the project from the query, body or stored token.
-		if action == "upload_tokens.manage" && s.UploadTokenID.IsZero() {
+		// Token management resolves its project, and exception review resolves the requested transition.
+		if s.UploadTokenID.IsZero() && (action == "upload_tokens.manage" || c.GetString(_operationKey) == "decideException") {
 			c.Next()
 			return
 		}

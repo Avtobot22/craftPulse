@@ -37,6 +37,7 @@ const (
 	ruleProjectManager
 	// ruleTechLead is a tech lead of the project; an administrator does not stand in for it.
 	ruleTechLead
+	ruleExceptionManage
 )
 
 // _rules is table 5.3 for the actions served so far; an action missing here is granted to nobody.
@@ -63,6 +64,9 @@ var _rules = map[string]rule{
 	"docs.manage":           ruleServiceOwner,
 	"links.decide":          ruleProjectManager,
 	"check_profiles.manage": ruleTechLead,
+	"exceptions.manage":     ruleExceptionManage,
+	"exceptions.review":     ruleTechLead,
+	"findings.read":         ruleAreaRead,
 }
 
 // Profiles is the org module; Profile runs in the caller's organization transaction.
@@ -170,6 +174,12 @@ func (u *UseCase) Authorize(ctx context.Context, s entity.Subject, r entity.Acce
 		return managedScope(p), nil
 	}
 	if denial == nil {
+		switch r.Action {
+		case "exceptions.manage":
+			return entity.GrantScope(entity.ScopeGrant{Projects: p.ExceptionProjects, SecurityProjects: p.SecurityProjects}), nil
+		case "exceptions.review":
+			return entity.GrantScope(entity.ScopeGrant{Projects: p.LeadProjects, SecurityProjects: p.SecurityProjects}), nil
+		}
 		return scope(p), nil
 	}
 	err = u.auditor.RecordSeparately(ctx, entity.AuditEvent{
@@ -224,6 +234,9 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
 	if _rules[r.Action] == ruleTechLead && !r.Area.ID.IsZero() && !slices.Contains(p.LeadProjects, r.Area.ID) {
+		return ReasonNoPermission, entity.ErrForbidden
+	}
+	if _rules[r.Action] == ruleExceptionManage && !r.Area.ID.IsZero() && !slices.Contains(p.ExceptionProjects, r.Area.ID) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
 	if _rules[r.Action] == ruleProcessOwner && !ownsProcess(p, r.Area) {
@@ -284,6 +297,8 @@ func granted(p entity.Profile, action string) bool {
 		return len(p.UploadProjects) > 0
 	case ruleTechLead:
 		return len(p.LeadProjects) > 0
+	case ruleExceptionManage:
+		return len(p.ExceptionProjects) > 0
 	case ruleReceipts:
 		return len(p.UploadProjects) > 0 || slices.ContainsFunc(p.Roles, func(r entity.RoleAssignment) bool { return r.Role == entity.RoleAdministrator })
 	case ruleSession:
@@ -329,6 +344,6 @@ func scope(p entity.Profile) entity.Scope {
 		return out
 	}
 	return entity.GrantScope(entity.ScopeGrant{
-		Whole: p.Whole, Teams: ids(p.Areas.Teams), Projects: ids(p.Areas.Projects), Services: ids(p.Areas.Services),
+		Whole: p.Whole, Teams: ids(p.Areas.Teams), Projects: ids(p.Areas.Projects), Services: ids(p.Areas.Services), SecurityProjects: p.SecurityProjects,
 	})
 }

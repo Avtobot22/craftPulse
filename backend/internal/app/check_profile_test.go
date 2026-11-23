@@ -22,6 +22,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/oidc"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/change"
+	decisionuc "github.com/Avtobot22/craftPulse/backend/internal/usecase/decision"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/normalize"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/org"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
@@ -39,6 +40,7 @@ type checksEnv struct {
 	areas             map[string]uuid.UUID
 	orgs              *org.UseCase
 	norm              *normalize.UseCase
+	decisions         *decisionuc.UseCase
 }
 
 func newChecksEnv(t *testing.T) *checksEnv {
@@ -51,9 +53,11 @@ func newChecksEnv(t *testing.T) *checksEnv {
 	e.orgs = orgs
 	e.norm, err = newNormalize(e.app, e.store, e.uc, orgs, nil, e.clock)
 	require.NoError(t, err)
+	e.decisions, err = newDecision(e.app, e.rights, e.clock)
+	require.NoError(t, err)
 	reg := prometheus.NewRegistry()
 	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg,
-		apiModules{orgs: orgs, access: e.rights, connections: e.connect, intake: e.uc, catalog: catalog, findingReports: e.norm})
+		apiModules{orgs: orgs, access: e.rights, connections: e.connect, intake: e.uc, catalog: catalog, findingReports: e.norm, decisions: e.decisions})
 	e.router = httpctrl.NewRouter(zerolog.New(zerolog.SyncWriter(e.logs)), reg, health.Probes{Ready: &health.Readiness{}}, api)
 
 	e.other = e.tokenProject(t, e.orgID)

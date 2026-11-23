@@ -187,6 +187,12 @@ func (u *UseCase) Profile(ctx context.Context, orgID, userID entity.ID, at time.
 	if p.LeadProjects, err = u.roleProjects(ctx, orgID, roles, at, entity.RoleTechLead); err != nil {
 		return entity.Profile{}, err
 	}
+	if p.ExceptionProjects, err = u.roleProjects(ctx, orgID, roles, at, entity.RoleTechLead, entity.RoleDeveloper); err != nil {
+		return entity.Profile{}, err
+	}
+	if p.SecurityProjects, err = u.roleProjects(ctx, orgID, roles, at, entity.RoleSecurityAccess); err != nil {
+		return entity.Profile{}, err
+	}
 	return p, nil
 }
 

@@ -1242,8 +1242,9 @@ func (e DodVersionObligationsEvidenceKind) Valid() bool {
 
 // Defines values for ExceptionDecisionDecision.
 const (
-	ExceptionDecisionDecisionApprove ExceptionDecisionDecision = "approve"
-	ExceptionDecisionDecisionReject  ExceptionDecisionDecision = "reject"
+	ExceptionDecisionDecisionApprove  ExceptionDecisionDecision = "approve"
+	ExceptionDecisionDecisionReject   ExceptionDecisionDecision = "reject"
+	ExceptionDecisionDecisionWithdraw ExceptionDecisionDecision = "withdraw"
 )
 
 // Valid indicates whether the value is a known member of the ExceptionDecisionDecision enum.
@@ -1252,6 +1253,8 @@ func (e ExceptionDecisionDecision) Valid() bool {
 	case ExceptionDecisionDecisionApprove:
 		return true
 	case ExceptionDecisionDecisionReject:
+		return true
+	case ExceptionDecisionDecisionWithdraw:
 		return true
 	default:
 		return false
