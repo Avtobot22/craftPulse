@@ -28,6 +28,7 @@ type Handler struct {
 	intake
 	process
 	checks
+	exceptions
 	reports
 	codeDetails
 	fallback
@@ -41,30 +42,32 @@ type fallback struct {
 }
 
 type Deps struct {
-	Webhooks      usecase.Webhooks
-	SourceLinks   usecase.SourceLinks
-	SiteURL       string
-	Documentation usecase.Documentation
-	Links         usecase.Links
-	UploadTokens  usecase.UploadTokens
-	Logins        usecase.Logins
-	Access        usecase.Access
-	Structure     usecase.Structure
-	Users         usecase.Users
-	Audit         usecase.AuditLog
-	Protocols     usecase.Protocols
-	Connections   usecase.Connections
-	Accounts      usecase.Accounts
-	Intake        usecase.Intake
-	Sync          usecase.SyncStatus
-	Operations    usecase.Operations
-	Reports       usecase.TeamReports
-	Code          usecase.CodeDetails
-	Process       usecase.Process
-	Previews      usecase.MappingPreviews
-	Targets       usecase.Targets
-	Checks        usecase.CheckProfiles
-	Registerer    prometheus.Registerer
+	Webhooks        usecase.Webhooks
+	SourceLinks     usecase.SourceLinks
+	SiteURL         string
+	Documentation   usecase.Documentation
+	Links           usecase.Links
+	UploadTokens    usecase.UploadTokens
+	Logins          usecase.Logins
+	Access          usecase.Access
+	Structure       usecase.Structure
+	Users           usecase.Users
+	Audit           usecase.AuditLog
+	Protocols       usecase.Protocols
+	Connections     usecase.Connections
+	Accounts        usecase.Accounts
+	Intake          usecase.Intake
+	Sync            usecase.SyncStatus
+	Operations      usecase.Operations
+	Reports         usecase.TeamReports
+	Code            usecase.CodeDetails
+	Process         usecase.Process
+	Previews        usecase.MappingPreviews
+	Targets         usecase.Targets
+	Checks          usecase.CheckProfiles
+	Exceptions      usecase.Exceptions
+	ExceptionDrafts usecase.ExceptionDrafts
+	Registerer      prometheus.Registerer
 }
 
 func New(d Deps) *Handler {
@@ -79,6 +82,7 @@ func New(d Deps) *Handler {
 		intake:         intake{uc: d.Intake},
 		process:        process{uc: d.Process, previews: d.Previews, targets: d.Targets, connections: d.Connections},
 		checks:         checks{uc: d.Checks},
+		exceptions:     exceptions{uc: d.Exceptions, drafts: d.ExceptionDrafts},
 		codeDetails:    codeDetails{uc: d.Code},
 		reports:        reports{operations: d.Operations, views: d.Reports},
 		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),

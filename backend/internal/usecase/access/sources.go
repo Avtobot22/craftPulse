@@ -238,7 +238,7 @@ func (u *UseCase) grant(ctx context.Context, s entity.Subject, scope entity.Scop
 ) (entity.Scope, error) {
 	g := entity.ScopeGrant{
 		Whole: scope.Whole() && !q.Projects, Teams: scope.Teams(), Projects: scope.Projects(), Services: scope.Services(),
-		Areas: scope.Areas(), Objects: scope.Objects(),
+		Areas: scope.Areas(), Objects: scope.Objects(), SecurityProjects: scope.SecurityProjects(),
 	}
 	notes := scope.Notes()
 	if q.Projects {

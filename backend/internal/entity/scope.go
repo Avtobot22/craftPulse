@@ -9,13 +9,14 @@ import (
 // source areas and the objects with their own restriction the sources allow. Only access builds it with
 // GrantScope, which forbidigo refuses elsewhere; the zero value allows nothing.
 type Scope struct {
-	whole    bool
-	teams    []ID
-	projects []ID
-	services []ID
-	areas    []ID
-	objects  []ID
-	notes    []AccessNote
+	whole            bool
+	teams            []ID
+	projects         []ID
+	securityProjects []ID
+	services         []ID
+	areas            []ID
+	objects          []ID
+	notes            []AccessNote
 }
 
 // ScopeGrant is the decision access turns into a scope.
@@ -27,14 +28,16 @@ type ScopeGrant struct {
 	// Areas are the source areas the sources allow the user now.
 	Areas []ID
 	// Objects are the objects with their own restriction the sources allow one by one.
-	Objects []ID
-	Notes   []AccessNote
+	Objects          []ID
+	Notes            []AccessNote
+	SecurityProjects []ID
 }
 
 func GrantScope(g ScopeGrant) Scope {
 	return Scope{
 		whole: g.Whole, teams: slices.Clone(g.Teams), projects: slices.Clone(g.Projects), services: slices.Clone(g.Services),
-		areas: slices.Clone(g.Areas), objects: slices.Clone(g.Objects), notes: slices.Clone(g.Notes),
+		securityProjects: slices.Clone(g.SecurityProjects),
+		areas:            slices.Clone(g.Areas), objects: slices.Clone(g.Objects), notes: slices.Clone(g.Notes),
 	}
 }
 
@@ -44,6 +47,9 @@ func (s Scope) Whole() bool { return s.whole }
 func (s Scope) Teams() []ID { return slices.Clone(s.teams) }
 
 func (s Scope) Projects() []ID { return slices.Clone(s.projects) }
+
+// SecurityProjects are the projects with an explicit grant to view sensitive findings.
+func (s Scope) SecurityProjects() []ID { return slices.Clone(s.securityProjects) }
 
 func (s Scope) Services() []ID { return slices.Clone(s.services) }
 

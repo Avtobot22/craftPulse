@@ -1242,8 +1242,9 @@ func (e DodVersionObligationsEvidenceKind) Valid() bool {
 
 // Defines values for ExceptionDecisionDecision.
 const (
-	ExceptionDecisionDecisionApprove ExceptionDecisionDecision = "approve"
-	ExceptionDecisionDecisionReject  ExceptionDecisionDecision = "reject"
+	ExceptionDecisionDecisionApprove  ExceptionDecisionDecision = "approve"
+	ExceptionDecisionDecisionReject   ExceptionDecisionDecision = "reject"
+	ExceptionDecisionDecisionWithdraw ExceptionDecisionDecision = "withdraw"
 )
 
 // Valid indicates whether the value is a known member of the ExceptionDecisionDecision enum.
@@ -1252,6 +1253,8 @@ func (e ExceptionDecisionDecision) Valid() bool {
 	case ExceptionDecisionDecisionApprove:
 		return true
 	case ExceptionDecisionDecisionReject:
+		return true
+	case ExceptionDecisionDecisionWithdraw:
 		return true
 	default:
 		return false
@@ -5442,6 +5445,9 @@ type CodeLocation struct {
 
 // CohortItem defines model for CohortItem.
 type CohortItem struct {
+	// Basis Доступные MR и текущие pipelines, проверенные для вклада задачи в X01 или X02.
+	Basis *[]ObjectRef `json:"basis,omitempty"`
+
 	// BasisDeleted Основание удалено по запросу или сроку; содержимое объекта не выдаётся.
 	BasisDeleted bool `json:"basis_deleted"`
 
@@ -5463,6 +5469,9 @@ type CohortItem struct {
 	PipelineId *openapi_types.UUID `json:"pipeline_id,omitempty"`
 	ReasonCode *string             `json:"reason_code"`
 	Role       CohortItemRole      `json:"role"`
+
+	// Signals Признаки ожидания ревью и состояния CI, найденные среди доступных оснований X01 или X02.
+	Signals *[]string `json:"signals,omitempty"`
 
 	// SizeLabel Размер задачи на начало эпизода; `null` - группа «без размера». Передаётся для когорт задач.
 	SizeLabel *string `json:"size_label,omitempty"`
@@ -6775,7 +6784,7 @@ type MetricPoint struct {
 type MetricSeries struct {
 	DefinitionVersion int `json:"definition_version"`
 
-	// Estimator Оценка показателя с несколькими рядами: `p50` и `p85` у T08 и T14, поле у T38 (`size`, `type`, `team`, `start`), вид у T40 (`lag`, `last_success_age`), T41 (`tasks`, `transitions`) и T42 (`missing`, `changed`). Отсутствует у показателя с одним рядом.
+	// Estimator Оценка показателя с несколькими рядами: `p50` и `p85` у T08 и T14, поле у T38 (`size`, `type`, `team`, `start`), вид у T40 (`lag`, `last_success_age`), T41 (`tasks`, `transitions`) и T42 (`missing`, `changed`). X01 использует `no_reviewer` и `no_first_response`, X02 - `failed`, `passed_after_retry` и `missing_report`. У A22 ключ `actor_kind:event_kind` выбирает когорту группы. Отсутствует у показателя с одним рядом.
 	Estimator *string `json:"estimator,omitempty"`
 
 	// Group Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для отчёта команды - тип или размер задачи.

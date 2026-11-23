@@ -120,10 +120,14 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, check
 		return err
 	}
 	views := newView(pool, viewModules{code: normalizer, reviewCalculator: calculator, projectAreas: orgs, runCalculator: calculator, collection: collection, series: calculator, reports: calculator, instances: connections, rights: rights}, clock.System{})
+	exceptions, err := newDecision(pool, rights, clock.System{})
+	if err != nil {
+		return err
+	}
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection, webhooks: collection,
 		operations: views, reports: views, code: views, process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
-		findingReports: normalizer, catalog: catalog,
+		findingReports: normalizer, catalog: catalog, decisions: exceptions,
 	}
 	api := newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules)
 	api.RunnerNetwork, api.TrustedProxies = cfg.RunnerNetwork, cfg.TrustedProxies
@@ -201,10 +205,15 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	}
 	views := newView(pool, viewModules{code: normalizer, reviewCalculator: calculator, projectAreas: orgs, runCalculator: calculator, collection: collection, series: calculator, reports: calculator, instances: connections, rights: rights}, clock.System{})
 	purges := newRetention(pool, connections, views, clock.System{})
+	exceptions, err := newDecision(pool, rights, clock.System{})
+	if err != nil {
+		return err
+	}
+	changes := newIdentifier(pool, normalizer, orgs, clock.System{}, exceptions)
 	workers := river.NewWorkers()
 	kinds := workerctrl.Register(workers, workerctrl.Deps{
 		Probes: connections, Packages: packages, Collection: collection, Normalizer: normalizer, Calculator: calculator,
-		Retention: purges, Identifier: newIdentifier(pool, normalizer, orgs, clock.System{}),
+		Retention: purges, Identifier: changes, DecisionExpiry: exceptions, ExceptionProjector: changes,
 	})
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Int("job_kinds", kinds).Msg("worker started")

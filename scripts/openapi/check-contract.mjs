@@ -52,7 +52,7 @@ assert(byId.listTargetVersions.responses['200'].headers.ETag);
 const targetExample = byId.listTargetVersions.responses['200'].content['application/json'].example;
 assert.equal(byId.listTargetVersions.responses['200'].headers.ETag.example,
   `"${Math.max(...targetExample.data.map(version => version.version_no))}"`, 'Target ETag example must match the latest version');
-assert.deepEqual(contract.components.schemas.ExceptionDecision.properties.decision.enum, ['approve', 'reject']);
+assert.deepEqual(contract.components.schemas.ExceptionDecision.properties.decision.enum, ['approve', 'reject', 'withdraw']);
 assert.equal(byId.decideException['x-craftpulse-action'], 'exceptions.review');
 assert(contract.info.description.includes('required') && contract.info.description.includes('redactions'));
 

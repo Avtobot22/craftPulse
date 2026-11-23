@@ -74,12 +74,14 @@ type Areas struct {
 type Profile struct {
 	UploadProjects []ID
 	// LeadProjects are the projects of the tech lead roles: the matrix of checks (check_profiles.manage).
-	LeadProjects []ID
-	User         User
-	Organization Organization
-	Roles        []RoleAssignment
-	Areas        Areas
-	Whole        bool
+	LeadProjects      []ID
+	ExceptionProjects []ID
+	SecurityProjects  []ID
+	User              User
+	Organization      Organization
+	Roles             []RoleAssignment
+	Areas             Areas
+	Whole             bool
 }
 
 type AccessRequest struct {

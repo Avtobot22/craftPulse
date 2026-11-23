@@ -24,9 +24,13 @@ import (
 // _linkMerged is the merge of the MR of PA-4: in the week of 2 March 2026, before as_of of the series.
 var _linkMerged = time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC)
 
-// importMRs imports the repository 42 with the MR 9001 of the branch feature/PA-4-retry merged on 2 March; the
-// repository is an area of the project of the team before the MR comes, so the key in the branch gives a candidate.
-func (e *seriesEnv) importMRs(t *testing.T, admin entity.Subject) {
+func (e *seriesEnv) mrImporter(t *testing.T, admin entity.Subject) func(...*envelope.Record) entity.Receipt {
+	t.Helper()
+	submit := e.codeImporter(t, admin)
+	return func(recs ...*envelope.Record) entity.Receipt { return submit(mrManifest("42"), recs...) }
+}
+
+func (e *seriesEnv) codeImporter(t *testing.T, admin entity.Subject) func(*envelope.Manifest, ...*envelope.Record) entity.Receipt {
 	t.Helper()
 	caller, err := adapterapi.NewCaller(adapterapi.Config{Resolver: mapResolver{}})
 	require.NoError(t, err)
@@ -36,8 +40,8 @@ func (e *seriesEnv) importMRs(t *testing.T, admin entity.Subject) {
 	require.NoError(t, err)
 	intake, err := newIngest(e.app, sharedStore(t), conn, e.connectionsEnv.rights, orgs, e.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
-	submit := func(recs ...*envelope.Record) entity.Receipt {
-		rc, err := intake.SubmitImport(t.Context(), admin, entity.ID(e.project), bytes.NewReader(pack(t, mrManifest("42"), recs...)))
+	return func(manifest *envelope.Manifest, recs ...*envelope.Record) entity.Receipt {
+		rc, err := intake.SubmitImport(t.Context(), admin, entity.ID(e.project), bytes.NewReader(pack(t, manifest, recs...)))
 		require.NoError(t, err)
 		if rc.Status == entity.ReceiptQuarantined {
 			require.NoError(t, intake.ProcessPackage(t.Context(), e.orgID, rc.ID))
@@ -50,6 +54,13 @@ func (e *seriesEnv) importMRs(t *testing.T, admin entity.Subject) {
 		e.settle(t)
 		return rc
 	}
+}
+
+// importMRs imports the repository 42 with the MR 9001 of the branch feature/PA-4-retry merged on 2 March; the
+// repository is an area of the project of the team before the MR comes, so the key in the branch gives a candidate.
+func (e *seriesEnv) importMRs(t *testing.T, admin entity.Subject) {
+	t.Helper()
+	submit := e.mrImporter(t, admin)
 	rc := submit(mrRepository(t, "42", "team/payments", "r1"))
 	area, err := e.runner.norm.AreaOf(t.Context(), e.orgID, *rc.SourceInstanceID, entity.ObjectRepository, "42")
 	require.NoError(t, err)

@@ -118,6 +118,8 @@ type Point struct {
 type SeriesGroup struct {
 	TaskType  *string
 	SizeLabel *string
+	EventKind string
+	ActorKind PersonKind
 }
 
 // Series is the points of one metric and estimator, for example T08 with p85.
