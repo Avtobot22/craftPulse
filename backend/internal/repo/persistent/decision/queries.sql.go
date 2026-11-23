@@ -18,7 +18,7 @@ SELECT DISTINCT v.decision_id FROM decision.decision_version v
 JOIN decision.decision d ON d.organization_id = v.organization_id AND d.id = v.decision_id AND d.kind = 'exception'
 WHERE v.organization_id = $1 AND v.area_id = $2
     AND v.known_seq <= $3::bigint AND v.effective_from <= $4
-    AND v.expires_at > $4
+    AND ($5::bool OR v.expires_at > $4)
 ORDER BY v.decision_id
 `
 
@@ -27,6 +27,7 @@ type AreaDecisionIDsParams struct {
 	AreaID         uuid.UUID
 	KnownSeq       int64
 	AsOf           time.Time
+	IncludeExpired bool
 }
 
 func (q *Queries) AreaDecisionIDs(ctx context.Context, arg AreaDecisionIDsParams) ([]uuid.UUID, error) {
@@ -35,6 +36,7 @@ func (q *Queries) AreaDecisionIDs(ctx context.Context, arg AreaDecisionIDsParams
 		arg.AreaID,
 		arg.KnownSeq,
 		arg.AsOf,
+		arg.IncludeExpired,
 	)
 	if err != nil {
 		return nil, err

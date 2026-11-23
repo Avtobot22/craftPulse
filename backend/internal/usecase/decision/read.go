@@ -93,9 +93,18 @@ func stateAt(current *entity.ExceptionVersion, anyActive bool, at time.Time) str
 
 // ActiveAt lists one active version of each decision of the area at the date and knowledge cut.
 func (u *UseCase) ActiveAt(ctx context.Context, org, area entity.ID, seq int64, at time.Time) ([]entity.ExceptionVersion, error) {
+	return u.areaVersionsAt(ctx, org, area, seq, at, false)
+}
+
+// ActiveAndExpiredAt returns one active version per decision, or its latest expired approval when none is active.
+func (u *UseCase) ActiveAndExpiredAt(ctx context.Context, org, area entity.ID, seq int64, at time.Time) ([]entity.ExceptionVersion, error) {
+	return u.areaVersionsAt(ctx, org, area, seq, at, true)
+}
+
+func (u *UseCase) areaVersionsAt(ctx context.Context, org, area entity.ID, seq int64, at time.Time, includeExpired bool) ([]entity.ExceptionVersion, error) {
 	var out []entity.ExceptionVersion
 	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
-		ids, err := u.d.Repo.AreaDecisionIDs(ctx, org, area, seq, stamp(at))
+		ids, err := u.d.Repo.AreaDecisionIDs(ctx, org, area, seq, stamp(at), includeExpired)
 		if err != nil {
 			return err
 		}
@@ -104,15 +113,36 @@ func (u *UseCase) ActiveAt(ctx context.Context, org, area entity.ID, seq int64, 
 			return err
 		}
 		for _, id := range ids {
-			if v := Effective(all[id], seq, at); v != nil && v.Scope.AreaID == area {
-				version := *v
-				version.Status = entity.ExceptionApproved
-				out = append(out, version)
+			v, status := areaVersion(all[id], seq, at, includeExpired)
+			if v == nil || v.Scope.AreaID != area {
+				continue
 			}
+			version := *v
+			version.Status = status
+			out = append(out, version)
 		}
 		return nil
 	})
 	return out, err
+}
+
+func areaVersion(r *entity.ExceptionRecord, seq int64, at time.Time, includeExpired bool) (version *entity.ExceptionVersion, status string) {
+	state := statuses(r, seq, at)
+	if v := selectEffective(r.Versions, state, seq, at); v != nil {
+		return v, entity.ExceptionApproved
+	}
+	if !includeExpired {
+		return nil, ""
+	}
+	var expired *entity.ExceptionVersion
+	for i := range r.Versions {
+		v := &r.Versions[i]
+		if v.Seq <= seq && state[v.ID] == entity.ExceptionApproved && !at.Before(v.ExpiresAt) &&
+			v.CreatedAt.Before(v.ExpiresAt) && (expired == nil || v.Number > expired.Number) {
+			expired = v
+		}
+	}
+	return expired, entity.ExceptionExpired
 }
 
 // Get returns the latest version and the visible part of its history.

@@ -531,6 +531,6 @@ type DecisionRepo interface {
 	InsertVersion(ctx context.Context, org entity.ID, v *entity.ExceptionVersion) (entity.ID, error)
 	InsertTransition(ctx context.Context, org entity.ID, t *entity.ExceptionTransition) error
 	Histories(ctx context.Context, org entity.ID, ids []entity.ID, seq int64) (map[entity.ID]*entity.ExceptionRecord, error)
-	AreaDecisionIDs(ctx context.Context, org, area entity.ID, seq int64, at time.Time) ([]entity.ID, error)
+	AreaDecisionIDs(ctx context.Context, org, area entity.ID, seq int64, at time.Time, includeExpired bool) ([]entity.ID, error)
 	PageDecisions(ctx context.Context, org entity.ID, q *entity.ExceptionQuery, cut *entity.ExceptionCursor, limit int32) ([]entity.ExceptionCursor, error)
 }

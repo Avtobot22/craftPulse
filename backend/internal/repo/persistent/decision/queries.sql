@@ -60,7 +60,7 @@ SELECT DISTINCT v.decision_id FROM decision.decision_version v
 JOIN decision.decision d ON d.organization_id = v.organization_id AND d.id = v.decision_id AND d.kind = 'exception'
 WHERE v.organization_id = sqlc.arg(organization_id) AND v.area_id = sqlc.arg(area_id)
     AND v.known_seq <= sqlc.arg(known_seq)::bigint AND v.effective_from <= sqlc.arg(as_of)
-    AND v.expires_at > sqlc.arg(as_of)
+    AND (sqlc.arg(include_expired)::bool OR v.expires_at > sqlc.arg(as_of))
 ORDER BY v.decision_id;
 
 -- name: PageDecisions :many
