@@ -26,11 +26,12 @@ func TestCheckCompleteness_ChecksAndReportMatrix(t *testing.T) {
 			{Kind: entity.AnalysisSAST, ComponentID: component, Language: "go"},
 		},
 	}
-	code := completeScan(in.HeadSHA, entity.ID{14}, entity.AnalysisCode)
+	code := completeScan(in.AreaID, in.HeadSHA, entity.ID{14}, entity.AnalysisCode)
 	code.ExitClass, code.Language, code.ComponentID = "success", "go", &component
-	stale := completeScan("previous", entity.ID{15}, entity.AnalysisSAST)
+	stale := completeScan(in.AreaID, "previous", entity.ID{15}, entity.AnalysisSAST)
 	stale.Language, stale.ComponentID = "go", &component
-	in.Received = []FindingScan{*code, *stale}
+	anotherArea := completeScan(entity.ID{18}, in.HeadSHA, entity.ID{16}, entity.AnalysisSAST)
+	in.Received = []FindingScan{*code, *stale, *anotherArea}
 	all := New(Deps{}).CalculateCheckCompleteness(in)
 	checks := measured(t, all, "I08", "")
 	assertReading(t, checks, entity.StateAssessed, num(1.0/3))
@@ -58,10 +59,10 @@ func TestCheckCompleteness_RequiredReportIsNotSatisfiedByIncompleteEvidence(t *t
 			{Kind: entity.AnalysisCode, ComponentID: compB, Language: "go"},
 		},
 	}
-	unscoped := completeScan(in.HeadSHA, entity.ID{4}, entity.AnalysisCode)
-	partial := completeScan(in.HeadSHA, entity.ID{5}, entity.AnalysisCode)
+	unscoped := completeScan(in.AreaID, in.HeadSHA, entity.ID{4}, entity.AnalysisCode)
+	partial := completeScan(in.AreaID, in.HeadSHA, entity.ID{5}, entity.AnalysisCode)
 	partial.Completeness, partial.Language, partial.ComponentID = "partial", "go", &compA
-	rejected := completeScan(in.HeadSHA, entity.ID{6}, entity.AnalysisCode)
+	rejected := completeScan(in.AreaID, in.HeadSHA, entity.ID{6}, entity.AnalysisCode)
 	rejected.RejectedReason, rejected.Language, rejected.ComponentID = "malformed", "go", &compB
 	in.Received = []FindingScan{*unscoped, *partial, *rejected}
 	res := measured(t, New(Deps{}).CalculateCheckCompleteness(in), "I09", "")

@@ -1,8 +1,10 @@
 package calc
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -28,10 +30,11 @@ type FindingDisposition string
 
 type FindingFactor string
 
-// FindingScan is a report selected for one analysis scope, with the commit it actually scanned.
+// FindingScan is a report selected for one analysis scope, with the repository and commit it scanned.
 type FindingScan struct {
 	entity.ReportEvidence
-	SHA string
+	AreaID entity.ID
+	SHA    string
 }
 
 // ClassifiedFinding is the result of comparing canonical occurrences. A resolved occurrence comes from the base.
@@ -71,11 +74,28 @@ type FindingDecisions interface {
 	ActiveAndExpiredAt(ctx context.Context, org, area entity.ID, seq int64, at time.Time) ([]entity.ExceptionVersion, error)
 }
 
+type FindingMetricResult struct {
+	Points     []entity.SeriesPoint
+	CodeGroups []CodeFindingGroup
+}
+
+// CodeFindingGroup counts the applicable C11 identities with the same native classification.
+type CodeFindingGroup struct {
+	CodeFindingClass
+	Count int
+}
+
+type CodeFindingClass struct {
+	Class          string
+	RuleID         string
+	NativeSeverity string
+}
+
 // FindingMetricsAt evaluates one scope for change. The caller applies access rules before exposing evidence.
-func (u *UseCase) FindingMetricsAt(ctx context.Context, in FindingMetricsInput) ([]entity.SeriesPoint, error) {
+func (u *UseCase) FindingMetricsAt(ctx context.Context, in FindingMetricsInput) (FindingMetricResult, error) {
 	versions, err := u.d.Decisions.ActiveAndExpiredAt(ctx, in.OrganizationID, in.AreaID, in.KnownSeq, in.AsOf)
 	if err != nil {
-		return nil, err
+		return FindingMetricResult{}, err
 	}
 	return findingMetrics(&in, versions), nil
 }
@@ -85,9 +105,13 @@ type metricState struct {
 	reason string
 }
 
-func scanState(scan *FindingScan, sha string, seq int64) metricState {
+func matchingScan(scan *FindingScan, area entity.ID, sha string, seq int64) bool {
+	return scan != nil && scan.AreaID == area && sha != "" && scan.SHA == sha && scan.KnownSeq <= seq
+}
+
+func scanState(scan *FindingScan) metricState {
 	switch {
-	case scan == nil || sha == "" || scan.SHA != sha || scan.KnownSeq > seq:
+	case scan == nil:
 		return metricState{entity.StateNotEvaluated, _reasonReportMissing}
 	case scan.RejectedReason != "":
 		return metricState{entity.StateUnknown, _reasonReportRejected}
@@ -120,16 +144,18 @@ func snapshot(id, estimator string, at time.Time, state metricState) findingSnap
 	}, seen: make(map[entity.ID]int)}
 }
 
-func (s *findingSnapshot) add(c entity.Contribution) {
+func (s *findingSnapshot) add(c entity.Contribution) bool {
 	if idx, exists := s.seen[c.ObjectID]; exists {
 		// Another occurrence of this identity can remain applicable when only one occurrence is excepted.
 		if c.Role == entity.RoleNumerator && s.series.Contributions[idx].Role != entity.RoleNumerator {
 			s.series.Contributions[idx] = c
+			return true
 		}
-		return
+		return false
 	}
 	s.seen[c.ObjectID] = len(s.series.Contributions)
 	s.series.Contributions = append(s.series.Contributions, c)
+	return true
 }
 
 func (s *findingSnapshot) result() entity.SeriesPoint {
@@ -201,6 +227,7 @@ func markScan(s *findingSnapshot, scan *FindingScan, fallback entity.ID, state m
 }
 
 type findingEvaluation struct {
+	codeGroups                                       map[CodeFindingClass]int
 	open, added, kept, observed, resolved, newData   findingSnapshot
 	exceptions                                       exceptionIndex
 	head                                             metricState
@@ -208,10 +235,10 @@ type findingEvaluation struct {
 	security, sameArtifact, comparable, newDataKnown bool
 }
 
-func findingMetrics(in *FindingMetricsInput, versions []entity.ExceptionVersion) []entity.SeriesPoint {
+func findingMetrics(in *FindingMetricsInput, versions []entity.ExceptionVersion) FindingMetricResult {
 	security := entity.SensitiveFinding(in.Kind)
 	if !security && in.Kind != entity.FindingCode {
-		return nil
+		return FindingMetricResult{}
 	}
 	deltaID, resolvedID, exceptionID := "C12", "C13", "C26"
 	if security {
@@ -225,13 +252,17 @@ func findingMetrics(in *FindingMetricsInput, versions []entity.ExceptionVersion)
 	} else {
 		result = append(result, e.open.result())
 	}
-	return append(result, exceptionMetrics(in, versions, exceptionID)...)
+	return FindingMetricResult{Points: append(result, exceptionMetrics(in, versions, exceptionID)...), CodeGroups: e.classifiedCode()}
 }
 
 func newFindingEvaluation(in *FindingMetricsInput, versions []entity.ExceptionVersion, deltaID, resolvedID string, security bool) findingEvaluation {
-	head := scanState(in.Head, in.HeadSHA, in.KnownSeq)
-	base := scanState(in.Base, in.BaseSHA, in.KnownSeq)
-	delta := deltaState(head, base, in.IncomparableReason)
+	headReport, baseReport := in.scopedScan(in.Head, in.HeadSHA), in.scopedScan(in.Base, in.BaseSHA)
+	head, base := scanState(headReport), scanState(baseReport)
+	reason := in.IncomparableReason
+	if reason == "" && !sameComparisonScope(headReport, baseReport) {
+		reason = "report_scope_mismatch"
+	}
+	delta := deltaState(head, base, reason)
 	e := findingEvaluation{
 		open: snapshot("C11", "", in.AsOf, head), added: snapshot(deltaID, _estFindingNew, in.AsOf, delta),
 		kept: snapshot(deltaID, _estFindingKept, in.AsOf, delta), resolved: snapshot(resolvedID, "", in.AsOf, delta),
@@ -239,13 +270,20 @@ func newFindingEvaluation(in *FindingMetricsInput, versions []entity.ExceptionVe
 		sameArtifact: in.SameArtifact || in.HeadSHA != "" && in.HeadSHA == in.BaseSHA,
 		exceptions:   indexExceptions(in, versions),
 	}
+	if !security {
+		e.codeGroups = make(map[CodeFindingClass]int)
+	}
 	observed := head
 	if e.comparable {
 		observed = metricState{entity.StateNotApplicable, "baseline_comparable"}
 	}
 	e.observed = snapshot(deltaID, _estFindingObserved, in.AsOf, observed)
 	// A provenance change can be the reason the scans are incomparable for code delta.
-	data := deltaState(head, base, "")
+	dataReason := ""
+	if headReport != nil && baseReport != nil && headReport.Kind != baseReport.Kind {
+		dataReason = "report_scope_mismatch"
+	}
+	data := deltaState(head, base, dataReason)
 	e.newDataKnown = data.state == entity.StateAssessed && e.sameArtifact
 	e.newData = snapshot("S38", "", in.AsOf, data)
 	if !head.hasFacts() || head.state == entity.StateProvisional {
@@ -262,6 +300,23 @@ func newFindingEvaluation(in *FindingMetricsInput, versions []entity.ExceptionVe
 		markScan(&e.newData, in.Base, in.AreaID, base)
 	}
 	return e
+}
+
+func (in *FindingMetricsInput) scopedScan(r *FindingScan, sha string) *FindingScan {
+	if !matchingScan(r, in.AreaID, sha, in.KnownSeq) ||
+		(!in.ComponentID.IsZero() && r.ComponentID != nil && *r.ComponentID != in.ComponentID) {
+		return nil
+	}
+	return r
+}
+
+func sameComparisonScope(head, base *FindingScan) bool {
+	if head == nil || base == nil {
+		return true // The report state carries the reason.
+	}
+	return head.Kind == base.Kind && head.Language == base.Language &&
+		(head.ComponentID == nil || base.ComponentID == nil || *head.ComponentID == *base.ComponentID) &&
+		(head.ScopeHash == "" || base.ScopeHash == "" || head.ScopeHash == base.ScopeHash)
 }
 
 func deltaState(head, base metricState, reason string) metricState {
@@ -303,7 +358,10 @@ func (e *findingEvaluation) calculate(in *FindingMetricsInput) {
 func (e *findingEvaluation) takeHead(f *ClassifiedFinding) {
 	exception := e.exceptions.match(f.FindingCoordinates)
 	if !e.security {
-		e.open.add(findingContribution(f, f.Disposition, exception))
+		c := findingContribution(f, f.Disposition, exception)
+		if e.open.add(c) && c.Role == entity.RoleNumerator {
+			e.codeGroups[CodeFindingClass{Class: f.Class, RuleID: f.RuleID, NativeSeverity: f.NativeSeverity}]++
+		}
 	}
 	if e.security && e.newDataKnown && (f.Disposition == FindingNew || f.Disposition == FindingNewlyObserved) && sourceFactor(f.Factor) {
 		e.newData.add(findingContribution(f, f.Disposition, exception))
@@ -328,6 +386,17 @@ func (e *findingEvaluation) takeHead(f *ClassifiedFinding) {
 		e.resolved.add(c)
 	case FindingResolved:
 	}
+}
+
+func (e *findingEvaluation) classifiedCode() []CodeFindingGroup {
+	groups := make([]CodeFindingGroup, 0, len(e.codeGroups))
+	for class, count := range e.codeGroups {
+		groups = append(groups, CodeFindingGroup{CodeFindingClass: class, Count: count})
+	}
+	slices.SortFunc(groups, func(a, b CodeFindingGroup) int {
+		return cmp.Or(cmp.Compare(a.Class, b.Class), cmp.Compare(a.RuleID, b.RuleID), cmp.Compare(a.NativeSeverity, b.NativeSeverity))
+	})
+	return groups
 }
 
 func sourceFactor(f FindingFactor) bool {

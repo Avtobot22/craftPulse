@@ -19,8 +19,8 @@ func findingInput(kind string) FindingMetricsInput {
 	in := FindingMetricsInput{
 		OrganizationID: entity.ID{1}, AreaID: entity.ID{2}, ComponentID: entity.ID{3}, Kind: kind, HeadSHA: "head", BaseSHA: "base",
 		KnownSeq: 11, AsOf: _findingAt,
-		Head: completeScan("head", entity.ID{4}, entity.AnalysisCode),
-		Base: completeScan("base", entity.ID{5}, entity.AnalysisCode),
+		Head: completeScan(entity.ID{2}, "head", entity.ID{4}, entity.AnalysisCode),
+		Base: completeScan(entity.ID{2}, "base", entity.ID{5}, entity.AnalysisCode),
 	}
 	if kind != entity.FindingCode {
 		in.Head.Kind, in.Base.Kind = entity.AnalysisSAST, entity.AnalysisSAST
@@ -28,8 +28,8 @@ func findingInput(kind string) FindingMetricsInput {
 	return in
 }
 
-func completeScan(sha string, id entity.ID, kind string) *FindingScan {
-	return &FindingScan{SHA: sha, ReportEvidence: entity.ReportEvidence{ID: id, Kind: kind, ExitClass: "findings", Completeness: "complete"}}
+func completeScan(area entity.ID, sha string, id entity.ID, kind string) *FindingScan {
+	return &FindingScan{AreaID: area, SHA: sha, ReportEvidence: entity.ReportEvidence{ID: id, Kind: kind, ExitClass: "findings", Completeness: "complete"}}
 }
 
 func classified(in *FindingMetricsInput, id entity.ID, disposition FindingDisposition) ClassifiedFinding {
@@ -111,7 +111,7 @@ func TestFindingMetrics_ExceptionsRespectScopeAndTime(t *testing.T) {
 			}}})
 			all, err := u.FindingMetricsAt(t.Context(), in)
 			require.NoError(t, err)
-			open := measured(t, all, "C11", "")
+			open := measured(t, all.Points, "C11", "")
 			assertReading(t, open, entity.StateAssessed, num(tt.open))
 			require.Len(t, open.Contributions, 1, "one contribution per identity")
 			var basis findingEvidence
@@ -122,7 +122,7 @@ func TestFindingMetrics_ExceptionsRespectScopeAndTime(t *testing.T) {
 			assert.Equal(t, f.Class, basis.Class)
 			assert.Equal(t, f.LineStart, basis.Line)
 			assert.Equal(t, f.SourceID, basis.SourceID)
-			active, expired := measured(t, all, "C26", _estActive), measured(t, all, "C26", _estExpired)
+			active, expired := measured(t, all.Points, "C26", _estActive), measured(t, all.Points, "C26", _estExpired)
 			assertReading(t, active, entity.StateAssessed, num(tt.active))
 			assertReading(t, expired, entity.StateAssessed, num(tt.expired))
 			if tt.active == 1 {
@@ -155,6 +155,11 @@ func TestFindingMetrics_RequiresComparableCompleteScansForDelta(t *testing.T) {
 		{"scope changed", func(in *FindingMetricsInput) { in.IncomparableReason = "scope_changed" }, entity.StateAssessed, num(2), entity.StateNotEvaluated, "scope_changed", num(2)},
 		{"head missing", func(in *FindingMetricsInput) { in.Head = nil }, entity.StateNotEvaluated, nil, entity.StateNotEvaluated, _reasonReportMissing, nil},
 		{"previous head report", func(in *FindingMetricsInput) { in.Head.SHA = "old" }, entity.StateNotEvaluated, nil, entity.StateNotEvaluated, _reasonReportMissing, nil},
+		{"same head from another repository", func(in *FindingMetricsInput) { in.Head.AreaID = entity.ID{19} }, entity.StateNotEvaluated, nil, entity.StateNotEvaluated, _reasonReportMissing, nil},
+		{"baseline for another analysis kind", func(in *FindingMetricsInput) { in.Base.Kind = entity.AnalysisSAST }, entity.StateAssessed, num(2), entity.StateNotEvaluated, "report_scope_mismatch", num(2)},
+		{"baseline for another scope", func(in *FindingMetricsInput) {
+			in.Head.ScopeHash, in.Base.ScopeHash = "scope-a", "scope-b"
+		}, entity.StateAssessed, num(2), entity.StateNotEvaluated, "report_scope_mismatch", num(2)},
 		{"head rejected", func(in *FindingMetricsInput) { in.Head.RejectedReason = "malformed" }, entity.StateUnknown, nil, entity.StateUnknown, _reasonReportRejected, nil},
 		{"interrupted head", func(in *FindingMetricsInput) { in.Head.ExitClass = "timeout" }, entity.StateProvisional, num(2), entity.StateProvisional, _reasonReportPartial, num(2)},
 	} {
@@ -165,9 +170,9 @@ func TestFindingMetrics_RequiresComparableCompleteScansForDelta(t *testing.T) {
 			}
 			tt.change(&in)
 			all := findingMetrics(&in, nil)
-			assertReading(t, measured(t, all, "C11", ""), tt.openState, tt.openValue)
-			assert.Equal(t, tt.observed, measured(t, all, "C12", _estFindingObserved).Value)
-			for _, p := range []entity.Point{measured(t, all, "C12", _estFindingNew), measured(t, all, "C12", _estFindingKept), measured(t, all, "C13", "")} {
+			assertReading(t, measured(t, all.Points, "C11", ""), tt.openState, tt.openValue)
+			assert.Equal(t, tt.observed, measured(t, all.Points, "C12", _estFindingObserved).Value)
+			for _, p := range []entity.Point{measured(t, all.Points, "C12", _estFindingNew), measured(t, all.Points, "C12", _estFindingKept), measured(t, all.Points, "C13", "")} {
 				var expected *float64
 				if tt.delta == entity.StateAssessed {
 					expected = num(1)
@@ -179,12 +184,38 @@ func TestFindingMetrics_RequiresComparableCompleteScansForDelta(t *testing.T) {
 	}
 }
 
+func TestFindingMetrics_CodeGroupsCountApplicableIdentities(t *testing.T) {
+	t.Parallel()
+	in := findingInput(entity.FindingCode)
+	excepted := classified(&in, entity.ID{6}, FindingNew)
+	excepted.Path = "src/internal/a.go"
+	applicable := excepted
+	applicable.Path = "src/other.go"
+	sameGroup := classified(&in, entity.ID{7}, FindingPersisting)
+	otherGroup := classified(&in, entity.ID{8}, FindingNew)
+	otherGroup.NativeSeverity = "error"
+	in.Findings = []ClassifiedFinding{excepted, applicable, sameGroup, otherGroup, sameGroup}
+	v := entity.ExceptionVersion{
+		ID: entity.ID{9}, DecisionID: entity.ID{10}, FindingKind: in.Kind, Status: entity.ExceptionApproved,
+		ExceptionDraft: entity.ExceptionDraft{
+			Scope:         entity.ExceptionScope{AreaID: in.AreaID, RuleID: excepted.RuleID, PathPrefix: "src/internal"},
+			EffectiveFrom: in.AsOf.Add(-time.Hour), ExpiresAt: in.AsOf.Add(time.Hour),
+		},
+	}
+	all := findingMetrics(&in, []entity.ExceptionVersion{v})
+	assertReading(t, measured(t, all.Points, "C11", ""), entity.StateAssessed, num(3))
+	assert.Equal(t, []CodeFindingGroup{
+		{CodeFindingClass: CodeFindingClass{Class: "style", RuleID: "scanner-rule", NativeSeverity: "error"}, Count: 1},
+		{CodeFindingClass: CodeFindingClass{Class: "style", RuleID: "scanner-rule", NativeSeverity: "warning"}, Count: 2},
+	}, all.CodeGroups)
+}
+
 func TestFindingMetrics_CompleteZeroAndPartialAbsence(t *testing.T) {
 	t.Parallel()
 	in := findingInput(entity.FindingCode)
-	assertReading(t, measured(t, findingMetrics(&in, nil), "C11", ""), entity.StateAssessed, num(0))
+	assertReading(t, measured(t, findingMetrics(&in, nil).Points, "C11", ""), entity.StateAssessed, num(0))
 	in.Head.SkippedTargets = []entity.SkippedTarget{{Path: "src", Reason: "scope incomplete"}}
-	assertReading(t, measured(t, findingMetrics(&in, nil), "C11", ""), entity.StateProvisional, nil)
+	assertReading(t, measured(t, findingMetrics(&in, nil).Points, "C11", ""), entity.StateProvisional, nil)
 }
 
 func TestFindingMetrics_SecurityFindingsFromNewData(t *testing.T) {
@@ -197,8 +228,8 @@ func TestFindingMetrics_SecurityFindingsFromNewData(t *testing.T) {
 			f.Factor = factor
 			in.Findings = []ClassifiedFinding{f}
 			all := findingMetrics(&in, nil)
-			assertReading(t, measured(t, all, "S10", _estFindingNew), entity.StateNotEvaluated, nil)
-			source := measured(t, all, "S38", "")
+			assertReading(t, measured(t, all.Points, "S10", _estFindingNew), entity.StateNotEvaluated, nil)
+			source := measured(t, all.Points, "S38", "")
 			assertReading(t, source, entity.StateAssessed, num(1))
 			require.Len(t, source.Contributions, 1)
 			var basis findingEvidence
@@ -221,9 +252,9 @@ func TestFindingMetrics_AcceptedRiskIsNotAResolution(t *testing.T) {
 		},
 	}
 	all := findingMetrics(&in, []entity.ExceptionVersion{v})
-	fixed := measured(t, all, "S11", "")
+	fixed := measured(t, all.Points, "S11", "")
 	assertReading(t, fixed, entity.StateAssessed, num(0))
 	require.Len(t, fixed.Contributions, 1)
 	assert.Equal(t, entity.RoleExcluded, fixed.Contributions[0].Role)
-	assertReading(t, measured(t, all, "S35", _estActive), entity.StateAssessed, num(1))
+	assertReading(t, measured(t, all.Points, "S35", _estActive), entity.StateAssessed, num(1))
 }

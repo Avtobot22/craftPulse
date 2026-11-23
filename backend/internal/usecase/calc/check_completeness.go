@@ -12,7 +12,7 @@ const (
 	_objectExpectedReport entity.ObjectKind = "expected_report"
 )
 
-// ExpectedCheck is one logical check from the configured graph, with its final visible outcome if available.
+// ExpectedCheck is one logical check and matrix configuration, with its final visible outcome if available.
 type ExpectedCheck struct {
 	Key     string
 	JobID   entity.ID
@@ -93,7 +93,7 @@ func missingReports(in *CheckCompletenessInput) entity.SeriesPoint {
 	received := make(map[string][]*FindingScan)
 	for i := range in.Received {
 		r := &in.Received[i]
-		if in.HeadSHA != "" && r.SHA == in.HeadSHA && r.KnownSeq <= in.KnownSeq {
+		if matchingScan(r, in.AreaID, in.HeadSHA, in.KnownSeq) {
 			received[r.Kind] = append(received[r.Kind], r)
 		}
 	}
@@ -125,7 +125,7 @@ func expectedReportContribution(in *CheckCompletenessInput, w entity.ExpectedRep
 		if !sameReportScope(w, r, single) {
 			continue
 		}
-		state := scanState(r, in.HeadSHA, in.KnownSeq)
+		state := scanState(r)
 		if actual == nil || current.state == entity.StateUnknown || state.state == entity.StateAssessed {
 			actual, current = &r.ID, state
 		}
