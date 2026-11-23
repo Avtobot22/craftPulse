@@ -164,6 +164,11 @@ func TestExceptions_ApprovalRenewalExpiryAndPermissions(t *testing.T) {
 	assert.Empty(t, e.activeExceptions(t, repoID, expires))
 
 	e.expireException(t, d.Id, expires, repoID)
+	expired, err := e.decisions.ActiveAndExpiredAt(t.Context(), e.orgID, entity.ID(repoID), math.MaxInt64, expires)
+	require.NoError(t, err)
+	require.Len(t, expired, 1)
+	assert.Equal(t, activeVersions[0].ID, expired[0].ID)
+	assert.Equal(t, entity.ExceptionExpired, expired[0].Status)
 	waiting := decode[openapi.ExceptionDetail](t, get(author, path, http.StatusOK))
 	assert.Equal(t, entity.ExceptionPending, string(waiting.State))
 	rejected := decode[openapi.ExceptionDetail](t, post(reviewer, decide, etag2, uuid.New(), map[string]string{"decision": "reject"}, http.StatusOK))

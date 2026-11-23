@@ -73,6 +73,7 @@ type calcModules struct {
 	collection   calc.Collection
 	activity     calc.ActivityCollection
 	rights       calc.Rights
+	decisions    calc.FindingDecisions
 }
 
 func newCalc(pool *pgxpool.Pool, m calcModules, c clock.Clock, reg prometheus.Registerer) (*calc.UseCase, error) {
@@ -94,7 +95,7 @@ func newCalc(pool *pgxpool.Pool, m calcModules, c clock.Clock, reg prometheus.Re
 	return calc.New(calc.Deps{
 		Structure: m.structure, Facts: m.facts, TestCoverage: m.testCoverage, Settings: m.settings,
 		Collection: m.collection, Activity: m.activity, Code: code, Rights: m.rights, Links: links,
-		Docs: documentation, DocReports: docReports,
+		Docs: documentation, DocReports: docReports, Decisions: m.decisions,
 		Repo: calcrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Queue: queue.New(jobs), Tx: tx,
 		Metrics: metrics, Clock: c, NewID: newID,
 	}), nil
