@@ -448,6 +448,21 @@ func (q *Queries) LockCurrentBaseline(ctx context.Context, arg LockCurrentBaseli
 	return i, err
 }
 
+const lockExceptionProjection = `-- name: LockExceptionProjection :exec
+SELECT pg_advisory_xact_lock(hashtextextended('change.exception_projection:' ||
+    $1::uuid::text || ':' || $2::uuid::text, 0))
+`
+
+type LockExceptionProjectionParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+}
+
+func (q *Queries) LockExceptionProjection(ctx context.Context, arg LockExceptionProjectionParams) error {
+	_, err := q.db.Exec(ctx, lockExceptionProjection, arg.OrganizationID, arg.AreaID)
+	return err
+}
+
 const pipelineExpectedReports = `-- name: PipelineExpectedReports :many
 WITH versions AS (
     SELECT DISTINCT ON (v.project_id) v.id
@@ -619,7 +634,8 @@ INSERT INTO change.exception_projection (organization_id, area_id, as_of, known_
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (organization_id, area_id) DO UPDATE
 SET as_of = EXCLUDED.as_of, known_seq = EXCLUDED.known_seq, active_version_ids = EXCLUDED.active_version_ids
-WHERE (change.exception_projection.as_of, change.exception_projection.known_seq) <= (EXCLUDED.as_of, EXCLUDED.known_seq)
+WHERE change.exception_projection.as_of <= EXCLUDED.as_of
+    AND change.exception_projection.known_seq <= EXCLUDED.known_seq
 `
 
 type StoreExceptionProjectionParams struct {

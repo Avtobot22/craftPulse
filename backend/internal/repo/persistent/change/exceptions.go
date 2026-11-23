@@ -25,6 +25,15 @@ func (r *Repo) FindingKindsForException(ctx context.Context, org entity.ID, s en
 	return out, nil
 }
 
+// LockExceptionProjection serializes the selection and storage of the area's knowledge cuts.
+func (r *Repo) LockExceptionProjection(ctx context.Context, org, area entity.ID) error {
+	err := r.q(ctx).LockExceptionProjection(ctx, LockExceptionProjectionParams{OrganizationID: uuid.UUID(org), AreaID: uuid.UUID(area)})
+	if err != nil {
+		return fmt.Errorf("change: lock exception projection: %w", err)
+	}
+	return nil
+}
+
 // ProjectExceptions saves the effective decision versions of an area for change.
 func (r *Repo) ProjectExceptions(ctx context.Context, org, area entity.ID, seq int64, at time.Time, versions []entity.ID) error {
 	err := r.q(ctx).StoreExceptionProjection(ctx, StoreExceptionProjectionParams{

@@ -110,9 +110,14 @@ WHERE f.organization_id = sqlc.arg(organization_id) AND f.area_id = sqlc.arg(are
     AND (sqlc.narg(package_purl)::text IS NULL OR o.package_purl = sqlc.narg(package_purl))
 ORDER BY f.finding_kind;
 
+-- name: LockExceptionProjection :exec
+SELECT pg_advisory_xact_lock(hashtextextended('change.exception_projection:' ||
+    sqlc.arg(organization_id)::uuid::text || ':' || sqlc.arg(area_id)::uuid::text, 0));
+
 -- name: StoreExceptionProjection :exec
 INSERT INTO change.exception_projection (organization_id, area_id, as_of, known_seq, active_version_ids)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (organization_id, area_id) DO UPDATE
 SET as_of = EXCLUDED.as_of, known_seq = EXCLUDED.known_seq, active_version_ids = EXCLUDED.active_version_ids
-WHERE (change.exception_projection.as_of, change.exception_projection.known_seq) <= (EXCLUDED.as_of, EXCLUDED.known_seq);
+WHERE change.exception_projection.as_of <= EXCLUDED.as_of
+    AND change.exception_projection.known_seq <= EXCLUDED.known_seq;

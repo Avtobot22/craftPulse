@@ -158,6 +158,9 @@ func outsideExceptionScope(field string) error {
 func (u *UseCase) RunExceptionRecount(ctx context.Context, job entity.ChangeRecountJob, complete Complete) error {
 	org := job.OrganizationID
 	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		if err := u.d.Repo.LockExceptionProjection(ctx, org, job.AreaID); err != nil {
+			return err
+		}
 		seq, _, err := u.d.Tenants.Clock(ctx, org)
 		if err != nil {
 			return err
