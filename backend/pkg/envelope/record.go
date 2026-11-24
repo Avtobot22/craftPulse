@@ -113,6 +113,11 @@ func (c *checker) recordRule(record map[string]any) (recordRule, *Rejection) {
 	if problem := semantic(kind, payload); problem != "" {
 		return recordRule{}, &Rejection{ReasonSchemaViolation, problem}
 	}
+	if kind == "mr_diff" {
+		if problem := validateMRDiff(record, payload); problem != "" {
+			return recordRule{}, &Rejection{ReasonSchemaViolation, problem}
+		}
+	}
 	return rule, nil
 }
 

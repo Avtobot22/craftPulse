@@ -39,6 +39,7 @@ type input struct {
 	mrs           []*mrCandidate
 	mrEvents      []*mrEventCandidate
 	mrRevisions   []*mrRevisionCandidate
+	mrDiffs       []mrDiffCandidate
 	ciRuns        []*ciRunCandidate
 	ciAttempts    []*ciAttemptCandidate
 	reports       []*reportCandidate
@@ -147,6 +148,12 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 				return nil, err
 			}
 			keep(&in.mrRevisions, mrRevisions, entity.SourceKey{NativeNS: c.mr.NativeID, NativeID: c.revision.RevisionKey}, c, func(*mrRevisionCandidate) bool { return true })
+		case kind == "mr_diff":
+			c, err := in.mrDiff(rec, base)
+			if err != nil {
+				return nil, err
+			}
+			in.mrDiffs = append(in.mrDiffs, c)
 		case kind == "ci_run":
 			c, err := in.ciRun(rec, base, entity.ObjectKind(m.Area.Kind))
 			if err != nil {

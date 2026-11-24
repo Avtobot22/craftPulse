@@ -47,7 +47,7 @@ type mrHistory struct {
 	truncated bool
 }
 
-func (s source) fetchMR(ctx context.Context, item listedMR, m *envelope.Manifest, page *adaptersdk.Page) error {
+func (s source) fetchMR(ctx context.Context, item listedMR, m *envelope.Manifest, page *adaptersdk.Page, targeted bool) error {
 	root := projectPath(item.ProjectID) + "/merge_requests/" + id(item.IID)
 	var mr mergeRequest
 	if err := s.get(ctx, "merge_request", root, &mr); err != nil {
@@ -76,6 +76,16 @@ func (s source) fetchMR(ctx context.Context, item listedMR, m *envelope.Manifest
 	if err != nil {
 		return err
 	}
+	if targeted && mr.State == "opened" && h.currentDiff == nil && (h.latestDiffSeen || mr.DiffRefs.HeadSHA != payload.HeadSha) {
+		return adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "GitLab is preparing the diff for the current head")
+	}
+	if h.currentDiff != nil {
+		payload.BaseSha = optional(h.currentDiff.BaseSHA)
+		payload.MergeBaseSha = payload.BaseSha
+		if err := h.diff(ctx, root, *h.currentDiff); err != nil {
+			return err
+		}
+	}
 	if h.truncated || (!payload.Draft && h.hasDraft && h.readyAt == nil) {
 		m.Completeness = envelope.ManifestCompletenessPartial
 		m.Selection.Truncated = append(m.Selection.Truncated, envelope.TruncatedHistory{
@@ -88,10 +98,12 @@ func (s source) fetchMR(ctx context.Context, item listedMR, m *envelope.Manifest
 type historyReader struct {
 	source
 	mrHistory
-	page     *adaptersdk.Page
-	observed time.Time
-	mr       string
-	pushes   map[int64]pushNote
+	page           *adaptersdk.Page
+	observed       time.Time
+	mr             string
+	pushes         map[int64]pushNote
+	currentDiff    *diffVersion
+	latestDiffSeen bool
 }
 
 type pushNote struct {
@@ -117,6 +129,12 @@ func (h *historyReader) read(ctx context.Context, root string, mr mergeRequest) 
 	if err := historyPages(ctx, h, root, "versions", func(v diffVersion) error {
 		if err := h.revision(v); err != nil {
 			return err
+		}
+		if previous == nil && mr.State == "opened" {
+			h.latestDiffSeen = true
+			if mr.isCurrentDiff(v) {
+				h.currentDiff = &v
+			}
 		}
 		// GitLab lists the most recent diff version first. Each version with an older
 		// predecessor and a changed head records a push, even when the notes are absent.

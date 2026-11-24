@@ -56,7 +56,7 @@ x-craftpulse-schemas:
     kinds: [account]
   merge_requests:
     versions: ['1']
-    kinds: [repository, merge_request, mr_revision, mr_event, account]
+    kinds: [repository, merge_request, mr_revision, mr_diff, mr_event, account]
   ci_runs:
     versions: ['1']
     kinds: [ci_run, ci_attempt, report_file, execution_manifest]
@@ -193,7 +193,7 @@ components:
         record_class: {type: string, enum: [event, object, snapshot, file]}
         record_kind:
           type: string
-          enum: [repository, task, task_event, task_status, task_resolution, task_type, task_field, relation, account, merge_request, mr_revision, mr_event, ci_run, ci_attempt, report_file, execution_manifest, finding, document, git_ref]
+          enum: [repository, task, task_event, task_status, task_resolution, task_type, task_field, relation, account, merge_request, mr_revision, mr_diff, mr_event, ci_run, ci_attempt, report_file, execution_manifest, finding, document, git_ref]
         payload_schema: {type: string, pattern: '^[a-z_]+/[0-9]+$', description: 'Вид и версия схемы тела, например `task_event/1`.'}
         native_ns: {type: string, maxLength: 255, description: 'Пространство имён исходного ID по правилу `x-craftpulse-identity` контракта адаптера; пусто, если ID уникален в экземпляре.'}
         native_id: {type: string, minLength: 1, maxLength: 1024}
@@ -427,6 +427,53 @@ components:
         start_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
         created_at: {type: string, format: date-time}
       example: {mr_native_id: '9001', head_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, base_sha: 34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971, start_sha: 34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971, created_at: '2026-10-01T09:00:00+03:00'}
+    MrDiffV1:
+      type: object
+      description: Итоговый diff ревизии MR от merge base до head. Как у mr_revision, native_ns содержит ID MR, native_id - ID ревизии. Текст патча в пакет не входит.
+      x-craftpulse-record: {kind: mr_diff, version: '1', classes: [object]}
+      required: [mr_native_id, base_sha, head_sha, completeness, files]
+      additionalProperties: false
+      properties:
+        mr_native_id: {type: string, minLength: 1, maxLength: 255}
+        base_sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        head_sha: {type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
+        completeness: {type: string, enum: [complete, partial]}
+        files:
+          type: array
+          maxItems: 1000
+          items: {$ref: '#/components/schemas/MrDiffFile'}
+      example:
+        mr_native_id: '9001'
+        head_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac
+        base_sha: 34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971
+        completeness: complete
+        files:
+          - {old_path: old.go, new_path: new.go, new_file: false, deleted_file: false, renamed_file: true, binary: false, added_lines: 2, deleted_lines: 1, head_ranges: [{from: 6, to: 7}]}
+    MrDiffFile:
+      type: object
+      required: [old_path, new_path, new_file, deleted_file, renamed_file, binary, added_lines, deleted_lines, head_ranges]
+      additionalProperties: false
+      properties:
+        old_path: {type: string, minLength: 1, maxLength: 4096}
+        new_path: {type: string, minLength: 1, maxLength: 4096}
+        new_file: {type: boolean}
+        deleted_file: {type: boolean}
+        renamed_file: {type: boolean}
+        binary: {type: boolean}
+        added_lines: {type: [integer, 'null'], minimum: 0, maximum: 2147483647, description: 'null, если счётчик недоступен.'}
+        deleted_lines: {type: [integer, 'null'], minimum: 0, maximum: 2147483647, description: 'null, если счётчик недоступен.'}
+        head_ranges:
+          type: array
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/MrDiffRange'}
+          description: Непересекающиеся диапазоны добавленных и заменённых строк head, по возрастанию.
+    MrDiffRange:
+      type: object
+      required: [from, to]
+      additionalProperties: false
+      properties:
+        from: {type: integer, minimum: 1, maximum: 2147483647}
+        to: {type: integer, minimum: 1, maximum: 2147483647, description: Последняя включённая строка.}
     MrEventV1:
       type: object
       description: Событие MR (`normalize.mr_event`). `native_ns` - ID MR, `native_id` - ID note, approval или события у источника.

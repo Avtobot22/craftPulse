@@ -100,6 +100,9 @@ func (in *input) keys() []entity.SourceKey {
 	for _, c := range in.mrRevisions {
 		set[c.mr] = true
 	}
+	for i := range in.mrDiffs {
+		set[in.mrDiffs[i].mr] = true
+	}
 	for _, c := range in.ciRuns {
 		set[c.key], set[c.area] = true, true
 		if c.parent != nil {

@@ -21,6 +21,7 @@ func (u *UseCase) RunMR(ctx context.Context, job entity.SyncMRJob, holder string
 		return u.finish(ctx, org, conn, holder, complete)
 	}
 	if job.SchemaID == "" {
+		// The GitLab merge_requests page includes the current revision's diff for an open MR.
 		job.SchemaID = "merge_requests"
 	}
 	in := entity.FetchInput{

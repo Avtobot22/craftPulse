@@ -252,8 +252,17 @@ func TestWebhook_MRAndPipelineReachNormalize(t *testing.T) {
 	m.Source.Provider, m.Source.InstanceKey = envelope.SourceProviderJiraCloud, _jiraInstance
 	yes := true
 	eventAt := e.clock.Now().Add(-2 * time.Second)
+	diff := mrRecord(t, "mr_diff", "v2", "9001", "", envelope.MrDiffV1{
+		MrNativeId: "9001", BaseSha: strings.Repeat("b", 40), HeadSha: strings.Repeat("a", 40), Completeness: "complete",
+		Files: []envelope.MrDiffFile{{
+			OldPath: "src/app.go", NewPath: "src/app.go", AddedLines: new(1), DeletedLines: new(1),
+			HeadRanges: []envelope.MrDiffRange{{From: 3, To: 3}},
+		}},
+	})
+	diff.SourceRevision = nil
 	source := &webhookFetch{UseCase: e.connect, mr: pack(t, m, mrRepository(t, "10000", "demo/repo", "r1"),
-		mrState(t, "9001", "10000", "Changed", "v2", _t2, &yes), reviewEvent(t, "webhook-review", "review", "7", eventAt))}
+		mrState(t, "9001", "10000", "Changed", "v2", _t2, &yes), mrRevision(t, "9001", "v2", "v2", strings.Repeat("a", 40)),
+		diff, reviewEvent(t, "webhook-review", "review", "7", eventAt))}
 	ci := ciManifest("10000")
 	ci.Source = m.Source
 	source.ci = pack(t, ci, ciRun(t, runSpec{id: "5001", project: "10000", sha: strings.Repeat("a", 40), status: "success", revision: "p2", updated: _t2, mr: "9001"}))
@@ -274,6 +283,7 @@ func TestWebhook_MRAndPipelineReachNormalize(t *testing.T) {
 		require.NoError(t, e.runner().run(t, e.nextKind(t, entity.KindNormalizeBatch)))
 	}
 	assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM normalize.mr_version WHERE title='Changed' AND superseded_seq IS NULL"))
+	assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM normalize.mr_diff WHERE completeness='complete'"))
 	assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM normalize.ci_run_version WHERE mr_id IS NOT NULL AND superseded_seq IS NULL"))
 	key := entity.ObjectKey{ObjectKind: "ci_run", NativeID: "5001"}
 	targets, err := e.norm.WebhookTargets(t.Context(), e.org, routeInstance(t, e), []entity.ObjectKey{key})

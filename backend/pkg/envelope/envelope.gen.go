@@ -433,6 +433,24 @@ func (e MergeRequestV1State) Valid() bool {
 	}
 }
 
+// Defines values for MrDiffV1Completeness.
+const (
+	MrDiffV1CompletenessComplete MrDiffV1Completeness = "complete"
+	MrDiffV1CompletenessPartial  MrDiffV1Completeness = "partial"
+)
+
+// Valid indicates whether the value is a known member of the MrDiffV1Completeness enum.
+func (e MrDiffV1Completeness) Valid() bool {
+	switch e {
+	case MrDiffV1CompletenessComplete:
+		return true
+	case MrDiffV1CompletenessPartial:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MrEventV1EventKind.
 const (
 	MrEventV1EventKindApproval         MrEventV1EventKind = "approval"
@@ -632,6 +650,7 @@ const (
 	RecordRecordKindFinding           RecordRecordKind = "finding"
 	RecordRecordKindGitRef            RecordRecordKind = "git_ref"
 	RecordRecordKindMergeRequest      RecordRecordKind = "merge_request"
+	RecordRecordKindMrDiff            RecordRecordKind = "mr_diff"
 	RecordRecordKindMrEvent           RecordRecordKind = "mr_event"
 	RecordRecordKindMrRevision        RecordRecordKind = "mr_revision"
 	RecordRecordKindRelation          RecordRecordKind = "relation"
@@ -663,6 +682,8 @@ func (e RecordRecordKind) Valid() bool {
 	case RecordRecordKindGitRef:
 		return true
 	case RecordRecordKindMergeRequest:
+		return true
+	case RecordRecordKindMrDiff:
 		return true
 	case RecordRecordKindMrEvent:
 		return true
@@ -1620,6 +1641,44 @@ type MergeRequestV1 struct {
 
 // MergeRequestV1State defines model for MergeRequestV1.State.
 type MergeRequestV1State string
+
+// MrDiffFile defines model for MrDiffFile.
+type MrDiffFile struct {
+	// AddedLines null, если счётчик недоступен.
+	AddedLines  *int `json:"added_lines"`
+	Binary      bool `json:"binary"`
+	DeletedFile bool `json:"deleted_file"`
+
+	// DeletedLines null, если счётчик недоступен.
+	DeletedLines *int `json:"deleted_lines"`
+
+	// HeadRanges Непересекающиеся диапазоны добавленных и заменённых строк head, по возрастанию.
+	HeadRanges  []MrDiffRange `json:"head_ranges"`
+	NewFile     bool          `json:"new_file"`
+	NewPath     string        `json:"new_path"`
+	OldPath     string        `json:"old_path"`
+	RenamedFile bool          `json:"renamed_file"`
+}
+
+// MrDiffRange defines model for MrDiffRange.
+type MrDiffRange struct {
+	From int `json:"from"`
+
+	// To Последняя включённая строка.
+	To int `json:"to"`
+}
+
+// MrDiffV1 Итоговый diff ревизии MR от merge base до head. Как у mr_revision, native_ns содержит ID MR, native_id - ID ревизии. Текст патча в пакет не входит.
+type MrDiffV1 struct {
+	BaseSha      string               `json:"base_sha"`
+	Completeness MrDiffV1Completeness `json:"completeness"`
+	Files        []MrDiffFile         `json:"files"`
+	HeadSha      string               `json:"head_sha"`
+	MrNativeId   string               `json:"mr_native_id"`
+}
+
+// MrDiffV1Completeness defines model for MrDiffV1.Completeness.
+type MrDiffV1Completeness string
 
 // MrEventV1 Событие MR (`normalize.mr_event`). `native_ns` - ID MR, `native_id` - ID note, approval или события у источника.
 type MrEventV1 struct {
