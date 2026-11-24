@@ -1,0 +1,21 @@
+services:
+  migrate:
+    image: craftpulse-profile-d-server:local
+    build:
+      context: ../../backend
+      args:
+        COMMIT_SHA: ${CRAFTPULSE_COMMIT_SHA:-local}
+  api:
+    image: craftpulse-profile-d-server:local
+    pull_policy: never
+    volumes:
+      - ./check-profiles.local.yaml:/etc/craftpulse/check-profiles.yaml:ro
+  worker:
+    image: craftpulse-profile-d-server:local
+    pull_policy: never
+  nginx:
+    image: craftpulse-profile-d-frontend:local
+    build:
+      context: ../../frontend
+      args:
+        COMMIT_SHA: ${CRAFTPULSE_COMMIT_SHA:-local}

@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 30s
+scrape_configs:
+  - job_name: craftpulse
+    metrics_path: /metrics
+    static_configs:
+      - targets: [api:9090, worker:9090]

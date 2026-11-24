@@ -8,12 +8,19 @@ import (
 
 	"github.com/Avtobot22/craftPulse/backend/config"
 	"github.com/Avtobot22/craftPulse/backend/internal/app"
+	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 	"github.com/Avtobot22/craftPulse/backend/pkg/logger"
 )
 
 const _service = "worker"
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		if !health.CheckLocalLiveness(os.Getenv("HTTP_ADDR")) {
+			os.Exit(1)
+		}
+		return
+	}
 	boot := logger.Default(_service)
 	environ := env.ToMap(os.Environ())
 	cfg, err := config.Load(environ)
