@@ -9,7 +9,7 @@
   "packageManager": "npm@11.16.0",
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck && vite build",
+    "build": "npm run check:theme && npm run typecheck && vite build",
     "typecheck": "tsc -b && npm run typecheck:api",
     "lint": "npm run lint:eslint && npm run lint:fsd",
     "lint:eslint": "eslint .",
@@ -23,9 +23,13 @@
     "check:generated": "node tools/api-types-generator/generate.mjs --check",
     "check": "npm run check:generated && npm run format:check && npm run lint && npm test && npm run build",
     "preview": "vite preview",
-    "typecheck:api": "tsc --strict --noEmit --skipLibCheck false --ignoreConfig src/shared/api/generated/schema.d.ts"
+    "typecheck:api": "tsc --strict --noEmit --skipLibCheck false --ignoreConfig src/shared/api/generated/schema.d.ts",
+    "generate:theme": "node tools/generate-theme.mjs",
+    "check:theme": "node tools/generate-theme.mjs --check"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@gravity-ui/icons": "^2.23.1",
     "@gravity-ui/uikit": "^8.1.0",
     "@tanstack/react-query": "^5.108.0",
     "react": "^19.3.1",
@@ -35,6 +39,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@feature-sliced/steiger-plugin": "0.8.2",
+    "@gravity-ui/uikit-themer": "^2.1.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

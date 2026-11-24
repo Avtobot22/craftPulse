@@ -1,0 +1,20 @@
+/* Product content only; controls, feedback, layout and timers belong to UIKit. */
+.cp-empty-state {
+  padding: var(--g-spacing-6);
+}
+.cp-error-state {
+  --g-alert-padding: 24px;
+  --g-alert-title-font-size: 1rem;
+  --g-alert-title-line-height: 1.5rem;
+  --g-alert-icon-margin-inline-end: 8px;
+  --g-alert-actions-margin: 16px;
+}
+.cp-technical-value {
+  background: var(--g-color-base-generic);
+  min-width: 0;
+}
+.cp-technical-value__text {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  max-width: 100%;
+}

@@ -1,0 +1,28 @@
+/* Public UIKit CSS API; native controls retain their own markup and behavior. */
+.g-root {
+  --g-button-font-size: 0.875rem;
+  --g-button-icon-offset: 8px;
+  --g-button-icon-space: 20px;
+  --g-button-padding: 12px;
+  --g-button-focus-outline-offset: 2px;
+  --g-text-input-focus-outline-color: var(--g-color-line-focus);
+  --g-text-area-focus-outline-color: var(--g-color-line-focus);
+  --g-select-focus-outline-color: var(--g-color-line-focus);
+  --g-text-input-border-color: var(--g-color-line-generic-solid);
+  --g-text-area-border-color: var(--g-color-line-generic-solid);
+  --g-alert-padding: 12px 16px;
+  --g-alert-title-font-size: 0.875rem;
+  --g-alert-title-line-height: 1.25rem;
+  --g-alert-message-font-size: 0.875rem;
+  --g-alert-message-line-height: 1.25rem;
+  --g-tooltip-padding: 8px 12px;
+  --g-list-item-view-min-height: 44px;
+  --g-toaster-width: min(400px, calc(100vw - 32px));
+}
+.cp-select-popup {
+  max-height: min(320px, calc(100dvh - 32px));
+}
+th,
+td {
+  font-variant-numeric: tabular-nums;
+}

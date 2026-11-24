@@ -1,10 +1,10 @@
-import { Button } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router'
 import { UnavailablePage } from '@/pages/unavailable'
 import { ApiError } from '@/shared/api'
 import { routePaths } from '@/shared/config'
+import { ErrorState, LoadingState } from '@/shared/ui'
 import type { AppRuntime } from '../initialization/runtime'
 import { expiredPath } from './session-navigation'
 
@@ -27,7 +27,7 @@ export function ProtectedRoute({ runtime }: { runtime: AppRuntime }) {
 
 function SessionGate({ runtime }: { runtime: AppRuntime }) {
   const query = useQuery(runtime.session.currentUserOptions())
-  if (query.isPending) return <p role="status">Загрузка</p>
+  if (query.isPending) return <LoadingState />
   if (query.error) {
     const error = query.error
     if (
@@ -37,19 +37,16 @@ function SessionGate({ runtime }: { runtime: AppRuntime }) {
       return <UnavailablePage correlationId={error.problem?.correlation_id} />
     }
     return (
-      <section role="alert">
-        <p>Не удалось проверить сессию</p>
-        {error instanceof ApiError && error.problem && (
-          <p>Код обращения: {error.problem.correlation_id}</p>
-        )}
-        <Button
-          onClick={() => {
-            void query.refetch()
-          }}
-        >
-          Повторить
-        </Button>
-      </section>
+      <ErrorState
+        reason="Не удалось проверить сессию"
+        {...(error instanceof ApiError && error.problem
+          ? { correlationId: error.problem.correlation_id }
+          : {})}
+        retrying={query.isFetching}
+        onRetry={() => {
+          void query.refetch()
+        }}
+      />
     )
   }
   return <Outlet />
