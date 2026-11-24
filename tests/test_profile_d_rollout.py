@@ -170,6 +170,14 @@ class RolloutTest(unittest.TestCase):
                 self.assertIn("--no-deps", args)
             self.assertEqual([args for label, args in calls if label == "verify"], ["adapter-git", "worker", "api"])
 
+    def test_adapter_resources_follow_profile_budget(self):
+        release = manifest(FIRST, 1, adapter=True)
+        release["images"]["craftpulse-adapter-gitlab"] = release["images"]["craftpulse-adapter-git"]
+        config = rollout_host.overrides({"tls_dir": "/etc/craftpulse/tls"}, ["git", "gitlab"], release, "/tmp/secrets")
+        services = config["services"]
+        self.assertEqual((services["adapter-git"]["mem_limit"], services["adapter-git"]["cpus"]), ("256m", 1.0))
+        self.assertEqual(services["adapter-gitlab"]["mem_limit"], "48m")
+
     def test_process_file_allowlist_rejects_operator_key_and_path_traversal(self):
         files = request(FIRST, 1)["files"]
         self.assertEqual(rollout_host.decode_files(files, [])["oidc/stand"], (65532, b"TEST-OIDC-SECRET\n"))

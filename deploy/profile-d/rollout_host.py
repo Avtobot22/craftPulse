@@ -108,6 +108,7 @@ def overrides(settings, adapters, manifest, secret_dir):
         database = f"adapter_{name}"
         common_env = {
             "DATABASE_MAX_CONNS": "2",
+            "GOMEMLIMIT": "96MiB" if name == "git" else "36MiB",
             "DATABASE_URL": f"postgres://{database}@postgres:5432/{database}?sslmode=disable",
             "DATABASE_PASSWORD_FILE": "/run/secrets/db-password",
             "ADAPTER_MASTER_KEY_VERSION": "1",
@@ -116,15 +117,16 @@ def overrides(settings, adapters, manifest, secret_dir):
         def volume(file, target):
             return f"{secret_dir}/adapters/{name}/{file}:/run/secrets/{target}:ro"
 
+        memory = "256m" if name == "git" else "48m"
         common = {
             "image": manifest["images"][ADAPTER + name],
             "cgroup_parent": "${CGROUP_PARENT:?Set the resource slice for the stand}",
-            "mem_limit": "128m", "memswap_limit": "128m",
+            "mem_limit": memory, "memswap_limit": memory,
         }
         services[service] = {
             **common, "restart": "unless-stopped", "stop_grace_period": "40s", "networks": ["data", "edge"],
             "environment": {
-                **common_env, "HTTP_ADDR": ":8443", "GOMEMLIMIT": "96MiB",
+                **common_env, "HTTP_ADDR": ":8443",
                 "TLS_CERT_FILE": "/run/secrets/tls-cert.pem", "TLS_KEY_FILE": "/run/secrets/tls-key.pem",
                 "ADAPTER_SERVICE_KEY_FILE": "/run/secrets/service-key",
                 "INSTALLATION_NETWORKS": settings.get("installation_networks", ""),
@@ -133,6 +135,8 @@ def overrides(settings, adapters, manifest, secret_dir):
             "volumes": [volume("app-password", "db-password")] + [volume(file, file) for file in
                         ("master-key", "service-key", "tls-cert.pem", "tls-key.pem")],
         }
+        if name == "git":
+            services[service]["cpus"] = 1.0
         services[f"{service}-migrate"] = {
             **common, "profiles": ["migration"], "networks": ["data"], "command": ["migrate"],
             "environment": {**common_env, "DATABASE_URL":

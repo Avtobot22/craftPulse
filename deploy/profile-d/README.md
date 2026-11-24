@@ -4,7 +4,7 @@
 
 ## Ресурсы
 
-На VPS 8 vCPU и около 15 ГиБ RAM. GitLab, Jenkins и SonarQube работают на той же машине. Для craftPulse задаётся общий потолок 4 vCPU и 5,5 ГиБ. На запуске остаётся 416 MiB внутри этого потолка сверх суммы ограничений контейнеров. Основной запас памяти остаётся снаружи slice.
+На VPS 8 vCPU и около 15 ГиБ RAM. GitLab, Jenkins и SonarQube работают на той же машине. Для craftPulse задаётся общий потолок 4 vCPU и 5,5 ГиБ. Основной запас памяти остаётся снаружи slice.
 
 | Компонент | Лимит MiB | Дополнительная настройка |
 | --- | ---: | --- |
@@ -16,8 +16,12 @@
 | nginx с frontend | 96 | TLS, 25 MiB, ограничение частоты входа и webhook |
 | VictoriaMetrics и VictoriaLogs | 256 + 256 | Метрики 13 месяцев, логи 30 дней |
 | Grafana | 512 | Источник метрик и дашборд состояния |
+| Адаптер Git | 256 | 1 vCPU, `GOMEMLIMIT=96MiB`, пул БД 2 |
+| Адаптеры GitLab и Jira Cloud | По 48 | `GOMEMLIMIT=36MiB`, пул БД 2 |
 
-Запущенные сервисы ограничены суммарно 4704 MiB. С миграцией - 5216 MiB. Лимит swap равен лимиту памяти контейнера. На VPS оператор устанавливает [systemd slice](craftpulse-d.slice):
+Ядро и инфраструктура ограничены суммарно 4704 MiB. С тремя адаптерами и
+миграцией ядра сумма составляет 5568 MiB. На VPS оператор устанавливает
+[systemd slice](craftpulse-d.slice):
 
 ```sh
 sudo install -m 0644 craftpulse-d.slice /etc/systemd/system/craftpulse-d.slice
