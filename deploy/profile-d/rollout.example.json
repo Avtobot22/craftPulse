@@ -1,0 +1,15 @@
+
+{
+  "tls_dir": "/etc/craftpulse/tls",
+  "check_profiles": "/etc/craftpulse/check-profiles.yaml",
+  "backup_recipient": "<public age recipient>",
+  "installation_networks": "172.31.84.0/27",
+  "source_private_networks": "",
+  "install": {
+    "INSTALL_ORGANIZATIONS": "stand",
+    "ORG_STAND_NAME": "Служебная организация стенда",
+    "ORG_STAND_OIDC_ISSUER": "https://gitlab.example.com",
+    "ORG_STAND_OIDC_CLIENT_ID": "<OIDC client ID>",
+    "ORG_STAND_ADMIN_SUBJECT": "<first administrator subject>"
+  }
+}
