@@ -4230,6 +4230,16 @@
                 }
               },
               {
+                "name": "queue_seconds",
+                "schema": {
+                  "types": [
+                    "number"
+                  ],
+                  "format": "double",
+                  "minimum": 0
+                }
+              },
+              {
                 "name": "exit_class",
                 "schema": {
                   "types": [
@@ -4264,6 +4274,15 @@
                   "types": [
                     "integer",
                     "null"
+                  ],
+                  "minimum": 0
+                }
+              },
+              {
+                "name": "eligible_file_count",
+                "schema": {
+                  "types": [
+                    "integer"
                   ],
                   "minimum": 0
                 }
@@ -4463,6 +4482,24 @@
                     {
                       "name": "to_sha",
                       "schema": {}
+                    },
+                    {
+                      "name": "from_at",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "format": "date-time"
+                      }
+                    },
+                    {
+                      "name": "to_at",
+                      "schema": {
+                        "types": [
+                          "string"
+                        ],
+                        "format": "date-time"
+                      }
                     },
                     {
                       "name": "truncated",

@@ -76,9 +76,11 @@ type SkippedTarget struct {
 
 // ScanHistory is the range of commits a check of history read and whether it was cut.
 type ScanHistory struct {
-	FromSHA   string
-	ToSHA     string
-	Truncated bool
+	FromSHA   string     `json:"from_sha"`
+	ToSHA     string     `json:"to_sha"`
+	Truncated bool       `json:"truncated"`
+	FromAt    *time.Time `json:"from_at,omitempty"`
+	ToAt      *time.Time `json:"to_at,omitempty"`
 }
 
 // FindingOccurrence is a finding in one report. Empty texts and nil lines are unknown; Evidence keeps safe
@@ -122,11 +124,12 @@ const SkippedOutsideRepository = "outside_repository"
 
 // ReportRows are the rows a report gives: findings of an analysis, executions of tests or coverage of files.
 type ReportRows struct {
-	Findings []FindingOccurrence
-	Tests    []TestExecution
-	Coverage []CoverageFact
-	Code     *CodeFacts
-	Docs     *DocsReportFacts
+	Findings     []FindingOccurrence
+	Tests        []TestExecution
+	Coverage     []CoverageFact
+	Code         *CodeFacts
+	Docs         *DocsReportFacts
+	Dependencies *DependencyInventory
 }
 
 // TestExecution is a test case of a JUnit report in the configuration of its attempt (DR-006): the same case in two

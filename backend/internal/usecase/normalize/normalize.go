@@ -90,8 +90,8 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 	}
 	part, more := u.part(recs, job.AfterNo)
 	var in *input
-	if len(part) > 0 {
-		if in, err = u.prepare(ctx, rc, part, via(job, rc), job.AfterNo == 0); err != nil {
+	if len(part) > 0 || job.ScanManifest {
+		if in, err = u.prepare(ctx, rc, part, via(job, rc), job.AfterNo == 0, !more); err != nil {
 			return err
 		}
 	}
@@ -156,6 +156,12 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 				return err
 			}
 		}
+		if in != nil && len(in.analysis) > 0 {
+			recount := entity.CalcRecountJob{OrganizationID: org, AnalysisReceiptID: job.ReceiptID, CorrelationID: job.CorrelationID}
+			if err := u.d.Queue.Enqueue(ctx, recount, entity.QueueBulk); err != nil {
+				return err
+			}
+		}
 		if reports {
 			identify := entity.ChangeIdentifyJob{OrganizationID: org, ReceiptID: job.ReceiptID, CorrelationID: job.CorrelationID}
 			if err := u.d.Queue.Enqueue(ctx, identify, queueOf(rc)); err != nil {
@@ -205,7 +211,7 @@ func (u *UseCase) part(recs []entity.IngestRecord, after int) ([]entity.IngestRe
 }
 
 // prepare reads a part; the first part also reads the execution manifest of the package.
-func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, part []entity.IngestRecord, via entity.ObservedVia, first bool) (*input, error) {
+func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, part []entity.IngestRecord, via entity.ObservedVia, first, last bool) (*input, error) {
 	if rc.ObjectKey == "" || rc.SourceInstanceID == nil {
 		return nil, errorf("receipt %s has accepted records but no stored package", rc.ID)
 	}
@@ -221,6 +227,12 @@ func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, part []entity.
 	in, err := prepare(rc, pkg, part, via, first)
 	if err != nil {
 		return nil, err
+	}
+	if last {
+		in.analysis, err = analysisCandidates(pkg, rc.RecordCount)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return in, u.readReports(ctx, rc, in)
 }

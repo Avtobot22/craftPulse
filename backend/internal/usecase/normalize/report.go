@@ -25,20 +25,21 @@ const (
 // for a file an adapter read from the CI of the source. Rejected holds the reason its record is rejected with; a
 // file of a format without a parser yet has no parser and gives no report.
 type reportCandidate struct {
-	file      string
-	run       *entity.SourceKey
-	attempt   *entity.SourceKey
-	component *envelope.ScanComponent
-	parser    *reportParser
-	paths     parseInput
-	report    entity.ScanReport
-	findings  []entity.FindingOccurrence
-	tests     []parsedTest
-	coverage  []entity.CoverageFact
-	code      *entity.CodeFacts
-	docs      *entity.DocsReportFacts
-	tool      *envelope.ScanToolRun
-	rejected  string
+	file         string
+	run          *entity.SourceKey
+	attempt      *entity.SourceKey
+	component    *envelope.ScanComponent
+	parser       *reportParser
+	paths        parseInput
+	report       entity.ScanReport
+	findings     []entity.FindingOccurrence
+	tests        []parsedTest
+	coverage     []entity.CoverageFact
+	code         *entity.CodeFacts
+	docs         *entity.DocsReportFacts
+	dependencies *entity.DependencyInventory
+	tool         *envelope.ScanToolRun
+	rejected     string
 }
 
 func (in *input) reportFile(rec *envelope.Record, b baseFact, scan *envelope.ScanManifestV1) (*reportCandidate, error) {
@@ -232,6 +233,7 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 			c.docsProvenance(parsed)
 			c.report.DependencyDelta = parsed.dependencyDelta
 			c.report.DependencyBaseSHA = parsed.dependencyBaseSHA
+			c.dependencies = parsed.dependencies
 			c.report.SkippedTargets = append(c.report.SkippedTargets, parsed.excluded...)
 			c.report.SchemaVersion, c.report.ParserVersion = parsed.formatVersion, first.parser.version
 			if c.report.Kind == entity.AnalysisDocs && c.report.Format == "sarif" {
@@ -384,6 +386,7 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 		}
 		rows := entity.ReportRows{
 			Findings: c.findings, Tests: w.executions(c, r.AttemptID, attempts), Coverage: c.coverage, Code: c.code, Docs: c.docs,
+			Dependencies: c.dependencies,
 		}
 		if err := w.u.d.Repo.InsertReport(ctx, w.org, &r, rows); err != nil {
 			return err

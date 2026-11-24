@@ -102,8 +102,9 @@ type IngestRecord struct {
 
 // PreparedPackage is a checked and cleaned package whose journal is not written yet.
 type PreparedPackage struct {
-	Receipt Receipt
-	Records []IngestRecord
+	Receipt         Receipt
+	Records         []IngestRecord
+	HasScanManifest bool
 	// Duplicate is set when a stored package with the same hash was found before the transaction.
 	Duplicate bool
 	// ObservedVia is how sync read the page; the channel decides it when empty.

@@ -919,6 +919,11 @@ components:
         finished_at:
           type: string
           format: date-time
+        queue_seconds:
+          type: number
+          format: double
+          minimum: 0
+          description: Измеренное время ожидания перед запуском инструмента в секундах.
         exit_class:
           type: string
           enum:
@@ -939,6 +944,10 @@ components:
             - integer
             - "null"
           minimum: 0
+        eligible_file_count:
+          type: integer
+          minimum: 0
+          description: Число пригодных файлов выбранного языка в области инструмента, включая пригодные файлы, которые он пропустил.
         skipped_count:
           type:
             - integer
@@ -1133,6 +1142,12 @@ components:
           type: string
           pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
         to_sha: *a1
+        from_at:
+          type: string
+          format: date-time
+        to_at:
+          type: string
+          format: date-time
         truncated:
           type: boolean
 

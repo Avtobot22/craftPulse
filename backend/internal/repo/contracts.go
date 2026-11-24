@@ -298,6 +298,9 @@ type SyncRepo interface {
 
 // NormalizeRepo is the normalize schema under row-level security: canonical facts in versions of knowledge.
 type NormalizeRepo interface {
+	InsertAnalysisRuns(ctx context.Context, org entity.ID, runs []entity.AnalysisRun) error
+	ReadAnalysisFacts(ctx context.Context, org entity.ID, scope entity.AnalysisScope, seq int64, asOf time.Time) (entity.AnalysisFacts, error)
+	ReceiptAnalysisScopes(ctx context.Context, org, receipt entity.ID) ([]entity.AnalysisScope, error)
 	WebhookTargets(context.Context, entity.ID, entity.ID, []entity.ObjectKey) (map[entity.ObjectKey]entity.WebhookMRTarget, error)
 	CurrentSyncVersions(context.Context, entity.ID, entity.ID, []string) (map[entity.ObjectKey]entity.SyncObjectVersion, error)
 	LinkMRVersions(context.Context, entity.ID, entity.LinkMRFilter) ([]entity.MRVersion, error)

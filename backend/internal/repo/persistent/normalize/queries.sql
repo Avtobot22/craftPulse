@@ -520,14 +520,16 @@ ORDER BY f.finding_kind, f.path, f.line_start, f.rule_id, f.id;
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
     scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
-    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash, dependency_delta, dependency_base_sha)
+    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash,
+    dependency_delta, dependency_base_sha, dependency_inventory)
 VALUES (sqlc.arg(organization_id), sqlc.arg(receipt_id), sqlc.arg(record_no), sqlc.arg(known_seq), sqlc.arg(area_id), sqlc.narg(component_id),
     sqlc.arg(report_kind), sqlc.arg(mode), sqlc.narg(producer), sqlc.narg(producer_version), sqlc.arg(report_format), sqlc.arg(schema_version),
     sqlc.arg(parser_version), sqlc.narg(profile_id), sqlc.narg(rules_hash), sqlc.narg(config_hash), sqlc.narg(db_version),
     sqlc.narg(db_published_at), sqlc.narg(scope_hash), sqlc.narg(sha), sqlc.narg(artifact_digest), sqlc.narg(run_id), sqlc.narg(attempt_id),
     sqlc.narg(started_at), sqlc.narg(finished_at), sqlc.arg(exit_class), sqlc.arg(completeness), sqlc.narg(scanned_count),
     sqlc.narg(skipped_count), sqlc.arg(skipped_targets), sqlc.narg(history_from_sha), sqlc.narg(history_to_sha), sqlc.narg(history_truncated),
-    sqlc.narg(ref_name), sqlc.narg(language), sqlc.narg(docs_run_id), sqlc.narg(docs_file_hash), sqlc.narg(dependency_delta), sqlc.narg(dependency_base_sha))
+    sqlc.narg(ref_name), sqlc.narg(language), sqlc.narg(docs_run_id), sqlc.narg(docs_file_hash), sqlc.narg(dependency_delta),
+    sqlc.narg(dependency_base_sha), sqlc.narg(dependency_inventory))
 RETURNING id;
 
 -- An empty text and a zero line stand for NULL: arrays of the statement carry no NULL elements. Set-returning
@@ -814,3 +816,73 @@ WHERE d.known_seq <= sqlc.arg(known_seq)
             AND m.base_sha IS NOT NULL AND m.base_sha IS DISTINCT FROM r.base_sha
     )
 ORDER BY (d.completeness = 'complete') DESC, d.known_seq DESC, d.content_hash DESC LIMIT 1;
+-- name: InsertAnalysisRun :exec
+INSERT INTO normalize.analysis_run (organization_id, receipt_id, known_seq, area_id, component_id, sha, tool_id, record_nos, metadata)
+VALUES (sqlc.arg(organization_id), sqlc.arg(receipt_id), sqlc.arg(known_seq), sqlc.arg(area_id), sqlc.narg(component_id),
+        sqlc.arg(sha), sqlc.arg(tool_id), sqlc.arg(record_nos)::integer[], sqlc.arg(metadata))
+ON CONFLICT (organization_id, receipt_id, tool_id) DO NOTHING;
+
+-- name: ReceiptAnalysisScopes :many
+SELECT DISTINCT area_id, component_id, sha
+FROM normalize.analysis_run
+WHERE organization_id = sqlc.arg(organization_id) AND receipt_id = sqlc.arg(receipt_id)
+ORDER BY area_id, component_id, sha;
+
+-- name: ReadAnalysisRuns :many
+SELECT a.id, a.receipt_id, a.known_seq, a.tool_id, a.metadata,
+       COALESCE((
+           SELECT jsonb_agg(jsonb_build_object(
+               'id', COALESCE(r.id, rejected.id, '00000000-0000-0000-0000-000000000000'::uuid),
+               'reason', CASE
+                   WHEN j.outcome = 'conflict' THEN 'report_conflict'
+                   WHEN j.outcome = 'rejected' THEN j.reason_code
+                   WHEN j.outcome = 'suppressed' THEN 'report_suppressed'
+                   WHEN rejected.id IS NOT NULL THEN rejected.reason_code
+                   WHEN r.id IS NOT NULL THEN ''
+                   WHEN j.record_no IS NOT NULL THEN 'report_not_normalized'
+                   ELSE 'report_record_missing'
+               END,
+               'dependencies', r.dependency_inventory
+           ) ORDER BY idx)
+           FROM unnest(a.record_nos) WITH ORDINALITY AS refs(no, idx)
+           LEFT JOIN ingest.record j ON j.organization_id = a.organization_id
+               AND j.receipt_id = a.receipt_id AND j.record_no = refs.no
+           LEFT JOIN normalize.report r ON r.organization_id = j.organization_id
+               AND r.receipt_id = COALESCE(j.first_receipt_id, j.receipt_id)
+               AND r.record_no = COALESCE(j.first_record_no, j.record_no) AND r.known_seq <= sqlc.arg(known_seq)
+               AND r.area_id = a.area_id AND r.sha = a.sha AND r.component_id IS NOT DISTINCT FROM a.component_id
+           LEFT JOIN normalize.rejected_report rejected ON rejected.organization_id = j.organization_id
+               AND rejected.receipt_id = COALESCE(j.first_receipt_id, j.receipt_id)
+               AND rejected.record_no = COALESCE(j.first_record_no, j.record_no) AND rejected.known_seq <= sqlc.arg(known_seq)
+               AND rejected.area_id = a.area_id AND rejected.sha = a.sha
+               AND rejected.component_id IS NOT DISTINCT FROM a.component_id
+       ), '[]'::jsonb)::jsonb AS reports
+FROM normalize.analysis_run a
+WHERE a.organization_id = sqlc.arg(organization_id) AND a.area_id = sqlc.arg(area_id)
+  AND a.sha = sqlc.arg(sha) AND a.component_id IS NOT DISTINCT FROM sqlc.narg(component_id)::uuid
+  AND a.known_seq <= sqlc.arg(known_seq)
+ORDER BY a.known_seq DESC, a.receipt_id, a.tool_id;
+
+-- name: ReadAnalysisDocumentVersions :many
+WITH corpus AS (
+    SELECT DISTINCT v.document_id, d.path_prefix, r.profile_id
+    FROM normalize.report r JOIN normalize.docs_report d
+        ON (d.organization_id, d.report_id) = (r.organization_id, r.id)
+    JOIN normalize.docs_report_document link ON (link.organization_id, link.report_id) = (d.organization_id, d.report_id)
+    JOIN normalize.document_version v ON (v.organization_id, v.id) = (link.organization_id, link.document_version_id)
+    WHERE r.organization_id = sqlc.arg(organization_id) AND r.area_id = sqlc.arg(area_id)
+      AND r.sha = sqlc.arg(sha) AND r.component_id IS NOT DISTINCT FROM sqlc.narg(component_id)::uuid
+      AND r.known_seq <= sqlc.arg(known_seq) AND r.finished_at <= sqlc.arg(as_of)
+      AND r.completeness = 'complete' AND r.exit_class IN ('success', 'findings')
+)
+SELECT DISTINCT ON (v.document_id) v.id, r.id AS report_id, v.path, v.version_ref, r.finished_at AS observed_at
+FROM corpus c
+JOIN normalize.document_version v ON v.organization_id = sqlc.arg(organization_id) AND v.document_id = c.document_id
+JOIN normalize.docs_report_document link ON (link.organization_id, link.document_version_id) = (v.organization_id, v.id)
+JOIN normalize.docs_report d ON (d.organization_id, d.report_id) = (link.organization_id, link.report_id)
+JOIN normalize.report r ON (r.organization_id, r.id) = (d.organization_id, d.report_id)
+WHERE r.area_id = sqlc.arg(area_id) AND r.component_id IS NOT DISTINCT FROM sqlc.narg(component_id)::uuid
+  AND d.path_prefix = c.path_prefix AND r.profile_id IS NOT DISTINCT FROM c.profile_id
+  AND r.known_seq <= sqlc.arg(known_seq) AND r.finished_at <= sqlc.arg(as_of)
+  AND r.completeness = 'complete' AND r.exit_class IN ('success', 'findings')
+ORDER BY v.document_id, r.finished_at, v.id, r.id;

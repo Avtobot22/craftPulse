@@ -79,3 +79,29 @@ func TestParseTrivy_InvalidAndEmpty(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, out.findings)
 }
+
+func TestParseTrivy_DependencyInventory(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, reports string
+		want          *entity.DependencyInventory
+	}{
+		{
+			"exact, range and project root", `[{"Class":"lang-pkgs","Packages":[{"Version":"1.2.0"},{"Version":"^2.0"},{"Version":"1.x"},{"Version":"2.0","Relationship":"root"}]}]`,
+			&entity.DependencyInventory{Entries: 3, Resolved: 1},
+		},
+		{
+			"one target lacks inventory", `[{"Class":"lang-pkgs","Packages":[{"Version":"v1.2.3+incompatible"}]},{"Class":"lang-pkgs"}]`,
+			&entity.DependencyInventory{Entries: 1, Resolved: 1, Partial: true},
+		},
+		{"empty inventory", `[{"Class":"lang-pkgs","Packages":[]}]`, &entity.DependencyInventory{}},
+		{"unknown inventory", `[{"Class":"lang-pkgs"}]`, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := parse(t, "trivy_json", entity.AnalysisSCA, []byte(`{"SchemaVersion":2,"Results":`+tt.reports+`}`))
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got.dependencies)
+		})
+	}
+}

@@ -35,6 +35,7 @@ type trivyPackageIdentifier struct {
 
 type trivyPackage struct {
 	ID           string
+	Version      string
 	Identifier   trivyPackageIdentifier
 	Relationship string
 	Dev          *bool
@@ -50,15 +51,17 @@ type trivyMisconfiguration struct {
 }
 
 type trivyResult struct {
-	Target, Type      string
-	Packages          []trivyPackage
-	Vulnerabilities   []trivyVulnerability
-	Misconfigurations []trivyMisconfiguration
+	Target, Type, Class string
+	Packages            []trivyPackage
+	Vulnerabilities     []trivyVulnerability
+	Misconfigurations   []trivyMisconfiguration
 }
 
 func parseTrivy(r io.Reader, in parseInput) (*parsedReport, error) {
 	dec := json.NewDecoder(r)
 	out := &parsedReport{}
+	var inventory entity.DependencyInventory
+	var hasInventory bool
 	err := object(dec, func(key string) error {
 		switch key {
 		case "SchemaVersion":
@@ -85,6 +88,10 @@ func parseTrivy(r io.Reader, in parseInput) (*parsedReport, error) {
 				if err := dec.Decode(&result); err != nil {
 					return err
 				}
+				if in.kind == entity.AnalysisSCA && (result.Class == "lang-pkgs" || result.Packages != nil) {
+					hasInventory = hasInventory || result.Packages != nil
+					addDependencyInventory(&inventory, result.Packages)
+				}
 				return result.findings(in.kind, out)
 			})
 		default:
@@ -97,7 +104,37 @@ func parseTrivy(r io.Reader, in parseInput) (*parsedReport, error) {
 	if out.formatVersion == "" {
 		return nil, invalidReport("trivy: no schema version")
 	}
+	if hasInventory {
+		out.dependencies = &inventory
+	}
 	return out, end(dec)
+}
+
+func addDependencyInventory(inventory *entity.DependencyInventory, packages []trivyPackage) {
+	inventory.Partial = inventory.Partial || packages == nil
+	for i := range packages {
+		p := &packages[i]
+		if p.Relationship == "root" {
+			continue
+		}
+		inventory.Entries++
+		if exactPackageVersion(p.Version) {
+			inventory.Resolved++
+		}
+	}
+}
+
+func exactPackageVersion(version string) bool {
+	version = strings.TrimSpace(version)
+	if version == "" || strings.ContainsAny(version, "<>=~^*|, \t\r\n") {
+		return false
+	}
+	for _, part := range strings.Split(version, ".") {
+		if strings.EqualFold(part, "x") {
+			return false
+		}
+	}
+	return strings.ContainsAny(version, "0123456789")
 }
 
 func (r *trivyResult) findings(kind string, out *parsedReport) error {

@@ -460,6 +460,7 @@ func (s *SASTRunner) component(ctx context.Context, row Entry, several bool, dea
 	skipped := len(scan.skipped)
 	if o.finished() {
 		run.ScannedCount, run.SkippedCount, run.SkippedTargets = &scan.scanned, &skipped, scan.skipped
+		run.EligibleFileCount = new(scan.scanned + skipped)
 	}
 	excluded := append([]envelope.ScanExcludedTarget{}, scan.excluded...)
 	run.ExcludedTargets = &excluded

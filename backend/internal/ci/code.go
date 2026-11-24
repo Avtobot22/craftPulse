@@ -414,6 +414,7 @@ func setScope(run *envelope.ScanToolRun, s *Scope, skippedTargets []envelope.Sca
 		skippedTargets = []envelope.ScanSkippedTarget{}
 	}
 	run.ScannedCount, run.SkippedCount, run.SkippedTargets = &scanned, &skipped, skippedTargets
+	run.EligibleFileCount = new(scanned + skipped)
 	run.ExcludedTargets, run.TestTargets = &excluded, &tests
 }
 
