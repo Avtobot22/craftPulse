@@ -2670,6 +2670,12 @@ SELECT r.mr_id, r.id AS revision_id, r.revision_key, r.head_sha, r.base_sha, d.k
 FROM revision r
 JOIN normalize.mr_diff d ON d.organization_id = r.organization_id AND d.mr_revision_id = r.id
 WHERE d.known_seq <= $1
+    AND NOT EXISTS (
+        SELECT 1 FROM normalize.mr_version m
+        WHERE m.organization_id = r.organization_id AND m.mr_id = r.mr_id AND m.head_sha = r.head_sha
+            AND m.known_seq <= $1 AND (m.superseded_seq IS NULL OR m.superseded_seq > $1)
+            AND m.base_sha IS NOT NULL AND m.base_sha IS DISTINCT FROM r.base_sha
+    )
 ORDER BY (d.completeness = 'complete') DESC, d.known_seq DESC, d.content_hash DESC LIMIT 1
 `
 

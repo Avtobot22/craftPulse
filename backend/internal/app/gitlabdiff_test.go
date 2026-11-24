@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -215,6 +216,24 @@ func TestGitLabDiff_NormalizesTwoHeadsAndIgnoresReplay(t *testing.T) {
 	e.drain(t)
 	assert.Equal(t, 3, e.n(t, "SELECT count(*) FROM normalize.mr_diff"), "same diff after another normalization")
 	assert.Zero(t, e.n(t, "SELECT count(*) FROM normalize.mr_diff WHERE files::text LIKE '%fixture text%'"))
+
+	after := time.Date(2026, 11, 22, 10, 0, 0, 0, time.UTC)
+	state := mrState(t, "10", "7", "New base", "v3", after, new(true))
+	var payload envelope.MergeRequestV1
+	require.NoError(t, json.Unmarshal(state.Payload, &payload))
+	payload.HeadSha = secondHead
+	payload.BaseSha = new(strings.Repeat("a", len(base)))
+	state.Payload, err = json.Marshal(payload)
+	require.NoError(t, err)
+	m := mrManifest("7")
+	m.Source.InstanceKey = "https://example.com"
+	require.Equal(t, entity.ReceiptAccepted, e.imported(t, e.admin, pack(t, m, state)).Status)
+	e.drain(t)
+	_, err = e.norm.MRDiffAt(t.Context(), scope, e.orgID, mr, secondHead, math.MaxInt64)
+	assert.ErrorIs(t, err, entity.ErrNotFound, "the earlier base is stale for the same head")
+	stored, err := e.norm.MRDiffAt(t.Context(), scope, e.orgID, mr, secondHead, newHead.KnownSeq)
+	require.NoError(t, err)
+	assert.Equal(t, newHead, stored)
 }
 
 func diffCommit(t *testing.T, dir, name, contents string) string {
@@ -231,4 +250,48 @@ func gitDiffCommand(t *testing.T, dir string, args ...string) string {
 	out, err := osexec.CommandContext(t.Context(), "git", append(cfg, args...)...).CombinedOutput()
 	require.NoError(t, err, string(out))
 	return string(out)
+}
+
+func TestGitLabDiff_TargetedReadWaitsForNewVersionAfterForcePush(t *testing.T) {
+	t.Parallel()
+	var awaiting atomic.Bool
+	awaiting.Store(true)
+	fixture := &gitLabFixture{}
+	srv := newGitLabTestEnvWithSource(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const root = "/api/v4/projects/7/merge_requests/1"
+		if awaiting.Load() {
+			switch r.URL.Path {
+			case root:
+				w.Header().Set("Content-Type", "application/json")
+				body := strings.Replace(glMR("7", "1", "10", _glTime),
+					`"head_sha":"`+_glHead+`"`, `"head_sha":"`+_glBase+`"`, 1)
+				_, _ = io.WriteString(w, body)
+				return
+			case root + "/versions":
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `[
+					{"id":302,"merge_request_id":10,"head_commit_sha":"`+_glBase+`","base_commit_sha":"`+_glBase+`","created_at":"`+_glNew+`"},
+					{"id":301,"merge_request_id":10,"head_commit_sha":"`+_glHead+`","base_commit_sha":"`+_glBase+`","created_at":"`+_glTime+`"}
+				]`)
+				return
+			}
+		}
+		fixture.ServeHTTP(w, r)
+	}))
+	srv.probe(t)
+	in := srv.target.Fetch
+	in.ObjectKeys = []adaptersdk.ObjectKey{{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "10"}}
+	status, body := srv.call(t, http.MethodPost, "fetch", in)
+	assert.Equal(t, http.StatusServiceUnavailable, status)
+	assert.Contains(t, string(body), "current head")
+
+	awaiting.Store(false)
+	_, result := srv.fetch(t, in)
+	var ids []string
+	for _, r := range result.Records {
+		if r.Kind == "mr_diff" {
+			ids = append(ids, r.NativeID)
+		}
+	}
+	assert.Equal(t, []string{"302"}, ids)
 }

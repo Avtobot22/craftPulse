@@ -192,8 +192,9 @@ func (s source) fetchMRs(ctx context.Context, projectID int64, in adaptersdk.Fet
 	if err != nil {
 		return err
 	}
+	targeted := len(in.ObjectKeys) > 0
 	for _, item := range items[:min(len(items), limit)] {
-		if err := s.fetchMR(ctx, item, m, page); err != nil {
+		if err := s.fetchMR(ctx, item, m, page, targeted); err != nil {
 			return err
 		}
 	}
