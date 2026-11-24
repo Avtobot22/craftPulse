@@ -113,6 +113,13 @@ func TestTechnicalComparison_ReportsAndPermissions(t *testing.T) {
 	assert.False(t, secureResult.Comparable)
 	assert.Nil(t, secureResult.Factors[0].NewCount)
 	assert.NotEqual(t, secureResult.Base.ReportId, secureResult.Head.ReportId)
+	sca.ci, sca.exit, sca.content = gitlabCI("58106", "8106"), "success", []byte(`{"SchemaVersion":2,"Results":[]}`)
+	e.submit(t, reportPackageOf(t, _checksInstance, other, sca))
+	resolved := call(security, e.goComponent, head, other, entity.AnalysisSCA)
+	assert.True(t, resolved.Comparable, "%+v", resolved)
+	require.Len(t, resolved.Factors, 1)
+	assert.Equal(t, new(len(secureResult.Factors[0].FindingIds)), resolved.Factors[0].ResolvedCount)
+	assert.ElementsMatch(t, secureResult.Factors[0].FindingIds, resolved.Factors[0].FindingIds)
 
 	masked := call(plain, e.goComponent, head, head, entity.AnalysisSCA)
 	assert.True(t, masked.AccessLimited)

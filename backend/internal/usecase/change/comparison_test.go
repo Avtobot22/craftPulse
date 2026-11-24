@@ -98,10 +98,13 @@ func TestCompareReports_DatabaseAndLockfileFactors(t *testing.T) {
 	q.HeadSHA = h.SHA
 	out = CompareReports(q, &b, &h, ids)
 	assert.True(t, out.Comparable)
-	assert.Equal(t, []entity.TechnicalFactor{{Factor: _codeChanged}, {Factor: _dependencyChanged, NewCount: 1, FindingIDs: []entity.ID{{3}}}}, out.Factors)
+	assert.Equal(t, []entity.TechnicalFactor{
+		{Factor: _codeChanged, ResolvedCount: 1, FindingIDs: []entity.ID{{1}}},
+		{Factor: _dependencyChanged, NewCount: 1, FindingIDs: []entity.ID{{3}}},
+	}, out.Factors)
 	h.DependencyBaseSHA = "older"
 	out = CompareReports(q, &b, &h, ids)
-	assert.Equal(t, []entity.TechnicalFactor{{Factor: _codeChanged}}, out.Factors)
+	assert.Equal(t, []entity.TechnicalFactor{{Factor: _codeChanged, NewCount: 1, ResolvedCount: 1, FindingIDs: []entity.ID{{1}, {3}}}}, out.Factors)
 }
 
 func states(a, b, c string) map[entity.ID]string {

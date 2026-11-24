@@ -223,12 +223,14 @@ func (c *comparisonCauses) recordFinding(base, head *entity.TechnicalReport, f c
 		addFactorFinding(c.factor(_dbChanged), f.ID, state)
 		return
 	}
-	if f.DependencyChanged && state == entity.FindingNew && base.SHA != head.SHA && head.DependencyBaseSHA == base.SHA {
+	if base.SHA == head.SHA {
+		return
+	}
+	if f.DependencyChanged && state == entity.FindingNew && head.DependencyBaseSHA == base.SHA {
 		addFactorFinding(c.factor(_dependencyChanged), f.ID, state)
+		return
 	}
-	if base.SHA != head.SHA && f.Rule.kind != entity.FindingDependency {
-		addFactorFinding(c.factor(_codeChanged), f.ID, state)
-	}
+	addFactorFinding(c.factor(_codeChanged), f.ID, state)
 }
 
 func addFactorFinding(f *entity.TechnicalFactor, id entity.ID, state string) {
