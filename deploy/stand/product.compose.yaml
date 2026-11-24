@@ -1,0 +1,250 @@
+{
+  "name": "craftpulse-product",
+  "services": {
+    "postgres": {
+      "image": "postgres:18.7-alpine3.23@sha256:339a86bf416979bb4d3d2e30a1f9e096e7302564faff4151b804cf53463059d5",
+      "mem_limit": "768m",
+      "memswap_limit": "768m",
+      "restart": "unless-stopped",
+      "cpus": 1,
+      "environment": {
+        "POSTGRES_PASSWORD_FILE": "/run/secrets/postgres-password",
+        "TZ": "UTC",
+        "CRAFTPULSE_OWNER_PASSWORD_FILE": "/run/secrets/owner-password",
+        "CRAFTPULSE_APP_PASSWORD_FILE": "/run/secrets/app-password",
+        "CRAFTPULSE_BACKUP_PASSWORD_FILE": "/run/secrets/backup-password"
+      },
+      "volumes": [
+        "database:/var/lib/postgresql",
+        "/opt/craftpulse/product/init.sh:/docker-entrypoint-initdb.d/10-craftpulse.sh:ro",
+        "/etc/craftpulse-product/postgres-password:/run/secrets/postgres-password:ro",
+        "/etc/craftpulse-product/owner-password:/run/secrets/owner-password:ro",
+        "/etc/craftpulse-product/app-password:/run/secrets/app-password:ro",
+        "/etc/craftpulse-product/backup-password:/run/secrets/backup-password:ro"
+      ],
+      "networks": [
+        "backend"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "pg_isready",
+          "-h",
+          "127.0.0.1",
+          "-U",
+          "postgres"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 20
+      }
+    },
+    "seaweedfs": {
+      "image": "chrislusf/seaweedfs:4.55@sha256:7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9",
+      "mem_limit": "640m",
+      "memswap_limit": "640m",
+      "restart": "unless-stopped",
+      "cpus": 1,
+      "command": [
+        "mini",
+        "-dir=/data",
+        "-bucket=craftpulse",
+        "-s3.config=/run/secrets/s3.json"
+      ],
+      "volumes": [
+        "object-store:/data",
+        "/etc/craftpulse-product/s3.json:/run/secrets/s3.json:ro"
+      ],
+      "networks": [
+        "backend"
+      ]
+    },
+    "server": {
+      "image": "ghcr.io/avtobot22/craftpulse-server@sha256:c55e951823c07b5cac50c8742aa28353b67bc2cd19ad4df6a4fe280385be0aba",
+      "mem_limit": "512m",
+      "memswap_limit": "512m",
+      "restart": "unless-stopped",
+      "cpus": 0.75,
+      "environment": {
+        "DATABASE_PASSWORD_FILE": "/run/secrets/db-password",
+        "CORE_MASTER_KEY_VERSION": "1",
+        "CORE_MASTER_KEY_FILE": "/run/secrets/master-key",
+        "OBJECT_STORE_ENDPOINT": "http://seaweedfs:8333",
+        "OBJECT_STORE_REGION": "us-east-1",
+        "OBJECT_STORE_BUCKET": "craftpulse",
+        "OBJECT_STORE_ACCESS_KEY_ID": "craftpulse",
+        "OBJECT_STORE_SECRET_ACCESS_KEY_FILE": "/run/secrets/object-secret",
+        "SITE_URL": "https://craftpulse.defects.team",
+        "DATABASE_MAX_CONNS": "5",
+        "DATABASE_URL": "postgres://craftpulse_app@postgres:5432/craftpulse?sslmode=disable"
+      },
+      "volumes": [
+        "/etc/craftpulse-product/app-password:/run/secrets/db-password:ro",
+        "/etc/craftpulse-product/master-key:/run/secrets/master-key:ro",
+        "/etc/craftpulse-product/object-secret:/run/secrets/object-secret:ro"
+      ],
+      "networks": [
+        "backend",
+        "edge"
+      ],
+      "extra_hosts": [
+        "gitlab.defects.team:host-gateway",
+        "craftpulse.defects.team:host-gateway"
+      ],
+      "ports": [
+        "127.0.0.1:8091:8080",
+        "127.0.0.1:9191:9090"
+      ]
+    },
+    "worker": {
+      "image": "ghcr.io/avtobot22/craftpulse-server@sha256:c55e951823c07b5cac50c8742aa28353b67bc2cd19ad4df6a4fe280385be0aba",
+      "mem_limit": "512m",
+      "memswap_limit": "512m",
+      "restart": "unless-stopped",
+      "cpus": 0.75,
+      "command": [
+        "/usr/local/bin/worker"
+      ],
+      "environment": {
+        "DATABASE_PASSWORD_FILE": "/run/secrets/db-password",
+        "CORE_MASTER_KEY_VERSION": "1",
+        "CORE_MASTER_KEY_FILE": "/run/secrets/master-key",
+        "OBJECT_STORE_ENDPOINT": "http://seaweedfs:8333",
+        "OBJECT_STORE_REGION": "us-east-1",
+        "OBJECT_STORE_BUCKET": "craftpulse",
+        "OBJECT_STORE_ACCESS_KEY_ID": "craftpulse",
+        "OBJECT_STORE_SECRET_ACCESS_KEY_FILE": "/run/secrets/object-secret",
+        "SITE_URL": "https://craftpulse.defects.team",
+        "DATABASE_MAX_CONNS": "5",
+        "DATABASE_URL": "postgres://craftpulse_app@postgres:5432/craftpulse?sslmode=disable"
+      },
+      "volumes": [
+        "/etc/craftpulse-product/app-password:/run/secrets/db-password:ro",
+        "/etc/craftpulse-product/master-key:/run/secrets/master-key:ro",
+        "/etc/craftpulse-product/object-secret:/run/secrets/object-secret:ro"
+      ],
+      "networks": [
+        "backend",
+        "edge"
+      ],
+      "extra_hosts": [
+        "gitlab.defects.team:host-gateway",
+        "craftpulse.defects.team:host-gateway"
+      ],
+      "ports": [
+        "127.0.0.1:9192:9090"
+      ]
+    },
+    "frontend": {
+      "image": "ghcr.io/avtobot22/craftpulse-frontend@sha256:4a893b842c63a7ae4fc793bfe415a293d7a82b4cf0552a7d189d99bfdbaad74a",
+      "mem_limit": "128m",
+      "memswap_limit": "128m",
+      "restart": "unless-stopped",
+      "cpus": 0.5,
+      "volumes": [
+        "/opt/craftpulse/product/nginx.conf:/etc/nginx/conf.d/default.conf:ro"
+      ],
+      "networks": [
+        "edge"
+      ],
+      "ports": [
+        "127.0.0.1:8090:80"
+      ]
+    },
+    "migrate": {
+      "image": "ghcr.io/avtobot22/craftpulse-server@sha256:c55e951823c07b5cac50c8742aa28353b67bc2cd19ad4df6a4fe280385be0aba",
+      "mem_limit": "512m",
+      "memswap_limit": "512m",
+      "command": [
+        "/usr/local/bin/api",
+        "migrate"
+      ],
+      "environment": {
+        "DATABASE_PASSWORD_FILE": "/run/secrets/db-password",
+        "CORE_MASTER_KEY_VERSION": "1",
+        "CORE_MASTER_KEY_FILE": "/run/secrets/master-key",
+        "OBJECT_STORE_ENDPOINT": "http://seaweedfs:8333",
+        "OBJECT_STORE_REGION": "us-east-1",
+        "OBJECT_STORE_BUCKET": "craftpulse",
+        "OBJECT_STORE_ACCESS_KEY_ID": "craftpulse",
+        "OBJECT_STORE_SECRET_ACCESS_KEY_FILE": "/run/secrets/object-secret",
+        "SITE_URL": "https://craftpulse.defects.team",
+        "DATABASE_MAX_CONNS": "5",
+        "DATABASE_URL": "postgres://craftpulse_owner@postgres:5432/craftpulse?sslmode=disable"
+      },
+      "volumes": [
+        "/etc/craftpulse-product/owner-password:/run/secrets/db-password:ro",
+        "/etc/craftpulse-product/master-key:/run/secrets/master-key:ro",
+        "/etc/craftpulse-product/object-secret:/run/secrets/object-secret:ro"
+      ],
+      "profiles": [
+        "setup"
+      ],
+      "networks": [
+        "backend"
+      ]
+    },
+    "install": {
+      "image": "ghcr.io/avtobot22/craftpulse-server@sha256:c55e951823c07b5cac50c8742aa28353b67bc2cd19ad4df6a4fe280385be0aba",
+      "mem_limit": "512m",
+      "memswap_limit": "512m",
+      "command": [
+        "/usr/local/bin/api",
+        "install"
+      ],
+      "environment": {
+        "DATABASE_PASSWORD_FILE": "/run/secrets/db-password",
+        "CORE_MASTER_KEY_VERSION": "1",
+        "CORE_MASTER_KEY_FILE": "/run/secrets/master-key",
+        "OBJECT_STORE_ENDPOINT": "http://seaweedfs:8333",
+        "OBJECT_STORE_REGION": "us-east-1",
+        "OBJECT_STORE_BUCKET": "craftpulse",
+        "OBJECT_STORE_ACCESS_KEY_ID": "craftpulse",
+        "OBJECT_STORE_SECRET_ACCESS_KEY_FILE": "/run/secrets/object-secret",
+        "SITE_URL": "https://craftpulse.defects.team",
+        "DATABASE_MAX_CONNS": "5",
+        "DATABASE_URL": "postgres://craftpulse_app@postgres:5432/craftpulse?sslmode=disable",
+        "INSTALL_ORGANIZATIONS": "org-a,org-b",
+        "RELEASE_IMAGES": "craftpulse-server=sha256:c55e951823c07b5cac50c8742aa28353b67bc2cd19ad4df6a4fe280385be0aba,craftpulse-frontend=sha256:4a893b842c63a7ae4fc793bfe415a293d7a82b4cf0552a7d189d99bfdbaad74a",
+        "ORG_ORG_A_NAME": "??????????? A",
+        "ORG_ORG_A_OIDC_ISSUER": "https://gitlab.defects.team",
+        "ORG_ORG_A_OIDC_CLIENT_ID": "${ORG_ORG_A_OIDC_CLIENT_ID:?Set from the GitLab provisioning journal}",
+        "ORG_ORG_A_OIDC_CLIENT_SECRET_FILE": "/run/secrets/org-a-oidc-secret",
+        "ORG_ORG_A_ADMIN_SUBJECT": "${ORG_ORG_A_ADMIN_SUBJECT:?Set from the GitLab provisioning journal}",
+        "ORG_ORG_B_NAME": "??????????? B",
+        "ORG_ORG_B_OIDC_ISSUER": "https://gitlab.defects.team",
+        "ORG_ORG_B_OIDC_CLIENT_ID": "${ORG_ORG_B_OIDC_CLIENT_ID:?Set from the GitLab provisioning journal}",
+        "ORG_ORG_B_OIDC_CLIENT_SECRET_FILE": "/run/secrets/org-b-oidc-secret",
+        "ORG_ORG_B_ADMIN_SUBJECT": "${ORG_ORG_B_ADMIN_SUBJECT:?Set from the GitLab provisioning journal}"
+      },
+      "volumes": [
+        "/etc/craftpulse-product/app-password:/run/secrets/db-password:ro",
+        "/etc/craftpulse-product/master-key:/run/secrets/master-key:ro",
+        "/etc/craftpulse-product/object-secret:/run/secrets/object-secret:ro",
+        "/etc/craftpulse-product/org-a-oidc-secret:/run/secrets/org-a-oidc-secret:ro",
+        "/etc/craftpulse-product/org-b-oidc-secret:/run/secrets/org-b-oidc-secret:ro"
+      ],
+      "profiles": [
+        "setup"
+      ],
+      "networks": [
+        "backend",
+        "edge"
+      ],
+      "extra_hosts": [
+        "gitlab.defects.team:host-gateway",
+        "craftpulse.defects.team:host-gateway"
+      ]
+    }
+  },
+  "volumes": {
+    "database": {},
+    "object-store": {}
+  },
+  "networks": {
+    "backend": {
+      "internal": true
+    },
+    "edge": {}
+  }
+}

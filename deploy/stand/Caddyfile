@@ -1,0 +1,36 @@
+jenkins.defects.team {
+    reverse_proxy 127.0.0.1:8182
+}
+
+sonar.defects.team {
+    reverse_proxy 127.0.0.1:9002
+}
+
+gitlab.defects.team {
+    reverse_proxy 127.0.0.1:8181
+}
+
+craftpulse.defects.team {
+    @atlassian_ui path /atlassian-check /atlassian-check/*
+    @atlassian_callback {
+        path /source-links/callback
+        header_regexp cp88 Cookie (^|;\s*)__Host-cp88=
+    }
+    @backend path /api/v1/* /o/*/login /o/*/callback /source-links/callback /livez /readyz /version
+
+    handle @atlassian_ui {
+        reverse_proxy 127.0.0.1:8092
+    }
+    handle @atlassian_callback {
+        reverse_proxy 127.0.0.1:8092
+    }
+    handle /control/* {
+        respond 404
+    }
+    handle @backend {
+        reverse_proxy 127.0.0.1:8091
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8090
+    }
+}
