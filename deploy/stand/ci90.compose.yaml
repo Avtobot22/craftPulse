@@ -1,0 +1,202 @@
+{
+  "name": "craftpulse-ci90",
+  "services": {
+    "jenkins": {
+      "container_name": "craftpulse-ci90-jenkins",
+      "image": "jenkins/jenkins:2.580.2-jdk21@sha256:74401de6a6f92e1afe1b02d1c8e3d0c33f263bfb5275dd8813f9150355f2367b",
+      "restart": "unless-stopped",
+      "cpus": 2,
+      "mem_limit": "2g",
+      "memswap_limit": "2g",
+      "environment": {
+        "JAVA_OPTS": "-Xms256m -Xmx1024m -Djenkins.install.runSetupWizard=false"
+      },
+      "ports": [
+        "127.0.0.1:8182:8080"
+      ],
+      "networks": [
+        "jenkins-private",
+        "jenkins-edge"
+      ],
+      "volumes": [
+        "jenkins-home:/var/jenkins_home",
+        "/etc/craftpulse-ci90/jenkins:/bootstrap",
+        "/etc/craftpulse-ci90-agent:/agent-bootstrap"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "http://127.0.0.1:8080/login"
+        ],
+        "interval": "20s",
+        "timeout": "5s",
+        "retries": 15
+      }
+    },
+    "agent": {
+      "container_name": "craftpulse-ci90-agent",
+      "image": "jenkins/jenkins:2.580.2-jdk21@sha256:74401de6a6f92e1afe1b02d1c8e3d0c33f263bfb5275dd8813f9150355f2367b",
+      "restart": "unless-stopped",
+      "depends_on": {
+        "jenkins": {
+          "condition": "service_healthy"
+        }
+      },
+      "cpus": 1,
+      "mem_limit": "1g",
+      "memswap_limit": "1g",
+      "user": "1000:1000",
+      "read_only": true,
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "cap_drop": [
+        "ALL"
+      ],
+      "entrypoint": [
+        "java",
+        "-Xmx384m",
+        "-jar",
+        "/agent/agent.jar",
+        "-url",
+        "http://jenkins:8080/",
+        "-name",
+        "craftpulse-ci90-agent",
+        "-secret",
+        "@/agent/agent-secret",
+        "-webSocket",
+        "-workDir",
+        "/work"
+      ],
+      "networks": [
+        "jenkins-private"
+      ],
+      "volumes": [
+        "/etc/craftpulse-ci90-agent:/agent:ro",
+        "/var/lib/craftpulse-ci90-agent/tmp:/tmp",
+        "/var/lib/craftpulse-ci90-agent/work:/work"
+      ]
+    },
+    "db": {
+      "container_name": "craftpulse-ci90-db",
+      "image": "postgres:17.12-alpine3.23@sha256:318b8c3c90e13b6fc3a1e57b9bd260965ad578d46401b1b3cfdcc4e17ac81a3f",
+      "restart": "unless-stopped",
+      "cpus": 1,
+      "mem_limit": "768m",
+      "memswap_limit": "768m",
+      "networks": [
+        "sonar-private"
+      ],
+      "environment": {
+        "POSTGRES_DB": "sonarqube",
+        "POSTGRES_USER": "sonarqube",
+        "POSTGRES_PASSWORD_FILE": "/run/secrets/db_password"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "pg_isready",
+          "-U",
+          "sonarqube",
+          "-d",
+          "sonarqube"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12
+      },
+      "volumes": [
+        "db-data:/var/lib/postgresql/data",
+        "/etc/craftpulse-ci90/sonar-db-password:/run/secrets/db_password:ro"
+      ]
+    },
+    "sonarqube": {
+      "container_name": "craftpulse-ci90-sonarqube",
+      "image": "sonarqube:26.11.0.134175-community@sha256:65541accbdb92e27fe770fc6ba99988a3dd5a0c71ffafd67f88abfad366996fa",
+      "restart": "unless-stopped",
+      "cpus": 2,
+      "mem_limit": "4g",
+      "memswap_limit": "4g",
+      "networks": [
+        "sonar-private",
+        "sonarqube-edge"
+      ],
+      "ports": [
+        "127.0.0.1:9002:9000"
+      ],
+      "depends_on": {
+        "db": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "SONAR_JDBC_URL": "jdbc:postgresql://db:5432/sonarqube",
+        "SONAR_JDBC_USERNAME": "sonarqube"
+      },
+      "entrypoint": [
+        "/bin/bash",
+        "-c"
+      ],
+      "command": [
+        "export SONAR_JDBC_PASSWORD=\"$$(cat /run/secrets/db_password)\"; exec /opt/sonarqube/docker/entrypoint.sh"
+      ],
+      "ulimits": {
+        "nofile": {
+          "soft": 131072,
+          "hard": 131072
+        },
+        "nproc": 8192
+      },
+      "volumes": [
+        "sonar-data:/opt/sonarqube/data",
+        "sonar-extensions:/opt/sonarqube/extensions",
+        "sonar-logs:/opt/sonarqube/logs",
+        "/etc/craftpulse-ci90/sonar-db-password:/run/secrets/db_password:ro"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl --fail --silent http://127.0.0.1:9000/api/system/status | grep -q '\"status\":\"UP\"'"
+        ],
+        "interval": "20s",
+        "timeout": "5s",
+        "retries": 20
+      }
+    }
+  },
+  "networks": {
+    "jenkins-private": {
+      "internal": true
+    },
+    "sonar-private": {
+      "internal": true
+    },
+    "jenkins-edge": {},
+    "sonarqube-edge": {}
+  },
+  "volumes": {
+    "jenkins-home": {
+      "external": true,
+      "name": "craftpulse-ci90_jenkins-home"
+    },
+    "db-data": {
+      "external": true,
+      "name": "craftpulse-ci90_db-data"
+    },
+    "sonar-data": {
+      "external": true,
+      "name": "craftpulse-ci90_sonar-data"
+    },
+    "sonar-extensions": {
+      "external": true,
+      "name": "craftpulse-ci90_sonar-extensions"
+    },
+    "sonar-logs": {
+      "external": true,
+      "name": "craftpulse-ci90_sonar-logs"
+    }
+  }
+}

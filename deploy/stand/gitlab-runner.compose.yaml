@@ -1,0 +1,32 @@
+{
+  "name": "craftpulse-gitlab-runner",
+  "services": {
+    "runner": {
+      "image": "gitlab/gitlab-runner:v19.6.0@sha256:fb454a097fd26ea329b0234d6d82b53ae25f672bd625c278eaaee683a00f2507",
+      "container_name": "craftpulse-gitlab-runner",
+      "restart": "unless-stopped",
+      "cpus": 1,
+      "mem_limit": "1g",
+      "memswap_limit": "1g",
+      "extra_hosts": [
+        "gitlab.defects.team:host-gateway"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "command": [
+        "run",
+        "--config",
+        "/etc/gitlab-runner/config.toml",
+        "--user",
+        "gitlab-runner",
+        "--working-directory",
+        "/runner"
+      ],
+      "volumes": [
+        "/etc/craftpulse-gitlab-runner:/etc/gitlab-runner",
+        "/var/lib/craftpulse-gitlab-runner:/runner"
+      ]
+    }
+  }
+}
