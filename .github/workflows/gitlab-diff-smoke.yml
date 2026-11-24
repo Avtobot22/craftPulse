@@ -33,12 +33,23 @@ jobs:
           for i in $(seq 1 90); do
             if [ "$(docker inspect --format '{{.State.Health.Status}}' cp202-gitlab)" = healthy ]; then
               docker exec -e "CP202_GITLAB_TOKEN=$token" cp202-gitlab gitlab-rails runner 't=User.find_by_username("root").personal_access_tokens.build(name: "cp202-disposable", scopes: ["api"], expires_at: 1.day.from_now); t.set_token(ENV.fetch("CP202_GITLAB_TOKEN")); t.save!'
-              curl --retry 12 --retry-all-errors --retry-delay 2 --max-time 10 -fsS -o /dev/null -H "PRIVATE-TOKEN: $token" http://127.0.0.1:31891/api/v4/version
+              break
+            fi
+            sleep 5
+          done
+          for i in $(seq 1 72); do
+            code=$(curl --connect-timeout 2 --max-time 8 -s -o /dev/null -w '%{http_code}' -H "PRIVATE-TOKEN: $token" http://127.0.0.1:31891/api/v4/version || true)
+            if [ "$code" = 200 ]; then
               exit 0
+            fi
+            if [ $((i % 6)) -eq 0 ]; then
+              printf 'API HTTP status at attempt %s: %s\n' "$i" "$code"
+              docker exec cp202-gitlab gitlab-ctl status || true
             fi
             sleep 5
           done
           docker ps -a --filter name=cp202-gitlab
+          docker exec cp202-gitlab sh -c 'ss -lnt; tail -35 /var/log/gitlab/puma/current' || true
           exit 1
       - name: Compare two real GitLab heads through normalize
         working-directory: backend
