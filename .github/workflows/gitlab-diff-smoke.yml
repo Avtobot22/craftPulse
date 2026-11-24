@@ -1,0 +1,44 @@
+name: GitLab CE diff acceptance
+
+on:
+  push:
+    branches: [test/202-live-gitlab-smoke]
+
+permissions:
+  contents: read
+
+jobs:
+  gitlab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Start disposable GitLab
+        shell: bash
+        run: |
+          set -euo pipefail
+          token=$(openssl rand -hex 24)
+          root_password=$(openssl rand -hex 24)
+          echo "::add-mask::$token"
+          echo "::add-mask::$root_password"
+          printf 'CP202_GITLAB_TOKEN=%s\nCP202_GITLAB_URL=%s\n' "$token" 'http://127.0.0.1:31891' >> "$GITHUB_ENV"
+          cfg="external_url 'http://127.0.0.1:31891'; nginx['listen_port'] = 80; gitlab_rails['initial_root_password'] = '$root_password'; letsencrypt['enable'] = false; puma['worker_processes'] = 0; sidekiq['concurrency'] = 5; prometheus_monitoring['enable'] = false; gitlab_kas['enable'] = false; registry['enable'] = false"
+          docker run -d --name cp202-gitlab --shm-size 256m -p 127.0.0.1:31891:80 -e "GITLAB_OMNIBUS_CONFIG=$cfg" gitlab/gitlab-ce:19.5.5-ce.0@sha256:392e6bd5bf118ae520e4038261a5ae39aea05de0d2299a162b4c822a9684cf9b
+          for i in $(seq 1 90); do
+            if curl -fsS -o /dev/null http://127.0.0.1:31891/-/readiness; then
+              docker exec -e "CP202_GITLAB_TOKEN=$token" cp202-gitlab gitlab-rails runner 't=User.find_by_username("root").personal_access_tokens.build(name: "cp202-disposable", scopes: ["api"], expires_at: 1.day.from_now); t.set_token(ENV.fetch("CP202_GITLAB_TOKEN")); t.save!'
+              exit 0
+            fi
+            sleep 5
+          done
+          docker ps -a --filter name=cp202-gitlab
+          exit 1
+      - name: Compare two real GitLab heads through normalize
+        working-directory: backend
+        run: go test -race ./internal/app -run '^TestGitLabDiffLiveTwoHeads$' -count=1 -v
