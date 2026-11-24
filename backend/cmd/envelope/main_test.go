@@ -39,6 +39,11 @@ func writePackage(t *testing.T, schemaID string, broken bool) string {
 	for i, kind := range envelope.PackageKinds(schemaID) {
 		s := schemas[kind]
 		rec := &envelope.Record{RecordClass: envelope.RecordRecordClass(s.Classes[0]), RecordKind: envelope.RecordRecordKind(kind), PayloadSchema: kind + "/" + s.Version, NativeId: "id-" + kind, Payload: s.Example}
+		if kind == "mr_diff" {
+			var payload envelope.MrDiffV1
+			require.NoError(t, json.Unmarshal(s.Example, &payload))
+			rec.NativeNs = payload.MrNativeId
+		}
 		if broken && i == 0 {
 			rec.NativeId = ""
 		}

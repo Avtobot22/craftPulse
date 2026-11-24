@@ -1712,6 +1712,40 @@ func (q *Queries) InsertFindings(ctx context.Context, arg InsertFindingsParams) 
 	return err
 }
 
+const insertMRDiffs = `-- name: InsertMRDiffs :execrows
+INSERT INTO normalize.mr_diff (organization_id, mr_revision_id, known_seq, receipt_id, record_no, content_hash, completeness, files)
+SELECT r.organization_id, r.id, $1, $2, d.record_no, decode(d.content_hash, 'hex'), d.completeness, d.files
+FROM jsonb_to_recordset($3::jsonb)
+    AS d(mr_id uuid, revision_key text, head_sha text, base_sha text, record_no integer, content_hash text, completeness text, files jsonb)
+JOIN normalize.mr_revision r ON r.organization_id = $4 AND r.mr_id = d.mr_id
+    AND r.revision_key = d.revision_key AND r.head_sha = d.head_sha AND r.base_sha = d.base_sha AND r.superseded_seq IS NULL
+JOIN normalize.source_object o ON o.organization_id = r.organization_id AND o.id = r.mr_id
+    AND o.current_area_id = $5 AND o.deleted_at IS NULL
+ON CONFLICT (organization_id, mr_revision_id, content_hash) DO NOTHING
+`
+
+type InsertMRDiffsParams struct {
+	KnownSeq       int64
+	ReceiptID      uuid.UUID
+	Diffs          []byte
+	OrganizationID uuid.UUID
+	AreaID         uuid.NullUUID
+}
+
+func (q *Queries) InsertMRDiffs(ctx context.Context, arg InsertMRDiffsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertMRDiffs,
+		arg.KnownSeq,
+		arg.ReceiptID,
+		arg.Diffs,
+		arg.OrganizationID,
+		arg.AreaID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertObjects = `-- name: InsertObjects :exec
 INSERT INTO normalize.source_object (organization_id, instance_id, object_kind, native_ns, native_id, identity_quality, first_known_seq, restricted)
 SELECT $1::uuid, ($2::uuid[])[i], ($3::text[])[i], ($4::text[])[i],
@@ -2643,6 +2677,73 @@ func (q *Queries) ReadCIRunVersions(ctx context.Context, arg ReadCIRunVersionsPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const readMRDiff = `-- name: ReadMRDiff :one
+WITH revision AS (
+    SELECT r.organization_id, r.id, r.mr_id, r.revision_key, r.head_sha, r.base_sha
+    FROM normalize.mr_revision r
+    JOIN normalize.source_object o ON o.organization_id = r.organization_id AND o.id = r.mr_id
+    WHERE r.organization_id = $2 AND r.mr_id = $3 AND r.head_sha = $4
+        AND r.known_seq <= $1 AND (r.superseded_seq IS NULL OR r.superseded_seq > $1)
+        AND o.deleted_at IS NULL AND o.current_area_id = ANY($5::uuid[])
+        AND (NOT o.restricted OR o.id = ANY($6::uuid[]))
+    ORDER BY r.created_at DESC, r.known_seq DESC, r.id DESC LIMIT 1
+)
+SELECT r.mr_id, r.id AS revision_id, r.revision_key, r.head_sha, r.base_sha, d.known_seq, d.completeness, d.files
+FROM revision r
+JOIN normalize.mr_diff d ON d.organization_id = r.organization_id AND d.mr_revision_id = r.id
+WHERE d.known_seq <= $1
+    AND NOT EXISTS (
+        SELECT 1 FROM normalize.mr_version m
+        WHERE m.organization_id = r.organization_id AND m.mr_id = r.mr_id AND m.head_sha = r.head_sha
+            AND m.known_seq <= $1 AND (m.superseded_seq IS NULL OR m.superseded_seq > $1)
+            AND m.base_sha IS NOT NULL AND m.base_sha IS DISTINCT FROM r.base_sha
+    )
+ORDER BY (d.completeness = 'complete') DESC, d.known_seq DESC, d.content_hash DESC LIMIT 1
+`
+
+type ReadMRDiffParams struct {
+	KnownSeq       int64
+	OrganizationID uuid.UUID
+	MrID           uuid.UUID
+	HeadSha        string
+	Areas          []uuid.UUID
+	Allowed        []uuid.UUID
+}
+
+type ReadMRDiffRow struct {
+	MrID         uuid.UUID
+	RevisionID   uuid.UUID
+	RevisionKey  string
+	HeadSha      string
+	BaseSha      pgtype.Text
+	KnownSeq     int64
+	Completeness string
+	Files        []byte
+}
+
+func (q *Queries) ReadMRDiff(ctx context.Context, arg ReadMRDiffParams) (ReadMRDiffRow, error) {
+	row := q.db.QueryRow(ctx, readMRDiff,
+		arg.KnownSeq,
+		arg.OrganizationID,
+		arg.MrID,
+		arg.HeadSha,
+		arg.Areas,
+		arg.Allowed,
+	)
+	var i ReadMRDiffRow
+	err := row.Scan(
+		&i.MrID,
+		&i.RevisionID,
+		&i.RevisionKey,
+		&i.HeadSha,
+		&i.BaseSha,
+		&i.KnownSeq,
+		&i.Completeness,
+		&i.Files,
+	)
+	return i, err
 }
 
 const readMREvents = `-- name: ReadMREvents :many

@@ -317,8 +317,10 @@ type NormalizeRepo interface {
 	KnownMRRevisions(ctx context.Context, orgID entity.ID, keys []entity.MRFactKey) (map[entity.MRFactKey][]entity.Revision, error)
 	SupersedeMRRevisions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
 	InsertMRRevisions(ctx context.Context, orgID entity.ID, versions []entity.MRRevision) error
+	InsertMRDiffs(ctx context.Context, org, area, receipt entity.ID, seq int64, diffs []entity.MRDiffFact) (int64, error)
 	ReadMRVersions(ctx context.Context, orgID entity.ID, areas, allowed, mrs []entity.ID, seq int64) ([]entity.MRVersion, error)
 	ReadMRRevisions(ctx context.Context, orgID entity.ID, areas, allowed, mrs []entity.ID, seq int64) ([]entity.MRRevision, error)
+	ReadMRDiff(ctx context.Context, org, mr entity.ID, areas, allowed []entity.ID, head string, seq int64) (entity.MRDiff, error)
 	ReadMREvents(ctx context.Context, orgID entity.ID, areas, allowed, mrs []entity.ID, seq int64) ([]entity.MREvent, error)
 	FindMRIDs(ctx context.Context, orgID entity.ID, areas, allowed []entity.ID, key entity.SourceKey, sha string, seq int64) ([]entity.ID, error)
 	ReadRepositoryVersion(ctx context.Context, orgID, repositoryID entity.ID) (entity.RepositoryVersion, error)

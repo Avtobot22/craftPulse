@@ -18,6 +18,9 @@ func (w *writer) writeMRFacts(ctx context.Context, in *input) error {
 	if err := w.mergeRequestRevisions(ctx, in.mrRevisions); err != nil {
 		return err
 	}
+	if err := w.mergeRequestDiffs(ctx, in); err != nil {
+		return err
+	}
 	return w.mergeRequestEvents(ctx, in.mrEvents)
 }
 
