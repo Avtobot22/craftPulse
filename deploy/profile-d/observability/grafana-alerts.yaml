@@ -1,0 +1,273 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: craftpulse-stand
+    folder: craftPulse
+    interval: 30s
+    rules:
+      - uid: cp85-api-p95
+        title: API p95 выше 2 с
+        condition: B
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Проверь задержку операции {{ $labels.operation_id }}.'
+          __dashboardUid__: craftpulse-overview
+          __panelId__: "4"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                histogram_quantile(0.95, sum by (operation_id, le) (rate(craftpulse_api_request_duration_seconds_bucket{service="api"}[5m])))
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [2]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp85-river-interactive
+        title: Очередь interactive ждёт дольше 2 мин
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Проверь загрузку worker и состояние очереди interactive.'
+          __dashboardUid__: craftpulse-overview
+          __panelId__: "6"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                craftpulse_river_oldest_available_job_age_seconds{service="worker",queue="interactive"}
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [120]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp85-river-bulk
+        title: Очередь bulk ждёт дольше 1 ч
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Проверь загрузку worker и состояние очереди bulk.'
+          __dashboardUid__: craftpulse-overview
+          __panelId__: "6"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                craftpulse_river_oldest_available_job_age_seconds{service="worker",queue="bulk"}
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [3600]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp85-river-discard
+        title: Задание River исчерпало повторы
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Проверь ошибки заданий в очереди {{ $labels.queue }}.'
+          __dashboardUid__: craftpulse-overview
+          __panelId__: "7"
+        labels:
+          severity: critical
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                craftpulse_river_discarded_jobs{service="worker"}
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [0]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp85-login-failures
+        title: Растёт доля неудачных входов
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Проверь вход через {{ $labels.provider }}. Доля ошибок выросла более чем на 20 п.п. при пяти и более исходах за 5 мин.'
+          __dashboardUid__: craftpulse-overview
+          __panelId__: "10"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                ((sum by (provider) (increase(craftpulse_auth_login_outcomes_total{service="api",result="failed"}[5m])) / clamp_min(sum by (provider) (increase(craftpulse_auth_login_outcomes_total{service="api"}[5m])), 1)) - ((sum by (provider) (increase(craftpulse_auth_login_outcomes_total{service="api",result="failed"}[5m] offset 5m)) / clamp_min(sum by (provider) (increase(craftpulse_auth_login_outcomes_total{service="api"}[5m] offset 5m)), 1)) or on (provider) (0 * sum by (provider) (increase(craftpulse_auth_login_outcomes_total{service="api"}[5m]))))) and on (provider) (sum by (provider) (increase(craftpulse_auth_login_outcomes_total{service="api"}[5m])) >= 5)
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [0.2]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp85-access-denied
+        title: Растёт число отказов в доступе
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Субъект {{ $labels.subject }} получил как минимум на пять отказов больше, чем в предыдущие 5 мин.'
+          __dashboardUid__: craftpulse-overview
+          __panelId__: "11"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                sum by (subject) (increase(craftpulse_api_access_denied_total{service="api"}[5m])) - (sum by (subject) (increase(craftpulse_api_access_denied_total{service="api"}[5m] offset 5m)) or on (subject) (0 * sum by (subject) (increase(craftpulse_api_access_denied_total{service="api"}[5m]))))
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gte, params: [5]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp85-container-memory
+        title: Память контейнера выше 90% лимита
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Рабочий набор контейнера {{ $labels.container }} превысил 90% лимита памяти.'
+          __dashboardUid__: craftpulse-overview
+          __panelId__: "8"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                max by (service, container) (container_memory_working_set_bytes / (container_spec_memory_limit_bytes > 0))
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [0.9]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}

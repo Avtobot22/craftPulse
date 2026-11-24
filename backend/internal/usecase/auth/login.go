@@ -70,7 +70,7 @@ func (u *UseCase) begin(ctx context.Context, slug, returnTo string, trace *login
 	if err != nil {
 		return entity.LoginStart{}, err
 	}
-	return entity.LoginStart{RedirectURL: redirect, Cookie: cookie}, nil
+	return entity.LoginStart{RedirectURL: redirect, Cookie: cookie, Issuer: reg.Issuer}, nil
 }
 
 // CompleteLogin checks the provider response and creates the session (TZ 13.1, steps 4-8). Any failure
@@ -107,7 +107,9 @@ func (u *UseCase) finish(ctx context.Context, cb entity.LoginCallback, trace *lo
 
 	token := newToken()
 	now := u.d.Clock.Now()
-	res := entity.LoginResult{SessionToken: token, ReturnPath: attempt.ReturnPath, ExpiresAt: now.Add(entity.SessionLifetime)}
+	res := entity.LoginResult{
+		SessionToken: token, ReturnPath: attempt.ReturnPath, ExpiresAt: now.Add(entity.SessionLifetime), Issuer: reg.Issuer,
+	}
 	err = u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
 		in, err := u.d.Users.SignIn(ctx, orgID, id, now)
 		if err != nil {

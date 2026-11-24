@@ -22,15 +22,25 @@ type session struct {
 	access     usecase.Access
 	operations usecase.Operations
 	failures   *prometheus.CounterVec
+	outcomes   *prometheus.CounterVec
 }
+
+const (
+	_loginSucceeded = "succeeded"
+	_loginFailed    = "failed"
+)
 
 func newSession(logins usecase.Logins, access usecase.Access, operations usecase.Operations, reg prometheus.Registerer) session {
 	failures := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "craftpulse_auth_login_failures_total",
 		Help: "Failed logins by provider issuer and failure class.",
 	}, []string{"provider", "reason"})
-	reg.MustRegister(failures)
-	return session{logins: logins, access: access, operations: operations, failures: failures}
+	outcomes := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "craftpulse_auth_login_outcomes_total",
+		Help: "Terminal login outcomes by configured provider issuer and result.",
+	}, []string{"provider", "result"})
+	reg.MustRegister(failures, outcomes)
+	return session{logins: logins, access: access, operations: operations, failures: failures, outcomes: outcomes}
 }
 
 func (h *session) StartLogin(ctx context.Context, req openapi.StartLoginRequestObject) (openapi.StartLoginResponseObject, error) {
@@ -38,6 +48,8 @@ func (h *session) StartLogin(ctx context.Context, req openapi.StartLoginRequestO
 	if err != nil {
 		return h.loginFailed(ctx, req.OrgSlug, err), nil
 	}
+	h.outcomes.WithLabelValues(start.Issuer, _loginSucceeded)
+	h.outcomes.WithLabelValues(start.Issuer, _loginFailed)
 	return redirect{location: start.RedirectURL, cookies: func(w http.ResponseWriter) {
 		cookie.Set(w, cookie.Login, start.Cookie, entity.LoginAttemptLifetime)
 	}}, nil
@@ -56,6 +68,7 @@ func (h *session) CompleteLogin(ctx context.Context, req openapi.CompleteLoginRe
 	if err != nil {
 		return h.loginFailed(ctx, req.OrgSlug, err), nil
 	}
+	h.outcomes.WithLabelValues(res.Issuer, _loginSucceeded).Inc()
 	return redirect{location: res.ReturnPath, cookies: func(w http.ResponseWriter) {
 		cookie.Clear(w, cookie.Login)
 		cookie.Set(w, cookie.Session, res.SessionToken, entity.SessionLifetime)
@@ -98,6 +111,7 @@ func (h *session) loginFailed(ctx context.Context, slug string, err error) redir
 		provider = "unknown"
 	}
 	h.failures.WithLabelValues(provider, string(class)).Inc()
+	h.outcomes.WithLabelValues(provider, _loginFailed).Inc()
 	q := url.Values{"login_error": {string(class)}}
 	return redirect{location: "/o/" + url.PathEscape(slug) + "?" + q.Encode(), cookies: func(w http.ResponseWriter) {
 		cookie.Clear(w, cookie.Login)

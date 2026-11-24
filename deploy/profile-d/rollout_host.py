@@ -18,7 +18,8 @@ from rollout import (ADAPTER, ADAPTER_FILES, CORE_FILES, HERE, SHA, SLUG, Rollou
                      require, run, validate_manifest)
 
 
-INFRASTRUCTURE = ("postgres", "seaweedfs", "victoriametrics", "victorialogs", "grafana")
+INFRASTRUCTURE = ("postgres", "seaweedfs")
+OBSERVABILITY = ("victoriametrics", "victorialogs", "grafana", "cadvisor")
 PROVIDERS = {"jiracloud": "jira_cloud", "confluencecloud": "confluence_cloud"}
 PROBE_TIMEOUT = 90
 
@@ -125,6 +126,7 @@ def overrides(settings, adapters, manifest, secret_dir):
         common = {
             "image": manifest["images"][ADAPTER + name],
             "cgroup_parent": "${CGROUP_PARENT:?Set the resource slice for the stand}",
+            "cpus": "${CONTAINER_CPUS:-4}",
             "mem_limit": memory, "memswap_limit": memory,
         }
         services[service] = {
@@ -279,6 +281,8 @@ class Stand:
     def migrate(self, release):
         self.compose(release, "start infrastructure", "up", "-d", "--no-recreate", "--wait", "--wait-timeout", "180",
                      *INFRASTRUCTURE, timeout=210)
+        self.compose(release, "apply observability configuration", "up", "-d", "--no-deps", "--wait",
+                     "--wait-timeout", "180", *OBSERVABILITY, timeout=210)
         targets = [("craftpulse", "migrate", release["core_schema_version"])]
         for name in release["adapters"]:
             database = f"adapter_{name}"

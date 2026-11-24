@@ -4,4 +4,28 @@ scrape_configs:
   - job_name: craftpulse
     metrics_path: /metrics
     static_configs:
-      - targets: [api:9090, worker:9090]
+      - targets: [api:9090]
+        labels:
+          service: api
+      - targets: [worker:9090]
+        labels:
+          service: worker
+  - job_name: containers
+    static_configs:
+      - targets: [cadvisor:8080]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: container_(cpu_usage_seconds_total|memory_working_set_bytes|spec_(cpu_quota|cpu_period|memory_limit_bytes))
+        action: keep
+      - source_labels: [container_label_com_docker_compose_project]
+        regex: "%{COMPOSE_PROJECT_NAME}"
+        action: keep
+      - source_labels: [container_label_com_docker_compose_service, name]
+        regex: ".+;.+"
+        action: keep
+      - source_labels: [container_label_com_docker_compose_service]
+        target_label: service
+      - source_labels: [name]
+        target_label: container
+      - regex: (container_label_.*|image|name)
+        action: labeldrop

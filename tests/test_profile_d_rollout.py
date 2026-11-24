@@ -104,6 +104,11 @@ class RolloutTest(unittest.TestCase):
             stand.apply(request(FIRST, 1))
             stand.apply(request(SECOND, 2))
             events = stand.events
+            self.assertEqual(
+                [args for label, args in events if label == "apply observability configuration"],
+                [("up", "-d", "--no-deps", "--wait", "--wait-timeout", "180",
+                  "victoriametrics", "victorialogs", "grafana", "cadvisor")] * 2,
+            )
             migrations = [(i, event) for i, event in enumerate(events) if event[0] == "migrate craftpulse"]
             self.assertEqual(len(migrations), 2)
             for previous_schema, (index, (_, args)) in enumerate(migrations):
@@ -215,6 +220,7 @@ class RolloutTest(unittest.TestCase):
         services = config["services"]
         self.assertEqual((services["adapter-git"]["mem_limit"], services["adapter-git"]["cpus"]), ("256m", 1.0))
         self.assertEqual(services["adapter-gitlab"]["mem_limit"], "48m")
+        self.assertEqual(services["adapter-gitlab"]["cpus"], "${CONTAINER_CPUS:-4}")
 
     def test_process_file_allowlist_rejects_operator_key_and_path_traversal(self):
         files = request(FIRST, 1)["files"]

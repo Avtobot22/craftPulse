@@ -47,6 +47,12 @@ func Observe(metrics *Metrics) gin.HandlerFunc {
 		if err := c.Errors.Last(); err != nil {
 			event = event.Err(err.Err)
 		}
+		if reason := response.ReasonCode(c); reason != "" {
+			event.Str("reason_code", reason)
+		}
+		if subject, ok := SubjectFrom(c.Request.Context()); ok && !subject.OrganizationID.IsZero() {
+			event.Str("organization_id", subject.OrganizationID.String())
+		}
 		event.
 			Str("operation_id", op).
 			Str("method", c.Request.Method).
