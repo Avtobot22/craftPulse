@@ -51,6 +51,7 @@ func TestSummarizePatchRejectsIncompleteEvidence(t *testing.T) {
 	t.Parallel()
 	for name, patch := range map[string]string{
 		"hunk cut":          "@@ -1 +1,2 @@\n-old\n+first\n",
+		"no changes":        "@@ -1 +1 @@\n context only\n",
 		"overlapping hunks": "@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-old\n+again\n",
 		"wrong line range":  "@@ -0,0 +2147483647,2 @@\n+x\n+y\n",
 		"missing patch":     "",

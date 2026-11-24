@@ -183,7 +183,7 @@ func summarizePatch(patch string) (patchSummary, bool) {
 			return patchSummary{}, false
 		}
 	}
-	return out, h.complete() && (started || metadata)
+	return out, h.complete() && (started && (out.added > 0 || out.deleted > 0) || !started && metadata)
 }
 
 func binaryPatchLine(line string) bool {
@@ -217,6 +217,9 @@ func parseHunkRange(start, count string) (line int, n int, ok bool) {
 	parsedCount, countErr := strconv.ParseInt(cmp.Or(count, "1"), 10, 32)
 	if startErr != nil || countErr != nil || parsedCount > 0 && parsedStart == 0 || parsedStart+parsedCount > 1<<31 {
 		return 0, 0, false
+	}
+	if parsedCount == 0 {
+		parsedStart++
 	}
 	return int(parsedStart), int(parsedCount), true
 }
