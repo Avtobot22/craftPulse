@@ -95,6 +95,16 @@ func TestMRStructure_Complexity(t *testing.T) {
 			assert.Nil(t, got.Excluded[0].Delta)
 		})
 	}
+	pair := mrStructurePair(entity.CodeFormatLizard, "lizard",
+		entity.CodeFacts{Functions: []entity.CodeFunction{fn("app.go", "Split", 1, 5), fn("app.go", "Split", 11, 3)}},
+		entity.CodeFacts{Functions: []entity.CodeFunction{fn("app.go", "Split", 1, 3)}},
+	)
+	in := MRStructureInput{Functions: pair, Diff: mrStructureDiff(entity.MRDiffFile{NewPath: "app.go", DeletedLines: new(5)})}
+	got := new(UseCase).CalculateMRStructure(&in).Complexity
+	assert.Equal(t, entity.StateProvisional, got.State)
+	assert.Empty(t, got.Deltas)
+	require.Len(t, got.Excluded, 1)
+	assert.Equal(t, _reasonAmbiguousFunction, got.Excluded[0].ReasonCode)
 }
 
 func TestMRStructure_Clones(t *testing.T) {

@@ -96,6 +96,8 @@ func (m *MRComplexityMetric) add(fn *entity.CodeFunction, file *entity.MRDiffFil
 	key := previousFunction(fn, file)
 	base := identity.base[key]
 	changed := overlapsChangedLines(file, fn.CodeRange)
+	removedLines := file.DeletedLines != nil && *file.DeletedLines > 0
+	ambiguous := base != nil || identity.unmatchedName[fn.Name]
 	contribution := MRFunctionContribution{Head: *fn, Role: entity.RoleNumerator}
 	switch {
 	case base != nil && identity.baseCount[key] == 1 && identity.headCount[key] == 1:
@@ -104,13 +106,11 @@ func (m *MRComplexityMetric) add(fn *entity.CodeFunction, file *entity.MRDiffFil
 			contribution.Base, contribution.Delta = new(*base), &delta
 			m.Deltas = append(m.Deltas, contribution)
 		}
-	case !changed:
-		return
-	case base != nil || identity.unmatchedName[fn.Name]:
+	case ambiguous && (changed || removedLines && base != nil):
 		contribution.Role, contribution.ReasonCode = entity.RoleExcluded, _reasonAmbiguousFunction
 		m.Excluded = append(m.Excluded, contribution)
 		m.State, m.ReasonCode = entity.StateProvisional, cmp.Or(m.ReasonCode, _reasonAmbiguousFunction)
-	default:
+	case changed:
 		contribution.ReasonCode = "new_function"
 		m.NewFunctions = append(m.NewFunctions, contribution)
 	}

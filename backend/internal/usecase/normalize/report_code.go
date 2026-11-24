@@ -254,8 +254,10 @@ func (p *parsedReport) scopedCodeFacts(tool *envelope.ScanToolRun) *entity.CodeF
 	unlistedSkips := false
 	if tool != nil {
 		if tool.ExcludedTargets != nil {
+			out.ExcludedTargets = make([]entity.SkippedTarget, 0, len(*tool.ExcludedTargets))
 			for _, target := range *tool.ExcludedTargets {
 				excluded[target.Path] = true
+				out.ExcludedTargets = append(out.ExcludedTargets, entity.SkippedTarget{Path: target.Path, Reason: string(target.Reason)})
 			}
 		}
 		for _, target := range tool.SkippedTargets {

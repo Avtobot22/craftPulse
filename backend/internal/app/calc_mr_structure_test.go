@@ -14,6 +14,7 @@ import (
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
+	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 )
 
 const (
@@ -54,15 +55,19 @@ func TestCalcMRStructure_ReportsAndGitDiff(t *testing.T) {
 	gitDiffCommand(t, dir, "init", "--quiet")
 	diffCommit(t, dir, "app.js", _baseAdjust)
 	diffCommit(t, dir, "original.js", _mirror)
-	base := diffCommit(t, dir, "peer.js", _mirror)
+	diffCommit(t, dir, "peer.js", _mirror)
+	diffCommit(t, dir, "generated.js", "// @generated\nconst built = 1;\n")
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "vendor"), 0o700))
+	base := diffCommit(t, dir, "vendor/library.js", "const library = 1;\n")
 	diffCommit(t, dir, "app.js", _headAdjust)
+	gitDiffCommand(t, dir, "rm", "--quiet", "generated.js", "vendor/library.js")
 	head := diffCommit(t, dir, "extra.js", _mirror)
 	span := base + "..." + head
 	numstat := gitDiffCommand(t, dir, "diff", "--numstat", span)
 	patch := gitDiffCommand(t, dir, "diff", "--unified=0", span)
 	assert.Contains(t, patch, "@@ -3 +3,4 @@")
 	cloneLines := strings.Count(_mirror, "\n")
-	assert.Equal(t, fmt.Sprintf("4\t1\tapp.js\n%d\t0\textra.js\n", cloneLines), numstat)
+	assert.Equal(t, fmt.Sprintf("4\t1\tapp.js\n%d\t0\textra.js\n0\t2\tgenerated.js\n0\t1\tvendor/library.js\n", cloneLines), numstat)
 
 	e := newNormalizeEnv(t)
 	baseReceipt := e.imported(t, e.admin, mrStructureReport(t, "base", base))
@@ -87,13 +92,18 @@ func TestCalcMRStructure_ReportsAndGitDiff(t *testing.T) {
 		Diff: entity.MRDiff{BaseSHA: base, HeadSHA: head, Completeness: entity.MRDiffComplete, Files: []entity.MRDiffFile{
 			{OldPath: "app.js", NewPath: "app.js", AddedLines: new(4), DeletedLines: new(1), HeadRanges: []entity.MRDiffRange{{From: 3, To: 6}}},
 			{NewPath: "extra.js", NewFile: true, AddedLines: &cloneLines, DeletedLines: new(0), HeadRanges: []entity.MRDiffRange{{From: 1, To: cloneLines}}},
+			{OldPath: "generated.js", NewPath: "generated.js", DeletedFile: true, AddedLines: new(0), DeletedLines: new(2)},
+			{OldPath: "vendor/library.js", NewPath: "vendor/library.js", DeletedFile: true, AddedLines: new(0), DeletedLines: new(1)},
 		}},
 		Functions: pair("lizard", entity.CodeFormatLizard),
 		Clones:    pair("jscpd", entity.CodeFormatJscpd),
 		Coverage:  mrStructureCoverage(t, e, area, head),
 	}
 	got := new(calc.UseCase).CalculateMRStructure(&in)
-	assert.Equal(t, calc.MRSizeCounts{Files: 2, Added: int64(4 + cloneLines), Deleted: 1}, got.Size.Total)
+	assert.Equal(t, calc.MRSizeCounts{Files: 4, Added: int64(4 + cloneLines), Deleted: 4}, got.Size.Total)
+	assert.Equal(t, calc.MRSizeCounts{Files: 2, Added: int64(4 + cloneLines), Deleted: 1}, got.Size.Regular)
+	assert.Equal(t, calc.MRSizeCounts{Files: 1, Deleted: 2}, got.Size.Generated)
+	assert.Equal(t, calc.MRSizeCounts{Files: 1, Deleted: 1}, got.Size.Vendor)
 	require.Len(t, got.Complexity.Deltas, 1)
 	assert.Equal(t, "adjust", got.Complexity.Deltas[0].Head.Name)
 	assert.Equal(t, new(3), got.Complexity.Deltas[0].Delta)
@@ -128,7 +138,12 @@ func mrStructureReport(t *testing.T, rev, sha string) []byte {
 			profileID: "js-default", language: "javascript", exit: "success", completeness: "complete", content: fixture("clones.json"),
 		},
 	}
-	if rev == "head" {
+	if rev == "base" {
+		specs[0].excludedTargets = new([]envelope.ScanExcludedTarget{
+			{Path: "generated.js", Reason: envelope.ScanExcludedTargetReasonGenerated},
+			{Path: "vendor", Reason: envelope.ScanExcludedTargetReasonVendor},
+		})
+	} else {
 		specs = append(specs, reportSpec{
 			name: "coverage.info", kind: entity.AnalysisCoverage, format: "lcov", producer: "istanbul", version: "6.0.3",
 			profileID: "js-default", language: "javascript", exit: "success", completeness: "complete", content: fixture("coverage.info"),

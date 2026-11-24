@@ -42,11 +42,12 @@ type CloneGroup struct {
 
 // CodeFacts are normalized observations from one report. Nil inventory and denominator are unknown.
 type CodeFacts struct {
-	Functions     []CodeFunction  `json:"functions,omitempty"`
-	Files         *[]CodeFile     `json:"files,omitempty"`
-	Groups        []CloneGroup    `json:"groups,omitempty"`
-	PhysicalLines *int64          `json:"physical_lines,omitempty"`
-	Thresholds    *CodeThresholds `json:"thresholds,omitempty"`
+	Functions       []CodeFunction  `json:"functions,omitempty"`
+	Files           *[]CodeFile     `json:"files,omitempty"`
+	Groups          []CloneGroup    `json:"groups,omitempty"`
+	PhysicalLines   *int64          `json:"physical_lines,omitempty"`
+	Thresholds      *CodeThresholds `json:"thresholds,omitempty"`
+	ExcludedTargets []SkippedTarget `json:"excluded_targets,omitempty"`
 }
 
 // CodeScope identifies one report stream at a commit. A format determines which metrics that stream supplies.

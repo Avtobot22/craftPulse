@@ -161,11 +161,13 @@ func mrSize(in *MRStructureInput) MRSizeMetric {
 	if state == entity.StateNotEvaluated {
 		return out
 	}
+	baseExcluded := mrFileKinds(in.BaseExcluded, exclusionsAt(&in.Functions.Base, in.Diff.BaseSHA), exclusionsAt(&in.Clones.Base, in.Diff.BaseSHA))
+	headExcluded := mrFileKinds(in.HeadExcluded, exclusionsAt(&in.Functions.Head, in.Diff.HeadSHA), exclusionsAt(&in.Clones.Head, in.Diff.HeadSHA))
 	for i := range in.Diff.Files {
 		f := &in.Diff.Files[i]
-		kind := mrFileKind(f.NewPath, in.HeadExcluded)
+		kind := mrFileKind(f.NewPath, headExcluded)
 		if f.DeletedFile {
-			kind = mrFileKind(f.OldPath, in.BaseExcluded)
+			kind = mrFileKind(f.OldPath, baseExcluded)
 		}
 		out.Total.add(f)
 		switch kind {
@@ -187,15 +189,40 @@ func mrSize(in *MRStructureInput) MRSizeMetric {
 	return out
 }
 
-func mrFileKind(path string, excluded []entity.SkippedTarget) MRFileKind {
-	kind := MRFileRegular
-	for _, item := range excluded {
-		switch {
-		case item.Reason == string(MRFileVendor) && (path == item.Path || strings.HasPrefix(path, item.Path+"/")):
-			return MRFileVendor
-		case item.Reason == string(MRFileGenerated) && path == item.Path:
-			kind = MRFileGenerated
+func exclusionsAt(s *MRCodeSnapshot, sha string) []entity.SkippedTarget {
+	if s.Report == nil || sha == "" || s.Scope.SHA != sha {
+		return nil
+	}
+	return s.Report.Facts.ExcludedTargets
+}
+
+func mrFileKinds(targets ...[]entity.SkippedTarget) map[string]MRFileKind {
+	out := make(map[string]MRFileKind)
+	for _, list := range targets {
+		for _, item := range list {
+			kind := MRFileKind(item.Reason)
+			if kind == MRFileVendor || kind == MRFileGenerated && out[item.Path] != MRFileVendor {
+				out[item.Path] = kind
+			}
 		}
 	}
-	return kind
+	return out
+}
+
+func mrFileKind(path string, excluded map[string]MRFileKind) MRFileKind {
+	kind := MRFileRegular
+	for {
+		flag := excluded[path]
+		if flag == MRFileVendor {
+			return MRFileVendor
+		}
+		if flag == MRFileGenerated {
+			kind = MRFileGenerated
+		}
+		slash := strings.LastIndexByte(path, '/')
+		if slash < 0 {
+			return kind
+		}
+		path = path[:slash]
+	}
 }
