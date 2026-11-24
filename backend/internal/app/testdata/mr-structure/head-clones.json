@@ -1,0 +1,35 @@
+{
+  "duplicates": [
+    {
+      "format": "javascript",
+      "firstFile": {
+        "name": "extra.js",
+        "start": 1,
+        "end": 13
+      },
+      "secondFile": {
+        "name": "original.js",
+        "start": 1,
+        "end": 13
+      }
+    },
+    {
+      "format": "javascript",
+      "firstFile": {
+        "name": "extra.js",
+        "start": 1,
+        "end": 13
+      },
+      "secondFile": {
+        "name": "peer.js",
+        "start": 1,
+        "end": 13
+      }
+    }
+  ],
+  "statistics": {
+    "total": {
+      "lines": 39
+    }
+  }
+}

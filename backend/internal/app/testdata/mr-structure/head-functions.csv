@@ -1,0 +1,9 @@
+craftpulse-lizard,2
+file,app.js,8
+8,5,53,1,8,adjust@1-8@app.js,app.js,adjust,adjust ( value ),1,8
+file,extra.js,13
+13,1,129,1,13,mirror@1-13@extra.js,extra.js,mirror,mirror ( value ),1,13
+file,original.js,13
+13,1,129,1,13,mirror@1-13@original.js,original.js,mirror,mirror ( value ),1,13
+file,peer.js,13
+13,1,129,1,13,mirror@1-13@peer.js,peer.js,mirror,mirror ( value ),1,13
