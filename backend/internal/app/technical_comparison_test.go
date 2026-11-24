@@ -61,6 +61,21 @@ func TestTechnicalComparison_ReportsAndPermissions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, entity.FindingResolved, state)
 
+	e.submit(t, e.codeReport(t, other, "feature", "8199", sarifOf(hit{rule: "old", path: "example.go", line: 2}), "partial", "partial"))
+	partial := call(plain, e.goComponent, head, other, entity.AnalysisCode)
+	assert.False(t, partial.Comparable)
+	assert.Contains(t, partial.IncomparableReasons, openapi.TechnicalComparisonIncomparableReasonsScanIncomplete)
+	state, err = e.identifier.CurrentFindingState(t.Context(), e.orgID, entity.ID(e.goComponent), known, entity.AnalysisCode)
+	require.NoError(t, err)
+	assert.Equal(t, entity.FindingResolved, state, "an incomplete observation does not reopen a finding")
+	mr, err := e.identifier.CompareMergeRequestReports(t.Context(), e.orgID, entity.TechnicalComparisonQuery{
+		ComponentID: entity.ID(e.goComponent), BaseSHA: other, HeadSHA: head, Kind: entity.AnalysisCode,
+	}, "go", "go-default")
+	require.NoError(t, err)
+	assert.Contains(t, mr.IncomparableReasons, "base_scan_missing")
+	assert.Nil(t, mr.Base.ReportID)
+	assert.NotNil(t, mr.Head.ReportID)
+
 	spec := reportSpec{
 		name: "rules.sarif", kind: entity.AnalysisCode, format: "sarif", producer: "opengrep", version: "1.33.1", rulesHash: strings.Repeat("a", 64),
 		ci: gitlabCI("58103", "8103"), component: &envelope.ScanComponent{Id: &e.goComponent, PathPrefix: "services/billing"},
@@ -76,6 +91,9 @@ func TestTechnicalComparison_ReportsAndPermissions(t *testing.T) {
 		assert.Nil(t, f.ResolvedCount)
 		assert.Empty(t, f.FindingIds)
 	}
+	state, err = e.identifier.CurrentFindingState(t.Context(), e.orgID, entity.ID(e.goComponent), known, entity.AnalysisCode)
+	require.NoError(t, err)
+	assert.Equal(t, entity.FindingResolved, state, "a report under different rules does not replace the last comparable state")
 
 	sca := reportSpec{
 		name: "packages.json", kind: entity.AnalysisSCA, format: "trivy_json", formatVersion: "2", producer: "trivy", version: "0.70.0", profileID: "trivy-default",

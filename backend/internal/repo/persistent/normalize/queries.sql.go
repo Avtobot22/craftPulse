@@ -4228,6 +4228,14 @@ WITH runs AS (
     FROM runs
     WHERE ($8::text IS NULL OR language = $8)
         AND ($9::text IS NULL OR profile_id = $9)
+        AND ($10::uuid IS NULL OR EXISTS (
+            SELECT 1 FROM normalize.report ref
+            WHERE ref.organization_id = $2 AND ref.id = $10
+                AND (COALESCE(ref.producer, ''), COALESCE(ref.producer_version, ''), ref.mode,
+                    ref.rules_hash, ref.config_hash, ref.scope_hash, COALESCE(ref.db_version, ''))
+                IS NOT DISTINCT FROM (runs.producer, runs.producer_version, runs.mode,
+                    runs.rules_hash, runs.config_hash, runs.scope_hash, runs.db_version)
+        ))
 ), ranked AS (
     SELECT id, sha, language, profile_id, producer, producer_version, mode, rules_hash, config_hash, scope_hash, db_version, completeness, exit_class, interrupted, rejected, dependency_delta, dependency_base_sha, observed_at, known_seq, record_no, complete, row_number() OVER (
         PARTITION BY CASE WHEN $6::boolean THEN '' ELSE sha END, language, profile_id, complete
@@ -4244,15 +4252,16 @@ ORDER BY observed_at DESC, known_seq DESC, record_no DESC, id DESC
 `
 
 type TechnicalReportsParams struct {
-	ReportIds      []uuid.UUID
-	OrganizationID uuid.UUID
-	AreaID         uuid.UUID
-	ComponentID    uuid.UUID
-	ReportKind     string
-	Latest         bool
-	Shas           []string
-	Language       pgtype.Text
-	ProfileID      pgtype.Text
+	ReportIds         []uuid.UUID
+	OrganizationID    uuid.UUID
+	AreaID            uuid.UUID
+	ComponentID       uuid.UUID
+	ReportKind        string
+	Latest            bool
+	Shas              []string
+	Language          pgtype.Text
+	ProfileID         pgtype.Text
+	ReferenceReportID uuid.NullUUID
 }
 
 type TechnicalReportsRow struct {
@@ -4286,6 +4295,7 @@ func (q *Queries) TechnicalReports(ctx context.Context, arg TechnicalReportsPara
 		arg.Shas,
 		arg.Language,
 		arg.ProfileID,
+		arg.ReferenceReportID,
 	)
 	if err != nil {
 		return nil, err

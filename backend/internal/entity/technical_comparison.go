@@ -23,14 +23,15 @@ type TechnicalComparisonQuery struct {
 }
 
 type TechnicalReportScope struct {
-	AreaID      ID
-	ComponentID ID
-	Kind        string
-	SHAs        []string
-	ReportIDs   []ID
-	Latest      bool
-	Language    *string
-	ProfileID   *string
+	AreaID            ID
+	ComponentID       ID
+	Kind              string
+	SHAs              []string
+	ReportIDs         []ID
+	Latest            bool
+	Language          *string
+	ProfileID         *string
+	ReferenceReportID *ID
 }
 
 type TechnicalReport struct {

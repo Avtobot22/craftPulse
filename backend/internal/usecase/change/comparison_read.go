@@ -86,9 +86,11 @@ func (u *UseCase) pairReports(ctx context.Context, org entity.ID, q entity.Techn
 	if err != nil || base != nil {
 		return base, head, err
 	}
-	base = findTechnicalReport(list, func(r *entity.TechnicalReport) bool { return match(r) && sameTechnicalRow(r, head) })
-	if base == nil && scope.ProfileID == nil {
-		base = findTechnicalReport(list, match)
+	if scope.ProfileID == nil {
+		base = findTechnicalReport(list, func(r *entity.TechnicalReport) bool { return match(r) && sameTechnicalRow(r, head) })
+		if base == nil {
+			base = findTechnicalReport(list, match)
+		}
 	}
 	if base == nil && head != nil && head.SHA == q.BaseSHA && head.Complete() {
 		base = head

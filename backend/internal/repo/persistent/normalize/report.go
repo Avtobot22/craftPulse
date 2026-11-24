@@ -292,7 +292,7 @@ func (r *Repo) TechnicalReports(ctx context.Context, orgID entity.ID, s entity.T
 	rows, err := r.q(ctx).TechnicalReports(ctx, TechnicalReportsParams{
 		OrganizationID: uuid.UUID(orgID), AreaID: uuid.UUID(s.AreaID), ComponentID: uuid.UUID(s.ComponentID),
 		ReportKind: s.Kind, Shas: s.SHAs, ReportIds: ids(s.ReportIDs), Latest: s.Latest,
-		Language: presentText(s.Language), ProfileID: presentText(s.ProfileID),
+		Language: presentText(s.Language), ProfileID: presentText(s.ProfileID), ReferenceReportID: nullID(s.ReferenceReportID),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("normalize: technical reports: %w", err)

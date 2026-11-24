@@ -30,6 +30,7 @@ func (u *UseCase) CurrentFindingState(ctx context.Context, org, component, findi
 		seen := &observations[0]
 		scope.Latest, scope.ReportIDs = true, nil
 		scope.Language, scope.ProfileID = &seen.Language, &seen.ProfileID
+		scope.ReferenceReportID = &seen.ID
 		latest, err := u.d.Reports.TechnicalReports(ctx, org, scope)
 		if err != nil {
 			return err

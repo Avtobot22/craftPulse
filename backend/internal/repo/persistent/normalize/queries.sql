@@ -639,6 +639,14 @@ WITH runs AS (
     FROM runs
     WHERE (sqlc.narg(language)::text IS NULL OR language = sqlc.narg(language))
         AND (sqlc.narg(profile_id)::text IS NULL OR profile_id = sqlc.narg(profile_id))
+        AND (sqlc.narg(reference_report_id)::uuid IS NULL OR EXISTS (
+            SELECT 1 FROM normalize.report ref
+            WHERE ref.organization_id = sqlc.arg(organization_id) AND ref.id = sqlc.narg(reference_report_id)
+                AND (COALESCE(ref.producer, ''), COALESCE(ref.producer_version, ''), ref.mode,
+                    ref.rules_hash, ref.config_hash, ref.scope_hash, COALESCE(ref.db_version, ''))
+                IS NOT DISTINCT FROM (runs.producer, runs.producer_version, runs.mode,
+                    runs.rules_hash, runs.config_hash, runs.scope_hash, runs.db_version)
+        ))
 ), ranked AS (
     SELECT *, row_number() OVER (
         PARTITION BY CASE WHEN sqlc.arg(latest)::boolean THEN '' ELSE sha END, language, profile_id, complete

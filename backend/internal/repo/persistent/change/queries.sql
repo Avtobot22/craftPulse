@@ -61,9 +61,11 @@ ORDER BY occurrence_id;
 SELECT r.id FROM change.occurrence_identity i
 JOIN normalize.finding_occurrence o ON o.organization_id = i.organization_id AND o.id = i.occurrence_id
 JOIN normalize.report r ON r.organization_id = o.organization_id AND r.id = o.report_id
+LEFT JOIN normalize.ci_attempt_version a ON a.organization_id = r.organization_id AND a.attempt_id = r.attempt_id AND a.superseded_seq IS NULL
 WHERE i.organization_id = sqlc.arg(organization_id) AND i.finding_identity_id = sqlc.arg(finding_identity_id)
     AND r.component_id = sqlc.arg(component_id)::uuid AND r.report_kind = sqlc.arg(report_kind)::text AND r.sha IS NOT NULL
-ORDER BY COALESCE(r.finished_at, r.started_at, i.reported_at) DESC, r.known_seq DESC, r.record_no DESC, r.id DESC
+ORDER BY (r.completeness = 'complete' AND r.exit_class IN ('success', 'findings') AND NOT COALESCE(a.outcome = 'canceled', false)) DESC,
+    COALESCE(r.finished_at, r.started_at, i.reported_at) DESC, r.known_seq DESC, r.record_no DESC, r.id DESC
 LIMIT 1;
 
 -- name: LockCurrentBaseline :one
