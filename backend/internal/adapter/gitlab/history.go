@@ -76,6 +76,13 @@ func (s source) fetchMR(ctx context.Context, item listedMR, m *envelope.Manifest
 	if err != nil {
 		return err
 	}
+	if h.currentDiff != nil {
+		payload.BaseSha = optional(h.currentDiff.BaseSHA)
+		payload.MergeBaseSha = payload.BaseSha
+		if err := h.diff(ctx, root, *h.currentDiff); err != nil {
+			return err
+		}
+	}
 	if h.truncated || (!payload.Draft && h.hasDraft && h.readyAt == nil) {
 		m.Completeness = envelope.ManifestCompletenessPartial
 		m.Selection.Truncated = append(m.Selection.Truncated, envelope.TruncatedHistory{
@@ -88,10 +95,11 @@ func (s source) fetchMR(ctx context.Context, item listedMR, m *envelope.Manifest
 type historyReader struct {
 	source
 	mrHistory
-	page     *adaptersdk.Page
-	observed time.Time
-	mr       string
-	pushes   map[int64]pushNote
+	page        *adaptersdk.Page
+	observed    time.Time
+	mr          string
+	pushes      map[int64]pushNote
+	currentDiff *diffVersion
 }
 
 type pushNote struct {
@@ -117,6 +125,9 @@ func (h *historyReader) read(ctx context.Context, root string, mr mergeRequest) 
 	if err := historyPages(ctx, h, root, "versions", func(v diffVersion) error {
 		if err := h.revision(v); err != nil {
 			return err
+		}
+		if h.currentDiff == nil && mr.State == "opened" && mr.isCurrentDiff(v) {
+			h.currentDiff = &v
 		}
 		// GitLab lists the most recent diff version first. Each version with an older
 		// predecessor and a changed head records a push, even when the notes are absent.

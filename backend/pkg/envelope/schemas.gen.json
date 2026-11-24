@@ -61,6 +61,7 @@
         "repository",
         "merge_request",
         "mr_revision",
+        "mr_diff",
         "mr_event",
         "account"
       ]
@@ -576,6 +577,7 @@
             "account",
             "merge_request",
             "mr_revision",
+            "mr_diff",
             "mr_event",
             "ci_run",
             "ci_attempt",
@@ -2321,6 +2323,235 @@
         "target_branch": "main",
         "title": "Shipping fee",
         "updated_at": "2026-10-02T11:00:00+03:00"
+      }
+    },
+    {
+      "kind": "mr_diff",
+      "version": "1",
+      "classes": [
+        "object"
+      ],
+      "schema": {
+        "types": [
+          "object"
+        ],
+        "properties": [
+          {
+            "name": "mr_native_id",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "min_length": 1,
+              "max_length": 255
+            }
+          },
+          {
+            "name": "base_sha",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "head_sha",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            }
+          },
+          {
+            "name": "completeness",
+            "schema": {
+              "types": [
+                "string"
+              ],
+              "enum": [
+                "complete",
+                "partial"
+              ]
+            }
+          },
+          {
+            "name": "files",
+            "schema": {
+              "types": [
+                "array"
+              ],
+              "max_items": 1000,
+              "items": {
+                "types": [
+                  "object"
+                ],
+                "properties": [
+                  {
+                    "name": "old_path",
+                    "schema": {
+                      "types": [
+                        "string"
+                      ],
+                      "min_length": 1,
+                      "max_length": 4096
+                    }
+                  },
+                  {
+                    "name": "new_path",
+                    "schema": {
+                      "types": [
+                        "string"
+                      ],
+                      "min_length": 1,
+                      "max_length": 4096
+                    }
+                  },
+                  {
+                    "name": "new_file",
+                    "schema": {
+                      "types": [
+                        "boolean"
+                      ]
+                    }
+                  },
+                  {
+                    "name": "deleted_file",
+                    "schema": {
+                      "types": [
+                        "boolean"
+                      ]
+                    }
+                  },
+                  {
+                    "name": "renamed_file",
+                    "schema": {
+                      "types": [
+                        "boolean"
+                      ]
+                    }
+                  },
+                  {
+                    "name": "binary",
+                    "schema": {
+                      "types": [
+                        "boolean"
+                      ]
+                    }
+                  },
+                  {
+                    "name": "added_lines",
+                    "schema": {
+                      "types": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "maximum": 2147483647
+                    }
+                  },
+                  {
+                    "name": "deleted_lines",
+                    "schema": {
+                      "types": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "maximum": 2147483647
+                    }
+                  },
+                  {
+                    "name": "head_ranges",
+                    "schema": {
+                      "types": [
+                        "array"
+                      ],
+                      "max_items": 10000,
+                      "items": {
+                        "types": [
+                          "object"
+                        ],
+                        "properties": [
+                          {
+                            "name": "from",
+                            "schema": {
+                              "types": [
+                                "integer"
+                              ],
+                              "minimum": 1,
+                              "maximum": 2147483647
+                            }
+                          },
+                          {
+                            "name": "to",
+                            "schema": {
+                              "types": [
+                                "integer"
+                              ],
+                              "minimum": 1,
+                              "maximum": 2147483647
+                            }
+                          }
+                        ],
+                        "required": [
+                          "from",
+                          "to"
+                        ],
+                        "closed": true
+                      }
+                    }
+                  }
+                ],
+                "required": [
+                  "old_path",
+                  "new_path",
+                  "new_file",
+                  "deleted_file",
+                  "renamed_file",
+                  "binary",
+                  "added_lines",
+                  "deleted_lines",
+                  "head_ranges"
+                ],
+                "closed": true
+              }
+            }
+          }
+        ],
+        "required": [
+          "mr_native_id",
+          "base_sha",
+          "head_sha",
+          "completeness",
+          "files"
+        ],
+        "closed": true
+      },
+      "example": {
+        "base_sha": "34d8c5dc3ad96ae59b2a1128ef69fcfe2d36f971",
+        "completeness": "complete",
+        "files": [
+          {
+            "added_lines": 2,
+            "binary": false,
+            "deleted_file": false,
+            "deleted_lines": 1,
+            "head_ranges": [
+              {
+                "from": 6,
+                "to": 7
+              }
+            ],
+            "new_file": false,
+            "new_path": "new.go",
+            "old_path": "old.go",
+            "renamed_file": true
+          }
+        ],
+        "head_sha": "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac",
+        "mr_native_id": "9001"
       }
     },
     {

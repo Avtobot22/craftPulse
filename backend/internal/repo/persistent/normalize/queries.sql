@@ -696,3 +696,31 @@ ORDER BY path, kind, id;
 
 -- name: AllRepositoryAreas :many
 SELECT area_id FROM normalize.area WHERE organization_id = $1 AND area_kind = 'repository' ORDER BY area_id;
+
+-- name: InsertMRDiffs :execrows
+INSERT INTO normalize.mr_diff (organization_id, mr_revision_id, known_seq, receipt_id, record_no, content_hash, completeness, files)
+SELECT r.organization_id, r.id, sqlc.arg(known_seq), sqlc.arg(receipt_id), d.record_no, decode(d.content_hash, 'hex'), d.completeness, d.files
+FROM jsonb_to_recordset(sqlc.arg(diffs)::jsonb)
+    AS d(mr_id uuid, revision_key text, head_sha text, base_sha text, record_no integer, content_hash text, completeness text, files jsonb)
+JOIN normalize.mr_revision r ON r.organization_id = sqlc.arg(organization_id) AND r.mr_id = d.mr_id
+    AND r.revision_key = d.revision_key AND r.head_sha = d.head_sha AND r.base_sha = d.base_sha AND r.superseded_seq IS NULL
+JOIN normalize.source_object o ON o.organization_id = r.organization_id AND o.id = r.mr_id
+    AND o.current_area_id = sqlc.arg(area_id) AND o.deleted_at IS NULL
+ON CONFLICT (organization_id, mr_revision_id, content_hash) DO NOTHING;
+
+-- name: ReadMRDiff :one
+WITH revision AS (
+    SELECT r.organization_id, r.id, r.mr_id, r.revision_key, r.head_sha, r.base_sha
+    FROM normalize.mr_revision r
+    JOIN normalize.source_object o ON o.organization_id = r.organization_id AND o.id = r.mr_id
+    WHERE r.organization_id = sqlc.arg(organization_id) AND r.mr_id = sqlc.arg(mr_id) AND r.head_sha = sqlc.arg(head_sha)
+        AND r.known_seq <= sqlc.arg(known_seq) AND (r.superseded_seq IS NULL OR r.superseded_seq > sqlc.arg(known_seq))
+        AND o.deleted_at IS NULL AND o.current_area_id = ANY(sqlc.arg(areas)::uuid[])
+        AND (NOT o.restricted OR o.id = ANY(sqlc.arg(allowed)::uuid[]))
+    ORDER BY r.created_at DESC, r.known_seq DESC, r.id DESC LIMIT 1
+)
+SELECT r.mr_id, r.id AS revision_id, r.revision_key, r.head_sha, r.base_sha, d.known_seq, d.completeness, d.files
+FROM revision r
+JOIN normalize.mr_diff d ON d.organization_id = r.organization_id AND d.mr_revision_id = r.id
+WHERE d.known_seq <= sqlc.arg(known_seq)
+ORDER BY (d.completeness = 'complete') DESC, d.known_seq DESC, d.content_hash DESC LIMIT 1;

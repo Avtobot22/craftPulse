@@ -39,8 +39,9 @@ type mergeRequest struct {
 	TargetBranch   string  `json:"target_branch"`
 	SHA            string  `json:"sha"`
 	DiffRefs       struct {
-		HeadSHA string `json:"head_sha"`
-		BaseSHA string `json:"base_sha"`
+		HeadSHA  string `json:"head_sha"`
+		BaseSHA  string `json:"base_sha"`
+		StartSHA string `json:"start_sha"`
 	} `json:"diff_refs"`
 	Reviewers *[]account `json:"reviewers"`
 	CreatedAt time.Time  `json:"created_at"`
@@ -286,11 +287,16 @@ func (mr mergeRequest) payload(history mrHistory) (envelope.MergeRequestV1, erro
 		return envelope.MergeRequestV1{}, adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidResponse, "invalid GitLab merge request IID")
 	}
 	hasReviewers := mr.Reviewers != nil
+	head := cmp.Or(mr.SHA, mr.DiffRefs.HeadSHA)
+	var base *string
+	if mr.DiffRefs.HeadSHA == head {
+		base = optional(mr.DiffRefs.BaseSHA)
+	}
 	out := envelope.MergeRequestV1{
 		ProjectNativeId: id(mr.ProjectID), Iid: &iid, Title: optional(mr.Title), State: state, Draft: draft,
 		AuthorAccountNativeId: mr.Author.nativeID(), SourceBranch: mr.SourceBranch, TargetBranch: mr.TargetBranch,
 		OpenedAt: mr.CreatedAt, UpdatedAt: &mr.UpdatedAt, ReadyAt: ready, MergedAt: mr.MergedAt, ClosedAt: closed,
-		HeadSha: cmp.Or(mr.DiffRefs.HeadSHA, mr.SHA), BaseSha: optional(mr.DiffRefs.BaseSHA), MergeBaseSha: optional(mr.DiffRefs.BaseSHA),
+		HeadSha: head, BaseSha: base, MergeBaseSha: base,
 		ReviewerField: &hasReviewers,
 	}
 	if hasReviewers {

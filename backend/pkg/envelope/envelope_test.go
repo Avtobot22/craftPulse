@@ -42,6 +42,11 @@ func exampleRecord(t *testing.T, w *envelope.Writer, schema envelope.RecordSchem
 		RecordClass: envelope.RecordRecordClass(schema.Classes[0]), RecordKind: envelope.RecordRecordKind(schema.Kind),
 		PayloadSchema: schema.Kind + "/" + schema.Version, NativeId: "id-" + schema.Kind, Payload: schema.Example,
 	}
+	if schema.Kind == "mr_diff" {
+		var payload envelope.MrDiffV1
+		require.NoError(t, json.Unmarshal(schema.Example, &payload))
+		rec.NativeNs = payload.MrNativeId
+	}
 	switch rec.RecordClass {
 	case envelope.RecordRecordClassEvent:
 		at := time.Date(2026, 3, 2, 12, 0, 0, 0, time.FixedZone("", 3*3600))
