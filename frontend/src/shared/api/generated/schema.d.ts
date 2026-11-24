@@ -5008,6 +5008,7 @@ export interface components {
         };
         TechnicalComparison: {
             comparable: boolean;
+            /** @description `rules_changed` включает смену базы уязвимостей, которую отдельно показывает фактор `db_changed`. */
             incomparable_reasons: ("profile_changed" | "rules_changed" | "scope_changed" | "base_scan_missing" | "head_scan_missing" | "scan_incomplete")[];
             base: {
                 sha: components["schemas"]["GitSha"];
@@ -5022,8 +5023,10 @@ export interface components {
             factors: {
                 /** @enum {string} */
                 factor: "code_changed" | "dependency_changed" | "rules_changed" | "db_changed" | "scope_changed" | "source_recovered" | "source_lost" | "identity_uncertain";
-                new_count: number;
-                resolved_count: number;
+                /** @description `null` при несопоставимых результатах. */
+                new_count: number | null;
+                /** @description `null` при несопоставимых результатах. */
+                resolved_count: number | null;
                 finding_ids: string[];
             }[];
             access_limited: boolean;

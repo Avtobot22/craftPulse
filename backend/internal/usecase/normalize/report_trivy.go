@@ -67,13 +67,16 @@ func parseTrivy(r io.Reader, in parseInput) (*parsedReport, error) {
 			out.formatVersion = strconv.Itoa(version)
 			return err
 		case "CraftPulse":
-			var meta struct{ Delta string }
+			var meta struct{ Delta, BaseSHA string }
 			if err := dec.Decode(&meta); err != nil {
 				return err
 			}
 			switch meta.Delta {
 			case entity.DependencyDeltaComputed, entity.DependencyDeltaNoBase, entity.DependencyDeltaUnavailable:
 				out.dependencyDelta = meta.Delta
+			}
+			if meta.Delta == entity.DependencyDeltaComputed && entity.ValidGitSHA(meta.BaseSHA) {
+				out.dependencyBaseSHA = meta.BaseSHA
 			}
 			return nil
 		case "Results":

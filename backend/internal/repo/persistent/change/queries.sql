@@ -57,6 +57,15 @@ SELECT * FROM change.occurrence_identity
 WHERE organization_id = sqlc.arg(organization_id) AND occurrence_id = ANY (sqlc.arg(occurrence_ids)::uuid[])
 ORDER BY occurrence_id;
 
+-- name: LastFindingReport :one
+SELECT r.id FROM change.occurrence_identity i
+JOIN normalize.finding_occurrence o ON o.organization_id = i.organization_id AND o.id = i.occurrence_id
+JOIN normalize.report r ON r.organization_id = o.organization_id AND r.id = o.report_id
+WHERE i.organization_id = sqlc.arg(organization_id) AND i.finding_identity_id = sqlc.arg(finding_identity_id)
+    AND r.component_id = sqlc.arg(component_id)::uuid AND r.report_kind = sqlc.arg(report_kind)::text AND r.sha IS NOT NULL
+ORDER BY COALESCE(r.finished_at, r.started_at, i.reported_at) DESC, r.known_seq DESC, r.record_no DESC, r.id DESC
+LIMIT 1;
+
 -- name: LockCurrentBaseline :one
 SELECT * FROM change.baseline
 WHERE organization_id = sqlc.arg(organization_id) AND component_id = sqlc.arg(component_id) AND language = sqlc.arg(language)

@@ -64,7 +64,9 @@ type parsedReport struct {
 	code            *entity.CodeFacts
 	cloneExcluded   map[string]bool
 	dependencyDelta string
-	docs            *entity.DocsReportFacts
+
+	dependencyBaseSHA string
+	docs              *entity.DocsReportFacts
 	// excluded are the files of a coverage report outside the repository.
 	excluded []entity.SkippedTarget
 }

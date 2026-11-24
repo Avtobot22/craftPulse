@@ -8084,15 +8084,21 @@ type TechnicalComparison struct {
 	} `json:"base"`
 	Comparable bool `json:"comparable"`
 	Factors    []struct {
-		Factor        TechnicalComparisonFactorsFactor `json:"factor"`
-		FindingIds    []openapi_types.UUID             `json:"finding_ids"`
-		NewCount      int                              `json:"new_count"`
-		ResolvedCount int                              `json:"resolved_count"`
+		Factor     TechnicalComparisonFactorsFactor `json:"factor"`
+		FindingIds []openapi_types.UUID             `json:"finding_ids"`
+
+		// NewCount `null` при несопоставимых результатах.
+		NewCount *int `json:"new_count"`
+
+		// ResolvedCount `null` при несопоставимых результатах.
+		ResolvedCount *int `json:"resolved_count"`
 	} `json:"factors"`
 	Head struct {
 		ReportId *openapi_types.UUID `json:"report_id"`
 		Sha      GitSha              `json:"sha"`
 	} `json:"head"`
+
+	// IncomparableReasons `rules_changed` включает смену базы уязвимостей, которую отдельно показывает фактор `db_changed`.
 	IncomparableReasons []TechnicalComparisonIncomparableReasons `json:"incomparable_reasons"`
 }
 

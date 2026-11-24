@@ -18,6 +18,8 @@ const _identityMethod = 1
 type Reports interface {
 	ReceiptReports(ctx context.Context, orgID, receiptID entity.ID) ([]entity.ReportFindings, error)
 	ReportsByID(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ReportFindings, error)
+	TechnicalReports(ctx context.Context, orgID entity.ID, scope entity.TechnicalReportScope) ([]entity.TechnicalReport, error)
+	TechnicalOccurrences(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.ReportOccurrence, error)
 	LastBranchReports(ctx context.Context, orgID entity.ID, queries []entity.BranchReportQuery) ([]entity.ReportFindings, error)
 	DefaultBranches(ctx context.Context, orgID entity.ID, repositories []entity.ID) (map[entity.ID]string, error)
 }

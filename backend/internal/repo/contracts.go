@@ -95,6 +95,7 @@ type StructureRepo interface {
 	SupersedeLink(ctx context.Context, orgID entity.ID, kind entity.LinkKind, rowID entity.ID, seq int64, at time.Time) error
 	InsertLink(ctx context.Context, orgID entity.ID, kind entity.LinkKind, l entity.Link, seq int64) error
 	CurrentComponents(ctx context.Context, orgID entity.ID) ([]entity.Component, error)
+	ConfirmedComponent(ctx context.Context, orgID, id entity.ID) (entity.Component, error)
 	ProjectComponents(ctx context.Context, orgID, projectID entity.ID, at time.Time) ([]entity.Component, error)
 	SupersedeComponent(ctx context.Context, orgID, id entity.ID, seq int64, at time.Time) error
 	InsertComponent(ctx context.Context, orgID entity.ID, c entity.Component, seq int64) error
@@ -358,6 +359,8 @@ type NormalizeRepo interface {
 	ReceiptCodeScopes(ctx context.Context, orgID, receiptID entity.ID) ([]entity.CodeScope, error)
 	ReceiptReports(ctx context.Context, orgID, receiptID entity.ID) ([]entity.ReportFindings, error)
 	ReportsByID(ctx context.Context, orgID entity.ID, reportIDs []entity.ID) ([]entity.ReportFindings, error)
+	TechnicalReports(ctx context.Context, orgID entity.ID, scope entity.TechnicalReportScope) ([]entity.TechnicalReport, error)
+	TechnicalOccurrences(ctx context.Context, orgID entity.ID, reportIDs []entity.ID) (map[entity.ID][]entity.ReportOccurrence, error)
 	LastBranchReports(ctx context.Context, orgID entity.ID, components []entity.ID, refs []string) ([]entity.ReportFindings, error)
 	DefaultBranches(ctx context.Context, orgID entity.ID, repositories []entity.ID) (map[entity.ID]string, error)
 
@@ -519,6 +522,7 @@ type ChangeRepo interface {
 	LockExceptionProjection(ctx context.Context, org, area entity.ID) error
 	ProjectExceptions(ctx context.Context, org, area entity.ID, seq int64, at time.Time, versions []entity.ID) error
 	OccurrenceIdentities(ctx context.Context, orgID entity.ID, occurrences []entity.ID) ([]entity.OccurrenceIdentity, error)
+	LastFindingReport(ctx context.Context, orgID, componentID, findingID entity.ID, kind string) (entity.ID, error)
 	LockCurrentBaseline(ctx context.Context, orgID, componentID entity.ID, language, kind string) (entity.Baseline, error)
 	ReplaceBaseline(ctx context.Context, orgID entity.ID, old, b *entity.Baseline) error
 	CurrentBaselines(ctx context.Context, orgID entity.ID, components []entity.ID) ([]entity.Baseline, error)

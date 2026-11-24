@@ -376,6 +376,10 @@ LIMIT 1;
 -- name: CurrentComponents :many
 SELECT * FROM org.component WHERE organization_id = sqlc.arg(organization_id) AND superseded_seq IS NULL ORDER BY service_id, repository_area_id, path_prefix, id;
 
+-- name: ConfirmedComponent :one
+SELECT * FROM org.component WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id)
+    AND superseded_seq IS NULL AND status = 'confirmed';
+
 -- name: SupersedeComponent :exec
 UPDATE org.component SET superseded_seq = sqlc.arg(seq)::bigint, superseded_at = sqlc.arg(at)::timestamptz
 WHERE organization_id = sqlc.arg(organization_id) AND id = sqlc.arg(id) AND superseded_seq IS NULL;

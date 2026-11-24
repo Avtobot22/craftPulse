@@ -192,6 +192,16 @@ func (u *UseCase) ProjectComponents(ctx context.Context, orgID, projectID entity
 	return out, err
 }
 
+func (u *UseCase) ConfirmedComponent(ctx context.Context, orgID, id entity.ID) (entity.Component, error) {
+	var out entity.Component
+	err := u.tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.orgs.ConfirmedComponent(ctx, orgID, id)
+		return err
+	})
+	return out, err
+}
+
 // RepositoryComponents are the confirmed components in force of a repository, the components its reports belong
 // to; it runs in the caller's organization transaction.
 func (u *UseCase) RepositoryComponents(ctx context.Context, orgID, areaID entity.ID) ([]entity.Component, error) {

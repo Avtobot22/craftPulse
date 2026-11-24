@@ -60,6 +60,8 @@ type ScanReport struct {
 	SkippedTargets  []SkippedTarget
 	History         *ScanHistory
 	DependencyDelta string
+
+	DependencyBaseSHA string
 	// RefName is the branch or tag of the run and Language the language of the check; empty when unknown.
 	RefName      string
 	Language     string
@@ -182,6 +184,7 @@ type ReportOccurrence struct {
 	PackagePURL        string
 	Fingerprint        []byte
 	ContentFingerprint []byte
+	DependencyDelta    string
 }
 
 // BranchReportQuery asks for the last report of a component, language and kind of analysis on a branch.

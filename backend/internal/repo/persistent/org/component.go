@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -22,6 +23,17 @@ func (r *Repo) CurrentComponents(ctx context.Context, orgID entity.ID) ([]entity
 		return nil, fmt.Errorf("org: current components: %w", err)
 	}
 	return convert(rows, component), nil
+}
+
+func (r *Repo) ConfirmedComponent(ctx context.Context, orgID, id entity.ID) (entity.Component, error) {
+	row, err := New(postgres.Conn(ctx, r.pool)).ConfirmedComponent(ctx, ConfirmedComponentParams{OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(id)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.Component{}, entity.ErrNotFound
+	}
+	if err != nil {
+		return entity.Component{}, fmt.Errorf("org: confirmed component: %w", err)
+	}
+	return component(row), nil
 }
 
 func (r *Repo) ProjectComponents(ctx context.Context, orgID, projectID entity.ID, at time.Time) ([]entity.Component, error) {
