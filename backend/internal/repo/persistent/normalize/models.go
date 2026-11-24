@@ -81,6 +81,21 @@ type NormalizeDictionaryEntry struct {
 	Attributes     []byte
 }
 
+type NormalizeDocumentVersion struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	DocumentID     uuid.UUID
+	AreaID         uuid.UUID
+	KnownSeq       int64
+	VersionRef     string
+	DocFormat      string
+	Path           string
+	Title          pgtype.Text
+	ContentHash    []byte
+	Owner          pgtype.Text
+	AclState       string
+}
+
 type NormalizeMrEvent struct {
 	OrganizationID  uuid.UUID
 	ID              uuid.UUID

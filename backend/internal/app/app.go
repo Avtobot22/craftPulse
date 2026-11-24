@@ -114,16 +114,16 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, check
 	if err != nil {
 		return err
 	}
-	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights},
+	exceptions, err := newDecision(pool, rights, clock.System{})
+	if err != nil {
+		return err
+	}
+	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights, decisions: exceptions},
 		clock.System{}, reg)
 	if err != nil {
 		return err
 	}
 	views := newView(pool, viewModules{code: normalizer, reviewCalculator: calculator, projectAreas: orgs, runCalculator: calculator, collection: collection, series: calculator, reports: calculator, instances: connections, rights: rights}, clock.System{})
-	exceptions, err := newDecision(pool, rights, clock.System{})
-	if err != nil {
-		return err
-	}
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection, webhooks: collection,
 		operations: views, reports: views, code: views, process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
@@ -198,17 +198,17 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights},
+	exceptions, err := newDecision(pool, rights, clock.System{})
+	if err != nil {
+		return err
+	}
+	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights, decisions: exceptions},
 		clock.System{}, reg)
 	if err != nil {
 		return err
 	}
 	views := newView(pool, viewModules{code: normalizer, reviewCalculator: calculator, projectAreas: orgs, runCalculator: calculator, collection: collection, series: calculator, reports: calculator, instances: connections, rights: rights}, clock.System{})
 	purges := newRetention(pool, connections, views, clock.System{})
-	exceptions, err := newDecision(pool, rights, clock.System{})
-	if err != nil {
-		return err
-	}
 	changes := newIdentifier(pool, normalizer, orgs, clock.System{}, exceptions)
 	workers := river.NewWorkers()
 	kinds := workerctrl.Register(workers, workerctrl.Deps{

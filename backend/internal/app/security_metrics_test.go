@@ -165,4 +165,34 @@ func TestSecurityMetrics_FromImportedReports(t *testing.T) {
 	assert.Equal(t, entity.StateNotEvaluated, secretGroups[0].State)
 	assert.Equal(t, entity.StateAssessed, secretGroups[1].State)
 	assert.Equal(t, ptr(0), secretGroups[1].Count)
+
+	clean := specs[1]
+	clean.name, clean.exit = "clean-trivy.json", "success"
+	clean.content = []byte(`{"SchemaVersion":2,"Results":[],"CraftPulse":{"Delta":"computed"}}`)
+	fresh := e.imported(t, e.admin, reportPackage(t, failedSHA, clean))
+	require.Equal(t, entity.ReceiptAccepted, fresh.Status)
+	e.drain(t)
+	scope.KnownSeq, err = e.norm.ReportKnowledge(t.Context(), e.orgID, nil)
+	require.NoError(t, err)
+	recovered, err := calculator.SecurityAt(t.Context(), e.orgID, scope)
+	require.NoError(t, err)
+	require.Len(t, recovered.Reports, 2)
+	assert.Equal(t, entity.StateAssessed, recovered.Metrics["S13"].State)
+	assert.Equal(t, ptr(0.0), recovered.Metrics["S13"].Value)
+
+	fresh = e.imported(t, e.admin, reportPackage(t, _reportSHA, clean))
+	require.Equal(t, entity.ReceiptAccepted, fresh.Status)
+	e.drain(t)
+	scope.SHA = _reportSHA
+	scope.KnownSeq, err = e.norm.ReportKnowledge(t.Context(), e.orgID, nil)
+	require.NoError(t, err)
+	current, err := calculator.SecurityAt(t.Context(), e.orgID, scope)
+	require.NoError(t, err)
+	require.Len(t, current.Reports, 5)
+	assert.Equal(t, ptr(4.0), current.Metrics["S09"].Value)
+	assert.Equal(t, ptr(0.0), current.Metrics["S13"].Value)
+	scope.KnownSeq = seq
+	previous, err := calculator.SecurityAt(t.Context(), e.orgID, scope)
+	require.NoError(t, err)
+	assert.Equal(t, ptr(3.0), previous.Metrics["S13"].Value)
 }

@@ -119,6 +119,11 @@ func (in *input) keys() []entity.SourceKey {
 		set[a.key] = true
 	}
 	for _, c := range in.reports {
+		if c.docs != nil {
+			for i := range c.docs.Documents {
+				set[in.documentKey(c.docs.Documents[i].Path)] = true
+			}
+		}
 		if c.run != nil {
 			set[*c.run] = true
 		}
@@ -140,9 +145,10 @@ func (u *UseCase) placeAreas(ctx context.Context, org entity.ID, in *input, obje
 		switch k.Kind {
 		case entity.ObjectTask, entity.ObjectCIAttempt, entity.ObjectCIJob,
 			entity.ObjectCodeFile, entity.ObjectCodeFunction, entity.ObjectCloneGroup, entity.ObjectCodeReport,
-			entity.ObjectSecurityFinding, entity.ObjectAffectedPackage, entity.ObjectSecurityAdvisory:
+			entity.ObjectSecurityFinding, entity.ObjectAffectedPackage, entity.ObjectSecurityAdvisory,
+			entity.ObjectDocumentationRoot, entity.ObjectDocumentationFinding, entity.ObjectDocumentationReport:
 			continue
-		case entity.ObjectMergeRequest, entity.ObjectCIRun:
+		case entity.ObjectMergeRequest, entity.ObjectCIRun, entity.ObjectDocument:
 			if o.CurrentAreaID == nil {
 				area := objects[in.area].ID
 				placements = append(placements, entity.ObjectPlacement{ObjectID: o.ID, AreaID: area})

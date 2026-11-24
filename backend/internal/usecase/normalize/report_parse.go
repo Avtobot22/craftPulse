@@ -50,6 +50,7 @@ type reportParser struct {
 type parseInput struct {
 	kind       string
 	sha        string
+	container  string
 	sourceRoot string
 	sourceDir  string
 }
@@ -63,6 +64,7 @@ type parsedReport struct {
 	code            *entity.CodeFacts
 	cloneExcluded   map[string]bool
 	dependencyDelta string
+	docs            *entity.DocsReportFacts
 	// excluded are the files of a coverage report outside the repository.
 	excluded []entity.SkippedTarget
 }
@@ -70,6 +72,11 @@ type parsedReport struct {
 // _parsers is the registry of report parsers; a format without a parser here is not read yet, and its record
 // stays accepted without a report.
 var _parsers = []reportParser{
+	{
+		format: entity.DocsFormatInventory, version: "docs-json/1",
+		kinds: []string{entity.AnalysisDocs, entity.AnalysisOpenAPI}, accepts: func(v string) bool { return v == "1" },
+		parse: parseDocsInventory,
+	},
 	{
 		format: entity.CodeFormatLizard, version: "lizard-csv/1",
 		kinds: []string{entity.AnalysisCode}, accepts: func(v string) bool { return v == "1" || v == "2" },
@@ -378,11 +385,12 @@ func bounded(s string, limit int) string {
 // weaknesses and packages, never a fragment of code or the value of a secret (BR-017).
 type evidence struct {
 	entity.SecurityEvidence
-	Tool             *toolRef     `json:"tool,omitempty"`
-	RuleName         string       `json:"rule_name,omitempty"`
-	RuleDescription  string       `json:"rule_description,omitempty"`
-	SecuritySeverity string       `json:"security_severity,omitempty"`
-	Identifiers      []identifier `json:"identifiers,omitempty"`
+	Tool             *toolRef                 `json:"tool,omitempty"`
+	RuleName         string                   `json:"rule_name,omitempty"`
+	RuleDescription  string                   `json:"rule_description,omitempty"`
+	SecuritySeverity string                   `json:"security_severity,omitempty"`
+	Identifiers      []identifier             `json:"identifiers,omitempty"`
+	Link             *envelope.DocsLinkTarget `json:"link,omitempty"`
 }
 
 type toolRef struct {

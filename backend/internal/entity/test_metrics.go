@@ -30,6 +30,10 @@ type ReportEvidence struct {
 	SkippedTargets  []SkippedTarget
 	DependencyDelta string
 	SecretScope     string
+	Mode            string
+	ProfileID       string
+	HistoryFromSHA  string
+	HistoryToSHA    string
 }
 
 func (r *ReportEvidence) Partial() bool {

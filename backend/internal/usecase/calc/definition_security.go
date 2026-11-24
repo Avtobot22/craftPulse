@@ -1,7 +1,5 @@
 package calc
 
-const _securityCatalog = "docs/product/metrics/security.md#"
-
 var _securityDefinitions = []Definition{
 	{
 		ID: "S09", Version: 1, Name: "Open security occurrences", Unit: UnitCount, CatalogRef: _securityCatalog + "s09",

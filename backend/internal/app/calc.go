@@ -9,10 +9,12 @@ import (
 
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	calcrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/calc"
+	docsrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/docs"
 	linkrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/link"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/docs"
 	linkuc "github.com/Avtobot22/craftPulse/backend/internal/usecase/link"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 )
@@ -72,6 +74,7 @@ type calcModules struct {
 	collection   calc.Collection
 	activity     calc.ActivityCollection
 	rights       calc.Rights
+	decisions    calc.FindingDecisions
 }
 
 func newCalc(pool *pgxpool.Pool, m calcModules, c clock.Clock, reg prometheus.Registerer) (*calc.UseCase, error) {
@@ -87,9 +90,13 @@ func newCalc(pool *pgxpool.Pool, m calcModules, c clock.Clock, reg prometheus.Re
 	// calc only reads links; their decisions stay with normalize (TZ 10.3).
 	links := linkuc.New(linkuc.Deps{Repo: linkrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Clock: c, NewID: newID})
 	code, _ := m.facts.(calc.CodeReports)
+	docReports, _ := m.facts.(calc.DocumentationReports)
+	documents, _ := m.facts.(docs.Documents)
+	documentation := docs.New(docs.Deps{Repo: docsrepo.NewRepo(pool), Tx: tx, Documents: documents})
 	return calc.New(calc.Deps{
 		Structure: m.structure, Facts: m.facts, TestCoverage: m.testCoverage, Security: m.security, Settings: m.settings,
 		Collection: m.collection, Activity: m.activity, Code: code, Rights: m.rights, Links: links,
+		Docs: documentation, DocReports: docReports, Decisions: m.decisions,
 		Repo: calcrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Queue: queue.New(jobs), Tx: tx,
 		Metrics: metrics, Clock: c, NewID: newID,
 	}), nil

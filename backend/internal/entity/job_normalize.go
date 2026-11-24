@@ -15,6 +15,7 @@ type NormalizeBatchJob struct {
 	ResolvedNo      int         `json:"resolved_no,omitempty"`
 	Reports         bool        `json:"reports,omitempty"`
 	CodeReports     bool        `json:"code_reports,omitempty"`
+	DocsReports     bool        `json:"docs_reports,omitempty"`
 	SecurityReports bool        `json:"security_reports,omitempty"`
 	CorrelationID   ID          `json:"correlation_id"`
 }

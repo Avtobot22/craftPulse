@@ -12,25 +12,31 @@ INSERT INTO calc.definition (metric_id, definition_version, unit, catalog_ref) V
 ALTER TABLE calc.contribution DROP CONSTRAINT contribution_object_kind_check;
 ALTER TABLE calc.contribution ADD CONSTRAINT contribution_object_kind_check
     CHECK (object_kind IN ('task', 'connection', 'merge_request', 'ci_run', 'ci_job', 'ci_attempt',
-        'code_file', 'code_function', 'clone_group', 'code_report', 'security_finding', 'affected_package', 'security_advisory'));
+        'code_file', 'code_function', 'clone_group', 'code_report', 'document', 'documentation_root',
+        'documentation_finding', 'documentation_report', 'finding', 'exception', 'finding_report',
+        'expected_check', 'expected_report', 'security_finding', 'affected_package', 'security_advisory'));
 
 ALTER TABLE calc.revision_input DROP CONSTRAINT revision_input_input_kind_check;
 ALTER TABLE calc.revision_input ADD CONSTRAINT revision_input_input_kind_check
     CHECK (input_kind IN ('definition', 'mapping', 'calendar', 'target', 'decision', 'structure', 'accounts',
-        'links', 'source_watermark', 'code_report', 'profile_threshold', 'security_report'));
+        'links', 'source_watermark', 'code_report', 'profile_threshold', 'documentation_root', 'documentation_report',
+        'finding_report', 'finding_comparison', 'expected_checks', 'expected_reports', 'security_report'));
 
 -- +goose Down
 DELETE FROM calc.contribution WHERE object_kind IN ('security_finding', 'affected_package', 'security_advisory');
 ALTER TABLE calc.contribution DROP CONSTRAINT contribution_object_kind_check;
 ALTER TABLE calc.contribution ADD CONSTRAINT contribution_object_kind_check
     CHECK (object_kind IN ('task', 'connection', 'merge_request', 'ci_run', 'ci_job', 'ci_attempt',
-        'code_file', 'code_function', 'clone_group', 'code_report'));
+        'code_file', 'code_function', 'clone_group', 'code_report', 'document', 'documentation_root',
+        'documentation_finding', 'documentation_report', 'finding', 'exception', 'finding_report',
+        'expected_check', 'expected_report'));
 
 DELETE FROM calc.revision_input WHERE input_kind = 'security_report';
 ALTER TABLE calc.revision_input DROP CONSTRAINT revision_input_input_kind_check;
 ALTER TABLE calc.revision_input ADD CONSTRAINT revision_input_input_kind_check
     CHECK (input_kind IN ('definition', 'mapping', 'calendar', 'target', 'decision', 'structure', 'accounts',
-        'links', 'source_watermark', 'code_report', 'profile_threshold'));
+        'links', 'source_watermark', 'code_report', 'profile_threshold', 'documentation_root', 'documentation_report',
+        'finding_report', 'finding_comparison', 'expected_checks', 'expected_reports'));
 
 DELETE FROM calc.definition
 WHERE definition_version = 1 AND metric_id IN ('S09', 'S12', 'S13', 'S14', 'S15', 'S16', 'S18', 'S19');

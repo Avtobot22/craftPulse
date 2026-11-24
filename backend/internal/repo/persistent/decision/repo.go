@@ -145,9 +145,11 @@ func (r *Repo) Histories(ctx context.Context, org entity.ID, ids []entity.ID, se
 	return out, nil
 }
 
-// AreaDecisionIDs finds decisions with a version whose time range covers the requested moment.
-func (r *Repo) AreaDecisionIDs(ctx context.Context, org, area entity.ID, seq int64, at time.Time) ([]entity.ID, error) {
-	rows, err := r.q(ctx).AreaDecisionIDs(ctx, AreaDecisionIDsParams{OrganizationID: uuid.UUID(org), AreaID: uuid.UUID(area), KnownSeq: seq, AsOf: at})
+// AreaDecisionIDs selects area decisions with a started version at the cut.
+func (r *Repo) AreaDecisionIDs(ctx context.Context, org, area entity.ID, seq int64, at time.Time, includeExpired bool) ([]entity.ID, error) {
+	rows, err := r.q(ctx).AreaDecisionIDs(ctx, AreaDecisionIDsParams{
+		OrganizationID: uuid.UUID(org), AreaID: uuid.UUID(area), KnownSeq: seq, AsOf: at, IncludeExpired: includeExpired,
+	})
 	if err != nil {
 		return nil, wrap("load area decisions", err)
 	}

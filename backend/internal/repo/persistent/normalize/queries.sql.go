@@ -1021,6 +1021,286 @@ func (q *Queries) DictionaryRevisions(ctx context.Context, arg DictionaryRevisio
 	return items, nil
 }
 
+const documentationFindingsAt = `-- name: DocumentationFindingsAt :many
+SELECT f.id, f.report_id, f.finding_kind, f.rule_id, f.path, f.line_start,
+    COALESCE(f.mapped_severity, f.native_severity, 'unknown')::text AS severity, f.evidence,
+    first_seen.first_seen_at, COALESCE(f.evidence ? 'link', false)::boolean AS has_link_target
+FROM normalize.finding_occurrence f
+JOIN LATERAL (
+    SELECT min(COALESCE(r.finished_at, r.started_at, rc.received_at, uuid_extract_timestamp(r.id)))::timestamptz AS first_seen_at
+    FROM normalize.finding_occurrence old
+    JOIN normalize.report r ON r.organization_id = old.organization_id AND r.id = old.report_id
+    LEFT JOIN ingest.receipt rc ON rc.organization_id = r.organization_id AND rc.id = r.receipt_id
+    WHERE old.organization_id = f.organization_id AND old.fingerprint = f.fingerprint
+        AND old.finding_kind IN ('docs', 'openapi') AND old.finding_kind = f.finding_kind
+        AND r.area_id = $1 AND r.known_seq <= $2
+) first_seen ON true
+WHERE f.organization_id = $3 AND f.report_id = ANY($4::uuid[])
+    AND f.finding_kind IN ('docs', 'openapi') AND (f.evidence->>'suppressed') IS DISTINCT FROM 'true'
+    AND ($5::text IN ('', f.path) OR f.path IS NULL OR starts_with(f.path, $5::text || '/'))
+ORDER BY f.finding_kind, f.path, f.line_start, f.rule_id, f.id
+`
+
+type DocumentationFindingsAtParams struct {
+	AreaID         uuid.UUID
+	KnownSeq       int64
+	OrganizationID uuid.UUID
+	ReportIds      []uuid.UUID
+	PathPrefix     string
+}
+
+type DocumentationFindingsAtRow struct {
+	ID            uuid.UUID
+	ReportID      uuid.UUID
+	FindingKind   string
+	RuleID        string
+	Path          pgtype.Text
+	LineStart     pgtype.Int4
+	Severity      string
+	Evidence      []byte
+	FirstSeenAt   time.Time
+	HasLinkTarget bool
+}
+
+func (q *Queries) DocumentationFindingsAt(ctx context.Context, arg DocumentationFindingsAtParams) ([]DocumentationFindingsAtRow, error) {
+	rows, err := q.db.Query(ctx, documentationFindingsAt,
+		arg.AreaID,
+		arg.KnownSeq,
+		arg.OrganizationID,
+		arg.ReportIds,
+		arg.PathPrefix,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocumentationFindingsAtRow
+	for rows.Next() {
+		var i DocumentationFindingsAtRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReportID,
+			&i.FindingKind,
+			&i.RuleID,
+			&i.Path,
+			&i.LineStart,
+			&i.Severity,
+			&i.Evidence,
+			&i.FirstSeenAt,
+			&i.HasLinkTarget,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const documentationReportDocuments = `-- name: DocumentationReportDocuments :many
+SELECT d.report_id, v.id, v.document_id, v.version_ref, v.doc_format, v.path, v.title, v.content_hash, v.owner, v.acl_state, d.spec_valid
+FROM normalize.docs_report_document d
+JOIN normalize.document_version v ON v.organization_id = d.organization_id AND v.id = d.document_version_id
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.document_id
+WHERE d.organization_id = $1 AND d.report_id = ANY($2::uuid[])
+    AND v.acl_state = 'known' AND NOT o.restricted AND o.deleted_at IS NULL
+ORDER BY d.report_id, v.path, v.id
+`
+
+type DocumentationReportDocumentsParams struct {
+	OrganizationID uuid.UUID
+	ReportIds      []uuid.UUID
+}
+
+type DocumentationReportDocumentsRow struct {
+	ReportID    uuid.UUID
+	ID          uuid.UUID
+	DocumentID  uuid.UUID
+	VersionRef  string
+	DocFormat   string
+	Path        string
+	Title       pgtype.Text
+	ContentHash []byte
+	Owner       pgtype.Text
+	AclState    string
+	SpecValid   pgtype.Bool
+}
+
+func (q *Queries) DocumentationReportDocuments(ctx context.Context, arg DocumentationReportDocumentsParams) ([]DocumentationReportDocumentsRow, error) {
+	rows, err := q.db.Query(ctx, documentationReportDocuments, arg.OrganizationID, arg.ReportIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocumentationReportDocumentsRow
+	for rows.Next() {
+		var i DocumentationReportDocumentsRow
+		if err := rows.Scan(
+			&i.ReportID,
+			&i.ID,
+			&i.DocumentID,
+			&i.VersionRef,
+			&i.DocFormat,
+			&i.Path,
+			&i.Title,
+			&i.ContentHash,
+			&i.Owner,
+			&i.AclState,
+			&i.SpecValid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const documentationReportsAt = `-- name: DocumentationReportsAt :many
+SELECT DISTINCT ON (r.report_kind)
+    r.id, r.report_kind, r.completeness, r.skipped_count, d.owner_rule, d.checks, d.links, r.known_seq,
+    COALESCE(r.finished_at, r.started_at, uuid_extract_timestamp(r.id))::timestamptz AS observed_at,
+    COALESCE(sarif.id, '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS sarif_id
+FROM normalize.report r
+JOIN normalize.docs_report d ON d.organization_id = r.organization_id AND d.report_id = r.id
+LEFT JOIN LATERAL (
+    SELECT s.id FROM normalize.report s
+    WHERE s.organization_id = r.organization_id AND s.area_id = r.area_id AND s.sha = r.sha
+        AND s.report_kind = r.report_kind AND s.report_format = 'sarif' AND s.profile_id = r.profile_id
+        AND s.docs_run_id = r.docs_run_id AND s.docs_file_hash = d.sarif_hash
+        AND s.known_seq <= $1
+    ORDER BY (s.receipt_id = r.receipt_id) DESC, s.known_seq DESC, s.id DESC
+    LIMIT 1
+) sarif ON true
+WHERE r.organization_id = $2 AND r.area_id = $3
+    AND r.sha = $4 AND r.profile_id = $5 AND r.known_seq <= $1
+    AND d.path_prefix = $6 AND (d.root_id = $7 OR d.root_id IS NULL)
+ORDER BY r.report_kind, COALESCE(r.finished_at, r.started_at) DESC NULLS LAST, r.known_seq DESC, r.id DESC
+`
+
+type DocumentationReportsAtParams struct {
+	KnownSeq       int64
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	Sha            pgtype.Text
+	ProfileID      pgtype.Text
+	PathPrefix     string
+	RootID         uuid.NullUUID
+}
+
+type DocumentationReportsAtRow struct {
+	ID           uuid.UUID
+	ReportKind   string
+	Completeness string
+	SkippedCount pgtype.Int4
+	OwnerRule    pgtype.Text
+	Checks       []string
+	Links        []byte
+	KnownSeq     int64
+	ObservedAt   time.Time
+	SarifID      uuid.UUID
+}
+
+func (q *Queries) DocumentationReportsAt(ctx context.Context, arg DocumentationReportsAtParams) ([]DocumentationReportsAtRow, error) {
+	rows, err := q.db.Query(ctx, documentationReportsAt,
+		arg.KnownSeq,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.Sha,
+		arg.ProfileID,
+		arg.PathPrefix,
+		arg.RootID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocumentationReportsAtRow
+	for rows.Next() {
+		var i DocumentationReportsAtRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReportKind,
+			&i.Completeness,
+			&i.SkippedCount,
+			&i.OwnerRule,
+			&i.Checks,
+			&i.Links,
+			&i.KnownSeq,
+			&i.ObservedAt,
+			&i.SarifID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const documentsAt = `-- name: DocumentsAt :many
+SELECT v.organization_id, v.id, v.document_id, v.area_id, v.known_seq, v.version_ref, v.doc_format, v.path, v.title, v.content_hash, v.owner, v.acl_state FROM normalize.document_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.document_id
+WHERE v.organization_id = $1 AND v.area_id = $2
+    AND v.version_ref = $3 AND v.known_seq <= $4 AND v.acl_state = 'known'
+    AND NOT o.restricted AND o.deleted_at IS NULL
+    AND ($5::text IN ('', v.path) OR starts_with(v.path, $5::text || '/'))
+ORDER BY v.path, v.id
+`
+
+type DocumentsAtParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	VersionRef     string
+	KnownSeq       int64
+	PathPrefix     string
+}
+
+func (q *Queries) DocumentsAt(ctx context.Context, arg DocumentsAtParams) ([]NormalizeDocumentVersion, error) {
+	rows, err := q.db.Query(ctx, documentsAt,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.VersionRef,
+		arg.KnownSeq,
+		arg.PathPrefix,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeDocumentVersion
+	for rows.Next() {
+		var i NormalizeDocumentVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.DocumentID,
+			&i.AreaID,
+			&i.KnownSeq,
+			&i.VersionRef,
+			&i.DocFormat,
+			&i.Path,
+			&i.Title,
+			&i.ContentHash,
+			&i.Owner,
+			&i.AclState,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ensureTestCases = `-- name: EnsureTestCases :exec
 INSERT INTO normalize.test_case (organization_id, area_id, case_key, case_key_hash)
 SELECT $1, $2, unnest($3::text[]), unnest($4::bytea[])
@@ -1294,6 +1574,87 @@ func (q *Queries) InsertCoverageFacts(ctx context.Context, arg InsertCoverageFac
 	return err
 }
 
+const insertDocsReport = `-- name: InsertDocsReport :exec
+INSERT INTO normalize.docs_report (organization_id, report_id, root_id, path_prefix, owner_rule, checks, links, sarif_hash)
+VALUES ($1, $2, $3, $4,
+    $5, $6, $7, $8)
+`
+
+type InsertDocsReportParams struct {
+	OrganizationID uuid.UUID
+	ReportID       uuid.UUID
+	RootID         uuid.NullUUID
+	PathPrefix     string
+	OwnerRule      pgtype.Text
+	Checks         []string
+	Links          []byte
+	SarifHash      []byte
+}
+
+func (q *Queries) InsertDocsReport(ctx context.Context, arg InsertDocsReportParams) error {
+	_, err := q.db.Exec(ctx, insertDocsReport,
+		arg.OrganizationID,
+		arg.ReportID,
+		arg.RootID,
+		arg.PathPrefix,
+		arg.OwnerRule,
+		arg.Checks,
+		arg.Links,
+		arg.SarifHash,
+	)
+	return err
+}
+
+const insertDocsReportDocuments = `-- name: InsertDocsReportDocuments :execrows
+WITH input AS (
+    SELECT (doc.value->>'document_id')::uuid AS document_id, doc.value->>'path' AS path,
+        doc.value->>'version_ref' AS version_ref, doc.value->>'format' AS format, doc.value->>'title' AS title,
+        doc.value->>'owner' AS owner, doc.value->>'acl_state' AS acl_state, (doc.value->>'spec_valid')::boolean AS spec_valid,
+        decode(doc.value->>'content_hash', 'base64') AS hash
+    FROM jsonb_array_elements($3::jsonb) AS doc(value)
+), inserted AS (
+    INSERT INTO normalize.document_version
+        (organization_id, document_id, area_id, known_seq, version_ref, doc_format, path, title, content_hash, owner, acl_state)
+    SELECT $1, document_id, $4, $5,
+        version_ref, format, path, title, hash, owner, acl_state
+    FROM input
+    ON CONFLICT (organization_id, document_id, version_ref) DO NOTHING
+    RETURNING id, document_id
+), versions AS (
+    SELECT id, document_id FROM inserted
+    UNION ALL
+    SELECT v.id, v.document_id FROM normalize.document_version v
+    JOIN input i ON i.document_id = v.document_id AND i.version_ref = v.version_ref
+        AND i.hash = v.content_hash AND i.format = v.doc_format
+    WHERE v.organization_id = $1 AND v.area_id = $4
+)
+INSERT INTO normalize.docs_report_document (organization_id, report_id, document_version_id, spec_valid)
+SELECT $1, $2, v.id, i.spec_valid
+FROM versions v JOIN input i USING (document_id)
+`
+
+type InsertDocsReportDocumentsParams struct {
+	OrganizationID uuid.UUID
+	ReportID       uuid.UUID
+	Documents      []byte
+	AreaID         uuid.UUID
+	KnownSeq       int64
+}
+
+func (q *Queries) InsertDocsReportDocuments(ctx context.Context, arg InsertDocsReportDocumentsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertDocsReportDocuments,
+		arg.OrganizationID,
+		arg.ReportID,
+		arg.Documents,
+		arg.AreaID,
+		arg.KnownSeq,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertFindings = `-- name: InsertFindings :exec
 INSERT INTO normalize.finding_occurrence (organization_id, report_id, known_seq, native_id, rule_id, finding_kind, path, line_start, line_end,
     package_purl, native_severity, native_confidence, mapped_severity, severity_mapping_version, fingerprint, content_fingerprint, evidence)
@@ -1385,8 +1746,9 @@ func (q *Queries) InsertObjects(ctx context.Context, arg InsertObjectsParams) er
 
 const insertRejectedReport = `-- name: InsertRejectedReport :exec
 INSERT INTO normalize.rejected_report (organization_id, receipt_id, record_no, known_seq, area_id,
-    component_id, report_kind, language, sha, run_id, attempt_id, reason_code)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    component_id, report_kind, language, sha, run_id, attempt_id, reason_code, report_format, producer, mode, profile_id,
+    scope_hash, secret_scope, history_from_sha, history_to_sha)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 ON CONFLICT (organization_id, receipt_id, record_no) DO NOTHING
 `
 
@@ -1403,6 +1765,14 @@ type InsertRejectedReportParams struct {
 	RunID          uuid.NullUUID
 	AttemptID      uuid.NullUUID
 	ReasonCode     string
+	ReportFormat   pgtype.Text
+	Producer       pgtype.Text
+	Mode           pgtype.Text
+	ProfileID      pgtype.Text
+	ScopeHash      []byte
+	SecretScope    pgtype.Text
+	HistoryFromSha pgtype.Text
+	HistoryToSha   pgtype.Text
 }
 
 func (q *Queries) InsertRejectedReport(ctx context.Context, arg InsertRejectedReportParams) error {
@@ -1419,6 +1789,14 @@ func (q *Queries) InsertRejectedReport(ctx context.Context, arg InsertRejectedRe
 		arg.RunID,
 		arg.AttemptID,
 		arg.ReasonCode,
+		arg.ReportFormat,
+		arg.Producer,
+		arg.Mode,
+		arg.ProfileID,
+		arg.ScopeHash,
+		arg.SecretScope,
+		arg.HistoryFromSha,
+		arg.HistoryToSha,
 	)
 	return err
 }
@@ -1427,14 +1805,14 @@ const insertReport = `-- name: InsertReport :one
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
     scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
-    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, dependency_delta)
+    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash, dependency_delta)
 VALUES ($1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11, $12,
     $13, $14, $15, $16, $17,
     $18, $19, $20, $21, $22, $23,
     $24, $25, $26, $27, $28,
     $29, $30, $31, $32, $33,
-    $34, $35, $36)
+    $34, $35, $36, $37, $38)
 RETURNING id
 `
 
@@ -1474,6 +1852,8 @@ type InsertReportParams struct {
 	HistoryTruncated pgtype.Bool
 	RefName          pgtype.Text
 	Language         pgtype.Text
+	DocsRunID        pgtype.Text
+	DocsFileHash     []byte
 	DependencyDelta  pgtype.Text
 }
 
@@ -1514,6 +1894,8 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uui
 		arg.HistoryTruncated,
 		arg.RefName,
 		arg.Language,
+		arg.DocsRunID,
+		arg.DocsFileHash,
 		arg.DependencyDelta,
 	)
 	var id uuid.UUID
@@ -2523,7 +2905,9 @@ SELECT r.id, r.run_id, r.component_id, r.report_kind, COALESCE(r.language, '')::
           WHEN r.history_from_sha <> r.history_to_sha OR r.history_truncated THEN 'diff'
           WHEN r.mode = 'builtin' AND r.profile_id = 'gitleaks-default'
                AND r.history_from_sha IS NOT NULL AND r.scanned_count IS NULL THEN 'diff'
-          ELSE 'head' END)::text AS secret_scope
+          ELSE 'head' END)::text AS secret_scope,
+    r.mode, COALESCE(r.profile_id, '')::text AS profile_id,
+    COALESCE(r.history_from_sha, '')::text AS history_from_sha, COALESCE(r.history_to_sha, '')::text AS history_to_sha
 FROM normalize.report r
 WHERE r.organization_id = $1 AND r.area_id = $2
     AND r.known_seq <= $3
@@ -2532,7 +2916,9 @@ WHERE r.organization_id = $1 AND r.area_id = $2
     AND (NOT $6::boolean OR (r.run_id = ANY($5::uuid[])
         AND (r.attempt_id IS NULL OR r.attempt_id = ANY($7::uuid[]))))
 UNION ALL
-SELECT r.id, r.run_id, r.component_id, r.report_kind, r.language, '', '', '', '', '', '', r.known_seq, r.reason_code, '[]'::jsonb, '', ''
+SELECT r.id, r.run_id, r.component_id, r.report_kind, r.language, COALESCE(r.report_format, ''), COALESCE(r.producer, ''), '',
+    COALESCE(encode(r.scope_hash, 'hex'), ''), '', '', r.known_seq, r.reason_code, '[]'::jsonb, '', COALESCE(r.secret_scope, ''),
+    COALESCE(r.mode, ''), COALESCE(r.profile_id, ''), COALESCE(r.history_from_sha, ''), COALESCE(r.history_to_sha, '')
 FROM normalize.rejected_report r
 WHERE r.organization_id = $1 AND r.area_id = $2
     AND r.known_seq <= $3
@@ -2570,6 +2956,10 @@ type ReadReportEvidenceRow struct {
 	SkippedTargets  []byte
 	DependencyDelta string
 	SecretScope     string
+	Mode            string
+	ProfileID       string
+	HistoryFromSha  string
+	HistoryToSha    string
 }
 
 func (q *Queries) ReadReportEvidence(ctx context.Context, arg ReadReportEvidenceParams) ([]ReadReportEvidenceRow, error) {
@@ -2606,6 +2996,10 @@ func (q *Queries) ReadReportEvidence(ctx context.Context, arg ReadReportEvidence
 			&i.SkippedTargets,
 			&i.DependencyDelta,
 			&i.SecretScope,
+			&i.Mode,
+			&i.ProfileID,
+			&i.HistoryFromSha,
+			&i.HistoryToSha,
 		); err != nil {
 			return nil, err
 		}
@@ -2846,6 +3240,54 @@ func (q *Queries) ReceiptCodeScopes(ctx context.Context, arg ReceiptCodeScopesPa
 			&i.ReportFormat,
 			&i.Producer,
 			&i.ProfileID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const receiptDocumentationRoots = `-- name: ReceiptDocumentationRoots :many
+SELECT DISTINCT r.area_id, d.root_id, d.path_prefix, r.profile_id, r.sha
+FROM normalize.docs_report d
+JOIN normalize.report r ON r.organization_id = d.organization_id AND r.id = d.report_id
+WHERE r.organization_id = $1 AND r.receipt_id = $2
+    AND r.sha IS NOT NULL AND r.profile_id IS NOT NULL
+ORDER BY r.area_id, d.root_id, d.path_prefix, r.profile_id, r.sha
+`
+
+type ReceiptDocumentationRootsParams struct {
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+}
+
+type ReceiptDocumentationRootsRow struct {
+	AreaID     uuid.UUID
+	RootID     uuid.NullUUID
+	PathPrefix string
+	ProfileID  pgtype.Text
+	Sha        pgtype.Text
+}
+
+func (q *Queries) ReceiptDocumentationRoots(ctx context.Context, arg ReceiptDocumentationRootsParams) ([]ReceiptDocumentationRootsRow, error) {
+	rows, err := q.db.Query(ctx, receiptDocumentationRoots, arg.OrganizationID, arg.ReceiptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReceiptDocumentationRootsRow
+	for rows.Next() {
+		var i ReceiptDocumentationRootsRow
+		if err := rows.Scan(
+			&i.AreaID,
+			&i.RootID,
+			&i.PathPrefix,
+			&i.ProfileID,
+			&i.Sha,
 		); err != nil {
 			return nil, err
 		}

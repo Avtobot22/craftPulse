@@ -36,6 +36,7 @@ type reportCandidate struct {
 	tests     []parsedTest
 	coverage  []entity.CoverageFact
 	code      *entity.CodeFacts
+	docs      *entity.DocsReportFacts
 	tool      *envelope.ScanToolRun
 	rejected  string
 }
@@ -59,6 +60,9 @@ func (in *input) reportFile(rec *envelope.Record, b baseFact, scan *envelope.Sca
 	c.parser, _ = parserOf(c.report.Format)
 	c.paths.kind = c.report.Kind
 	c.paths.sha = c.report.SHA
+	if in.area.Kind == entity.ObjectRepository {
+		c.paths.container = in.area.NativeID
+	}
 	tool := scanTool(scan, rec.File.Path)
 	if tool == nil {
 		if p.ExitClass != nil {
@@ -73,6 +77,14 @@ func (in *input) reportFile(rec *envelope.Record, b baseFact, scan *envelope.Sca
 		}
 		c.run, c.attempt = in.ciObjects(job, p.RunNativeId, p.AttemptNativeId)
 		return c, nil
+	}
+	if c.report.Kind == entity.AnalysisDocs || c.report.Kind == entity.AnalysisOpenAPI {
+		c.report.DocsRunID = tool.Id
+		hash, err := hexHash(&rec.File.Sha256)
+		if err != nil {
+			return nil, err
+		}
+		c.report.DocsFileHash = hash
 	}
 	return c, in.provenance(c, tool)
 }
@@ -217,9 +229,13 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 			}
 			c.findings, c.tests, c.coverage = parsed.findings, parsed.tests, coverage
 			c.code = parsed.scopedCodeFacts(c.tool)
+			c.docsProvenance(parsed)
 			c.report.DependencyDelta = parsed.dependencyDelta
 			c.report.SkippedTargets = append(c.report.SkippedTargets, parsed.excluded...)
 			c.report.SchemaVersion, c.report.ParserVersion = parsed.formatVersion, first.parser.version
+			if c.report.Kind == entity.AnalysisDocs && c.report.Format == "sarif" {
+				c.report.ParserVersion = _docsSARIFParserVersion
+			}
 		}
 		return nil
 	})
@@ -359,7 +375,15 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 			id := w.objects[*c.attempt].ID
 			r.AttemptID = &id
 		}
-		rows := entity.ReportRows{Findings: c.findings, Tests: w.executions(c, r.AttemptID, attempts), Coverage: c.coverage, Code: c.code}
+		if c.docs != nil {
+			for i := range c.docs.Documents {
+				doc := &c.docs.Documents[i]
+				doc.DocumentID = w.objects[in.documentKey(doc.Path)].ID
+			}
+		}
+		rows := entity.ReportRows{
+			Findings: c.findings, Tests: w.executions(c, r.AttemptID, attempts), Coverage: c.coverage, Code: c.code, Docs: c.docs,
+		}
 		if err := w.u.d.Repo.InsertReport(ctx, w.org, &r, rows); err != nil {
 			return err
 		}

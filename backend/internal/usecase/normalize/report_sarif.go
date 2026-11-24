@@ -45,9 +45,10 @@ type sarifResult struct {
 		ID    string `json:"id"`
 		Index *int   `json:"index"`
 	} `json:"rule"`
-	Kind      string `json:"kind"`
-	Level     string `json:"level"`
-	GUID      string `json:"guid"`
+	Message   sarifText `json:"message"`
+	Kind      string    `json:"kind"`
+	Level     string    `json:"level"`
+	GUID      string    `json:"guid"`
 	Locations []struct {
 		PhysicalLocation *struct {
 			ArtifactLocation *struct {
@@ -249,6 +250,9 @@ func (run *sarifRun) findings(kind string, out *[]entity.FindingOccurrence) erro
 			ev = evidence{Tool: tool}
 			ev.Suppressed = len(res.Suppressions) > 0
 		}
+		if kind == entity.AnalysisDocs {
+			ev.Link = docsLinkEvidence(run.tool.Driver.Name, &f, res)
+		}
 		if f.Evidence, err = ev.encode(); err != nil {
 			return err
 		}
@@ -256,7 +260,11 @@ func (run *sarifRun) findings(kind string, out *[]entity.FindingOccurrence) erro
 			f.Fingerprint = fingerprint("gitleaks/sarif/1", f.RuleID, f.Path, lineText(f.LineStart), lineText(f.LineEnd),
 				strconv.Itoa(startColumn), strconv.Itoa(endColumn), commitHash(res.PartialFingerprints["commitSha"]))
 		} else {
-			f.Fingerprint = sarifFingerprint(kind, &f, res.PartialFingerprints)
+			if ev.Link != nil {
+				f.Fingerprint = fingerprint("docs-link/1", kind, f.RuleID, f.Path, ev.Link.TargetPath, ev.Link.Anchor)
+			} else {
+				f.Fingerprint = sarifFingerprint(kind, &f, res.PartialFingerprints)
+			}
 			f.ContentFingerprint = sarifContent(kind, f.RuleID, res.Fingerprints, res.PartialFingerprints)
 		}
 		*out = append(*out, f)

@@ -61,8 +61,10 @@ type ScanReport struct {
 	History         *ScanHistory
 	DependencyDelta string
 	// RefName is the branch or tag of the run and Language the language of the check; empty when unknown.
-	RefName  string
-	Language string
+	RefName      string
+	Language     string
+	DocsRunID    string
+	DocsFileHash []byte
 }
 
 type SkippedTarget struct {
@@ -122,6 +124,7 @@ type ReportRows struct {
 	Tests    []TestExecution
 	Coverage []CoverageFact
 	Code     *CodeFacts
+	Docs     *DocsReportFacts
 }
 
 // TestExecution is a test case of a JUnit report in the configuration of its attempt (DR-006): the same case in two

@@ -47,9 +47,38 @@ func (u *UseCase) readSecurityReports(ctx context.Context, org entity.ID, scope 
 	if err != nil {
 		return nil, err
 	}
-	return slices.DeleteFunc(reports, func(r entity.ReportEvidence) bool {
+	reports = slices.DeleteFunc(reports, func(r entity.ReportEvidence) bool {
 		return !sameReportComponent(r.ComponentID, scope.ComponentID) || !securityReportKind(r.Kind)
-	}), nil
+	})
+	return currentSecurityReports(reports), nil
+}
+
+// currentSecurityReports receives observations in descending knowledge order from ReadReportEvidence.
+func currentSecurityReports(reports []entity.ReportEvidence) []entity.ReportEvidence {
+	type stream struct {
+		kind, language, format, producer, mode, profile, scope string
+		secretScope, historyFrom, historyTo                    string
+	}
+	selected := make(map[stream]bool, len(reports))
+	return slices.DeleteFunc(reports, func(r entity.ReportEvidence) bool {
+		if r.Producer == "" || r.ScopeHash == "" {
+			return false
+		}
+		key := stream{
+			kind: r.Kind, language: r.Language, format: r.Format, producer: r.Producer,
+			mode: r.Mode, profile: r.ProfileID, scope: r.ScopeHash, secretScope: r.SecretScope,
+		}
+		if r.SecretScope == entity.SecretScopeDiff {
+			key.historyFrom, key.historyTo = r.HistoryFromSHA, r.HistoryToSHA
+		}
+		accepted, found := selected[key]
+		if !found || (!accepted && r.RejectedReason == "") {
+			// An invalid replacement does not invalidate the last accepted report.
+			selected[key] = r.RejectedReason == ""
+			return false
+		}
+		return true
+	})
 }
 
 // ReceiptSecurityScopes lists every security scope affected by the normalized receipt.
