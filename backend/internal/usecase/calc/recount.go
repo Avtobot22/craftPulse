@@ -46,6 +46,9 @@ func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, com
 	if !job.DocsReceiptID.IsZero() {
 		return u.recountDocumentation(ctx, job, complete)
 	}
+	if !job.SecurityReceiptID.IsZero() {
+		return u.recountSecurity(ctx, job, complete)
+	}
 	org := job.OrganizationID
 	var connectionAreas []entity.ID
 	if u.d.Activity != nil && (!job.TeamID.IsZero() || !job.ConnectionID.IsZero()) {
@@ -71,7 +74,7 @@ func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, com
 	var plans []due
 	for i := range all {
 		s := &all[i]
-		if s.MetricSet == entity.MetricSetCode || s.MetricSet == entity.MetricSetDocumentation {
+		if s.MetricSet == entity.MetricSetCode || s.MetricSet == entity.MetricSetDocumentation || s.MetricSet == entity.MetricSetSecurity {
 			continue
 		}
 		if !job.ConnectionID.IsZero() && s.MetricSet != entity.MetricSetActivity {
@@ -139,7 +142,7 @@ func (u *UseCase) RunExtend(ctx context.Context, job entity.CalcExtendJob, compl
 	var plans []due
 	for i := range all {
 		s := &all[i]
-		if s.MetricSet == entity.MetricSetCode || s.MetricSet == entity.MetricSetDocumentation {
+		if s.MetricSet == entity.MetricSetCode || s.MetricSet == entity.MetricSetDocumentation || s.MetricSet == entity.MetricSetSecurity {
 			continue
 		}
 		scope, ok, err := scopeOf(s.Scope)

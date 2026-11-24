@@ -7,16 +7,17 @@ const KindNormalizeBatch = "normalize.batch"
 // ResolvedNo is the record a conflict resolution accepted, which may replace the version of the same source
 // revision. Reports tells that a part gave reports, so change identifies them after the last part.
 type NormalizeBatchJob struct {
-	OrganizationID ID          `json:"organization_id"`
-	ReceiptID      ID          `json:"receipt_id"`
-	AfterNo        int         `json:"after_no,omitempty"`
-	Areas          []ID        `json:"areas,omitempty"`
-	ObservedVia    ObservedVia `json:"observed_via,omitempty"`
-	ResolvedNo     int         `json:"resolved_no,omitempty"`
-	Reports        bool        `json:"reports,omitempty"`
-	CodeReports    bool        `json:"code_reports,omitempty"`
-	DocsReports    bool        `json:"docs_reports,omitempty"`
-	CorrelationID  ID          `json:"correlation_id"`
+	OrganizationID  ID          `json:"organization_id"`
+	ReceiptID       ID          `json:"receipt_id"`
+	AfterNo         int         `json:"after_no,omitempty"`
+	Areas           []ID        `json:"areas,omitempty"`
+	ObservedVia     ObservedVia `json:"observed_via,omitempty"`
+	ResolvedNo      int         `json:"resolved_no,omitempty"`
+	Reports         bool        `json:"reports,omitempty"`
+	CodeReports     bool        `json:"code_reports,omitempty"`
+	DocsReports     bool        `json:"docs_reports,omitempty"`
+	SecurityReports bool        `json:"security_reports,omitempty"`
+	CorrelationID   ID          `json:"correlation_id"`
 }
 
 func (NormalizeBatchJob) Kind() string { return KindNormalizeBatch }

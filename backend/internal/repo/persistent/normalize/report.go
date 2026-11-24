@@ -56,6 +56,7 @@ func (r *Repo) InsertReport(ctx context.Context, orgID entity.ID, rep *entity.Sc
 		AttemptID: nullID(rep.AttemptID), StartedAt: tstz(rep.StartedAt), FinishedAt: tstz(rep.FinishedAt), ExitClass: rep.ExitClass,
 		Completeness: rep.Completeness, SkippedTargets: skipped, RefName: text(rep.RefName), Language: text(rep.Language),
 		DocsRunID: text(rep.DocsRunID), DocsFileHash: rep.DocsFileHash,
+		DependencyDelta: text(rep.DependencyDelta),
 	}
 	if p.ScannedCount, err = int4(rep.ScannedCount); err != nil {
 		return err
@@ -97,6 +98,7 @@ func (r *Repo) insertFindings(ctx context.Context, orgID entity.ID, id uuid.UUID
 		PackagePurls: make([]string, len(findings)), NativeSeverities: make([]string, len(findings)),
 		NativeConfidences: make([]string, len(findings)), Fingerprints: make([][]byte, len(findings)), Evidences: make([]string, len(findings)),
 		ContentFingerprints: make([][]byte, len(findings)),
+		MappedSeverities:    make([]string, len(findings)), SeverityMappingVersions: make([]int32, len(findings)),
 	}
 	for i := range findings {
 		o := &findings[i]
@@ -108,6 +110,8 @@ func (r *Repo) insertFindings(ctx context.Context, orgID entity.ID, id uuid.UUID
 		}
 		f.NativeIds[i], f.RuleIds[i], f.FindingKinds[i], f.Paths[i] = o.NativeID, o.RuleID, o.Kind, o.Path
 		f.PackagePurls[i], f.NativeSeverities[i], f.NativeConfidences[i] = o.PackagePURL, o.NativeSeverity, o.NativeConfidence
+		f.MappedSeverities[i] = o.MappedSeverity
+		f.SeverityMappingVersions[i] = int32(o.SeverityMappingVersion) //nolint:gosec // set by the parser's mapping
 		f.Fingerprints[i], f.Evidences[i] = o.Fingerprint, string(o.Evidence)
 		f.ContentFingerprints[i] = o.ContentFingerprint
 		if f.ContentFingerprints[i] == nil {

@@ -43,6 +43,8 @@ type reportSpec struct {
 	profileID, language                      string
 	mode                                     envelope.ScanToolRunMode
 	excludedTargets                          *[]envelope.ScanExcludedTarget
+	history                                  *envelope.ScanHistory
+	omitScannedCount                         bool
 }
 
 func reportFixture(t *testing.T, name string) []byte {
@@ -123,6 +125,12 @@ func reportPackageOf(t *testing.T, instance, sha string, specs ...reportSpec) []
 		tool.ExcludedTargets = s.excludedTargets
 		if s.completeness == "complete" {
 			tool.SkippedTargets, tool.SkippedCount, tool.History = []envelope.ScanSkippedTarget{}, ptr(0), nil
+		}
+		if s.history != nil {
+			tool.History = s.history
+		}
+		if s.omitScannedCount {
+			tool.ScannedCount = nil
 		}
 		scan.Tools = append(scan.Tools, tool)
 		payload := envelope.ReportFileV1{
@@ -225,7 +233,7 @@ func TestNormalizeReport_SARIFWithProvenanceAndRepeats(t *testing.T) {
 		assert.Equal(t, "builtin", r.Mode)
 		assert.Equal(t, "sarif", r.Format)
 		assert.Equal(t, "2.1.0", r.SchemaVersion, "the version the file declares")
-		assert.Equal(t, "sarif-2.1.0/1", r.ParserVersion)
+		assert.Equal(t, "sarif-2.1.0/2", r.ParserVersion)
 		assert.Equal(t, s.producer, *r.Producer)
 		assert.Equal(t, s.version, *r.ProducerVersion)
 		assert.Equal(t, "go-default", *r.ProfileID)
@@ -262,8 +270,11 @@ func TestNormalizeReport_SARIFWithProvenanceAndRepeats(t *testing.T) {
 	secrets := e.findings(t, rc.ID, "secrets")
 	require.Len(t, secrets, 1)
 	assert.Equal(t, []any{"aws-access-token", "secret", "config.env", 3}, []any{secrets[0].rule, secrets[0].kind, secrets[0].path, secrets[0].start})
+	assert.Equal(t, ptr("MEDIUM"), sast[0].confidence)
+	for _, f := range append(code, secrets...) {
+		assert.Nil(t, f.confidence)
+	}
 	for _, f := range append(append(code, sast...), secrets...) {
-		assert.Nil(t, f.confidence, "the tools name no confidence, so it stays unknown")
 		for _, banned := range []string{"demo-secret-snippet", "SELECT * FROM users", "has detected secret"} {
 			assert.NotContains(t, f.evidence, banned, "evidence keeps no code and no secret")
 		}
@@ -347,7 +358,7 @@ func TestNormalizeReport_GitLabSecurityKinds(t *testing.T) {
 	for _, s := range specs {
 		r := e.report(t, rc.ID, s.kind)
 		assert.Equal(t, "15.2.1", r.SchemaVersion)
-		assert.Equal(t, "gitlab-security-15/1", r.ParserVersion)
+		assert.Equal(t, "gitlab-security-15/2", r.ParserVersion)
 	}
 	sast := e.findings(t, rc.ID, "sast")
 	require.Len(t, sast, 2)
@@ -458,7 +469,7 @@ func TestNormalizeReport_AdapterArtifactWithoutScanManifest(t *testing.T) {
 	assert.Equal(t, objectID(t, e, "ci_attempt", attempt), *r.AttemptID)
 	assert.Equal(t, "findings", r.ExitClass)
 	assert.Equal(t, "complete", r.Completeness)
-	assert.Equal(t, "gitlab-security-15/1", r.ParserVersion)
+	assert.Equal(t, "gitlab-security-15/2", r.ParserVersion)
 	assert.Len(t, e.findings(t, rc.ID, "sast"), 2)
 	assert.Equal(t, 1, e.n(t, "SELECT count(*) FROM normalize.report WHERE receipt_id = $1 AND ref_name = 'refs/merge-requests/7/head' AND language IS NULL",
 		uuid.UUID(rc.ID)), "an artifact of the adapter takes the branch of its run")

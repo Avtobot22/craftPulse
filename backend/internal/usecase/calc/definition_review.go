@@ -75,6 +75,8 @@ func definitionsOf(set string) []Definition {
 		return _codeDefinitions
 	case entity.MetricSetDocumentation:
 		return _documentationDefinitions
+	case entity.MetricSetSecurity:
+		return _securityDefinitions
 	}
 	return _definitions
 }
@@ -87,5 +89,5 @@ func SetDefinitions(set string) []Definition {
 // registry is every definition in force.
 func registry() []Definition {
 	return slices.Concat(_definitions, _reviewDefinitions, _eventDefinitions, _linkDefinitions, _ciDefinitions, _activityDefinitions,
-		_codeDefinitions, _testCoverageDefinitions, _crossDefinitions, _documentationDefinitions, _findingDefinitions)
+		_codeDefinitions, _testCoverageDefinitions, _crossDefinitions, _documentationDefinitions, _findingDefinitions, _securityDefinitions)
 }

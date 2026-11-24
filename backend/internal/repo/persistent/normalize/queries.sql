@@ -520,26 +520,27 @@ ORDER BY f.finding_kind, f.path, f.line_start, f.rule_id, f.id;
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
     scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
-    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash)
+    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash, dependency_delta)
 VALUES (sqlc.arg(organization_id), sqlc.arg(receipt_id), sqlc.arg(record_no), sqlc.arg(known_seq), sqlc.arg(area_id), sqlc.narg(component_id),
     sqlc.arg(report_kind), sqlc.arg(mode), sqlc.narg(producer), sqlc.narg(producer_version), sqlc.arg(report_format), sqlc.arg(schema_version),
     sqlc.arg(parser_version), sqlc.narg(profile_id), sqlc.narg(rules_hash), sqlc.narg(config_hash), sqlc.narg(db_version),
     sqlc.narg(db_published_at), sqlc.narg(scope_hash), sqlc.narg(sha), sqlc.narg(artifact_digest), sqlc.narg(run_id), sqlc.narg(attempt_id),
     sqlc.narg(started_at), sqlc.narg(finished_at), sqlc.arg(exit_class), sqlc.arg(completeness), sqlc.narg(scanned_count),
     sqlc.narg(skipped_count), sqlc.arg(skipped_targets), sqlc.narg(history_from_sha), sqlc.narg(history_to_sha), sqlc.narg(history_truncated),
-    sqlc.narg(ref_name), sqlc.narg(language), sqlc.narg(docs_run_id), sqlc.narg(docs_file_hash))
+    sqlc.narg(ref_name), sqlc.narg(language), sqlc.narg(docs_run_id), sqlc.narg(docs_file_hash), sqlc.narg(dependency_delta))
 RETURNING id;
 
 -- An empty text and a zero line stand for NULL: arrays of the statement carry no NULL elements. Set-returning
 -- functions of one select list run in step, so the arrays give one row per finding.
 -- name: InsertFindings :exec
 INSERT INTO normalize.finding_occurrence (organization_id, report_id, known_seq, native_id, rule_id, finding_kind, path, line_start, line_end,
-    package_purl, native_severity, native_confidence, fingerprint, content_fingerprint, evidence)
+    package_purl, native_severity, native_confidence, mapped_severity, severity_mapping_version, fingerprint, content_fingerprint, evidence)
 SELECT sqlc.arg(organization_id), sqlc.arg(report_id), sqlc.arg(known_seq), NULLIF(unnest(sqlc.arg(native_ids)::text[]), ''),
     unnest(sqlc.arg(rule_ids)::text[]), unnest(sqlc.arg(finding_kinds)::text[]), NULLIF(unnest(sqlc.arg(paths)::text[]), ''),
     NULLIF(unnest(sqlc.arg(line_starts)::integer[]), 0), NULLIF(unnest(sqlc.arg(line_ends)::integer[]), 0),
     NULLIF(unnest(sqlc.arg(package_purls)::text[]), ''), NULLIF(unnest(sqlc.arg(native_severities)::text[]), ''),
-    NULLIF(unnest(sqlc.arg(native_confidences)::text[]), ''), unnest(sqlc.arg(fingerprints)::bytea[]),
+    NULLIF(unnest(sqlc.arg(native_confidences)::text[]), ''), NULLIF(unnest(sqlc.arg(mapped_severities)::text[]), ''),
+    NULLIF(unnest(sqlc.arg(severity_mapping_versions)::integer[]), 0), unnest(sqlc.arg(fingerprints)::bytea[]),
     NULLIF(unnest(sqlc.arg(content_fingerprints)::bytea[]), ''::bytea), NULLIF(unnest(sqlc.arg(evidences)::text[]), '')::jsonb;
 
 -- name: EnsureTestCases :exec
@@ -639,15 +640,24 @@ WHERE organization_id = sqlc.arg(organization_id) AND run_id = ANY (sqlc.arg(run
 
 -- name: InsertRejectedReport :exec
 INSERT INTO normalize.rejected_report (organization_id, receipt_id, record_no, known_seq, area_id,
-    component_id, report_kind, language, sha, run_id, attempt_id, reason_code)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    component_id, report_kind, language, sha, run_id, attempt_id, reason_code, report_format, producer, mode, profile_id,
+    scope_hash, secret_scope, history_from_sha, history_to_sha)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 ON CONFLICT (organization_id, receipt_id, record_no) DO NOTHING;
 
 -- name: ReadReportEvidence :many
 SELECT r.id, r.run_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language,
     r.report_format, COALESCE(r.producer, '')::text AS producer, COALESCE(r.producer_version, '')::text AS producer_version,
     COALESCE(encode(r.scope_hash, 'hex'), '')::text AS scope_hash,
-    r.exit_class, r.completeness, r.known_seq, ''::text AS rejected_reason, r.skipped_targets
+    r.exit_class, r.completeness, r.known_seq, ''::text AS rejected_reason, r.skipped_targets,
+    COALESCE(r.dependency_delta, '')::text AS dependency_delta,
+    (CASE WHEN r.report_kind <> 'secrets' THEN ''
+          WHEN r.history_from_sha <> r.history_to_sha OR r.history_truncated THEN 'diff'
+          WHEN r.mode = 'builtin' AND r.profile_id = 'gitleaks-default'
+               AND r.history_from_sha IS NOT NULL AND r.scanned_count IS NULL THEN 'diff'
+          ELSE 'head' END)::text AS secret_scope,
+    r.mode, COALESCE(r.profile_id, '')::text AS profile_id,
+    COALESCE(r.history_from_sha, '')::text AS history_from_sha, COALESCE(r.history_to_sha, '')::text AS history_to_sha
 FROM normalize.report r
 WHERE r.organization_id = sqlc.arg(organization_id) AND r.area_id = sqlc.arg(area_id)
     AND r.known_seq <= sqlc.arg(known_seq)
@@ -656,7 +666,9 @@ WHERE r.organization_id = sqlc.arg(organization_id) AND r.area_id = sqlc.arg(are
     AND (NOT sqlc.arg(pipeline)::boolean OR (r.run_id = ANY(sqlc.arg(run_ids)::uuid[])
         AND (r.attempt_id IS NULL OR r.attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[]))))
 UNION ALL
-SELECT r.id, r.run_id, r.component_id, r.report_kind, r.language, '', '', '', '', '', '', r.known_seq, r.reason_code, '[]'::jsonb
+SELECT r.id, r.run_id, r.component_id, r.report_kind, r.language, COALESCE(r.report_format, ''), COALESCE(r.producer, ''), '',
+    COALESCE(encode(r.scope_hash, 'hex'), ''), '', '', r.known_seq, r.reason_code, '[]'::jsonb, '', COALESCE(r.secret_scope, ''),
+    COALESCE(r.mode, ''), COALESCE(r.profile_id, ''), COALESCE(r.history_from_sha, ''), COALESCE(r.history_to_sha, '')
 FROM normalize.rejected_report r
 WHERE r.organization_id = sqlc.arg(organization_id) AND r.area_id = sqlc.arg(area_id)
     AND r.known_seq <= sqlc.arg(known_seq)
@@ -665,6 +677,27 @@ WHERE r.organization_id = sqlc.arg(organization_id) AND r.area_id = sqlc.arg(are
     AND (NOT sqlc.arg(pipeline)::boolean OR (r.run_id = ANY(sqlc.arg(run_ids)::uuid[])
         AND (r.attempt_id IS NULL OR r.attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[]))))
 ORDER BY known_seq DESC, id DESC;
+
+-- name: ReadSecurityFindings :many
+SELECT id, report_id, rule_id, finding_kind, COALESCE(path, '')::text AS path, line_start, line_end,
+    COALESCE(package_purl, '')::text AS package_purl, COALESCE(native_severity, '')::text AS native_severity,
+    COALESCE(native_confidence, '')::text AS native_confidence, COALESCE(mapped_severity, '')::text AS mapped_severity,
+    COALESCE(severity_mapping_version, 0)::integer AS severity_mapping_version, fingerprint, evidence
+FROM normalize.finding_occurrence
+WHERE organization_id = sqlc.arg(organization_id) AND report_id = ANY(sqlc.arg(report_ids)::uuid[])
+ORDER BY report_id, fingerprint, id;
+
+-- name: ReceiptSecurityScopes :many
+SELECT r.area_id, r.component_id, COALESCE(r.sha, '')::text AS sha
+FROM normalize.report r
+WHERE r.organization_id = sqlc.arg(organization_id) AND r.receipt_id = sqlc.arg(receipt_id) AND r.sha IS NOT NULL
+    AND r.report_kind IN ('sast', 'sca', 'iac', 'secrets')
+UNION
+SELECT r.area_id, r.component_id, COALESCE(r.sha, '')::text AS sha
+FROM normalize.rejected_report r
+WHERE r.organization_id = sqlc.arg(organization_id) AND r.receipt_id = sqlc.arg(receipt_id) AND r.sha IS NOT NULL
+    AND r.report_kind IN ('sast', 'sca', 'iac', 'secrets')
+ORDER BY area_id, component_id, sha;
 
 -- Re-uploads of the same execution replace its earlier observation. Without a run or attempt there is
 -- no identity across reports. Apply the outcome filter after choosing the current observation.

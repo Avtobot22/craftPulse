@@ -31,7 +31,7 @@ type documentationSeriesScope struct {
 // DocumentationSeries finds or creates a scope at one exact Git commit.
 // A zero root ID represents a service without a selected confirmed root.
 func (u *UseCase) DocumentationSeries(ctx context.Context, org entity.ID, scope entity.DocumentationScope) (entity.CalcSeries, error) {
-	if scope.ServiceID.IsZero() || scope.RepositoryID.IsZero() || !_codeSHA.MatchString(scope.SHA) {
+	if scope.ServiceID.IsZero() || scope.RepositoryID.IsZero() || !_reportSHA.MatchString(scope.SHA) {
 		return entity.CalcSeries{}, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/scope", Code: entity.FieldNotAllowedValue}}}
 	}
 	raw, err := json.Marshal(documentationSeriesScope{Kind: _scopeDocumentation, Documentation: scope})

@@ -1657,31 +1657,34 @@ func (q *Queries) InsertDocsReportDocuments(ctx context.Context, arg InsertDocsR
 
 const insertFindings = `-- name: InsertFindings :exec
 INSERT INTO normalize.finding_occurrence (organization_id, report_id, known_seq, native_id, rule_id, finding_kind, path, line_start, line_end,
-    package_purl, native_severity, native_confidence, fingerprint, content_fingerprint, evidence)
+    package_purl, native_severity, native_confidence, mapped_severity, severity_mapping_version, fingerprint, content_fingerprint, evidence)
 SELECT $1, $2, $3, NULLIF(unnest($4::text[]), ''),
     unnest($5::text[]), unnest($6::text[]), NULLIF(unnest($7::text[]), ''),
     NULLIF(unnest($8::integer[]), 0), NULLIF(unnest($9::integer[]), 0),
     NULLIF(unnest($10::text[]), ''), NULLIF(unnest($11::text[]), ''),
-    NULLIF(unnest($12::text[]), ''), unnest($13::bytea[]),
-    NULLIF(unnest($14::bytea[]), ''::bytea), NULLIF(unnest($15::text[]), '')::jsonb
+    NULLIF(unnest($12::text[]), ''), NULLIF(unnest($13::text[]), ''),
+    NULLIF(unnest($14::integer[]), 0), unnest($15::bytea[]),
+    NULLIF(unnest($16::bytea[]), ''::bytea), NULLIF(unnest($17::text[]), '')::jsonb
 `
 
 type InsertFindingsParams struct {
-	OrganizationID      uuid.UUID
-	ReportID            uuid.UUID
-	KnownSeq            int64
-	NativeIds           []string
-	RuleIds             []string
-	FindingKinds        []string
-	Paths               []string
-	LineStarts          []int32
-	LineEnds            []int32
-	PackagePurls        []string
-	NativeSeverities    []string
-	NativeConfidences   []string
-	Fingerprints        [][]byte
-	ContentFingerprints [][]byte
-	Evidences           []string
+	OrganizationID          uuid.UUID
+	ReportID                uuid.UUID
+	KnownSeq                int64
+	NativeIds               []string
+	RuleIds                 []string
+	FindingKinds            []string
+	Paths                   []string
+	LineStarts              []int32
+	LineEnds                []int32
+	PackagePurls            []string
+	NativeSeverities        []string
+	NativeConfidences       []string
+	MappedSeverities        []string
+	SeverityMappingVersions []int32
+	Fingerprints            [][]byte
+	ContentFingerprints     [][]byte
+	Evidences               []string
 }
 
 // An empty text and a zero line stand for NULL: arrays of the statement carry no NULL elements. Set-returning
@@ -1700,6 +1703,8 @@ func (q *Queries) InsertFindings(ctx context.Context, arg InsertFindingsParams) 
 		arg.PackagePurls,
 		arg.NativeSeverities,
 		arg.NativeConfidences,
+		arg.MappedSeverities,
+		arg.SeverityMappingVersions,
 		arg.Fingerprints,
 		arg.ContentFingerprints,
 		arg.Evidences,
@@ -1775,8 +1780,9 @@ func (q *Queries) InsertObjects(ctx context.Context, arg InsertObjectsParams) er
 
 const insertRejectedReport = `-- name: InsertRejectedReport :exec
 INSERT INTO normalize.rejected_report (organization_id, receipt_id, record_no, known_seq, area_id,
-    component_id, report_kind, language, sha, run_id, attempt_id, reason_code)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    component_id, report_kind, language, sha, run_id, attempt_id, reason_code, report_format, producer, mode, profile_id,
+    scope_hash, secret_scope, history_from_sha, history_to_sha)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 ON CONFLICT (organization_id, receipt_id, record_no) DO NOTHING
 `
 
@@ -1793,6 +1799,14 @@ type InsertRejectedReportParams struct {
 	RunID          uuid.NullUUID
 	AttemptID      uuid.NullUUID
 	ReasonCode     string
+	ReportFormat   pgtype.Text
+	Producer       pgtype.Text
+	Mode           pgtype.Text
+	ProfileID      pgtype.Text
+	ScopeHash      []byte
+	SecretScope    pgtype.Text
+	HistoryFromSha pgtype.Text
+	HistoryToSha   pgtype.Text
 }
 
 func (q *Queries) InsertRejectedReport(ctx context.Context, arg InsertRejectedReportParams) error {
@@ -1809,6 +1823,14 @@ func (q *Queries) InsertRejectedReport(ctx context.Context, arg InsertRejectedRe
 		arg.RunID,
 		arg.AttemptID,
 		arg.ReasonCode,
+		arg.ReportFormat,
+		arg.Producer,
+		arg.Mode,
+		arg.ProfileID,
+		arg.ScopeHash,
+		arg.SecretScope,
+		arg.HistoryFromSha,
+		arg.HistoryToSha,
 	)
 	return err
 }
@@ -1817,14 +1839,14 @@ const insertReport = `-- name: InsertReport :one
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
     scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
-    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash)
+    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash, dependency_delta)
 VALUES ($1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11, $12,
     $13, $14, $15, $16, $17,
     $18, $19, $20, $21, $22, $23,
     $24, $25, $26, $27, $28,
     $29, $30, $31, $32, $33,
-    $34, $35, $36, $37)
+    $34, $35, $36, $37, $38)
 RETURNING id
 `
 
@@ -1866,6 +1888,7 @@ type InsertReportParams struct {
 	Language         pgtype.Text
 	DocsRunID        pgtype.Text
 	DocsFileHash     []byte
+	DependencyDelta  pgtype.Text
 }
 
 func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uuid.UUID, error) {
@@ -1907,6 +1930,7 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uui
 		arg.Language,
 		arg.DocsRunID,
 		arg.DocsFileHash,
+		arg.DependencyDelta,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
@@ -2976,7 +3000,15 @@ const readReportEvidence = `-- name: ReadReportEvidence :many
 SELECT r.id, r.run_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language,
     r.report_format, COALESCE(r.producer, '')::text AS producer, COALESCE(r.producer_version, '')::text AS producer_version,
     COALESCE(encode(r.scope_hash, 'hex'), '')::text AS scope_hash,
-    r.exit_class, r.completeness, r.known_seq, ''::text AS rejected_reason, r.skipped_targets
+    r.exit_class, r.completeness, r.known_seq, ''::text AS rejected_reason, r.skipped_targets,
+    COALESCE(r.dependency_delta, '')::text AS dependency_delta,
+    (CASE WHEN r.report_kind <> 'secrets' THEN ''
+          WHEN r.history_from_sha <> r.history_to_sha OR r.history_truncated THEN 'diff'
+          WHEN r.mode = 'builtin' AND r.profile_id = 'gitleaks-default'
+               AND r.history_from_sha IS NOT NULL AND r.scanned_count IS NULL THEN 'diff'
+          ELSE 'head' END)::text AS secret_scope,
+    r.mode, COALESCE(r.profile_id, '')::text AS profile_id,
+    COALESCE(r.history_from_sha, '')::text AS history_from_sha, COALESCE(r.history_to_sha, '')::text AS history_to_sha
 FROM normalize.report r
 WHERE r.organization_id = $1 AND r.area_id = $2
     AND r.known_seq <= $3
@@ -2985,7 +3017,9 @@ WHERE r.organization_id = $1 AND r.area_id = $2
     AND (NOT $6::boolean OR (r.run_id = ANY($5::uuid[])
         AND (r.attempt_id IS NULL OR r.attempt_id = ANY($7::uuid[]))))
 UNION ALL
-SELECT r.id, r.run_id, r.component_id, r.report_kind, r.language, '', '', '', '', '', '', r.known_seq, r.reason_code, '[]'::jsonb
+SELECT r.id, r.run_id, r.component_id, r.report_kind, r.language, COALESCE(r.report_format, ''), COALESCE(r.producer, ''), '',
+    COALESCE(encode(r.scope_hash, 'hex'), ''), '', '', r.known_seq, r.reason_code, '[]'::jsonb, '', COALESCE(r.secret_scope, ''),
+    COALESCE(r.mode, ''), COALESCE(r.profile_id, ''), COALESCE(r.history_from_sha, ''), COALESCE(r.history_to_sha, '')
 FROM normalize.rejected_report r
 WHERE r.organization_id = $1 AND r.area_id = $2
     AND r.known_seq <= $3
@@ -3021,6 +3055,12 @@ type ReadReportEvidenceRow struct {
 	KnownSeq        int64
 	RejectedReason  string
 	SkippedTargets  []byte
+	DependencyDelta string
+	SecretScope     string
+	Mode            string
+	ProfileID       string
+	HistoryFromSha  string
+	HistoryToSha    string
 }
 
 func (q *Queries) ReadReportEvidence(ctx context.Context, arg ReadReportEvidenceParams) ([]ReadReportEvidenceRow, error) {
@@ -3055,6 +3095,12 @@ func (q *Queries) ReadReportEvidence(ctx context.Context, arg ReadReportEvidence
 			&i.KnownSeq,
 			&i.RejectedReason,
 			&i.SkippedTargets,
+			&i.DependencyDelta,
+			&i.SecretScope,
+			&i.Mode,
+			&i.ProfileID,
+			&i.HistoryFromSha,
+			&i.HistoryToSha,
 		); err != nil {
 			return nil, err
 		}
@@ -3101,6 +3147,73 @@ func (q *Queries) ReadRepositoryVersion(ctx context.Context, arg ReadRepositoryV
 		&i.WebUrl,
 	)
 	return i, err
+}
+
+const readSecurityFindings = `-- name: ReadSecurityFindings :many
+SELECT id, report_id, rule_id, finding_kind, COALESCE(path, '')::text AS path, line_start, line_end,
+    COALESCE(package_purl, '')::text AS package_purl, COALESCE(native_severity, '')::text AS native_severity,
+    COALESCE(native_confidence, '')::text AS native_confidence, COALESCE(mapped_severity, '')::text AS mapped_severity,
+    COALESCE(severity_mapping_version, 0)::integer AS severity_mapping_version, fingerprint, evidence
+FROM normalize.finding_occurrence
+WHERE organization_id = $1 AND report_id = ANY($2::uuid[])
+ORDER BY report_id, fingerprint, id
+`
+
+type ReadSecurityFindingsParams struct {
+	OrganizationID uuid.UUID
+	ReportIds      []uuid.UUID
+}
+
+type ReadSecurityFindingsRow struct {
+	ID                     uuid.UUID
+	ReportID               uuid.UUID
+	RuleID                 string
+	FindingKind            string
+	Path                   string
+	LineStart              pgtype.Int4
+	LineEnd                pgtype.Int4
+	PackagePurl            string
+	NativeSeverity         string
+	NativeConfidence       string
+	MappedSeverity         string
+	SeverityMappingVersion int32
+	Fingerprint            []byte
+	Evidence               []byte
+}
+
+func (q *Queries) ReadSecurityFindings(ctx context.Context, arg ReadSecurityFindingsParams) ([]ReadSecurityFindingsRow, error) {
+	rows, err := q.db.Query(ctx, readSecurityFindings, arg.OrganizationID, arg.ReportIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReadSecurityFindingsRow
+	for rows.Next() {
+		var i ReadSecurityFindingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReportID,
+			&i.RuleID,
+			&i.FindingKind,
+			&i.Path,
+			&i.LineStart,
+			&i.LineEnd,
+			&i.PackagePurl,
+			&i.NativeSeverity,
+			&i.NativeConfidence,
+			&i.MappedSeverity,
+			&i.SeverityMappingVersion,
+			&i.Fingerprint,
+			&i.Evidence,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const readTestExecutions = `-- name: ReadTestExecutions :many
@@ -3346,6 +3459,50 @@ func (q *Queries) ReceiptReports(ctx context.Context, arg ReceiptReportsParams) 
 			&i.Interrupted,
 			&i.DefaultBranch,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const receiptSecurityScopes = `-- name: ReceiptSecurityScopes :many
+SELECT r.area_id, r.component_id, COALESCE(r.sha, '')::text AS sha
+FROM normalize.report r
+WHERE r.organization_id = $1 AND r.receipt_id = $2 AND r.sha IS NOT NULL
+    AND r.report_kind IN ('sast', 'sca', 'iac', 'secrets')
+UNION
+SELECT r.area_id, r.component_id, COALESCE(r.sha, '')::text AS sha
+FROM normalize.rejected_report r
+WHERE r.organization_id = $1 AND r.receipt_id = $2 AND r.sha IS NOT NULL
+    AND r.report_kind IN ('sast', 'sca', 'iac', 'secrets')
+ORDER BY area_id, component_id, sha
+`
+
+type ReceiptSecurityScopesParams struct {
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+}
+
+type ReceiptSecurityScopesRow struct {
+	AreaID      uuid.UUID
+	ComponentID uuid.NullUUID
+	Sha         string
+}
+
+func (q *Queries) ReceiptSecurityScopes(ctx context.Context, arg ReceiptSecurityScopesParams) ([]ReceiptSecurityScopesRow, error) {
+	rows, err := q.db.Query(ctx, receiptSecurityScopes, arg.OrganizationID, arg.ReceiptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReceiptSecurityScopesRow
+	for rows.Next() {
+		var i ReceiptSecurityScopesRow
+		if err := rows.Scan(&i.AreaID, &i.ComponentID, &i.Sha); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

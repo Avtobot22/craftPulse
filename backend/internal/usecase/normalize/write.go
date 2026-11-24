@@ -148,6 +148,7 @@ func (u *UseCase) placeAreas(ctx context.Context, org entity.ID, in *input, obje
 		switch k.Kind {
 		case entity.ObjectTask, entity.ObjectCIAttempt, entity.ObjectCIJob,
 			entity.ObjectCodeFile, entity.ObjectCodeFunction, entity.ObjectCloneGroup, entity.ObjectCodeReport,
+			entity.ObjectSecurityFinding, entity.ObjectAffectedPackage, entity.ObjectSecurityAdvisory,
 			entity.ObjectDocumentationRoot, entity.ObjectDocumentationFinding, entity.ObjectDocumentationReport:
 			continue
 		case entity.ObjectMergeRequest, entity.ObjectCIRun, entity.ObjectDocument:

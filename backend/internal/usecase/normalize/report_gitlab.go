@@ -109,6 +109,7 @@ func gitlabFinding(kind string, v *gitlabVulnerability, tool *toolRef) (entity.F
 		return entity.FindingOccurrence{}, err
 	}
 	f.NativeSeverity = bounded(v.Severity, _maxSeverity)
+	mapSecuritySeverity(&f)
 	f.Path = repoPath(v.Location.File)
 	start, err := lineNumber(v.Location.StartLine)
 	if err != nil {
@@ -131,7 +132,21 @@ func gitlabFinding(kind string, v *gitlabVulnerability, tool *toolRef) (entity.F
 	pkg, version := "", ""
 	if d := v.Location.Dependency; d != nil && d.Package.Name != "" {
 		pkg, version = d.Package.Name, d.Version
-		ev.Package = &packageRef{Name: pkg, Version: version}
+		ev.Package = &entity.DependencyEvidence{Name: pkg, Version: version}
+	}
+	if kind == entity.AnalysisSCA {
+		var advisories []string
+		for _, id := range v.Identifiers {
+			switch id.Type {
+			case "cve", "ghsa", "osv", "gemnasium":
+				if id.Value != "" {
+					advisories = append(advisories, id.Value)
+				}
+			}
+		}
+		if len(advisories) > 0 {
+			ev.Advisory = &entity.AdvisoryEvidence{ID: advisories[0], Aliases: advisories[1:]}
+		}
 	}
 	if f.Evidence, err = ev.encode(); err != nil {
 		return entity.FindingOccurrence{}, err

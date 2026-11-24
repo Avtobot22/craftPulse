@@ -13,7 +13,7 @@ import (
 
 const _scopeCode = "code"
 
-var _codeSHA = regexp.MustCompile("^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+var _reportSHA = regexp.MustCompile("^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 type CodeReports interface {
 	CodeReportAt(ctx context.Context, org entity.ID, scope entity.CodeScope, seq int64) (*entity.CodeReport, error)
@@ -27,7 +27,7 @@ type codeSeriesScope struct {
 
 // CodeSeries finds or creates the series of one code-report stream at an exact commit.
 func (u *UseCase) CodeSeries(ctx context.Context, org entity.ID, scope entity.CodeScope) (entity.CalcSeries, error) {
-	if scope.RepositoryID.IsZero() || !_codeSHA.MatchString(scope.SHA) ||
+	if scope.RepositoryID.IsZero() || !_reportSHA.MatchString(scope.SHA) ||
 		(scope.Format != entity.CodeFormatLizard && scope.Format != entity.CodeFormatJscpd) {
 		return entity.CalcSeries{}, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/scope", Code: entity.FieldNotAllowedValue}}}
 	}

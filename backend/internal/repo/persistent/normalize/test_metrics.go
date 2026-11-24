@@ -15,12 +15,25 @@ func (r *Repo) InsertRejectedReport(ctx context.Context, org entity.ID, report e
 	if err != nil {
 		return err
 	}
-	err = r.q(ctx).InsertRejectedReport(ctx, InsertRejectedReportParams{
+	p := InsertRejectedReportParams{
 		OrganizationID: uuid.UUID(org), ReceiptID: uuid.UUID(report.Record.ReceiptID), RecordNo: no,
 		KnownSeq: report.KnownSeq, AreaID: uuid.UUID(report.AreaID), ComponentID: nullID(report.ComponentID),
 		ReportKind: report.Kind, Language: report.Language, Sha: text(report.SHA), RunID: nullID(report.RunID),
 		AttemptID: nullID(report.AttemptID), ReasonCode: reason,
-	})
+		ReportFormat: text(report.Format), Producer: text(report.Producer), Mode: text(report.Mode),
+		ProfileID: text(report.ProfileID), ScopeHash: report.ScopeHash,
+	}
+	if report.Kind == entity.AnalysisSecrets {
+		p.SecretScope = text(entity.SecretScopeHead)
+		if h := report.History; h != nil {
+			p.HistoryFromSha, p.HistoryToSha = text(h.FromSHA), text(h.ToSHA)
+			if h.FromSHA != h.ToSHA || h.Truncated ||
+				(report.Mode == entity.CheckModeBuiltin && report.ProfileID == "gitleaks-default" && report.ScannedCount == nil) {
+				p.SecretScope = text(entity.SecretScopeDiff)
+			}
+		}
+	}
+	err = r.q(ctx).InsertRejectedReport(ctx, p)
 	if err != nil {
 		return fmt.Errorf("normalize: insert rejected report evidence: %w", err)
 	}
@@ -43,6 +56,8 @@ func (r *Repo) ReadReportEvidence(ctx context.Context, org entity.ID, scope enti
 			ID: entity.ID(row.ID), RunID: idPtr(row.RunID), ComponentID: idPtr(row.ComponentID), Kind: row.ReportKind,
 			Language: row.Language, Format: row.ReportFormat, Producer: row.Producer, ProducerVersion: row.ProducerVersion,
 			ScopeHash: row.ScopeHash, ExitClass: row.ExitClass, Completeness: row.Completeness, KnownSeq: row.KnownSeq, RejectedReason: row.RejectedReason,
+			DependencyDelta: row.DependencyDelta, SecretScope: row.SecretScope,
+			Mode: row.Mode, ProfileID: row.ProfileID, HistoryFromSHA: row.HistoryFromSha, HistoryToSHA: row.HistoryToSha,
 		}
 		if err := json.Unmarshal(row.SkippedTargets, &e.SkippedTargets); err != nil {
 			return nil, fmt.Errorf("normalize: decode skipped report targets: %w", err)

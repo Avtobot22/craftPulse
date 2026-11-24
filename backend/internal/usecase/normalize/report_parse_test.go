@@ -88,7 +88,12 @@ func TestParseSARIF_Tools(t *testing.T) {
 			assert.Equal(t, tt.want, rows(got.findings))
 			for _, f := range got.findings {
 				assert.Equal(t, tt.finding, f.Kind)
-				assert.Empty(t, f.NativeConfidence, "SARIF of these tools names no confidence")
+				if tt.kind == entity.AnalysisSAST {
+					assert.Equal(t, "MEDIUM", f.NativeConfidence)
+					assert.Equal(t, "medium", evidenceOf(t, f).MappedConfidence)
+				} else {
+					assert.Empty(t, f.NativeConfidence)
+				}
 				assert.Equal(t, tt.tool, *evidenceOf(t, f).Tool)
 				assert.Len(t, f.Fingerprint, 32)
 			}
@@ -233,7 +238,7 @@ func TestParseGitLabSecurity_Kinds(t *testing.T) {
 	assert.Equal(t, []string{"CWE-89"}, evidenceOf(t, sast.findings[0]).CWE)
 	deps, err := parse(t, "gitlab_security", entity.AnalysisSCA, fixture(t, "gl-dependency-scanning-report.json"))
 	require.NoError(t, err)
-	assert.Equal(t, &packageRef{Name: "golang.org/x/net", Version: "v0.30.0"}, evidenceOf(t, deps.findings[0]).Package)
+	assert.Equal(t, &entity.DependencyEvidence{Name: "golang.org/x/net", Version: "v0.30.0"}, evidenceOf(t, deps.findings[0]).Package)
 	assert.Len(t, deps.findings[0].ContentFingerprint, 32, "a package without its lockfile is the content of a dependency finding")
 	assert.Nil(t, sast.findings[0].ContentFingerprint, "schema 15 says nothing of the content of a SAST finding")
 }
@@ -293,8 +298,20 @@ func TestParseSARIF_VersionAfterRuns(t *testing.T) {
 
 func TestFormatsWithoutParser(t *testing.T) {
 	t.Parallel()
-	for _, format := range []string{"trivy_json", "gitleaks_json"} {
-		_, ok := parserOf(format)
-		assert.False(t, ok, format)
-	}
+	_, ok := parserOf("unsupported_format")
+	assert.False(t, ok)
+}
+
+func TestParseGitleaks_DifferentColumnsOnOneLine(t *testing.T) {
+	t.Parallel()
+	sarif := fixture(t, "gitleaks.sarif")
+	sameLine := bytes.Replace(sarif, []byte(`"startColumn": 20`), []byte(`"startColumn": 10`), 1)
+	first, err := parse(t, "sarif", entity.AnalysisSecrets, sarif)
+	require.NoError(t, err)
+	second, err := parse(t, "sarif", entity.AnalysisSecrets, sameLine)
+	require.NoError(t, err)
+	require.Len(t, first.findings, 1)
+	require.Len(t, second.findings, 1)
+	assert.NotEqual(t, first.findings[0].Fingerprint, second.findings[0].Fingerprint)
+	assert.NotContains(t, string(second.findings[0].Evidence), "demo-secret-snippet")
 }

@@ -1,0 +1,44 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": ".",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "deploy/pod.yaml",
+      "Class": "config",
+      "Type": "kubernetes",
+      "Misconfigurations": [
+        {
+          "ID": "KSV001",
+          "Severity": "HIGH",
+          "Status": "FAIL",
+          "Message": "synthetic-iac-marker-from-message",
+          "CauseMetadata": {
+            "Resource": "Pod/default/sample",
+            "StartLine": 5,
+            "EndLine": 7,
+            "Code": { "Lines": [{ "Number": 5, "Content": "synthetic-iac-marker-from-code" }] }
+          }
+        },
+        {
+          "ID": "KSV001",
+          "Severity": "HIGH",
+          "Status": "FAIL",
+          "CauseMetadata": { "Resource": "Pod/default/sample", "StartLine": 8, "EndLine": 9 }
+        },
+        {
+          "ID": "KSV002",
+          "Severity": "MEDIUM",
+          "Status": "EXCEPTION",
+          "CauseMetadata": { "Resource": "Pod/default/sample", "StartLine": 5 }
+        },
+        {
+          "ID": "KSV003",
+          "Severity": "LOW",
+          "Status": "PASS",
+          "CauseMetadata": { "Resource": "Pod/default/sample", "StartLine": 5 }
+        }
+      ]
+    }
+  ]
+}
