@@ -261,6 +261,10 @@ type ExceptionDrafts interface {
 	CreateException(ctx context.Context, s entity.Subject, scope entity.Scope, cmd entity.ExceptionWrite) (entity.ExceptionView, error)
 }
 
+type TechnicalComparisons interface {
+	CompareTechnicalResults(context.Context, entity.Subject, entity.Scope, entity.TechnicalComparisonQuery) (entity.TechnicalComparison, error)
+}
+
 // Exceptions reads and reviews finding exceptions.
 type Exceptions interface {
 	Get(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID) (entity.ExceptionView, error)

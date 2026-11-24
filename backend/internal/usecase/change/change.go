@@ -16,6 +16,7 @@ import (
 // Components is org: the confirmed components of the repositories of a project and the areas of projects; both
 // run in the caller's organization transaction.
 type Components interface {
+	ConfirmedComponent(ctx context.Context, orgID, id entity.ID) (entity.Component, error)
 	ProjectComponents(ctx context.Context, orgID, projectID entity.ID, at time.Time) ([]entity.Component, error)
 	ProjectAreas(ctx context.Context, orgID entity.ID, at time.Time) ([]entity.Link, error)
 }

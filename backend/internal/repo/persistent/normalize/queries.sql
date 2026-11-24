@@ -520,14 +520,14 @@ ORDER BY f.finding_kind, f.path, f.line_start, f.rule_id, f.id;
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
     scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
-    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash, dependency_delta)
+    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash, dependency_delta, dependency_base_sha)
 VALUES (sqlc.arg(organization_id), sqlc.arg(receipt_id), sqlc.arg(record_no), sqlc.arg(known_seq), sqlc.arg(area_id), sqlc.narg(component_id),
     sqlc.arg(report_kind), sqlc.arg(mode), sqlc.narg(producer), sqlc.narg(producer_version), sqlc.arg(report_format), sqlc.arg(schema_version),
     sqlc.arg(parser_version), sqlc.narg(profile_id), sqlc.narg(rules_hash), sqlc.narg(config_hash), sqlc.narg(db_version),
     sqlc.narg(db_published_at), sqlc.narg(scope_hash), sqlc.narg(sha), sqlc.narg(artifact_digest), sqlc.narg(run_id), sqlc.narg(attempt_id),
     sqlc.narg(started_at), sqlc.narg(finished_at), sqlc.arg(exit_class), sqlc.arg(completeness), sqlc.narg(scanned_count),
     sqlc.narg(skipped_count), sqlc.arg(skipped_targets), sqlc.narg(history_from_sha), sqlc.narg(history_to_sha), sqlc.narg(history_truncated),
-    sqlc.narg(ref_name), sqlc.narg(language), sqlc.narg(docs_run_id), sqlc.narg(docs_file_hash), sqlc.narg(dependency_delta))
+    sqlc.narg(ref_name), sqlc.narg(language), sqlc.narg(docs_run_id), sqlc.narg(docs_file_hash), sqlc.narg(dependency_delta), sqlc.narg(dependency_base_sha))
 RETURNING id;
 
 -- An empty text and a zero line stand for NULL: arrays of the statement carry no NULL elements. Set-returning
@@ -605,10 +605,61 @@ ORDER BY r.record_no;
 
 -- name: ReportOccurrences :many
 SELECT id, report_id, rule_id, finding_kind, COALESCE(path, '')::text AS path, line_start, COALESCE(package_purl, '')::text AS package_purl, fingerprint,
-    content_fingerprint
+    content_fingerprint, COALESCE(evidence #>> '{package,delta}', '')::text AS dependency_delta
 FROM normalize.finding_occurrence
 WHERE organization_id = sqlc.arg(organization_id) AND report_id = ANY (sqlc.arg(report_ids)::uuid[])
 ORDER BY report_id, id;
+
+-- name: TechnicalReports :many
+WITH runs AS (
+    SELECT r.id, r.sha, COALESCE(r.language, '')::text AS language, COALESCE(r.profile_id, '')::text AS profile_id,
+        COALESCE(r.producer, '')::text AS producer, COALESCE(r.producer_version, '')::text AS producer_version,
+        r.mode, r.rules_hash, r.config_hash, r.scope_hash, COALESCE(r.db_version, '')::text AS db_version,
+        r.completeness, r.exit_class, COALESCE(a.outcome = 'canceled', false)::boolean AS interrupted,
+        false AS rejected, COALESCE(r.dependency_delta, '')::text AS dependency_delta, COALESCE(r.dependency_base_sha, '')::text AS dependency_base_sha,
+        COALESCE(r.finished_at, r.started_at, receipt.received_at) AS observed_at, r.known_seq, r.record_no
+    FROM normalize.report r
+    JOIN ingest.receipt receipt ON receipt.organization_id = r.organization_id AND receipt.id = r.receipt_id
+    LEFT JOIN normalize.ci_attempt_version a ON a.organization_id = r.organization_id AND a.attempt_id = r.attempt_id AND a.superseded_seq IS NULL
+    WHERE r.organization_id = sqlc.arg(organization_id) AND r.area_id = sqlc.arg(area_id)
+        AND r.component_id = sqlc.arg(component_id)::uuid AND r.report_kind = sqlc.arg(report_kind)::text
+        AND r.report_format NOT IN ('lizard_csv', 'jscpd_json') AND r.sha IS NOT NULL
+        AND (sqlc.arg(latest)::boolean OR r.sha = ANY(sqlc.arg(shas)::text[]) OR r.id = ANY(sqlc.arg(report_ids)::uuid[]))
+    UNION ALL
+    SELECT r.id, r.sha, r.language, COALESCE(r.profile_id, ''), COALESCE(r.producer, ''), '',
+        COALESCE(r.mode, ''), NULL::bytea, NULL::bytea, r.scope_hash, '', 'unknown', '', false, true, '', '',
+        receipt.received_at, r.known_seq, r.record_no
+    FROM normalize.rejected_report r
+    JOIN ingest.receipt receipt ON receipt.organization_id = r.organization_id AND receipt.id = r.receipt_id
+    WHERE r.organization_id = sqlc.arg(organization_id) AND r.area_id = sqlc.arg(area_id)
+        AND r.component_id = sqlc.arg(component_id)::uuid AND r.report_kind = sqlc.arg(report_kind)::text
+        AND COALESCE(r.report_format, '') NOT IN ('lizard_csv', 'jscpd_json') AND r.sha = ANY(sqlc.arg(shas)::text[])
+), eligible AS (
+    SELECT *, (completeness = 'complete' AND exit_class IN ('success','findings') AND NOT interrupted AND NOT rejected) AS complete
+    FROM runs
+    WHERE (sqlc.narg(language)::text IS NULL OR language = sqlc.narg(language))
+        AND (sqlc.narg(profile_id)::text IS NULL OR profile_id = sqlc.narg(profile_id))
+        AND (sqlc.narg(reference_report_id)::uuid IS NULL OR EXISTS (
+            SELECT 1 FROM normalize.report ref
+            WHERE ref.organization_id = sqlc.arg(organization_id) AND ref.id = sqlc.narg(reference_report_id)
+                AND (COALESCE(ref.producer, ''), COALESCE(ref.producer_version, ''), ref.mode,
+                    ref.rules_hash, ref.config_hash, ref.scope_hash, COALESCE(ref.db_version, ''))
+                IS NOT DISTINCT FROM (runs.producer, runs.producer_version, runs.mode,
+                    runs.rules_hash, runs.config_hash, runs.scope_hash, runs.db_version)
+        ))
+), ranked AS (
+    SELECT *, row_number() OVER (
+        PARTITION BY CASE WHEN sqlc.arg(latest)::boolean THEN '' ELSE sha END, language, profile_id, complete
+        ORDER BY observed_at DESC, known_seq DESC, record_no DESC, id DESC
+    ) AS position
+    FROM eligible
+    WHERE NOT sqlc.arg(latest)::boolean OR complete
+)
+SELECT id, COALESCE(sha, '')::text AS sha, language, profile_id, producer, producer_version, mode, rules_hash, config_hash,
+    scope_hash, db_version, completeness, exit_class, interrupted, rejected, dependency_delta, dependency_base_sha
+FROM ranked
+WHERE position <= 2 OR id = ANY(sqlc.arg(report_ids)::uuid[])
+ORDER BY observed_at DESC, known_seq DESC, record_no DESC, id DESC;
 
 -- name: ReportsByID :many
 SELECT r.id, r.area_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language, COALESCE(r.ref_name, '')::text AS ref_name,

@@ -190,6 +190,36 @@ func (q *Queries) AssignmentsByConfirmation(ctx context.Context, arg Assignments
 	return items, nil
 }
 
+const confirmedComponent = `-- name: ConfirmedComponent :one
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, service_id, repository_area_id, path_prefix, status, origin, confirmed_by, confirmed_at FROM org.component WHERE organization_id = $1 AND id = $2
+    AND superseded_seq IS NULL AND status = 'confirmed'
+`
+
+type ConfirmedComponentParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) ConfirmedComponent(ctx context.Context, arg ConfirmedComponentParams) (OrgComponent, error) {
+	row := q.db.QueryRow(ctx, confirmedComponent, arg.OrganizationID, arg.ID)
+	var i OrgComponent
+	err := row.Scan(
+		&i.OrganizationID,
+		&i.ID,
+		&i.KnownSeq,
+		&i.SupersededSeq,
+		&i.SupersededAt,
+		&i.ServiceID,
+		&i.RepositoryAreaID,
+		&i.PathPrefix,
+		&i.Status,
+		&i.Origin,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+	)
+	return i, err
+}
+
 const createOrganization = `-- name: CreateOrganization :exec
 INSERT INTO org.organization (organization_id, name, status, first_admin_issuer, first_admin_subject, structure_version, created_at)
 VALUES ($1, $2, $3, $4, $5, 0, $6)

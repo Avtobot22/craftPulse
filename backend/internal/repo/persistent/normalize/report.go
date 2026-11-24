@@ -56,7 +56,7 @@ func (r *Repo) InsertReport(ctx context.Context, orgID entity.ID, rep *entity.Sc
 		AttemptID: nullID(rep.AttemptID), StartedAt: tstz(rep.StartedAt), FinishedAt: tstz(rep.FinishedAt), ExitClass: rep.ExitClass,
 		Completeness: rep.Completeness, SkippedTargets: skipped, RefName: text(rep.RefName), Language: text(rep.Language),
 		DocsRunID: text(rep.DocsRunID), DocsFileHash: rep.DocsFileHash,
-		DependencyDelta: text(rep.DependencyDelta),
+		DependencyDelta: text(rep.DependencyDelta), DependencyBaseSha: text(rep.DependencyBaseSHA),
 	}
 	if p.ScannedCount, err = int4(rep.ScannedCount); err != nil {
 		return err
@@ -239,8 +239,7 @@ func (r *Repo) ReceiptReports(ctx context.Context, orgID, receiptID entity.ID) (
 		return nil, fmt.Errorf("normalize: receipt reports: %w", err)
 	}
 	out := make([]entity.ReportFindings, len(rows))
-	reports := make([]uuid.UUID, len(rows))
-	at := make(map[uuid.UUID]int, len(rows))
+	reports := make([]entity.ID, len(rows))
 	for i := range rows {
 		row := &rows[i]
 		out[i] = reportFindings(ReportsByIDRow{
@@ -249,28 +248,73 @@ func (r *Repo) ReceiptReports(ctx context.Context, orgID, receiptID entity.ID) (
 			KnownSeq: row.KnownSeq,
 		})
 		out[i].Interrupted, out[i].DefaultBranch = row.Interrupted, row.DefaultBranch
-		reports[i], at[row.ID] = row.ID, i
+		reports[i] = entity.ID(row.ID)
 	}
 	if len(rows) == 0 {
 		return out, nil
 	}
-	occurrences, err := r.q(ctx).ReportOccurrences(ctx, ReportOccurrencesParams{OrganizationID: uuid.UUID(orgID), ReportIds: reports})
+	occurrences, err := r.TechnicalOccurrences(ctx, orgID, reports)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Occurrences = occurrences[out[i].ID]
+	}
+	return out, nil
+}
+
+func (r *Repo) TechnicalOccurrences(ctx context.Context, orgID entity.ID, reports []entity.ID) (map[entity.ID][]entity.ReportOccurrence, error) {
+	if len(reports) == 0 {
+		return nil, nil
+	}
+	occurrences, err := r.q(ctx).ReportOccurrences(ctx, ReportOccurrencesParams{OrganizationID: uuid.UUID(orgID), ReportIds: ids(reports)})
 	if err != nil {
 		return nil, fmt.Errorf("normalize: report occurrences: %w", err)
 	}
+	out := make(map[entity.ID][]entity.ReportOccurrence, len(reports))
 	for i := range occurrences {
 		o := &occurrences[i]
-		rep := &out[at[o.ReportID]]
 		occ := entity.ReportOccurrence{
 			ID: entity.ID(o.ID), RuleID: o.RuleID, Kind: o.FindingKind, Path: o.Path, PackagePURL: o.PackagePurl, Fingerprint: o.Fingerprint, ContentFingerprint: o.ContentFingerprint,
+			DependencyDelta: o.DependencyDelta,
 		}
 		if o.LineStart.Valid {
 			n := int(o.LineStart.Int32)
 			occ.LineStart = &n
 		}
-		rep.Occurrences = append(rep.Occurrences, occ)
+		id := entity.ID(o.ReportID)
+		out[id] = append(out[id], occ)
 	}
 	return out, nil
+}
+
+func (r *Repo) TechnicalReports(ctx context.Context, orgID entity.ID, s entity.TechnicalReportScope) ([]entity.TechnicalReport, error) {
+	rows, err := r.q(ctx).TechnicalReports(ctx, TechnicalReportsParams{
+		OrganizationID: uuid.UUID(orgID), AreaID: uuid.UUID(s.AreaID), ComponentID: uuid.UUID(s.ComponentID),
+		ReportKind: s.Kind, Shas: s.SHAs, ReportIds: ids(s.ReportIDs), Latest: s.Latest,
+		Language: presentText(s.Language), ProfileID: presentText(s.ProfileID), ReferenceReportID: nullID(s.ReferenceReportID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: technical reports: %w", err)
+	}
+	out := make([]entity.TechnicalReport, len(rows))
+	for i := range rows {
+		v := &rows[i]
+		out[i] = entity.TechnicalReport{
+			ID: entity.ID(v.ID), SHA: v.Sha, Language: v.Language, ProfileID: v.ProfileID, Producer: v.Producer, ProducerVersion: v.ProducerVersion,
+			Mode: v.Mode, RulesHash: v.RulesHash, ConfigHash: v.ConfigHash, ScopeHash: v.ScopeHash, DBVersion: v.DbVersion,
+			Completeness: v.Completeness, ExitClass: v.ExitClass, Interrupted: v.Interrupted, Rejected: v.Rejected, DependencyDelta: v.DependencyDelta,
+			DependencyBaseSHA: v.DependencyBaseSha,
+		}
+	}
+	return out, nil
+}
+
+func presentText(value *string) pgtype.Text {
+	if value == nil {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: *value, Valid: true}
 }
 
 // ReportsByID are the reports of ids without their findings.

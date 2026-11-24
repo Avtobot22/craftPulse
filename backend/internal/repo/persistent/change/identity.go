@@ -14,6 +14,19 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
 
+func (r *Repo) LastFindingReport(ctx context.Context, orgID, componentID, findingID entity.ID, kind string) (entity.ID, error) {
+	id, err := r.q(ctx).LastFindingReport(ctx, LastFindingReportParams{
+		OrganizationID: uuid.UUID(orgID), ComponentID: uuid.UUID(componentID), FindingIdentityID: uuid.UUID(findingID), ReportKind: kind,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.ID{}, entity.ErrNotFound
+	}
+	if err != nil {
+		return entity.ID{}, fmt.Errorf("change: last report of finding: %w", err)
+	}
+	return entity.ID(id), nil
+}
+
 // IdentitiesByFingerprint are the canonical findings of an area with any of the fingerprints, by fingerprint.
 func (r *Repo) IdentitiesByFingerprint(ctx context.Context, orgID, areaID entity.ID, method int, fingerprints [][]byte) (map[string]entity.ID, error) {
 	m, err := methodVersion(method)

@@ -41,6 +41,7 @@ type reportSpec struct {
 	testTargets                              *[]string
 	formatVersion                            string
 	profileID, language                      string
+	rulesHash, dbVersion                     string
 	mode                                     envelope.ScanToolRunMode
 	excludedTargets                          *[]envelope.ScanExcludedTarget
 	history                                  *envelope.ScanHistory
@@ -121,6 +122,12 @@ func reportPackageOf(t *testing.T, instance, sha string, specs ...reportSpec) []
 		}
 		if s.mode != "" {
 			tool.Mode = s.mode
+		}
+		if s.rulesHash != "" {
+			tool.RulesHash = &s.rulesHash
+		}
+		if s.dbVersion != "" {
+			tool.DbVersion = &s.dbVersion
 		}
 		tool.ExcludedTargets = s.excludedTargets
 		if s.completeness == "complete" {

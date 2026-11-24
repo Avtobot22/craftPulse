@@ -30,6 +30,26 @@ func (u *UseCase) ReportsByID(ctx context.Context, orgID entity.ID, ids []entity
 	return out, err
 }
 
+func (u *UseCase) TechnicalReports(ctx context.Context, orgID entity.ID, scope entity.TechnicalReportScope) ([]entity.TechnicalReport, error) {
+	var out []entity.TechnicalReport
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.TechnicalReports(ctx, orgID, scope)
+		return err
+	})
+	return out, err
+}
+
+func (u *UseCase) TechnicalOccurrences(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID][]entity.ReportOccurrence, error) {
+	var out map[entity.ID][]entity.ReportOccurrence
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.TechnicalOccurrences(ctx, orgID, ids)
+		return err
+	})
+	return out, err
+}
+
 // LastBranchReports gives the last report of every query: of its component, language and kind of analysis on its
 // branch; a query without a report is absent.
 func (u *UseCase) LastBranchReports(ctx context.Context, orgID entity.ID, queries []entity.BranchReportQuery) ([]entity.ReportFindings, error) {

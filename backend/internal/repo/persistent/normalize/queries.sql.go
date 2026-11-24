@@ -1839,56 +1839,57 @@ const insertReport = `-- name: InsertReport :one
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
     scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
-    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash, dependency_delta)
+    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash, dependency_delta, dependency_base_sha)
 VALUES ($1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11, $12,
     $13, $14, $15, $16, $17,
     $18, $19, $20, $21, $22, $23,
     $24, $25, $26, $27, $28,
     $29, $30, $31, $32, $33,
-    $34, $35, $36, $37, $38)
+    $34, $35, $36, $37, $38, $39)
 RETURNING id
 `
 
 type InsertReportParams struct {
-	OrganizationID   uuid.UUID
-	ReceiptID        uuid.UUID
-	RecordNo         int32
-	KnownSeq         int64
-	AreaID           uuid.UUID
-	ComponentID      uuid.NullUUID
-	ReportKind       string
-	Mode             string
-	Producer         pgtype.Text
-	ProducerVersion  pgtype.Text
-	ReportFormat     string
-	SchemaVersion    string
-	ParserVersion    string
-	ProfileID        pgtype.Text
-	RulesHash        []byte
-	ConfigHash       []byte
-	DbVersion        pgtype.Text
-	DbPublishedAt    pgtype.Timestamptz
-	ScopeHash        []byte
-	Sha              pgtype.Text
-	ArtifactDigest   pgtype.Text
-	RunID            uuid.NullUUID
-	AttemptID        uuid.NullUUID
-	StartedAt        pgtype.Timestamptz
-	FinishedAt       pgtype.Timestamptz
-	ExitClass        string
-	Completeness     string
-	ScannedCount     pgtype.Int4
-	SkippedCount     pgtype.Int4
-	SkippedTargets   []byte
-	HistoryFromSha   pgtype.Text
-	HistoryToSha     pgtype.Text
-	HistoryTruncated pgtype.Bool
-	RefName          pgtype.Text
-	Language         pgtype.Text
-	DocsRunID        pgtype.Text
-	DocsFileHash     []byte
-	DependencyDelta  pgtype.Text
+	OrganizationID    uuid.UUID
+	ReceiptID         uuid.UUID
+	RecordNo          int32
+	KnownSeq          int64
+	AreaID            uuid.UUID
+	ComponentID       uuid.NullUUID
+	ReportKind        string
+	Mode              string
+	Producer          pgtype.Text
+	ProducerVersion   pgtype.Text
+	ReportFormat      string
+	SchemaVersion     string
+	ParserVersion     string
+	ProfileID         pgtype.Text
+	RulesHash         []byte
+	ConfigHash        []byte
+	DbVersion         pgtype.Text
+	DbPublishedAt     pgtype.Timestamptz
+	ScopeHash         []byte
+	Sha               pgtype.Text
+	ArtifactDigest    pgtype.Text
+	RunID             uuid.NullUUID
+	AttemptID         uuid.NullUUID
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	ExitClass         string
+	Completeness      string
+	ScannedCount      pgtype.Int4
+	SkippedCount      pgtype.Int4
+	SkippedTargets    []byte
+	HistoryFromSha    pgtype.Text
+	HistoryToSha      pgtype.Text
+	HistoryTruncated  pgtype.Bool
+	RefName           pgtype.Text
+	Language          pgtype.Text
+	DocsRunID         pgtype.Text
+	DocsFileHash      []byte
+	DependencyDelta   pgtype.Text
+	DependencyBaseSha pgtype.Text
 }
 
 func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uuid.UUID, error) {
@@ -1931,6 +1932,7 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uui
 		arg.DocsRunID,
 		arg.DocsFileHash,
 		arg.DependencyDelta,
+		arg.DependencyBaseSha,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
@@ -3515,7 +3517,7 @@ func (q *Queries) ReceiptSecurityScopes(ctx context.Context, arg ReceiptSecurity
 
 const reportOccurrences = `-- name: ReportOccurrences :many
 SELECT id, report_id, rule_id, finding_kind, COALESCE(path, '')::text AS path, line_start, COALESCE(package_purl, '')::text AS package_purl, fingerprint,
-    content_fingerprint
+    content_fingerprint, COALESCE(evidence #>> '{package,delta}', '')::text AS dependency_delta
 FROM normalize.finding_occurrence
 WHERE organization_id = $1 AND report_id = ANY ($2::uuid[])
 ORDER BY report_id, id
@@ -3536,6 +3538,7 @@ type ReportOccurrencesRow struct {
 	PackagePurl        string
 	Fingerprint        []byte
 	ContentFingerprint []byte
+	DependencyDelta    string
 }
 
 func (q *Queries) ReportOccurrences(ctx context.Context, arg ReportOccurrencesParams) ([]ReportOccurrencesRow, error) {
@@ -3557,6 +3560,7 @@ func (q *Queries) ReportOccurrences(ctx context.Context, arg ReportOccurrencesPa
 			&i.PackagePurl,
 			&i.Fingerprint,
 			&i.ContentFingerprint,
+			&i.DependencyDelta,
 		); err != nil {
 			return nil, err
 		}
@@ -4184,6 +4188,140 @@ func (q *Queries) TaskVersionsAt(ctx context.Context, arg TaskVersionsAtParams) 
 			&i.ParentTaskID,
 			&i.RestrictionNative,
 			&i.RawFields,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const technicalReports = `-- name: TechnicalReports :many
+WITH runs AS (
+    SELECT r.id, r.sha, COALESCE(r.language, '')::text AS language, COALESCE(r.profile_id, '')::text AS profile_id,
+        COALESCE(r.producer, '')::text AS producer, COALESCE(r.producer_version, '')::text AS producer_version,
+        r.mode, r.rules_hash, r.config_hash, r.scope_hash, COALESCE(r.db_version, '')::text AS db_version,
+        r.completeness, r.exit_class, COALESCE(a.outcome = 'canceled', false)::boolean AS interrupted,
+        false AS rejected, COALESCE(r.dependency_delta, '')::text AS dependency_delta, COALESCE(r.dependency_base_sha, '')::text AS dependency_base_sha,
+        COALESCE(r.finished_at, r.started_at, receipt.received_at) AS observed_at, r.known_seq, r.record_no
+    FROM normalize.report r
+    JOIN ingest.receipt receipt ON receipt.organization_id = r.organization_id AND receipt.id = r.receipt_id
+    LEFT JOIN normalize.ci_attempt_version a ON a.organization_id = r.organization_id AND a.attempt_id = r.attempt_id AND a.superseded_seq IS NULL
+    WHERE r.organization_id = $2 AND r.area_id = $3
+        AND r.component_id = $4::uuid AND r.report_kind = $5::text
+        AND r.report_format NOT IN ('lizard_csv', 'jscpd_json') AND r.sha IS NOT NULL
+        AND ($6::boolean OR r.sha = ANY($7::text[]) OR r.id = ANY($1::uuid[]))
+    UNION ALL
+    SELECT r.id, r.sha, r.language, COALESCE(r.profile_id, ''), COALESCE(r.producer, ''), '',
+        COALESCE(r.mode, ''), NULL::bytea, NULL::bytea, r.scope_hash, '', 'unknown', '', false, true, '', '',
+        receipt.received_at, r.known_seq, r.record_no
+    FROM normalize.rejected_report r
+    JOIN ingest.receipt receipt ON receipt.organization_id = r.organization_id AND receipt.id = r.receipt_id
+    WHERE r.organization_id = $2 AND r.area_id = $3
+        AND r.component_id = $4::uuid AND r.report_kind = $5::text
+        AND COALESCE(r.report_format, '') NOT IN ('lizard_csv', 'jscpd_json') AND r.sha = ANY($7::text[])
+), eligible AS (
+    SELECT id, sha, language, profile_id, producer, producer_version, mode, rules_hash, config_hash, scope_hash, db_version, completeness, exit_class, interrupted, rejected, dependency_delta, dependency_base_sha, observed_at, known_seq, record_no, (completeness = 'complete' AND exit_class IN ('success','findings') AND NOT interrupted AND NOT rejected) AS complete
+    FROM runs
+    WHERE ($8::text IS NULL OR language = $8)
+        AND ($9::text IS NULL OR profile_id = $9)
+        AND ($10::uuid IS NULL OR EXISTS (
+            SELECT 1 FROM normalize.report ref
+            WHERE ref.organization_id = $2 AND ref.id = $10
+                AND (COALESCE(ref.producer, ''), COALESCE(ref.producer_version, ''), ref.mode,
+                    ref.rules_hash, ref.config_hash, ref.scope_hash, COALESCE(ref.db_version, ''))
+                IS NOT DISTINCT FROM (runs.producer, runs.producer_version, runs.mode,
+                    runs.rules_hash, runs.config_hash, runs.scope_hash, runs.db_version)
+        ))
+), ranked AS (
+    SELECT id, sha, language, profile_id, producer, producer_version, mode, rules_hash, config_hash, scope_hash, db_version, completeness, exit_class, interrupted, rejected, dependency_delta, dependency_base_sha, observed_at, known_seq, record_no, complete, row_number() OVER (
+        PARTITION BY CASE WHEN $6::boolean THEN '' ELSE sha END, language, profile_id, complete
+        ORDER BY observed_at DESC, known_seq DESC, record_no DESC, id DESC
+    ) AS position
+    FROM eligible
+    WHERE NOT $6::boolean OR complete
+)
+SELECT id, COALESCE(sha, '')::text AS sha, language, profile_id, producer, producer_version, mode, rules_hash, config_hash,
+    scope_hash, db_version, completeness, exit_class, interrupted, rejected, dependency_delta, dependency_base_sha
+FROM ranked
+WHERE position <= 2 OR id = ANY($1::uuid[])
+ORDER BY observed_at DESC, known_seq DESC, record_no DESC, id DESC
+`
+
+type TechnicalReportsParams struct {
+	ReportIds         []uuid.UUID
+	OrganizationID    uuid.UUID
+	AreaID            uuid.UUID
+	ComponentID       uuid.UUID
+	ReportKind        string
+	Latest            bool
+	Shas              []string
+	Language          pgtype.Text
+	ProfileID         pgtype.Text
+	ReferenceReportID uuid.NullUUID
+}
+
+type TechnicalReportsRow struct {
+	ID                uuid.UUID
+	Sha               string
+	Language          string
+	ProfileID         string
+	Producer          string
+	ProducerVersion   string
+	Mode              string
+	RulesHash         []byte
+	ConfigHash        []byte
+	ScopeHash         []byte
+	DbVersion         string
+	Completeness      string
+	ExitClass         string
+	Interrupted       bool
+	Rejected          bool
+	DependencyDelta   string
+	DependencyBaseSha string
+}
+
+func (q *Queries) TechnicalReports(ctx context.Context, arg TechnicalReportsParams) ([]TechnicalReportsRow, error) {
+	rows, err := q.db.Query(ctx, technicalReports,
+		arg.ReportIds,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.ComponentID,
+		arg.ReportKind,
+		arg.Latest,
+		arg.Shas,
+		arg.Language,
+		arg.ProfileID,
+		arg.ReferenceReportID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TechnicalReportsRow
+	for rows.Next() {
+		var i TechnicalReportsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Sha,
+			&i.Language,
+			&i.ProfileID,
+			&i.Producer,
+			&i.ProducerVersion,
+			&i.Mode,
+			&i.RulesHash,
+			&i.ConfigHash,
+			&i.ScopeHash,
+			&i.DbVersion,
+			&i.Completeness,
+			&i.ExitClass,
+			&i.Interrupted,
+			&i.Rejected,
+			&i.DependencyDelta,
+			&i.DependencyBaseSha,
 		); err != nil {
 			return nil, err
 		}

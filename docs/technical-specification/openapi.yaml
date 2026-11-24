@@ -7615,6 +7615,7 @@ components:
         comparable: {type: boolean}
         incomparable_reasons:
           type: array
+          description: '`rules_changed` включает смену базы уязвимостей, которую отдельно показывает фактор `db_changed`.'
           items: {type: string, enum: [profile_changed, rules_changed, scope_changed, base_scan_missing, head_scan_missing, scan_incomplete]}
         base:
           type: object
@@ -7635,8 +7636,8 @@ components:
             required: [factor, new_count, resolved_count, finding_ids]
             properties:
               factor: {type: string, enum: [code_changed, dependency_changed, rules_changed, db_changed, scope_changed, source_recovered, source_lost, identity_uncertain]}
-              new_count: {type: integer, minimum: 0}
-              resolved_count: {type: integer, minimum: 0}
+              new_count: {type: [integer, 'null'], minimum: 0, description: '`null` при несопоставимых результатах.'}
+              resolved_count: {type: [integer, 'null'], minimum: 0, description: '`null` при несопоставимых результатах.'}
               finding_ids: {type: array, items: {type: string, format: uuid}}
         access_limited: {type: boolean}
         access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}

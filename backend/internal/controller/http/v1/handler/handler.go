@@ -29,6 +29,7 @@ type Handler struct {
 	process
 	checks
 	exceptions
+	comparisons
 	reports
 	codeDetails
 	fallback
@@ -67,6 +68,7 @@ type Deps struct {
 	Checks          usecase.CheckProfiles
 	Exceptions      usecase.Exceptions
 	ExceptionDrafts usecase.ExceptionDrafts
+	Comparisons     usecase.TechnicalComparisons
 	Registerer      prometheus.Registerer
 }
 
@@ -83,6 +85,7 @@ func New(d Deps) *Handler {
 		process:        process{uc: d.Process, previews: d.Previews, targets: d.Targets, connections: d.Connections},
 		checks:         checks{uc: d.Checks},
 		exceptions:     exceptions{uc: d.Exceptions, drafts: d.ExceptionDrafts},
+		comparisons:    comparisons{uc: d.Comparisons},
 		codeDetails:    codeDetails{uc: d.Code},
 		reports:        reports{operations: d.Operations, views: d.Reports},
 		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),
@@ -142,7 +145,7 @@ func Error(c *gin.Context, err error) {
 	case errors.Is(err, entity.ErrIdempotencyKeyReused):
 		response.Write(c, response.IdempotencyKeyReused)
 		return
-	case errors.Is(err, errMalformedPage), errors.Is(err, errMalformedForm), errors.Is(err, entity.ErrInvalidCursor):
+	case errors.Is(err, errMalformedPage), errors.Is(err, errMalformedForm), errors.Is(err, errMalformedTechnicalComparison), errors.Is(err, entity.ErrInvalidCursor):
 		response.Write(c, response.MalformedRequest)
 		return
 	case errors.Is(err, errPayloadTooLarge):

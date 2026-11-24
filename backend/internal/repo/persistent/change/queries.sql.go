@@ -384,6 +384,37 @@ func (q *Queries) InsertProfileVersion(ctx context.Context, arg InsertProfileVer
 	return err
 }
 
+const lastFindingReport = `-- name: LastFindingReport :one
+SELECT r.id FROM change.occurrence_identity i
+JOIN normalize.finding_occurrence o ON o.organization_id = i.organization_id AND o.id = i.occurrence_id
+JOIN normalize.report r ON r.organization_id = o.organization_id AND r.id = o.report_id
+LEFT JOIN normalize.ci_attempt_version a ON a.organization_id = r.organization_id AND a.attempt_id = r.attempt_id AND a.superseded_seq IS NULL
+WHERE i.organization_id = $1 AND i.finding_identity_id = $2
+    AND r.component_id = $3::uuid AND r.report_kind = $4::text AND r.sha IS NOT NULL
+ORDER BY (r.completeness = 'complete' AND r.exit_class IN ('success', 'findings') AND NOT COALESCE(a.outcome = 'canceled', false)) DESC,
+    COALESCE(r.finished_at, r.started_at, i.reported_at) DESC, r.known_seq DESC, r.record_no DESC, r.id DESC
+LIMIT 1
+`
+
+type LastFindingReportParams struct {
+	OrganizationID    uuid.UUID
+	FindingIdentityID uuid.UUID
+	ComponentID       uuid.UUID
+	ReportKind        string
+}
+
+func (q *Queries) LastFindingReport(ctx context.Context, arg LastFindingReportParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lastFindingReport,
+		arg.OrganizationID,
+		arg.FindingIdentityID,
+		arg.ComponentID,
+		arg.ReportKind,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const latestProfileVersion = `-- name: LatestProfileVersion :one
 SELECT organization_id, id, project_id, version_no, base_version_no, content_hash, known_seq, confirmed_by, confirmed_at, confirmation_id FROM change.profile_version WHERE organization_id = $1 AND project_id = $2
 ORDER BY version_no DESC LIMIT 1

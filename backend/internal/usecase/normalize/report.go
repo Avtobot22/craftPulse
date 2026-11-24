@@ -231,6 +231,7 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 			c.code = parsed.scopedCodeFacts(c.tool)
 			c.docsProvenance(parsed)
 			c.report.DependencyDelta = parsed.dependencyDelta
+			c.report.DependencyBaseSHA = parsed.dependencyBaseSHA
 			c.report.SkippedTargets = append(c.report.SkippedTargets, parsed.excluded...)
 			c.report.SchemaVersion, c.report.ParserVersion = parsed.formatVersion, first.parser.version
 			if c.report.Kind == entity.AnalysisDocs && c.report.Format == "sarif" {
