@@ -28,12 +28,12 @@ jobs:
           echo "::add-mask::$token"
           echo "::add-mask::$root_password"
           printf 'CP202_GITLAB_TOKEN=%s\nCP202_GITLAB_URL=%s\n' "$token" 'http://127.0.0.1:31891' >> "$GITHUB_ENV"
-          cfg="external_url 'http://127.0.0.1:31891'; nginx['listen_port'] = 80; gitlab_rails['initial_root_password'] = '$root_password'; letsencrypt['enable'] = false; puma['worker_processes'] = 0; sidekiq['concurrency'] = 5; prometheus_monitoring['enable'] = false; gitlab_kas['enable'] = false; registry['enable'] = false"
-          docker run -d --name cp202-gitlab --shm-size 256m -p 127.0.0.1:31891:80 -e "GITLAB_OMNIBUS_CONFIG=$cfg" gitlab/gitlab-ce:19.5.5-ce.0@sha256:392e6bd5bf118ae520e4038261a5ae39aea05de0d2299a162b4c822a9684cf9b
+          cfg="external_url 'http://127.0.0.1:31891'; gitlab_rails['initial_root_password'] = '$root_password'; letsencrypt['enable'] = false; puma['worker_processes'] = 0; sidekiq['concurrency'] = 5; prometheus_monitoring['enable'] = false; gitlab_kas['enable'] = false; registry['enable'] = false"
+          docker run -d --name cp202-gitlab --shm-size 256m --network host -e "GITLAB_OMNIBUS_CONFIG=$cfg" gitlab/gitlab-ce:19.5.5-ce.0@sha256:392e6bd5bf118ae520e4038261a5ae39aea05de0d2299a162b4c822a9684cf9b
           for i in $(seq 1 90); do
             if [ "$(docker inspect --format '{{.State.Health.Status}}' cp202-gitlab)" = healthy ]; then
               docker exec -e "CP202_GITLAB_TOKEN=$token" cp202-gitlab gitlab-rails runner 't=User.find_by_username("root").personal_access_tokens.build(name: "cp202-disposable", scopes: ["api"], expires_at: 1.day.from_now); t.set_token(ENV.fetch("CP202_GITLAB_TOKEN")); t.save!'
-              curl --max-time 10 -fsS -o /dev/null -H "PRIVATE-TOKEN: $token" http://127.0.0.1:31891/api/v4/version
+              curl --retry 12 --retry-all-errors --retry-delay 2 --max-time 10 -fsS -o /dev/null -H "PRIVATE-TOKEN: $token" http://127.0.0.1:31891/api/v4/version
               exit 0
             fi
             sleep 5

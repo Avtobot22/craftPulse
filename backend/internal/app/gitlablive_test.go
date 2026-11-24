@@ -94,6 +94,11 @@ func TestGitLabDiffLiveTwoHeads(t *testing.T) {
 	target, err := url.Parse(host)
 	require.NoError(t, err)
 	source := httputil.NewSingleHostReverseProxy(target)
+	direct := source.Director
+	source.Director = func(req *http.Request) {
+		direct(req)
+		req.Host = target.Host
+	}
 	srv := newGitLabTestEnvWithSource(t, source)
 	raw, err := json.Marshal(map[string]string{"token": token})
 	require.NoError(t, err)
