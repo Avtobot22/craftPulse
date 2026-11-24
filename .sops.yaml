@@ -1,0 +1,5 @@
+creation_rules:
+  - path_regex: ^deploy[/\\]profile-d[/\\]stand[.]sops[.]json$
+    age: >-
+      age1096dgmp0hmaf9xq7eqmyqemm60ukev9kftyc295d32k2h4kmk4vqsfr8dd,
+      age13hg6uggywyg9ls8ketm7d7ed9tmhc7ym6zzymjgg8alg4508dcxqdzf5s4

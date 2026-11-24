@@ -1,0 +1,7 @@
+[Unit]
+Description=craftPulse on defects
+
+[Slice]
+CPUQuota=400%
+MemoryMax=5632M
+MemorySwapMax=0

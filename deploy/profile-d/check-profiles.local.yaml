@@ -1,0 +1,6 @@
+# Local smoke catalog. It leaves CI profile generation disabled.
+version: 1
+step:
+  image: ghcr.io/avtobot22/craftpulse-ci
+  digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+profiles: []

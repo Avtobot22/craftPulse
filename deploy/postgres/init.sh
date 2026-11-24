@@ -14,6 +14,7 @@ psql -v ON_ERROR_STOP=1 --username "${POSTGRES_USER:-postgres}" --dbname postgre
     -v owner_password="$owner_password" \
     -v app_password="$app_password" \
     -v backup_password="$backup_password" <<'SQL'
+SET log_min_duration_statement = -1;
 CREATE ROLE craftpulse_owner LOGIN PASSWORD :'owner_password';
 CREATE ROLE craftpulse_app LOGIN NOBYPASSRLS PASSWORD :'app_password';
 CREATE ROLE craftpulse_backup LOGIN NOBYPASSRLS PASSWORD :'backup_password';

@@ -1,0 +1,28 @@
+x-stand-cgroup: &stand-cgroup
+  cgroup_parent: ${CGROUP_PARENT:?Set the resource slice for the stand}
+
+services:
+  postgres:
+    <<: *stand-cgroup
+  seaweedfs:
+    <<: *stand-cgroup
+  migrate:
+    <<: *stand-cgroup
+    image: ${CRAFTPULSE_SERVER_IMAGE:?Load a release manifest}
+  api:
+    <<: *stand-cgroup
+    image: ${CRAFTPULSE_SERVER_IMAGE:?Load a release manifest}
+    volumes:
+      - ${CHECK_PROFILES_PATH:?Set the release catalog path}:/etc/craftpulse/check-profiles.yaml:ro
+  worker:
+    <<: *stand-cgroup
+    image: ${CRAFTPULSE_SERVER_IMAGE:?Load a release manifest}
+  nginx:
+    <<: *stand-cgroup
+    image: ${CRAFTPULSE_FRONTEND_IMAGE:?Load a release manifest}
+  victoriametrics:
+    <<: *stand-cgroup
+  victorialogs:
+    <<: *stand-cgroup
+  grafana:
+    <<: *stand-cgroup

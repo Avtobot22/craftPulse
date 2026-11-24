@@ -8,7 +8,7 @@ RUN npm ci --no-audit --no-fund
 COPY . ./
 RUN npm run build
 
-FROM nginx:1.30.6-alpine@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a
+FROM nginx:1.30.8-alpine@sha256:6437a63b5c529f0e06162b3f593c0154cff6fa2ea0f94fd7c27928cb399e022d
 RUN apk upgrade --no-cache
 ARG COMMIT_SHA=unknown
 LABEL org.opencontainers.image.title="craftpulse-frontend" \
