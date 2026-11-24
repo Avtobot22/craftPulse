@@ -200,6 +200,9 @@ func Definitions() []Definition {
 
 // lookup finds a definition in force; a retired one is absent.
 func lookup(id string) (Definition, bool) {
+	if id == _aliasPatchCoverage {
+		id = _metricPatchCoverage
+	}
 	all := registry()
 	i := slices.IndexFunc(all, func(d Definition) bool { return d.ID == id })
 	if i < 0 {

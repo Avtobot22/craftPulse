@@ -107,6 +107,9 @@ func TestLizard_ManifestExcludesFilesAndDirectories(t *testing.T) {
 		}),
 	})
 	assert.Empty(t, facts.Functions)
+	assert.Equal(t, []entity.SkippedTarget{
+		{Path: "src/gen.go", Reason: "generated"}, {Path: "vendor", Reason: "vendor"}, {Path: "build", Reason: "build"},
+	}, facts.ExcludedTargets)
 	assert.Equal(t, []entity.CodeFile{{Path: "src/app.go", NLOC: 20}, {Path: "src/app_test.go", NLOC: 10, Test: true}}, *facts.Files)
 }
 

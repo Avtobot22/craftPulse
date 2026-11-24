@@ -1,0 +1,22 @@
+{
+  "duplicates": [
+    {
+      "format": "javascript",
+      "firstFile": {
+        "name": "original.js",
+        "start": 1,
+        "end": 13
+      },
+      "secondFile": {
+        "name": "peer.js",
+        "start": 1,
+        "end": 13
+      }
+    }
+  ],
+  "statistics": {
+    "total": {
+      "lines": 26
+    }
+  }
+}
