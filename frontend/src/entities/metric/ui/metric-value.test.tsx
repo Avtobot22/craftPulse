@@ -46,6 +46,33 @@ describe('MetricValue', () => {
     expect(screen.getByText('Малая выборка')).toBeInTheDocument()
   })
 
+  it.each(['PROVISIONAL', 'BOUNDED'] as const)(
+    'shows coverage counts for %s',
+    (state) => {
+      render(
+        <MetricValue
+          value={{
+            ...base,
+            state,
+            value: state === 'PROVISIONAL' ? 259_200 : null,
+            unit: 'seconds',
+            n: 6,
+            bound:
+              state === 'BOUNDED' ? { kind: 'lower', value: 259_200 } : null,
+            low_sample: true,
+            missing_count: 1,
+            excluded_count: 2,
+            reason_code: 'history_incomplete',
+          }}
+        />,
+      )
+      expect(screen.getByText('n = 6')).toBeInTheDocument()
+      expect(
+        screen.getByText('Пропущено: 1. Исключено: 2.'),
+      ).toBeInTheDocument()
+    },
+  )
+
   it('formats a duration as days and hours', () => {
     render(<MetricValue value={{ ...base, unit: 'seconds', value: 90_061 }} />)
     expect(screen.getByText('1 д 1 ч')).toBeInTheDocument()

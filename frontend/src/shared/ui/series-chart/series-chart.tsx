@@ -95,8 +95,19 @@ export function SeriesChart({
     },
     xAxis: {
       type: 'datetime',
-      title: { text: 'Начало периода (UTC)' },
-      labels: { style: { fontSize: '14px' } },
+      title: { text: `Начало периода (${timeZone})` },
+      labels: {
+        style: { fontSize: '14px' },
+        formatter: (tick: unknown) => {
+          const value =
+            tick && typeof tick === 'object' && 'value' in tick
+              ? tick.value
+              : tick
+          return typeof value === 'number' || value instanceof Date
+            ? time.format(value)
+            : ''
+        },
+      },
     },
     yAxis: [
       {

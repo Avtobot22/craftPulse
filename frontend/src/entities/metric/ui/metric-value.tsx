@@ -54,6 +54,7 @@ function formatValue(
 
 export function MetricValue({ value }: MetricValueProps) {
   const { state, unit, denominator, n, bound, low_sample, reason_code } = value
+  const showCoverage = state === 'PROVISIONAL' || state === 'BOUNDED'
   const missingDenominator =
     (unit === 'ratio' || unit === 'percent' || unit === '%') &&
     (denominator === null || denominator <= 0)
@@ -87,6 +88,12 @@ export function MetricValue({ value }: MetricValueProps) {
         <Text>Причина отсутствия значения не указана</Text>
       )}
       {n !== null && <Text>n = {number.format(n)}</Text>}
+      {showCoverage && (
+        <Text>
+          Пропущено: {number.format(value.missing_count)}. Исключено:{' '}
+          {number.format(value.excluded_count)}.
+        </Text>
+      )}
       {low_sample && <Text>Малая выборка</Text>}
     </Flex>
   )

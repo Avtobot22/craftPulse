@@ -18,6 +18,16 @@ import type { AppRuntime } from '../initialization/runtime'
 import { createAppRoutes } from './routes'
 
 const cleanups: (() => void)[] = []
+const [team] = teams.data
+const [project] = projects.data
+if (!team || !project) throw new Error('Expected one team and project fixture')
+const processOwnerRole = {
+  role: 'process_owner',
+  team_id: team.id,
+  project_id: null,
+  service_id: null,
+  assigned_at: '2026-10-01T09:00:00Z',
+} as const
 const admin = {
   ...currentUser,
   actions: [
@@ -27,10 +37,8 @@ const admin = {
     'installation.read',
     'process.manage',
   ],
+  roles: [...currentUser.roles, processOwnerRole],
 }
-const [team] = teams.data
-const [project] = projects.data
-if (!team || !project) throw new Error('Expected one team and project fixture')
 const adminWithoutAreas = {
   ...admin,
   areas: { teams: [], projects: [], services: [] },
@@ -39,6 +47,22 @@ const secondTeam = {
   ...team,
   id: '0193a5b0-3333-7000-8000-000000000002',
   name: 'Другая команда',
+}
+const scopedProcessOwner = {
+  ...currentUser,
+  actions: [...currentUser.actions, 'process.manage'],
+  areas: { ...currentUser.areas, teams: [team, secondTeam] },
+  roles: [
+    ...currentUser.roles,
+    processOwnerRole,
+    {
+      role: 'dev_lead',
+      team_id: secondTeam.id,
+      project_id: null,
+      service_id: null,
+      assigned_at: '2026-10-01T09:00:00Z',
+    },
+  ],
 }
 
 function mockApi(user = currentUser, availableTeams = teams.data) {
@@ -282,8 +306,11 @@ describe('UI-01', () => {
     expect(screen.queryByRole('link', { name: 'Целевые сроки' })).toBeNull()
   })
 
-  it('shows process settings for the selected team with process.manage', async () => {
-    mount(`/?team_id=${team.id}`, mockApi(admin))
+  it('hides process settings after switching to a read-only team', async () => {
+    mount(
+      `/?team_id=${team.id}`,
+      mockApi(scopedProcessOwner, [team, secondTeam]),
+    )
     expect(
       await screen.findByRole('link', { name: 'Настройки процесса' }),
     ).toHaveAttribute('href', `/settings/process?team_id=${team.id}`)
@@ -291,7 +318,37 @@ describe('UI-01', () => {
       'href',
       `/settings/targets?team_id=${team.id}`,
     )
+    fireEvent.change(screen.getByRole('combobox', { name: 'Команда' }), {
+      target: { value: secondTeam.id },
+    })
+    await waitFor(() => {
+      expect(
+        screen.getByRole('link', { name: 'Отчёт команды' }),
+      ).toHaveAttribute('href', `/reports/team?team_id=${secondTeam.id}`)
+    })
+    expect(
+      screen.queryByRole('link', { name: 'Настройки процесса' }),
+    ).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Целевые сроки' })).toBeNull()
   })
+
+  it.each([
+    [routePaths.workflowSettings, 'Настройки процесса'],
+    [routePaths.targetSettings, 'Целевые сроки'],
+  ])(
+    'blocks %s for a team where the user only reads reports',
+    async (path, heading) => {
+      mount(
+        `${path}?team_id=${secondTeam.id}`,
+        mockApi(scopedProcessOwner, [team, secondTeam]),
+      )
+      await screen.findByRole('link', { name: 'Отчёт команды' })
+      expect(
+        screen.getByRole('heading', { name: 'Объект или область недоступны' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: heading })).toBeNull()
+    },
+  )
 
   it.each([
     ['/settings/process', 'process.manage'],

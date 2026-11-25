@@ -13,7 +13,7 @@ import {
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser, SessionController } from '@/shared/auth'
 import { contentGridProps, layoutSizes, routePaths } from '@/shared/config'
-import { ErrorState } from '@/shared/ui'
+import { ErrorState, LoadingState } from '@/shared/ui'
 import {
   changeScope,
   projectParam,
@@ -109,13 +109,25 @@ export function HomePage({
       (path === routePaths.users &&
         matchPath(path + '/:userId', location.pathname)),
   )
-  const allowed = settings.filter(({ action }) =>
-    current.actions.includes(action),
-  )
-  const visibleSettings = allowed.filter(
-    ({ action }) => action !== 'process.manage' || scope.team,
+  const selectedTeamId = scope.team?.id
+  const ownsProcess =
+    selectedTeamId !== undefined &&
+    current.roles.some(
+      ({ role, team_id }) =>
+        role === 'process_owner' && team_id === selectedTeamId,
+    )
+  const allowed = settings.filter(
+    ({ action }) =>
+      current.actions.includes(action) &&
+      (action !== 'process.manage' || ownsProcess),
   )
   const currentSetting = active && allowed.includes(active) ? active : undefined
+  const checkingProcessTeam =
+    active?.action === 'process.manage' &&
+    current.actions.includes(active.action) &&
+    hasAreas &&
+    Boolean(params.get(teamParam)) &&
+    scope.teams.isPending
   const isReport = reportPaths.some((path) =>
     matchPath(path, location.pathname),
   )
@@ -155,7 +167,7 @@ export function HomePage({
     if (heading) heading.tabIndex = -1
     const target = heading ?? main
     target?.focus()
-  }, [location.pathname, missing, noArea, restoring])
+  }, [location.pathname, missing, noArea, restoring, checkingProcessTeam])
 
   function updateArea(team: string, project?: string) {
     const { params: next, reset } = changeScope(params, team, project)
@@ -217,7 +229,7 @@ export function HomePage({
   const teamError = scope.teams.isError && hasAreas
   const projectError = scope.projects.isError && !!scope.team
   const overview = hasAreas && current.actions.includes(report.action)
-  const hasNavigation = overview || visibleSettings.length > 0
+  const hasNavigation = overview || allowed.length > 0
   return (
     <div
       className={hasNavigation ? 'cp-shell' : 'cp-shell cp-shell--without-nav'}
@@ -398,12 +410,12 @@ export function HomePage({
                 {report.label}
               </Link>
             )}
-            {visibleSettings.length > 0 && (
+            {allowed.length > 0 && (
               <div role="group" aria-labelledby="settings-heading">
                 <Text id="settings-heading" as="h2" variant="subheader-1">
                   Настройки
                 </Text>
-                {visibleSettings.map(({ path, label }) => (
+                {allowed.map(({ path, label }) => (
                   <Link
                     key={path}
                     aria-current={active?.path === path ? 'page' : undefined}
@@ -471,7 +483,9 @@ export function HomePage({
                   </ol>
                 </nav>
               )}
-              {missing ? (
+              {checkingProcessTeam ? (
+                <LoadingState />
+              ) : missing ? (
                 <Text as="h1" variant="header-1">
                   Объект или область недоступны
                 </Text>

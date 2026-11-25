@@ -46,6 +46,34 @@ describe('SeriesChart', () => {
     expect(screen.getByText(/Часовой пояс: UTC/)).toBeInTheDocument()
   })
 
+  it('uses the requested time zone for the axis and point details', () => {
+    render(
+      <SeriesChart
+        title="Динамика"
+        summary="Значение за октябрь"
+        unit="ч"
+        timeZone="Europe/Moscow"
+        series={series}
+        onPointSelect={vi.fn()}
+      />,
+    )
+    const xAxis = chart.mock.lastCall?.[0].data.xAxis
+    const timestamp = Date.parse(point.point_start)
+    const formatter: unknown = xAxis?.labels?.formatter
+    expect(xAxis?.title?.text).toBe('Начало периода (Europe/Moscow)')
+    if (typeof formatter !== 'function') {
+      throw new Error('Missing tick formatter')
+    }
+    const label: unknown = Reflect.apply(formatter, undefined, [timestamp])
+    expect(label).toMatch(/03:00:00/)
+    expect(plotted()?.[0]?.data[0]).toMatchObject({
+      x: timestamp,
+      custom: { details: expect.stringContaining('03:00:00') },
+    })
+    const button = screen.getByRole('button', { name: /03:00:00/ })
+    expect(button).toHaveTextContent('03:00:00')
+  })
+
   it('limits the plot and table to five selected series', () => {
     const all = Array.from({ length: 6 }, (_, index) => ({
       id: String(index),
