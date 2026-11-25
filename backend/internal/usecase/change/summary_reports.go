@@ -72,7 +72,8 @@ func (u *UseCase) summarizeRow(ctx context.Context, org entity.ID, mr entity.Sum
 		if err != nil {
 			return time.Time{}, err
 		}
-		for _, b := range baselines {
+		for i := range baselines {
+			b := &baselines[i]
 			if b.ReportID == base.ID && b.ProfileVersionID == v.ProfileVersionID {
 				v.Inputs = append(v.Inputs, entity.SummaryInput{Kind: "baseline", ID: b.ID})
 			}
@@ -106,7 +107,8 @@ func (u *UseCase) summaryMissing(ctx context.Context, org entity.ID, mr entity.S
 		if err != nil {
 			return err
 		}
-		for _, r := range facts.Runs {
+		for i := range facts.Runs {
+			r := &facts.Runs[i]
 			if e.AnalysisKind == entity.AnalysisCode && (r.Producer == "lizard" || r.Producer == "jscpd") {
 				continue
 			}
@@ -163,8 +165,8 @@ func (u *UseCase) summaryFindings(ctx context.Context, org entity.ID, mr entity.
 		if err := u.identify(ctx, org, r, mr.KnowledgeSeq); err != nil {
 			return err
 		}
-		for _, o := range r.Occurrences {
-			keys = append(keys, o.ID)
+		for j := range r.Occurrences {
+			keys = append(keys, r.Occurrences[j].ID)
 		}
 	}
 	head.Occurrences = occurrences[head.ID]
@@ -224,9 +226,10 @@ func summaryOccurrences(occurrences []entity.ReportOccurrence, ids []entity.Occu
 		byOccurrence[id.OccurrenceID] = id.FindingIdentityID
 	}
 	out := make(map[entity.ID][]entity.ReportOccurrence)
-	for _, o := range occurrences {
+	for i := range occurrences {
+		o := &occurrences[i]
 		id := byOccurrence[o.ID]
-		out[id] = append(out[id], o)
+		out[id] = append(out[id], *o)
 	}
 	return out
 }
@@ -239,7 +242,8 @@ func summaryFinding(calculation *entity.SummaryFindingComparison, report entity.
 		right = "security"
 	}
 	var accepted, applicable *entity.SummaryItem
-	for _, o := range occurrences {
+	for i := range occurrences {
+		o := &occurrences[i]
 		item := entity.SummaryItem{
 			Kind: f.Lifecycle, FindingID: &f.ID, OccurrenceID: &o.ID, RequiredRight: right,
 			ComponentID: &calculation.ComponentID, AnalysisKind: calculation.AnalysisKind,
@@ -252,8 +256,8 @@ func summaryFinding(calculation *entity.SummaryFindingComparison, report entity.
 		calculation.Findings = append(calculation.Findings, entity.SummaryFinding{
 			FindingCoordinates: coords, OccurrenceID: o.ID, ReportID: report, Lifecycle: f.Lifecycle, Severity: item.Severity, LineStart: o.LineStart,
 		})
-		for _, version := range versions {
-			if version.Matches(coords) {
+		for j := range versions {
+			if versions[j].Matches(coords) {
 				item.Kind = "accepted"
 				break
 			}
@@ -262,7 +266,7 @@ func summaryFinding(calculation *entity.SummaryFindingComparison, report entity.
 		if item.Kind == "accepted" {
 			best = &accepted
 		}
-		if *best == nil || compareSummarySignals(item, **best) < 0 {
+		if *best == nil || compareSummarySignals(&item, *best) < 0 {
 			*best = &item
 		}
 	}
@@ -292,7 +296,7 @@ func severityOrder(s string) int {
 	}
 }
 
-func compareSummarySignals(a, b entity.SummaryItem) int {
+func compareSummarySignals(a, b *entity.SummaryItem) int {
 	return cmp.Or(cmp.Compare(severityOrder(a.Severity), severityOrder(b.Severity)),
 		cmp.Compare(b.RequiredRight, a.RequiredRight), cmp.Compare(a.AnalysisKind, b.AnalysisKind),
 		compareIDs(*a.FindingID, *b.FindingID), compareIDs(*a.OccurrenceID, *b.OccurrenceID))
@@ -300,12 +304,12 @@ func compareSummarySignals(a, b entity.SummaryItem) int {
 
 func rankSummary(items []entity.SummaryItem) {
 	var candidates []int
-	for i, item := range items {
-		if item.Kind == entity.FindingNew {
+	for i := range items {
+		if items[i].Kind == entity.FindingNew {
 			candidates = append(candidates, i)
 		}
 	}
-	slices.SortStableFunc(candidates, func(a, b int) int { return compareSummarySignals(items[a], items[b]) })
+	slices.SortStableFunc(candidates, func(a, b int) int { return compareSummarySignals(&items[a], &items[b]) })
 	for rank, index := range candidates[:min(5, len(candidates))] {
 		items[index].Rank = new(rank + 1)
 	}

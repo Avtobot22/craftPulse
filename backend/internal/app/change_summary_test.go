@@ -195,7 +195,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assertItem(ready, "not_evaluated", "scan_failed", 1)
 	assertItem(ready, "not_evaluated", "import_failed", 1)
 
-	var hits []hit
+	hits := make([]hit, 0, 6)
 	for i := range 6 {
 		hits = append(hits, hit{rule: fmt.Sprintf("new-%d", i), path: "src/main.go", line: i + 10})
 	}

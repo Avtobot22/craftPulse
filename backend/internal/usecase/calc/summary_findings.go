@@ -15,7 +15,7 @@ func (*UseCase) CalculateSummaryFindings(comparison entity.SummaryFindingCompari
 	[]entity.SummaryFindingValues, []entity.RevisionInput,
 ) {
 	kinds := summaryFindingKinds(comparison)
-	var values []entity.SummaryFindingValues
+	values := make([]entity.SummaryFindingValues, 0, len(kinds))
 	var definitions []entity.RevisionInput
 	for _, kind := range kinds {
 		in := FindingMetricsInput{
@@ -24,7 +24,8 @@ func (*UseCase) CalculateSummaryFindings(comparison entity.SummaryFindingCompari
 		}
 		in.Head, in.HeadSHA = summaryFindingScan(&comparison, comparison.Head)
 		in.Base, in.BaseSHA = summaryFindingScan(&comparison, comparison.Base)
-		for _, f := range comparison.Findings {
+		for i := range comparison.Findings {
+			f := &comparison.Findings[i]
 			if f.Kind != kind {
 				continue
 			}
@@ -74,7 +75,8 @@ func summaryFindingKinds(c entity.SummaryFindingComparison) []string {
 	case entity.AnalysisIaC:
 		kinds = append(kinds, entity.FindingIaC)
 	}
-	for _, f := range c.Findings {
+	for i := range c.Findings {
+		f := &c.Findings[i]
 		if (f.Kind == entity.FindingCode || entity.SensitiveFinding(f.Kind)) && !slices.Contains(kinds, f.Kind) {
 			kinds = append(kinds, f.Kind)
 		}
@@ -83,7 +85,7 @@ func summaryFindingKinds(c entity.SummaryFindingComparison) []string {
 	return kinds
 }
 
-func summaryFindingScan(c *entity.SummaryFindingComparison, r *entity.TechnicalReport) (*FindingScan, string) {
+func summaryFindingScan(c *entity.SummaryFindingComparison, r *entity.TechnicalReport) (scan *FindingScan, sha string) {
 	if r == nil {
 		return nil, ""
 	}

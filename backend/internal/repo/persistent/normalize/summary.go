@@ -163,7 +163,7 @@ func (r *Repo) SummaryReports(ctx context.Context, org entity.ID, mr entity.Summ
 				AND ($10::bytea IS NULL OR r.rules_hash = $10)
 			UNION ALL
 			SELECT r.id, r.sha, COALESCE(r.report_format,''), r.language, COALESCE(r.producer,''), '',
-				NULL, NULL, r.scope_hash, '', 'unknown', '', false, true, '', '',
+				CAST(NULL AS bytea), NULL, r.scope_hash, '', 'unknown', '', false, true, '', '',
 				i.received_at, r.known_seq, r.record_no
 			FROM normalize.rejected_report r
 			JOIN ingest.receipt i ON (i.organization_id, i.id) = (r.organization_id, r.receipt_id)

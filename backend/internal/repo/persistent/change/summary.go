@@ -70,7 +70,8 @@ func (r *Repo) SaveSummary(ctx context.Context, org entity.ID, v *entity.Summary
 			(organization_id, summary_revision_id, input_kind, input_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
 			uuid.UUID(org), revisionID, i.Kind, uuid.UUID(i.ID))
 	}
-	for n, i := range v.Items {
+	for n := range v.Items {
+		i := &v.Items[n]
 		batch.Queue(`INSERT INTO change.summary_item
 			(organization_id, summary_revision_id, item_no, item_kind, finding_identity_id, occurrence_id,
 			 required_right, rank, component_id, analysis_kind, reason_code, severity, value)
