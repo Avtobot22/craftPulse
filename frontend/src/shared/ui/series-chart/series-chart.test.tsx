@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { isValidElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChartProps, LineSeries } from '@gravity-ui/charts'
 import { SeriesChart } from './series-chart'
@@ -17,6 +18,18 @@ const plotted = () =>
 const point = { point_start: '2026-10-01T00:00:00Z', value: 42 }
 const series: ChartSeries[] = [
   { id: 'one', metric_id: 'T08', name: 'Время', points: [point] },
+]
+const percentileSeries: ChartSeries[] = [
+  { id: 'p50', metric_id: 'T08', name: 'p50', points: [point] },
+  {
+    id: 'p85',
+    metric_id: 'T08',
+    name: 'p85',
+    points: [
+      { ...point, value: 84 },
+      { point_start: '2026-10-02T00:00:00Z', value: 96 },
+    ],
+  },
 ]
 
 describe('SeriesChart', () => {
@@ -130,7 +143,7 @@ describe('SeriesChart', () => {
     ).toBeInTheDocument()
   })
 
-  it('exposes point details and selection through a focusable native button', () => {
+  it('distinguishes p50 and p85 when selecting points on one date', () => {
     const onPointSelect = vi.fn()
     render(
       <SeriesChart
@@ -138,19 +151,121 @@ describe('SeriesChart', () => {
         summary="Значение за октябрь"
         unit="ч"
         timeZone="UTC"
-        series={series}
+        series={percentileSeries}
         onPointSelect={onPointSelect}
       />,
     )
-    const button = screen.getByRole('button', { name: /Время, .*42 ч/ })
-    button.focus()
-    expect(button).toHaveFocus()
-    // JSDOM does not synthesize the native Enter/Space click on a button.
-    fireEvent.click(button, { detail: 0 })
-    expect(onPointSelect).toHaveBeenCalledWith({
+    const p50 = screen.getByRole('button', { name: /^p50, .*42 ч$/ })
+    const p85 = screen.getByRole('button', { name: /^p85, .*84 ч$/ })
+    p50.focus()
+    expect(p50).toHaveFocus()
+    // JSDOM does not synthesize the native click from Enter or Space.
+    fireEvent.click(p50, { detail: 0 })
+    p85.focus()
+    expect(p85).toHaveFocus()
+    fireEvent.click(p85, { detail: 0 })
+
+    expect(onPointSelect).toHaveBeenNthCalledWith(1, {
+      series_id: 'p50',
       metric_id: 'T08',
       point_start: point.point_start,
     })
-    expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(onPointSelect).toHaveBeenNthCalledWith(2, {
+      series_id: 'p85',
+      metric_id: 'T08',
+      point_start: point.point_start,
+    })
+    expect(p50).toHaveAttribute('aria-pressed', 'false')
+    expect(p85).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('forwards the series selected by the chart on a shared date', () => {
+    const onPointSelect = vi.fn()
+    render(
+      <SeriesChart
+        title="Динамика"
+        summary="Значение за октябрь"
+        unit="ч"
+        timeZone="UTC"
+        series={percentileSeries}
+        onPointSelect={onPointSelect}
+      />,
+    )
+    const click = chart.mock.lastCall?.[0].data.chart?.events?.click
+    const plottedSeries = plotted()
+    if (!click || !plottedSeries) throw new Error('Missing chart click handler')
+
+    for (const line of plottedSeries) {
+      const data = line.data[0]
+      if (!data) throw new Error('Missing chart point')
+      const series = { type: line.type, id: line.name, name: line.name }
+      const selected = { point: data, series }
+      const event = new PointerEvent('click')
+      click(
+        {
+          ...selected,
+          position: [0, 0],
+          chart: { getClosest: () => selected },
+        },
+        event,
+      )
+    }
+
+    expect(onPointSelect.mock.calls).toEqual([
+      [{ series_id: 'p50', metric_id: 'T08', point_start: point.point_start }],
+      [{ series_id: 'p85', metric_id: 'T08', point_start: point.point_start }],
+    ])
+  })
+
+  it('shows the same p50 and p85 values on hover and on focus', () => {
+    render(
+      <SeriesChart
+        title="Динамика"
+        summary="Значение за октябрь"
+        unit="ч"
+        timeZone="UTC"
+        series={percentileSeries}
+        onPointSelect={vi.fn()}
+      />,
+    )
+    const p50 = screen.getByRole('button', { name: /^p50, .*42 ч$/ })
+    const p85 = screen.getByRole('button', { name: /^p85, .*84 ч$/ })
+    const renderer = chart.mock.lastCall?.[0].data.tooltip?.renderer
+    const lines = plotted()
+    const samePeriod = lines?.[0]?.data[0]
+    const nextPeriod = lines?.[1]?.data[1]
+    if (!renderer || !samePeriod || !nextPeriod) {
+      throw new Error('Missing chart tooltip or point')
+    }
+
+    const tooltip = renderer({
+      hovered: [
+        {
+          series: { type: 'line', id: 'p85', name: 'p85' },
+          data: nextPeriod,
+        },
+        {
+          series: { type: 'line', id: 'p50', name: 'p50' },
+          data: samePeriod,
+          closest: true,
+        },
+      ],
+    })
+    if (!isValidElement(tooltip)) {
+      throw new Error('Missing chart tooltip content')
+    }
+    const { container } = render(tooltip)
+    const details = within(container)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent)
+    expect(details).toEqual([
+      expect.stringMatching(/^p50, .*42 ч$/),
+      expect.stringMatching(/^p85, .*84 ч$/),
+    ])
+    for (const button of [p50, p85]) {
+      button.focus()
+      expect(button).toHaveFocus()
+      expect(button).toHaveAccessibleDescription(details.join(' '))
+    }
   })
 })

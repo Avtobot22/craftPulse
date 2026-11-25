@@ -21,6 +21,7 @@ export interface ChartSeries {
 }
 
 export interface ChartPointSelection {
+  series_id: ChartSeries['id']
   metric_id: string
   point_start: string
 }
@@ -43,7 +44,7 @@ const markers = [
 ] as const
 const maxSeries = markers.length
 
-type PlotPoint = ChartPointSelection & { seriesId: string; details: string }
+type PlotPoint = ChartPointSelection & { details: string }
 type LineInteraction = ChartInteractionItem<LineSeriesData<PlotPoint>, 'line'>
 const number = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 20 })
 
@@ -79,13 +80,49 @@ export function SeriesChart({
     points.some(({ value }) => value !== null),
   )
   const selectPoint = ({
-    seriesId,
+    series_id,
     metric_id,
     point_start,
-  }: Omit<PlotPoint, 'details'>) => {
-    setSelected({ id: seriesId, start: point_start })
-    onPointSelect({ metric_id, point_start })
+  }: ChartPointSelection) => {
+    setSelected({ id: series_id, start: point_start })
+    onPointSelect({ series_id, metric_id, point_start })
   }
+  const pointsByPeriod = new Map<number, PlotPoint[]>()
+  const lineSeries = visible.map(
+    ({ id, metric_id, name, points }, index): LineSeries<PlotPoint> => ({
+      type: 'line',
+      name,
+      lineWidth: 2,
+      cursor: 'pointer',
+      marker: {
+        enabled: true,
+        radius: 3,
+        symbol: (markers[index] ?? markers[0]).symbol,
+      },
+      data: points
+        .map(({ point_start, value }) => {
+          const x = Date.parse(point_start)
+          const details = pointDetails(name, point_start, value)
+          const custom = { series_id: id, metric_id, point_start, details }
+          const periodPoints = pointsByPeriod.get(x)
+          if (periodPoints) periodPoints.push(custom)
+          else pointsByPeriod.set(x, [custom])
+          return {
+            x,
+            y: value,
+            custom,
+            ...(selected?.id === id && selected.start === point_start
+              ? { annotation: { label: { text: details } } }
+              : {}),
+          }
+        })
+        .sort((a, b) => a.x - b.x),
+    }),
+  )
+  const periodDetails = (start: string) =>
+    pointsByPeriod
+      .get(Date.parse(start))
+      ?.map(({ series_id, details }) => <li key={series_id}>{details}</li>)
   const chart: ChartData<PlotPoint, LineInteraction> = {
     chart: {
       events: {
@@ -109,45 +146,17 @@ export function SeriesChart({
     ],
     legend: { enabled: false },
     tooltip: {
-      renderer: ({ hovered }) => (
-        <ul className="cp-series-chart__tooltip">
-          {hovered.map(
-            ({ data }) =>
-              data.custom && (
-                <li key={data.custom.seriesId}>{data.custom.details}</li>
-              ),
-          )}
-        </ul>
-      ),
+      renderer: ({ hovered }) => {
+        const point = (hovered.find(({ closest }) => closest) ?? hovered[0])
+          ?.data.custom
+        return (
+          <ul className="cp-series-chart__tooltip">
+            {point && periodDetails(point.point_start)}
+          </ul>
+        )
+      },
     },
-    series: {
-      data: visible.map(
-        ({ id, metric_id, name, points }, index): LineSeries<PlotPoint> => ({
-          type: 'line',
-          name,
-          lineWidth: 2,
-          cursor: 'pointer',
-          marker: {
-            enabled: true,
-            radius: 3,
-            symbol: (markers[index] ?? markers[0]).symbol,
-          },
-          data: points
-            .map(({ point_start, value }) => {
-              const details = pointDetails(name, point_start, value)
-              return {
-                x: Date.parse(point_start),
-                y: value,
-                custom: { seriesId: id, metric_id, point_start, details },
-                ...(selected?.id === id && selected.start === point_start
-                  ? { annotation: { label: { text: details } } }
-                  : {}),
-              }
-            })
-            .sort((a, b) => a.x - b.x),
-        }),
-      ),
-    },
+    series: { data: lineSeries },
   }
 
   return (
@@ -208,42 +217,45 @@ export function SeriesChart({
                 </tr>
               </thead>
               <tbody>
-                {visible.flatMap(({ id, metric_id, name, points }) =>
-                  points.map(({ point_start, value }) => {
-                    const date = formatDate(point_start)
-                    const display = formatValue(value)
-                    const details = pointDetails(name, point_start, value)
-                    const active =
-                      selected?.id === id && selected.start === point_start
-                    return (
-                      <tr key={JSON.stringify([id, point_start])}>
-                        <td>{name}</td>
-                        <td>
-                          <button
-                            type="button"
-                            aria-label={details}
-                            aria-pressed={active}
-                            onClick={() => {
-                              selectPoint({
-                                seriesId: id,
-                                metric_id,
-                                point_start,
-                              })
-                            }}
-                          >
-                            <time dateTime={point_start}>{date}</time>
-                          </button>
-                          <span
-                            className="cp-series-chart__details"
-                            aria-hidden="true"
-                          >
-                            {details}
-                          </span>
-                        </td>
-                        <td>{display}</td>
-                      </tr>
-                    )
-                  }),
+                {visible.flatMap(
+                  ({ id, metric_id, name, points }, seriesIndex) =>
+                    points.map(({ point_start, value }, rowIndex) => {
+                      const date = formatDate(point_start)
+                      const display = formatValue(value)
+                      const details = pointDetails(name, point_start, value)
+                      const detailsId = `${titleId}-${String(seriesIndex)}-${String(rowIndex)}`
+                      const active =
+                        selected?.id === id && selected.start === point_start
+                      return (
+                        <tr key={JSON.stringify([id, point_start])}>
+                          <td>{name}</td>
+                          <td>
+                            <button
+                              type="button"
+                              aria-label={details}
+                              aria-describedby={detailsId}
+                              aria-pressed={active}
+                              onClick={() => {
+                                selectPoint({
+                                  series_id: id,
+                                  metric_id,
+                                  point_start,
+                                })
+                              }}
+                            >
+                              <time dateTime={point_start}>{date}</time>
+                            </button>
+                            <ul
+                              id={detailsId}
+                              className="cp-series-chart__details"
+                            >
+                              {periodDetails(point_start)}
+                            </ul>
+                          </td>
+                          <td>{display}</td>
+                        </tr>
+                      )
+                    }),
                 )}
               </tbody>
             </table>
