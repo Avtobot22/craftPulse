@@ -51,7 +51,7 @@ describe('application routes', () => {
     ['/', 'craftPulse'],
     ['/login', 'Вход'],
     ['/login/example', 'Вход'],
-    ['/session-expired', 'Вход недоступен или сессия истекла'],
+    ['/session-expired', 'Сессия завершилась'],
     ['/access-denied', 'Объект или область недоступны'],
     ['/installation', 'Диагностика установки'],
     ['/welcome', 'Результат первого входа'],
@@ -86,7 +86,7 @@ describe('application routes', () => {
     )
     expect(
       await screen.findByRole('heading', {
-        name: 'Вход недоступен или сессия истекла',
+        name: 'Сессия завершилась',
       }),
     ).toBeInTheDocument()
     expect(router.state.location.pathname).toBe(routePaths.sessionExpired)
@@ -125,7 +125,7 @@ describe('application routes', () => {
       await Promise.resolve()
     })
     await screen.findByRole('heading', {
-      name: 'Вход недоступен или сессия истекла',
+      name: 'Сессия завершилась',
     })
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(runtime.queryClient.getQueryCache().getAll()).toHaveLength(0)
@@ -196,7 +196,7 @@ describe('application routes', () => {
     await screen.findByText('private:Платформа')
     fireEvent.click(screen.getByRole('button', { name: 'Проверить сервисы' }))
     await screen.findByRole('heading', {
-      name: 'Вход недоступен или сессия истекла',
+      name: 'Сессия завершилась',
     })
     expect(screen.queryByText('private:Платформа')).not.toBeInTheDocument()
     expect(runtime.queryClient.getQueryCache().getAll()).toHaveLength(0)

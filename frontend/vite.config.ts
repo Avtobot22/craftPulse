@@ -7,7 +7,7 @@ export default defineConfig({
   resolve: { alias: { '@': resolve(import.meta.dirname, 'src') } },
   server: {
     proxy: {
-      '/o/': {
+      '^/o/[^/]+/(login|callback)(?:\\?|$)': {
         target: process.env.API_PROXY_TARGET ?? 'http://localhost:8080',
         changeOrigin: true,
       },

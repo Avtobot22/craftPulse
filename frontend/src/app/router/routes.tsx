@@ -17,9 +17,22 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
     {
       element: <SessionNavigation runtime={runtime} />,
       children: [
-        { path: routePaths.login, element: <LoginPage /> },
-        { path: routePaths.login + '/:orgSlug', element: <LoginPage /> },
-        { path: routePaths.sessionExpired, element: <SessionExpiredPage /> },
+        {
+          path: routePaths.login,
+          element: <LoginPage session={runtime.session} />,
+        },
+        {
+          path: routePaths.login + '/:orgSlug',
+          element: <LoginPage session={runtime.session} />,
+        },
+        {
+          path: '/o/:orgSlug',
+          element: <LoginPage session={runtime.session} />,
+        },
+        {
+          path: routePaths.sessionExpired,
+          element: <SessionExpiredPage session={runtime.session} />,
+        },
         {
           element: <ProtectedRoute runtime={runtime} />,
           children: [
