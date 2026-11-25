@@ -47,6 +47,7 @@ var _rules = map[string]rule{
 	"session.manage":        ruleSession,
 	"org.read":              ruleAreaRead,
 	"report.read":           ruleAreaRead,
+	"tasks.read":            ruleAreaRead,
 	"mr.read":               ruleAreaRead,
 	"org.manage":            ruleAdministrator,
 	"users.manage":          ruleAdministrator,
@@ -169,6 +170,9 @@ func (u *UseCase) Authorize(ctx context.Context, s entity.Subject, r entity.Acce
 	if err != nil {
 		return entity.Scope{}, err
 	}
+	if !s.APIKeyID.IsZero() {
+		return taskKeyScope(s, r, p)
+	}
 	reason, denial := decide(p, r)
 	if denial == nil && _rules[r.Action] == ruleProjectManager {
 		return managedScope(p), nil
@@ -249,6 +253,9 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
 	if !granted(p, r.Action) {
+		if r.Operation == "getTask" && r.Action == "tasks.read" {
+			return ReasonOutsideScope, entity.ErrNotFound
+		}
 		return ReasonNoPermission, entity.ErrForbidden
 	}
 	return "", nil

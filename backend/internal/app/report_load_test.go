@@ -32,15 +32,21 @@ type loadManifest struct {
 	Sessions   []string            `json:"sessions"`
 	Filters    []map[string]string `json:"filters"`
 	Points     []map[string]string `json:"points"`
+	TaskPaths  []string            `json:"task_paths,omitempty"`
 }
 
 // collectLoad writes 100 tasks over the window of the series, about ten events each: the start, three
 // blockings by the flag, a resize and the completion, every fifth task cancelled instead.
 func (e *reportEnv) collectLoad(t *testing.T) {
 	t.Helper()
+	e.collectLoadTasks(t, _loadTasks)
+}
+
+func (e *reportEnv) collectLoadTasks(t *testing.T, count int) {
+	t.Helper()
 	first := e.week.AddDate(0, 0, -7*30)
-	tasks, events := make([]*envelope.Record, 0, _loadTasks), make([]*envelope.Record, 0, 10*_loadTasks)
-	for i := range _loadTasks {
+	tasks, events := make([]*envelope.Record, 0, count), make([]*envelope.Record, 0, 10*count)
+	for i := range count {
 		id := strconv.Itoa(32000 + i)
 		key := "L-" + strconv.Itoa(i+1)
 		created := first.Add(time.Duration(i) * 50 * time.Hour)

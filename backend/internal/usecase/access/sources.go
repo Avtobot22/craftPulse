@@ -285,10 +285,14 @@ func (u *UseCase) grant(ctx context.Context, s entity.Subject, scope entity.Scop
 	if len(refused) == 0 {
 		return entity.GrantScope(g), nil
 	}
+	actor, actorID := entity.ActorUser, s.UserID
+	if !s.APIKeyID.IsZero() {
+		actor, actorID = entity.ActorAPIKey, s.APIKeyID
+	}
 	err := u.auditor.RecordSeparately(ctx, entity.AuditEvent{
 		OrganizationID: s.OrganizationID,
-		ActorKind:      entity.ActorUser,
-		ActorID:        s.UserID,
+		ActorKind:      actor,
+		ActorID:        actorID,
 		Operation:      q.Operation,
 		ObjectKind:     "source_data",
 		ObjectID:       refused[0],

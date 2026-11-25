@@ -92,6 +92,7 @@ func newSync(pool *pgxpool.Pool, keyring *crypto.Keyring, connect sync.Connect, 
 // viewModules are the modules view reads: the runs of collection from sync, the series and the reports of calc,
 // the source instances of connect and the rights of a reader from access.
 type viewModules struct {
+	tasks      view.TaskDeps
 	collection view.Sync
 	series     view.Series
 	reports    view.Reports
@@ -111,7 +112,7 @@ type viewModules struct {
 func newView(pool *pgxpool.Pool, m viewModules, c clock.Clock) *view.UseCase {
 	tx := persistent.NewTransactor(pool)
 	return view.New(view.Deps{
-		Code: m.code, ReviewCalculator: m.reviewCalculator, ProjectAreas: m.projectAreas, RunCalculator: m.runCalculator, SourceRights: m.rights,
+		Tasks: m.tasks, Code: m.code, ReviewCalculator: m.reviewCalculator, ProjectAreas: m.projectAreas, RunCalculator: m.runCalculator, SourceRights: m.rights,
 		PipelineChecks: change.New(change.Deps{Repo: changerepo.NewRepo(pool), Tx: tx}),
 		CodeLinks:      linkuc.New(linkuc.Deps{Repo: linkrepo.NewRepo(pool), Tx: tx}),
 		Repo:           viewrepo.NewRepo(pool), Tx: tx, Sync: m.collection, Series: m.series, Reports: m.reports,
