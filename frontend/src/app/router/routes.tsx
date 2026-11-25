@@ -14,6 +14,10 @@ import { TeamReportPage } from '@/pages/team-report'
 import { MetricPassportPage } from '@/pages/metric-passport'
 import { MetricCohortPage } from '@/pages/metric-cohort'
 import { SavedViewPage } from '@/pages/saved-view'
+import { TaskListPage } from '@/pages/task-list'
+import { TaskDetailPage } from '@/pages/task-detail'
+import { ProjectTimelinePage } from '@/pages/project-timeline'
+import { MergeRequestQueuePage } from '@/pages/merge-request-queue'
 import { routePaths } from '@/shared/config'
 import type { AppRuntime } from '../initialization/runtime'
 import { ProtectedRoute } from './protected-route'
@@ -86,6 +90,16 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 {
                   path: routePaths.savedView,
                   element: <SavedViewPage />,
+                },
+                { path: routePaths.taskList, element: <TaskListPage /> },
+                { path: routePaths.taskDetail, element: <TaskDetailPage /> },
+                {
+                  path: routePaths.projectTimeline,
+                  element: <ProjectTimelinePage />,
+                },
+                {
+                  path: routePaths.mergeRequestQueue,
+                  element: <MergeRequestQueuePage />,
                 },
                 { path: '*', element: <UnavailablePage /> },
               ],
