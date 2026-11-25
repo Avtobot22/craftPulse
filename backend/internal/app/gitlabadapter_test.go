@@ -39,9 +39,10 @@ const (
 )
 
 type gitLabFixture struct {
-	brokenHistory atomic.Bool
-	listStatus    atomic.Int32
-	moveMR        atomic.Bool
+	brokenHistory          atomic.Bool
+	listStatus             atomic.Int32
+	moveMR                 atomic.Bool
+	releaseStalledResponse <-chan struct{}
 }
 
 func (f *gitLabFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +78,8 @@ func (f *gitLabFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p + "/merge_requests":
 		if status := f.listStatus.Load(); status != 0 {
 			if status < 0 {
-				<-r.Context().Done()
+				// Keep the response pending until the client has observed the timeout.
+				<-f.releaseStalledResponse
 				return
 			}
 			w.Header().Set("Retry-After", "10")
@@ -354,7 +356,10 @@ func TestGitLabAdapterReadsHistoryAndManifest(t *testing.T) {
 
 func TestGitLabAdapterSourceFailures(t *testing.T) {
 	t.Parallel()
-	e := newGitLabTestEnv(t)
+	releaseStalledResponse := make(chan struct{})
+	fixture := &gitLabFixture{releaseStalledResponse: releaseStalledResponse}
+	e := newGitLabTestEnvWithSource(t, fixture)
+	t.Cleanup(func() { close(releaseStalledResponse) })
 	e.probe(t)
 	for _, tc := range []struct {
 		status int
@@ -365,7 +370,7 @@ func TestGitLabAdapterSourceFailures(t *testing.T) {
 		{http.StatusTooManyRequests, "rate_limited"},
 		{http.StatusBadGateway, "unavailable"},
 	} {
-		e.fixture.listStatus.Store(int32(tc.status))
+		fixture.listStatus.Store(int32(tc.status))
 		status, body := e.call(t, http.MethodPost, "fetch", e.target.Fetch)
 		assert.NotEqual(t, http.StatusOK, status)
 		assert.Contains(t, string(body), `"code":"`+tc.code+`"`)
@@ -373,13 +378,13 @@ func TestGitLabAdapterSourceFailures(t *testing.T) {
 			assert.NotContains(t, string(body), `"retry_at":null`)
 		}
 	}
-	e.fixture.listStatus.Store(-1)
+	fixture.listStatus.Store(-1)
 	status, body := e.call(t, http.MethodPost, "fetch", e.target.Fetch)
 	assert.Equal(t, http.StatusGatewayTimeout, status)
 	assert.Contains(t, string(body), `"code":"timeout"`)
 
-	e.fixture.listStatus.Store(0)
-	e.fixture.brokenHistory.Store(true)
+	fixture.listStatus.Store(0)
+	fixture.brokenHistory.Store(true)
 	status, body = e.call(t, http.MethodPost, "fetch", e.target.Fetch)
 	assert.Equal(t, http.StatusServiceUnavailable, status)
 	assert.Contains(t, string(body), `"code":"unavailable"`)

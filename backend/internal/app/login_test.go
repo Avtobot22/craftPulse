@@ -349,6 +349,7 @@ func TestLogin_FirstAdministrator(t *testing.T) {
 	assert.Equal(t, "replaced", sessions[0].EndReason, "the browser keeps one session")
 	assert.False(t, sessions[1].Ended)
 	assert.NotEqual(t, token, b.cookies["__Host-cp_session"], "every login issues a new session ID")
+	assert.True(t, e.metric(t, fmt.Sprintf(`craftpulse_auth_login_outcomes_total{provider=%q,result="succeeded"} 2`, e.idp.issuer())))
 }
 
 func TestLogin_OnlyDeclaredAccountBecomesAdministrator(t *testing.T) {
@@ -436,6 +437,7 @@ func TestLogin_RejectsForgedResponse(t *testing.T) {
 			assert.Equal(t, "failed", login[0].Outcome)
 			assert.Equal(t, tt.wantError, login[0].Reason)
 			assert.True(t, e.metric(t, fmt.Sprintf(`craftpulse_auth_login_failures_total{provider=%q,reason=%q} 1`, e.idp.issuer(), tt.wantError)))
+			assert.True(t, e.metric(t, fmt.Sprintf(`craftpulse_auth_login_outcomes_total{provider=%q,result="failed"} 1`, e.idp.issuer())))
 		})
 	}
 }
@@ -614,6 +616,21 @@ func TestAccess_RolesApplyToNextRequest(t *testing.T) {
 	hidden := e.do(t, b, http.MethodGet, "/api/v1/teams/"+teams[0].String()+"/report", nil)
 	assert.Equal(t, http.StatusNotFound, hidden.Code, "a team outside the area is not visible")
 	assert.Equal(t, "not_found", problemCode(t, hidden))
+	var problem struct {
+		CorrelationID string `json:"correlation_id"`
+	}
+	require.NoError(t, json.Unmarshal(hidden.Body.Bytes(), &problem))
+	require.NotEmpty(t, problem.CorrelationID)
+	var found bool
+	for line := range strings.SplitSeq(e.logs.String(), "\n") {
+		if strings.Contains(line, problem.CorrelationID) && strings.Contains(line, `"message":"request finished"`) {
+			assert.Contains(t, line, fmt.Sprintf(`"organization_id":%q`, e.orgID))
+			assert.Contains(t, line, `"operation_id":"getTeamReport"`)
+			assert.Contains(t, line, `"reason_code":"not_found"`)
+			found = true
+		}
+	}
+	assert.True(t, found, "the problem correlation ID finds the request log")
 
 	_, err := e.owner.Exec(t.Context(), `INSERT INTO org.role_assignment (organization_id, user_id, role, team_id, assigned_by, assigned_at)
 		VALUES ($1, $2, 'developer', $3, $2, now())`, uuid.UUID(e.orgID), cu.User.ID, teams[0])

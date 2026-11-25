@@ -3,6 +3,7 @@ name: craftpulse-profile-d
 x-runtime: &runtime
   restart: unless-stopped
   cgroup_parent: ${CGROUP_PARENT:-}
+  cpus: ${CONTAINER_CPUS:-4}
 
 x-logging: &logs
   driver: syslog
@@ -47,6 +48,7 @@ x-core: &core
 services:
   postgres:
     <<: *runtime
+    logging: *logs
     image: postgres:18.7-alpine3.23@sha256:339a86bf416979bb4d3d2e30a1f9e096e7302564faff4151b804cf53463059d5
     mem_limit: 1536m
     memswap_limit: 1536m
@@ -89,6 +91,7 @@ services:
 
   seaweedfs:
     <<: *runtime
+    logging: *logs
     image: chrislusf/seaweedfs:4.55@sha256:7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9
     mem_limit: 512m
     memswap_limit: 512m
@@ -106,8 +109,9 @@ services:
       retries: 12
 
   migrate:
-    cgroup_parent: ${CGROUP_PARENT:-}
+    <<: *runtime
     restart: "no"
+    logging: *logs
     mem_limit: 512m
     memswap_limit: 512m
     command: [/usr/local/bin/api, migrate]
@@ -190,15 +194,22 @@ services:
   victoriametrics:
     <<: *runtime
     image: victoriametrics/victoria-metrics:v1.156.0@sha256:da8a90ac0912f16589be2b96a6441a2fca4bca415c83783d972d92e3b5b66970
-    mem_limit: 256m
-    memswap_limit: 256m
+    mem_limit: 128m
+    memswap_limit: 128m
     environment:
-      GOMEMLIMIT: 180MiB
-    command: [-storageDataPath=/data, -retentionPeriod=13, -promscrape.config=/etc/victoriametrics/scrape.yaml, -memory.allowedBytes=64MiB, -search.maxConcurrentRequests=2]
+      GOMEMLIMIT: 80MiB
+      GOMAXPROCS: "2"
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-craftpulse-profile-d}
+    command:
+      - -storageDataPath=/data
+      - -retentionPeriod=13M
+      - -promscrape.config=/etc/victoriametrics/scrape.yaml
+      - -memory.allowedBytes=32MiB
+      - -search.maxConcurrentRequests=2
     volumes:
       - metrics:/data
       - ./observability/scrape.yaml:/etc/victoriametrics/scrape.yaml:ro
-    networks: [data]
+    networks: [data, telemetry]
     healthcheck:
       test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8428/health]
       interval: 10s
@@ -208,11 +219,17 @@ services:
   victorialogs:
     <<: *runtime
     image: victoriametrics/victoria-logs:v1.54.0@sha256:ee4e820cac3721f5f5d91641b950c22439593adc4224f9655e5333d5a84c1dfe
-    mem_limit: 256m
-    memswap_limit: 256m
+    mem_limit: 128m
+    memswap_limit: 128m
     environment:
-      GOMEMLIMIT: 180MiB
-    command: [-storageDataPath=/data, -retentionPeriod=30d, -memory.allowedBytes=64MiB, -search.maxConcurrentRequests=2, -syslog.listenAddr.udp=:1514]
+      GOMEMLIMIT: 80MiB
+      GOMAXPROCS: "2"
+    command:
+      - -storageDataPath=/data
+      - -retentionPeriod=30d
+      - -memory.allowedBytes=32MiB
+      - -search.maxConcurrentRequests=2
+      - -syslog.listenAddr.udp=:1514
     volumes: [logs:/data]
     networks: [data, edge]
     ports:
@@ -226,32 +243,80 @@ services:
 
   grafana:
     <<: *runtime
-    image: grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
-    mem_limit: 512m
-    memswap_limit: 512m
+    image: grafana/grafana:12.4.15@sha256:2894082f6cf7081aefdc1389265c04000812309208c190d75e8c65f7a30e4b7e
+    mem_limit: 160m
+    memswap_limit: 160m
     environment:
-      GOMEMLIMIT: 370MiB
+      GOMEMLIMIT: 80MiB
+      GOMAXPROCS: "2"
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-password
+      GF_DATABASE_HIGH_AVAILABILITY: "false"
+      GF_DATABASE_WAL: "true"
+      GF_LIVE_MAX_CONNECTIONS: "0"
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED: "true"
+      GF_PLUGINS_DISABLE_PLUGINS: >-
+        canvas,cloudwatch,elasticsearch,grafana-postgresql-datasource,grafana-pyroscope-datasource,influxdb,jaeger,loki,mssql,mysql,opentsdb,stackdriver,tempo,zipkin
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
     volumes:
-      - grafana:/var/lib/grafana
+      - grafana-v12:/var/lib/grafana
       - ${SECRETS_DIR:?Set SECRETS_DIR}/grafana-password:/run/secrets/grafana-password:ro
       - ./observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/craftpulse.yaml:ro
       - ./observability/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/craftpulse.yaml:ro
       - ./observability/grafana-overview.json:/etc/grafana/craftpulse-dashboards/overview.json:ro
+      - ./observability/grafana-alerts.yaml:/etc/grafana/provisioning/alerting/craftpulse.yaml:ro
     networks: [data, edge]
     ports: ["127.0.0.1:${GRAFANA_PORT:-13000}:3000"]
     healthcheck:
       test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:3000/api/health]
+      start_period: 180s
       interval: 10s
       timeout: 5s
       retries: 12
 
+  cadvisor:
+    <<: *runtime
+    image: ghcr.io/google/cadvisor:v0.61.1@sha256:4929b70e82079d001d0028b85d6a4dd25ad4666b719455c9542b983489963916
+    mem_limit: 96m
+    memswap_limit: 96m
+    cgroup: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      GOMEMLIMIT: 64MiB
+      GOMAXPROCS: "2"
+    command:
+      - --docker_only
+      - --disable_root_cgroup_stats
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+      - --enable_metrics=cpu,memory
+      - --housekeeping_interval=15s
+      - --max_housekeeping_interval=15s
+      - --storage_duration=30s
+    volumes:
+      - /sys:/sys:ro
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CONTAINERD_SOCKET:-/run/containerd/containerd.sock}
+        target: /run/containerd/containerd.sock
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [telemetry]
+
 networks:
   data:
+    internal: true
+  telemetry:
     internal: true
   edge:
     ipam:
@@ -263,4 +328,4 @@ volumes:
   objects:
   metrics:
   logs:
-  grafana:
+  grafana-v12:

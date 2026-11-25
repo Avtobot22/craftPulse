@@ -13,6 +13,12 @@ import (
 
 const _problemContentType = "application/problem+json"
 
+const _reasonCodeKey = "craftpulse_problem_code"
+
+func ReasonCode(c *gin.Context) string {
+	return c.GetString(_reasonCodeKey)
+}
+
 type Problem struct {
 	status int
 	code   string
@@ -65,6 +71,7 @@ func WriteDetail(c *gin.Context, p Problem, detail string, fields []entity.Field
 		problem.Errors = &errs
 	}
 	body, _ := json.Marshal(problem)
+	c.Set(_reasonCodeKey, p.code)
 	c.Header("Cache-Control", "no-store")
 	c.Data(p.status, _problemContentType, body)
 	c.Abort()

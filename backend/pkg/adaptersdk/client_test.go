@@ -148,13 +148,6 @@ func sourceMux() *http.ServeMux {
 		w.WriteHeader(code)
 		_, _ = w.Write([]byte("token=" + _secret))
 	})
-	mux.HandleFunc("GET /slow", func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-time.After(2 * time.Second):
-		case <-r.Context().Done():
-		}
-		w.WriteHeader(http.StatusOK)
-	})
 	mux.HandleFunc("GET /garbage", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"items": [1, 2`)) })
 	mux.HandleFunc("GET /big", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"text":"` + strings.Repeat("x", 4096) + `"}`))
@@ -175,7 +168,7 @@ func sourceMux() *http.ServeMux {
 
 func TestSourceClient_ClassifiesResponses(t *testing.T) {
 	t.Parallel()
-	ts := newTestSource(t, sourceMux(), adaptersdk.ClientConfig{Timeout: 300 * time.Millisecond, MaxResponseBytes: 1024})
+	ts := newTestSource(t, sourceMux(), adaptersdk.ClientConfig{MaxResponseBytes: 1024})
 	retryDate := time.Now().Add(10 * time.Minute).UTC().Truncate(time.Second)
 
 	tests := []struct {
@@ -191,7 +184,6 @@ func TestSourceClient_ClassifiesResponses(t *testing.T) {
 		{"/status/429", adaptersdk.AdapterErrorCodeRateLimited, 0},
 		{"/status/503", adaptersdk.AdapterErrorCodeUnavailable, 0},
 		{"/status/400", adaptersdk.AdapterErrorCodeInvalidResponse, 0},
-		{"/slow", adaptersdk.AdapterErrorCodeTimeout, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -219,6 +211,19 @@ func TestSourceClient_ClassifiesResponses(t *testing.T) {
 	require.NoError(t, ts.getJSON(t, ts.url+"/ok", &ok))
 	assert.True(t, ok["ok"])
 	assert.Equal(t, 30*time.Second, adaptersdk.SourceTimeout)
+}
+
+func TestSourceClient_TimesOutWaitingForResponse(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	ts := newTestSource(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		<-release
+	}), adaptersdk.ClientConfig{Timeout: 300 * time.Millisecond})
+	t.Cleanup(func() { close(release) })
+
+	e := contractError(t, ts.get(t, ts.url))
+	assert.Equal(t, adaptersdk.AdapterErrorCodeTimeout, e.Code)
+	assert.Nil(t, e.RetryAt)
 }
 
 func TestSourceClient_RefusesInternalDestinations(t *testing.T) {

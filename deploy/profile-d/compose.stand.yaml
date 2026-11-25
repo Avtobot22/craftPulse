@@ -26,3 +26,5 @@ services:
     <<: *stand-cgroup
   grafana:
     <<: *stand-cgroup
+  cadvisor:
+    <<: *stand-cgroup

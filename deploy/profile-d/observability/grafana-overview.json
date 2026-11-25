@@ -1,44 +1,22 @@
 {
   "uid": "craftpulse-overview",
-  "title": "craftPulse",
+  "title": "craftPulse · Наблюдаемость",
   "schemaVersion": 39,
   "refresh": "30s",
   "time": {
-    "from": "now-1h",
+    "from": "now-30m",
     "to": "now"
   },
   "panels": [
     {
       "id": 1,
       "type": "timeseries",
-      "title": "Доступность API и worker",
+      "title": "Доступность сбора",
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 9
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "craftpulse-metrics"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "up{job=\"craftpulse\"}",
-          "legendFormat": "{{instance}}"
-        }
-      ]
-    },
-    {
-      "id": 2,
-      "type": "timeseries",
-      "title": "Память Go",
-      "gridPos": {
-        "x": 12,
-        "y": 0,
-        "w": 12,
-        "h": 9
+        "w": 24,
+        "h": 5
       },
       "datasource": {
         "type": "prometheus",
@@ -46,15 +24,311 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "short",
+          "min": 0
         },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "go_memstats_heap_alloc_bytes{job=\"craftpulse\"}",
+          "expr": "up{job=~\"craftpulse|containers\"}",
           "legendFormat": "{{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "craftpulse_river_query_up{service=\"worker\"}",
+          "legendFormat": "River SQL"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Запросы API в секунду",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (operation_id) (rate(craftpulse_api_requests_total{service=\"api\"}[5m]))",
+          "legendFormat": "{{operation_id}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Ошибки API 5xx в секунду",
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (operation_id) (rate(craftpulse_api_requests_total{service=\"api\",status=~\"5..\"}[5m])) or (0 * sum by (operation_id) (rate(craftpulse_api_requests_total{service=\"api\"}[5m])))",
+          "legendFormat": "{{operation_id}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Длительность запросов API, p95",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (operation_id, le) (rate(craftpulse_api_request_duration_seconds_bucket{service=\"api\"}[5m])))",
+          "legendFormat": "{{operation_id}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Доступные задания River",
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "craftpulse_river_available_jobs{service=\"worker\"}",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Возраст старейшего доступного задания",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "craftpulse_river_oldest_available_job_age_seconds{service=\"worker\"}",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Задания River, исчерпавшие повторы",
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "craftpulse_river_discarded_jobs{service=\"worker\"}",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Память контейнеров от лимита",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (service, container) (container_memory_working_set_bytes / (container_spec_memory_limit_bytes > 0))",
+          "legendFormat": "{{container}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "CPU контейнеров от квоты",
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (service, container) (sum without (cpu) (rate(container_cpu_usage_seconds_total[5m])) / ((container_spec_cpu_quota > 0) / container_spec_cpu_period))",
+          "legendFormat": "{{container}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Доля неудачных входов за 5 мин",
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (provider) (increase(craftpulse_auth_login_outcomes_total{service=\"api\",result=\"failed\"}[5m])) / clamp_min(sum by (provider) (increase(craftpulse_auth_login_outcomes_total{service=\"api\"}[5m])), 1)) and on (provider) (sum by (provider) (increase(craftpulse_auth_login_outcomes_total{service=\"api\"}[5m])) > 0)",
+          "legendFormat": "{{provider}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Отказы в доступе за 5 мин",
+      "gridPos": {
+        "x": 12,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (subject) (increase(craftpulse_api_access_denied_total{service=\"api\"}[5m])) > 0)",
+          "legendFormat": "{{subject}}"
         }
       ]
     }

@@ -22,7 +22,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "craftpulse_api_request_duration_seconds",
 			Help:    "Request duration by operationId.",
-			Buckets: prometheus.DefBuckets,
+			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 2.5, 5, 10},
 		}, []string{"operation_id"}),
 		denials: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "craftpulse_api_access_denied_total",

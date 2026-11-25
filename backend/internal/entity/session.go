@@ -83,6 +83,7 @@ type LoginAttempt struct {
 type LoginStart struct {
 	RedirectURL string
 	Cookie      string
+	Issuer      string
 }
 
 // LoginCallback is the provider response together with the cookies the browser brought back.
@@ -100,6 +101,7 @@ type LoginResult struct {
 	SessionToken string
 	ReturnPath   string
 	ExpiresAt    time.Time
+	Issuer       string
 }
 
 type NewSession struct {

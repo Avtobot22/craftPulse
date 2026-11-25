@@ -164,6 +164,7 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	reg := newRegistry()
 	probes := databaseProbes(pool)
 	probes.Live = wd.Check
+	queueMetrics := newQueueMetrics(reg)
 
 	caller, err := newAdapterCaller(adapters, reg)
 	if err != nil {
@@ -218,6 +219,7 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Int("job_kinds", kinds).Msg("worker started")
 	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return queueMetrics.run(gctx, pool, log) })
 	g.Go(func() error {
 		return serve(gctx, log, probes.Ready, map[string]http.Handler{
 			cfg.HTTPAddr:    health.Handler(probes),
