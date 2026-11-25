@@ -3,6 +3,7 @@ package app
 import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	changerepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/change"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
@@ -21,10 +22,10 @@ func newIdentifier(pool *pgxpool.Pool, reports change.Reports, components change
 }
 
 func newSummarizer(pool *pgxpool.Pool, reports change.Reports, components change.Components, c clock.Clock,
-	decisions change.Decisions, summary change.SummaryDeps,
+	decisions change.Decisions, summary change.SummaryDeps, catalog entity.CheckCatalog,
 ) *change.UseCase {
 	d := changeDeps(pool, reports, components, c)
-	d.Decisions, d.Summary = decisions, summary
+	d.Decisions, d.Summary, d.Catalog = decisions, summary, catalog
 	return change.New(d)
 }
 

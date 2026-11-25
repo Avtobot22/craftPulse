@@ -1,0 +1,199 @@
+import { useQuery } from '@tanstack/react-query'
+import { Text } from '@gravity-ui/uikit'
+import type { ReactNode } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router'
+import {
+  ApiError,
+  readArray,
+  readBoolean,
+  readNullableString,
+  readRecord,
+  readString,
+} from '@/shared/api'
+import type { ApiClient } from '@/shared/api'
+import { ErrorState, LoadingState } from '@/shared/ui'
+
+function ResultPage({
+  title,
+  pending,
+  error,
+  retry,
+  children,
+}: {
+  title: string
+  pending: boolean
+  error: Error | null
+  retry: () => void
+  children: ReactNode
+}) {
+  const unavailable =
+    error instanceof ApiError &&
+    (error.kind === 'not-found' || error.kind === 'forbidden')
+
+  return (
+    <section>
+      <Text as="h1" variant="header-1">
+        {title}
+      </Text>
+      {pending && <LoadingState />}
+      {unavailable && <p>Результат недоступен или ещё не готов.</p>}
+      {error && !unavailable && (
+        <ErrorState reason="Не удалось загрузить результат CI" onRetry={retry} />
+      )}
+      {!error && children}
+    </section>
+  )
+}
+
+function readSummary(value: unknown) {
+  const summary = readRecord(value)
+  const ci = summary.ci === null ? null : readRecord(summary.ci)
+  const expected =
+    summary.expected === undefined ? null : readRecord(summary.expected)
+  const checks = expected && readRecord(expected.missing_checks)
+  return {
+    head: readString(summary.head_sha),
+    status: readString(summary.status),
+    pipelineId: ci && readString(ci.pipeline_id),
+    checks:
+      checks &&
+      typeof checks.numerator === 'number' &&
+      typeof checks.denominator === 'number'
+        ? { missing: checks.numerator, total: checks.denominator }
+        : null,
+    limited: readBoolean(summary.access_limited),
+    items: readArray(summary.items, (value) => {
+      const item = readRecord(value)
+      return {
+        kind: readString(item.item_kind),
+        analysis:
+          item.analysis_kind === undefined ? null : readString(item.analysis_kind),
+        rule: readNullableString(item.rule_id),
+      }
+    }),
+  }
+}
+
+function readPipeline(value: unknown) {
+  const pipeline = readRecord(value)
+  return {
+    ref: readString(pipeline.ref_name),
+    sha: readString(pipeline.sha),
+    outcome: readString(pipeline.outcome),
+    reports: readArray(pipeline.reports, (value) => {
+      const report = readRecord(value)
+      return {
+        kind: readString(report.analysis_kind),
+        state: readString(report.state),
+      }
+    }),
+  }
+}
+
+export function MergeRequestSummaryPage({ api }: { api: ApiClient }) {
+  const { mergeRequestId = '' } = useParams()
+  const [params] = useSearchParams()
+  const head = params.get('head_sha') ?? undefined
+  const revision = params.get('revision_no') ?? undefined
+  const query = useQuery({
+    queryKey: ['merge-request-summary', mergeRequestId, head, revision],
+    queryFn: async ({ signal }) => {
+      const response = await api.read(
+        '/merge-requests/{merge_request_id}/summary',
+        readSummary,
+        {
+          signal,
+          pathParams: { merge_request_id: mergeRequestId },
+          query: { head_sha: head, revision_no: revision },
+        },
+      )
+      return response.data
+    },
+    retry: false,
+  })
+  const summary = query.data
+  return (
+    <ResultPage
+      title="Сводка MR"
+      error={query.error}
+      pending={query.isPending}
+      retry={() => void query.refetch()}
+    >
+      {summary && (
+        <>
+          <p>
+            Коммит <code>{summary.head}</code>
+          </p>
+          {(summary.status === 'stale' || summary.status === 'superseded') && (
+            <p>Историческая сводка</p>
+          )}
+          {summary.pipelineId && (
+            <Link to={'/pipelines/' + encodeURIComponent(summary.pipelineId)}>
+              Открыть pipeline
+            </Link>
+          )}
+          {summary.checks && (
+            <p>
+              Пропущено проверок: {summary.checks.missing} из{' '}
+              {summary.checks.total}
+            </p>
+          )}
+          {summary.limited && <p>Часть данных скрыта правами доступа.</p>}
+          {summary.items.length > 0 && (
+            <ul>
+              {summary.items.map((item, index) => (
+                <li key={index}>
+                  {[item.analysis, item.kind, item.rule]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </ResultPage>
+  )
+}
+
+export function PipelinePage({ api }: { api: ApiClient }) {
+  const { pipelineId = '' } = useParams()
+  const query = useQuery({
+    queryKey: ['pipeline', pipelineId],
+    queryFn: async ({ signal }) => {
+      const response = await api.read('/pipelines/{pipeline_id}', readPipeline, {
+        signal,
+        pathParams: { pipeline_id: pipelineId },
+      })
+      return response.data
+    },
+    retry: false,
+  })
+  const pipeline = query.data
+  return (
+    <ResultPage
+      title="Pipeline"
+      error={query.error}
+      pending={query.isPending}
+      retry={() => void query.refetch()}
+    >
+      {pipeline && (
+        <>
+          <p>
+            {pipeline.ref} · <code>{pipeline.sha}</code>
+          </p>
+          <p>Исход: {pipeline.outcome}</p>
+          {pipeline.reports.length > 0 && (
+            <ul>
+              {pipeline.reports.map((report, index) => (
+                <li key={index}>
+                  {report.kind} · {report.state}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </ResultPage>
+  )
+}

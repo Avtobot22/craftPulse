@@ -12,8 +12,10 @@ import (
 )
 
 const (
-	_varToken = "CRAFTPULSE_UPLOAD_TOKEN" //nolint:gosec // the name of the variable, not its value
-	_varURL   = "CRAFTPULSE_URL"
+	_builtinJobPrefix = "craftpulse-"
+	_importJob        = "craftpulse-import"
+	_varToken         = "CRAFTPULSE_UPLOAD_TOKEN" //nolint:gosec // the name of the variable, not its value
+	_varURL           = "CRAFTPULSE_URL"
 	// _reportVar names the variable of the path of a ready report of a kind the client points the import to.
 	_reportVar = "CRAFTPULSE_REPORT_"
 )
@@ -141,7 +143,7 @@ func (u *UseCase) CIConfiguration(ctx context.Context, s entity.Subject, project
 			continue
 		}
 		if e.Mode == entity.CheckModeBuiltin {
-			jobs["craftpulse-"+p.ID] = gitlabJob{
+			jobs[_builtinJobPrefix+p.ID] = gitlabJob{
 				Stage: "test", Image: p.Image + "@" + p.Digest, AllowFailure: true, Script: append(slices.Clone(p.Script), "craftpulse-ci upload"),
 			}
 			continue
@@ -166,7 +168,7 @@ func (u *UseCase) CIConfiguration(ctx context.Context, s entity.Subject, project
 			}
 			args = append(args, "--report", r)
 		}
-		jobs["craftpulse-import"] = gitlabJob{
+		jobs[_importJob] = gitlabJob{
 			Stage: "test", Image: u.d.Catalog.StepImage + "@" + u.d.Catalog.StepDigest, AllowFailure: true,
 			Script: []string{strings.Join(args, " "), "craftpulse-ci upload"},
 		}
@@ -185,4 +187,24 @@ func (u *UseCase) CIConfiguration(ctx context.Context, s entity.Subject, project
 	}
 	slices.SortStableFunc(vars[2:], func(a, b entity.CIVariable) int { return strings.Compare(a.Name, b.Name) })
 	return entity.CIConfiguration{System: system, VersionNo: m.version.VersionNo, Snippet: string(raw), Variables: vars}, nil
+}
+
+// summaryCheckJobs mirrors the generated CI jobs for the repository's profile rows.
+// Imported reports share one job; several components can share the same builtin job.
+func (u *UseCase) summaryCheckJobs(entries []entity.ProfileEntry) []string {
+	var jobs []string
+	for _, e := range entries {
+		p, ok := u.profiles[e.ProfileID]
+		if !ok {
+			continue
+		}
+		switch {
+		case e.Mode == entity.CheckModeBuiltin:
+			jobs = append(jobs, _builtinJobPrefix+p.ID)
+		case p.ReportFormat != "":
+			jobs = append(jobs, _importJob)
+		}
+	}
+	slices.Sort(jobs)
+	return slices.Compact(jobs)
 }

@@ -8758,6 +8758,9 @@ type ListMergeRequestsParamsSort string
 // GetMergeRequestSummaryParams defines parameters for GetMergeRequestSummary.
 type GetMergeRequestSummaryParams struct {
 	RevisionNo *int `form:"revision_no,omitempty" json:"revision_no,omitempty"`
+
+	// HeadSha Ограничивает выбор ревизиями указанного head. Без revision_no возвращается последняя ревизия этого head.
+	HeadSha *GitSha `form:"head_sha,omitempty" json:"head_sha,omitempty"`
 }
 
 // ListMetricDefinitionsParams defines parameters for ListMetricDefinitions.
@@ -12152,6 +12155,14 @@ func (siw *ServerInterfaceWrapper) GetMergeRequestSummary(c *gin.Context) {
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "revision_no", c.Request.URL.Query(), &params.RevisionNo, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
 	if err != nil {
 		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter revision_no: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "head_sha" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "head_sha", c.Request.URL.Query(), &params.HeadSha, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter head_sha: %w", err), http.StatusBadRequest)
 		return
 	}
 

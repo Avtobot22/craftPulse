@@ -140,7 +140,11 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, check
 	})
 }
 
-func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) error {
+func RunWorker(cfg config.Config, adapters config.Adapters, checks config.Checks, log zerolog.Logger) error {
+	catalog, err := change.ReadCatalog(checks.CatalogFile)
+	if err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -214,7 +218,7 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	if err != nil {
 		return err
 	}
-	changes := newSummarizer(pool, normalizer, orgs, clock.System{}, exceptions, summary)
+	changes := newSummarizer(pool, normalizer, orgs, clock.System{}, exceptions, summary, catalog)
 	workers := river.NewWorkers()
 	kinds := workerctrl.Register(workers, workerctrl.Deps{
 		Probes: connections, Packages: packages, Collection: collection, Normalizer: normalizer, Calculator: calculator,

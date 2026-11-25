@@ -17,7 +17,7 @@ func (h *codeDetails) GetMergeRequestSummary(ctx context.Context, req openapi.Ge
 	if err != nil {
 		return nil, err
 	}
-	summary, err := h.uc.MergeRequestSummary(ctx, s, scope, entity.ID(req.MergeRequestId), req.Params.RevisionNo)
+	summary, err := h.uc.MergeRequestSummary(ctx, s, scope, entity.ID(req.MergeRequestId), req.Params.RevisionNo, req.Params.HeadSha)
 	if err != nil {
 		return nil, err
 	}

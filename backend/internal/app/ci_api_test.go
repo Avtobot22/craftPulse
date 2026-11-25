@@ -597,7 +597,7 @@ func TestCIUpload_ResultLinks(t *testing.T) {
 		require.NotNil(t, result.ResultURL)
 		want := "/pipelines/" + runID(t, n, "5001").String()
 		if withMR {
-			want = "/merge-requests/" + mr.String() + "/summary"
+			want = "/merge-requests/" + mr.String() + "/summary?head_sha=" + sha
 		}
 		assert.Equal(t, want, *result.ResultURL)
 	}

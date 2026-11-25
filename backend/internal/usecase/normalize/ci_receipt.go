@@ -55,12 +55,14 @@ func (w *writer) recordCIResult(ctx context.Context, in *input) error {
 		return err
 	}
 	var mr *entity.ID
+	head := target.sha
 	if len(versions) > 0 {
 		if versions[0].AreaID != area {
 			return nil
 		}
 		if target.sha == "" || versions[0].SHA == target.sha {
 			mr = versions[0].MRID
+			head = versions[0].SHA
 		}
 	}
 	if mr == nil && target.mr != "" && target.sha != "" {
@@ -74,5 +76,8 @@ func (w *writer) recordCIResult(ctx context.Context, in *input) error {
 			mr = &id
 		}
 	}
-	return w.u.d.Ingest.RecordCIResult(ctx, w.org, in.receipt, &run.ID, mr, true)
+	if !entity.ValidGitSHA(head) {
+		mr, head = nil, ""
+	}
+	return w.u.d.Ingest.RecordCIResult(ctx, w.org, in.receipt, &run.ID, mr, head, true)
 }

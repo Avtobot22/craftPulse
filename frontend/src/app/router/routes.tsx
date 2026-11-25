@@ -1,4 +1,5 @@
 import type { RouteObject } from 'react-router'
+import { MergeRequestSummaryPage, PipelinePage } from '@/pages/ci-result'
 import { HomePage } from '@/pages/home'
 import { LoginPage } from '@/pages/login'
 import { SessionExpiredPage } from '@/pages/session-expired'
@@ -52,6 +53,14 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 { path: routePaths.users, element: <UsersPage /> },
                 { path: routePaths.users + '/:userId', element: <UsersPage /> },
+                {
+                  path: '/merge-requests/:mergeRequestId/summary',
+                  element: <MergeRequestSummaryPage api={runtime.api} />,
+                },
+                {
+                  path: '/pipelines/:pipelineId',
+                  element: <PipelinePage api={runtime.api} />,
+                },
                 { path: '*', element: <UnavailablePage /> },
               ],
             },

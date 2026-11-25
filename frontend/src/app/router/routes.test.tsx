@@ -112,6 +112,52 @@ describe('application routes', () => {
     ).toBeInTheDocument()
   })
 
+  it('opens a CI receipt at its historical MR head and links to the pipeline', async () => {
+    const head = 'a'.repeat(40)
+    const summaryPath = '/merge-requests/mr/summary?head_sha=' + head
+    const baseApi = mockApi()
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (input === '/api/v1' + summaryPath) {
+        return Promise.resolve(
+          jsonResponse({
+            head_sha: head,
+            status: 'stale',
+            ci: { pipeline_id: 'run' },
+            access_limited: true,
+            items: [{ item_kind: 'ci_attempts', rule_id: null }],
+          }),
+        )
+      }
+      if (input === '/api/v1/pipelines/run') {
+        return Promise.resolve(
+          jsonResponse({
+            ref_name: 'feature',
+            sha: head,
+            outcome: 'success',
+            reports: [],
+          }),
+        )
+      }
+      return baseApi(input, init)
+    })
+
+    mount(summaryPath, fetcher)
+    expect(
+      await screen.findByRole('heading', { name: 'Сводка MR', level: 1 }),
+    ).toBeInTheDocument()
+    expect(await screen.findByText(head)).toBeInTheDocument()
+    expect(screen.getByText('Историческая сводка')).toBeInTheDocument()
+    expect(
+      screen.getByText('Часть данных скрыта правами доступа.'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('link', { name: 'Открыть pipeline' }))
+    expect(
+      await screen.findByRole('heading', { name: 'Pipeline', level: 1 }),
+    ).toBeInTheDocument()
+    expect(await screen.findByText('Исход: success')).toBeInTheDocument()
+  })
+
   it('never requests private data on a public route', async () => {
     const fetcher = vi.fn<typeof fetch>()
     mount('/login/example', fetcher)

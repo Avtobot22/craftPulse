@@ -237,7 +237,7 @@ func (u *UseCase) record(ctx context.Context, p *entity.PreparedPackage) (entity
 	}
 	if rc.AcceptedCount > 0 || p.HasScanManifest {
 		if rc.Channel == entity.ChannelCI {
-			if err := u.RecordCIResult(ctx, org, rc.ID, nil, nil, true); err != nil {
+			if err := u.RecordCIResult(ctx, org, rc.ID, nil, nil, "", true); err != nil {
 				return entity.Receipt{}, err
 			}
 		}

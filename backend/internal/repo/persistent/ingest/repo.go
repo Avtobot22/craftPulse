@@ -435,26 +435,30 @@ func (r *Repo) FirstCIReceiptOfHash(ctx context.Context, orgID, projectID, exclu
 }
 
 // SaveCIResult retains coordinates found in an earlier part when the last part closes the receipt.
-func (r *Repo) SaveCIResult(ctx context.Context, org, receipt entity.ID, pipeline, mr *entity.ID, pending bool) error {
+func (r *Repo) SaveCIResult(ctx context.Context, org, receipt entity.ID, pipeline, mr *entity.ID, head string, pending bool) error {
 	_, err := postgres.Conn(ctx, r.pool).Exec(ctx, `
-		INSERT INTO ingest.ci_result AS r (organization_id, receipt_id, pending, pipeline_id, mr_id)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO ingest.ci_result AS r (organization_id, receipt_id, pending, pipeline_id, mr_id, head_sha)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''))
 		ON CONFLICT (organization_id, receipt_id) DO UPDATE SET pending = EXCLUDED.pending,
 			pipeline_id = COALESCE(r.pipeline_id, EXCLUDED.pipeline_id),
-			mr_id = CASE WHEN r.pipeline_id IS NULL OR r.pipeline_id = EXCLUDED.pipeline_id
-				THEN COALESCE(r.mr_id, EXCLUDED.mr_id) ELSE r.mr_id END`,
-		uuid.UUID(org), uuid.UUID(receipt), pending, nullID(pipeline), nullID(mr))
+			mr_id = CASE WHEN r.pipeline_id IS NULL OR (r.pipeline_id = EXCLUDED.pipeline_id
+				AND (r.head_sha IS NULL OR r.head_sha = EXCLUDED.head_sha))
+				THEN COALESCE(r.mr_id, EXCLUDED.mr_id) ELSE r.mr_id END,
+			head_sha = CASE WHEN r.pipeline_id IS NULL OR (r.pipeline_id = EXCLUDED.pipeline_id
+				AND (r.mr_id IS NULL OR r.mr_id = EXCLUDED.mr_id))
+				THEN COALESCE(r.head_sha, EXCLUDED.head_sha) ELSE r.head_sha END`,
+		uuid.UUID(org), uuid.UUID(receipt), pending, nullID(pipeline), nullID(mr), head)
 	return err
 }
 
 // ReadCIResult reads the normalization state and link target of a CI receipt.
-func (r *Repo) ReadCIResult(ctx context.Context, org, receipt entity.ID) (pending bool, pipelineID, mrID *entity.ID, err error) {
+func (r *Repo) ReadCIResult(ctx context.Context, org, receipt entity.ID) (pending bool, pipelineID, mrID *entity.ID, head string, err error) {
 	var pipeline, mr uuid.NullUUID
 	err = postgres.Conn(ctx, r.pool).QueryRow(ctx, `
-		SELECT pending, pipeline_id, mr_id FROM ingest.ci_result
-		WHERE organization_id = $1 AND receipt_id = $2`, uuid.UUID(org), uuid.UUID(receipt)).Scan(&pending, &pipeline, &mr)
+		SELECT pending, pipeline_id, mr_id, COALESCE(head_sha, '') FROM ingest.ci_result
+		WHERE organization_id = $1 AND receipt_id = $2`, uuid.UUID(org), uuid.UUID(receipt)).Scan(&pending, &pipeline, &mr, &head)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = nil
 	}
-	return pending, idPtr(pipeline), idPtr(mr), err
+	return pending, idPtr(pipeline), idPtr(mr), head, err
 }

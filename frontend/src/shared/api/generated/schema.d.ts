@@ -10904,6 +10904,8 @@ export interface operations {
         parameters: {
             query?: {
                 revision_no?: number;
+                /** @description Ограничивает выбор ревизиями указанного head. Без revision_no возвращается последняя ревизия этого head. */
+                head_sha?: components["schemas"]["GitSha"];
             };
             header?: never;
             path: {

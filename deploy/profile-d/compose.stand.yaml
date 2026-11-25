@@ -17,6 +17,8 @@ services:
   worker:
     <<: *stand-cgroup
     image: ${CRAFTPULSE_SERVER_IMAGE:?Load a release manifest}
+    volumes:
+      - ${CHECK_PROFILES_PATH:?Set the release catalog path}:/etc/craftpulse/check-profiles.yaml:ro
   nginx:
     <<: *stand-cgroup
     image: ${CRAFTPULSE_FRONTEND_IMAGE:?Load a release manifest}

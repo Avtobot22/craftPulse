@@ -13,6 +13,8 @@ services:
   worker:
     image: craftpulse-profile-d-server:local
     pull_policy: never
+    volumes:
+      - ./check-profiles.local.yaml:/etc/craftpulse/check-profiles.yaml:ro
   nginx:
     image: craftpulse-profile-d-frontend:local
     build:

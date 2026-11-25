@@ -152,6 +152,7 @@ services:
     cpus: 2.0
     stop_grace_period: 90s
     environment:
+      CHECK_PROFILES_FILE: /etc/craftpulse/check-profiles.yaml
       <<: *core-env
       DATABASE_URL: postgres://craftpulse_app@postgres:5432/craftpulse?sslmode=disable
       GOMEMLIMIT: 850MiB

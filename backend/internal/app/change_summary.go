@@ -59,15 +59,13 @@ func addSummaryValue(v *entity.SummaryRevision, kind string, value any) error {
 }
 
 func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID, mr entity.SummaryMR, run entity.CIRun,
-	v *entity.SummaryRevision,
+	jobs []string, v *entity.SummaryRevision,
 ) error {
 	points, definitions := s.calculator.CalculateSummaryCI(run)
-	checks := s.calculator.CalculateCheckCompleteness(calc.CheckCompletenessInput{AreaID: mr.AreaID, AsOf: mr.ObservedAt})
-	points = append(points, checks[0])
-	definitions = append(definitions, entity.RevisionInput{Kind: calc.InputDefinition, ID: "I08", Version: "1"})
-	assessment, definition := s.calculator.CalculateSummaryCompleteness(mr, v.ExpectedReports, v.CompleteReports)
-	points = append(points, assessment)
-	definitions = append(definitions, definition)
+	checks, checkDefinition := s.calculator.CalculateSummaryChecks(mr, run, jobs)
+	reports, reportDefinition := s.calculator.CalculateSummaryCompleteness(mr, v.ExpectedReports, v.CompleteReports)
+	points = append(points, checks, reports)
+	definitions = append(definitions, checkDefinition, reportDefinition)
 	v.Definitions = append(v.Definitions, definitions...)
 	publicExpected := slices.DeleteFunc(slices.Clone(v.ExpectedReports), func(r entity.ExpectedReport) bool {
 		return entity.SensitiveSummaryAnalysis(r.Kind)

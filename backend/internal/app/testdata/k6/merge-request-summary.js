@@ -1,5 +1,6 @@
 // MANIFEST is a JSON file with base_url, five session cookies in sessions,
 // and at least five MR UUIDs on the MVP dataset in merge_request_ids.
+// Optional head_shas maps MR UUIDs to heads from CI receipts to measure historical reads.
 import http from 'k6/http';
 import exec from 'k6/execution';
 
@@ -35,7 +36,9 @@ export default function () {
   const cycle = exec.vu.iterationInScenario;
   const phase = cycle < warmup ? 'warmup' : 'measure';
   const mr = manifest.merge_request_ids[(vu + cycle) % manifest.merge_request_ids.length];
-  http.get(`${manifest.base_url}/api/v1/merge-requests/${encodeURIComponent(mr)}/summary`, {
+  const head = manifest.head_shas?.[mr];
+  const query = head ? `?head_sha=${encodeURIComponent(head)}` : '';
+  http.get(`${manifest.base_url}/api/v1/merge-requests/${encodeURIComponent(mr)}/summary${query}`, {
     headers: { Cookie: manifest.sessions[vu] },
     tags: { phase, op: 'getMergeRequestSummary' },
     responseCallback: http.expectedStatuses(200),

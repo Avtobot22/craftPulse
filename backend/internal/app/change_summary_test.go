@@ -108,7 +108,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	deps, err := newSummaryDeps(e.app, source, e.norm, new(calc.UseCase), e.store, prometheus.NewRegistry())
 	require.NoError(t, err)
 	decisions := &summaryDecisions{Decisions: e.decisions}
-	u := newSummarizer(e.app, e.norm, e.orgs, e.clock, decisions, deps)
+	u := newSummarizer(e.app, e.norm, e.orgs, e.clock, decisions, deps, e.catalog)
 	count := e.normalized.n
 	run := func() {
 		t.Helper()
@@ -189,6 +189,20 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Zero(t, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish'`))
 	onFetch = func() {}
 
+	// Keep the URL emitted for head A before advancing normalize to head B.
+	archive := ciPackage(t, func(files map[string][]byte) {
+		files[envelope.ScanManifestName] = bytes.ReplaceAll(files[envelope.ScanManifestName],
+			[]byte("d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"), []byte(h1))
+	})
+	uploaded := e.uploadCI(t, e.token.Value, archive)
+	require.Equal(t, http.StatusAccepted, uploaded.Code, uploaded.Body.String())
+	receipt := decode[acceptedBody](t, uploaded).ReceiptID
+	require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(receipt)))
+	e.drain(t)
+	link := e.readCI(t, receipt, e.token.Value).ResultURL
+	require.NotNil(t, link)
+	assert.Equal(t, "/merge-requests/"+mr.String()+"/summary?head_sha="+h1, *link)
+
 	e.submit(t, page2)
 	e.submit(t, emptySecurityReports(h2))
 	manifest := ciManifest("42")
@@ -196,9 +210,13 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	e.submit(t, pack(t, manifest, mrRecord(t, "ci_run", "58101", "", "v1", envelope.CiRunV1{
 		ProjectNativeId: "42", RefName: "feature", Sha: h2, MrNativeId: new("9001"), NativeStatus: "success",
 		Outcome: "success", StartedAt: new(e.clock.Now()), FinishedAt: new(e.clock.Now()),
+	}), mrRecord(t, "ci_attempt", "70101", "", "v1", envelope.CiAttemptV1{
+		RunNativeId: "58101", JobKey: "craftpulse-go-default", JobName: "craftpulse-go-default",
+		ConfigFingerprint: strings.Repeat("a", 64), AttemptNo: 1, NativeStatus: "success", Outcome: "success",
 	})))
 	run()
 	ready = checkReady(h2, "reports_missing")
+	assert.Equal(t, link, e.readCI(t, receipt, e.token.Value).ResultURL)
 	assertItem(ready, "not_evaluated", "scan_missing", 2)
 	assertItem(ready, "resolved", "", 0)
 
@@ -269,6 +287,19 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	plain := read(e.lead, "")
 	assert.Equal(t, ready, full.Id)
 	assert.Equal(t, h2, plain.HeadSha)
+	require.NotNil(t, full.Expected)
+	assert.Equal(t, openapi.DataState("ASSESSED"), full.Expected.MissingChecks.State)
+	assert.Equal(t, new(float32(3)), full.Expected.MissingChecks.Numerator)
+	assert.Equal(t, new(float32(4)), full.Expected.MissingChecks.Denominator)
+	assert.Equal(t, new(float32(0.75)), full.Expected.MissingChecks.Value)
+	receiptPath := "/api/v1" + *link
+	fromReceipt := decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, security, receiptPath, "MergeRequestSummary"))
+	assert.Equal(t, h1, fromReceipt.HeadSha)
+	assert.Equal(t, "stale", string(fromReceipt.Status))
+	assert.Equal(t, http.StatusNotFound, e.do(t, security, http.MethodGet,
+		fmt.Sprintf("%s&revision_no=%d", receiptPath, full.RevisionNo), nil).Code)
+	assert.Equal(t, http.StatusNotFound, e.do(t, outside, http.MethodGet, receiptPath, nil).Code)
+	assert.Equal(t, http.StatusNotFound, e.do(t, security, http.MethodGet, summaryPath+"?head_sha="+strings.Repeat("0", 40), nil).Code)
 	assert.Empty(t, full.Redactions)
 	assert.Equal(t, []string{"items"}, plain.Redactions)
 	assert.True(t, plain.AccessLimited)

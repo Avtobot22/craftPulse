@@ -117,9 +117,9 @@ func scanSummaryProfile(row pgx.Row) (ChangeProfileVersion, error) {
 	return v, err
 }
 
-// ReadSummary selects the latest built revision (including stale while a new head is building)
-// or one exact historical revision. Last good is relative to the selected revision.
-func (r *Repo) ReadSummary(ctx context.Context, org, mr entity.ID, no *int) (entity.SummaryRead, error) {
+// ReadSummary selects the latest built revision matching the optional head and revision number.
+// Last good is relative to the selected revision.
+func (r *Repo) ReadSummary(ctx context.Context, org, mr entity.ID, no *int, head *string) (entity.SummaryRead, error) {
 	var v entity.SummaryRead
 	var id, project uuid.UUID
 	var goodNo *int
@@ -139,7 +139,8 @@ func (r *Repo) ReadSummary(ctx context.Context, org, mr entity.ID, no *int) (ent
 			ORDER BY revision_no DESC LIMIT 1
 		) g ON true
 		WHERE s.organization_id = $1 AND s.mr_id = $2 AND ($3::bigint IS NULL OR s.revision_no = $3)
-		ORDER BY s.revision_no DESC LIMIT 1`, uuid.UUID(org), uuid.UUID(mr), no).
+		  AND ($4::text IS NULL OR s.head_sha = $4)
+		ORDER BY s.revision_no DESC LIMIT 1`, uuid.UUID(org), uuid.UUID(mr), no, head).
 		Scan(&id, &project, &v.No, &v.HeadSHA, &v.BaseSHA, &v.Status, &v.PipelineState, &v.BuiltAt, &v.StaleReason,
 			&v.Publication.Status, &v.Publication.ExternalID, &v.Publication.ErrorCode, &v.Publication.PublishedAt,
 			&goodNo, &goodHead, &goodAt)
