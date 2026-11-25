@@ -159,6 +159,30 @@ describe('ApiClient', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  it.each(['*', 'W/"7"', '"7", "8"'])(
+    'rejects an invalid explicit ETag even with a cached version: %s',
+    async (ifMatch) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(jsonResponse(structure, 200, { ETag: '"7"' }))
+      const api = new ApiClient(fetcher)
+      await api.read('/organization/structure', readVersion)
+
+      await expect(
+        api.update(
+          'PUT',
+          '/organization/structure',
+          structureInput,
+          readVersion,
+          {
+            ifMatch,
+          },
+        ),
+      ).rejects.toMatchObject({ kind: 'missing-version' })
+      expect(fetcher).toHaveBeenCalledOnce()
+    },
+  )
+
   it('retires old versions when a new read lacks ETag or the previous write fails', async () => {
     const fetcher = vi
       .fn<typeof fetch>()

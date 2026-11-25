@@ -26,3 +26,15 @@ export type {
   SeriesChartProps,
 } from './series-chart/series-chart'
 import './states.css'
+export { ChangeConfirmationDialog } from './settings-dialogs/change-confirmation-dialog'
+export type {
+  ChangeAttempt,
+  ChangeConfirmationDialogProps,
+  ChangePreview,
+  ChangeProposal,
+  ChangeRecheck,
+  ChangeValidation,
+  RecheckReason,
+} from './settings-dialogs/change-confirmation'
+export { UnsavedChangesDialog } from './settings-dialogs/unsaved-changes-dialog'
+export type { UnsavedChangesDialogProps } from './settings-dialogs/unsaved-changes-dialog'
