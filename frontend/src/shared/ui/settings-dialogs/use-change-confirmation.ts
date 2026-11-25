@@ -90,11 +90,10 @@ export function useChangeConfirmation<Draft, Result>({
         setStatus({ kind: 'applied', attempt, result: outcome.result })
         return
       }
-      // The original write can still commit after a read of its baseline version.
       if (
         outcome.kind === 'not-applied' &&
         isStrongETag(outcome.proposal.etag) &&
-        outcome.proposal.etag !== attempt.etag
+        (reason === 'uncertain' || outcome.proposal.etag !== attempt.etag)
       ) {
         setStatus({
           kind: 'preview',

@@ -26,7 +26,7 @@ import {
   structureInput,
 } from '../../../../test/fixtures'
 import { ChangeConfirmationDialog, UnsavedChangesDialog } from '../index'
-import type { ChangeProposal, ChangeValidation } from '../index'
+import type { ChangeAttempt, ChangeProposal, ChangeValidation } from '../index'
 
 // jsdom has no modal implementation. Browser-generated Escape is sent as a cancel event.
 beforeAll(() => {
@@ -436,30 +436,50 @@ describe('UI-17', () => {
     expect(fetcher).toHaveBeenCalledTimes(3)
   })
 
-  it('отклоняет отрицательный результат сверки с прежним ETag', async () => {
+  it('разрешает повтор после таймаута, если операция отклонена и ETag не изменился', async () => {
     const proposal = prepare(
       { data: { version: 1, name: 'Платформа', project: 'Core' }, etag: '"1"' },
       'Инфраструктура',
     )
+    const submit = vi
+      .fn<(attempt: ChangeAttempt<typeof proposal.draft>) => Promise<string>>()
+      .mockRejectedValueOnce(new DOMException('Timeout', 'TimeoutError'))
+      .mockResolvedValueOnce('"2"')
+    const onSaved = vi.fn()
+    const onClose = vi.fn()
     render(
       <ChangeConfirmationDialog
         title="Подтверждение настроек"
         scope="Организация"
         consequences="Название команды изменится."
         proposal={proposal}
-        submit={() => Promise.reject(new TypeError('Network'))}
+        submit={submit}
         recheck={() => Promise.resolve({ kind: 'not-applied', proposal })}
-        onSaved={vi.fn()}
+        onSaved={onSaved}
         onValidation={vi.fn()}
-        onClose={vi.fn()}
+        onClose={onClose}
       />,
     )
     const dialog = screen.getByRole('dialog')
     fireEvent.click(button(dialog, 'Подтвердить'))
 
     expect(
-      await within(dialog).findByText('Исход сохранения пока неизвестен'),
+      await within(dialog).findByText('Изменение не применилось'),
     ).toBeInTheDocument()
+    expect(button(dialog, 'Отмена')).toBeEnabled()
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
+
+    fireEvent.click(button(dialog, 'Подтвердить'))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith('"2"'))
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(submit.mock.calls.map(([attempt]) => attempt.etag)).toEqual([
+      '"1"',
+      '"1"',
+    ])
+    expect(submit.mock.calls[1]?.[0].idempotencyKey).not.toBe(
+      submit.mock.calls[0]?.[0].idempotencyKey,
+    )
   })
 
   it('после таймаута ждёт подтверждения отложенной записи и не отправляет второй PUT', async () => {
