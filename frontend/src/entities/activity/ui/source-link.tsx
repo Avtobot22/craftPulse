@@ -1,13 +1,16 @@
+import type { ReactNode } from 'react'
 import { Link } from '@gravity-ui/uikit'
 
 export function SourceLink({
   url,
   sourceName,
+  children,
 }: {
   url: string | null
-  sourceName?: string
+  sourceName?: string | undefined
+  children?: ReactNode
 }) {
-  if (!url) return null
+  if (!url) return children ?? null
   const parsed = URL.parse(url)
   if (
     !parsed ||
@@ -15,9 +18,11 @@ export function SourceLink({
     parsed.username ||
     parsed.password
   )
-    return null
+    return children ?? null
 
   return (
-    <Link href={parsed.href}>Открыть в {sourceName ?? parsed.hostname}</Link>
+    <Link href={parsed.href}>
+      {children ?? `Открыть в ${sourceName ?? parsed.hostname}`}
+    </Link>
   )
 }

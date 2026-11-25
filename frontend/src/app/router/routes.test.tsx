@@ -13,6 +13,13 @@ import {
   jsonResponse,
   problemResponse,
 } from '../../../test/fixtures'
+import {
+  taskId,
+  taskDetail,
+  taskHistory,
+  taskTitle,
+  taskPage,
+} from '../../../test/task-fixtures'
 import { AppProviders } from '../initialization/app-providers'
 import { createAppRuntime } from '../initialization/runtime'
 import type { AppRuntime } from '../initialization/runtime'
@@ -89,6 +96,12 @@ function mockApi(
               : { ...projects, data: [] },
           ),
         )
+      case '/api/v1/tasks':
+        return Promise.resolve(jsonResponse(taskPage))
+      case `/api/v1/tasks/${taskId}`:
+        return Promise.resolve(jsonResponse(taskDetail))
+      case `/api/v1/tasks/${taskId}/events`:
+        return Promise.resolve(jsonResponse(taskHistory))
       case '/api/v1/session/logout':
         return Promise.resolve(new Response(null, { status: 204 }))
       default:
@@ -834,11 +847,7 @@ describe('task analysis routes', () => {
       'Задачи',
       taskReader,
     ],
-    [
-      taskAnalysisLinks.taskDetail('task-1', scope),
-      'Карточка задачи',
-      taskReader,
-    ],
+    [taskAnalysisLinks.taskDetail(taskId, scope), taskTitle, taskReader],
     [
       taskAnalysisLinks.projectTimeline({
         ...scope,

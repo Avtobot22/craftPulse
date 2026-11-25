@@ -97,8 +97,14 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                   path: routePaths.savedView,
                   element: <SavedViewPage />,
                 },
-                { path: routePaths.taskList, element: <TaskListPage /> },
-                { path: routePaths.taskDetail, element: <TaskDetailPage /> },
+                {
+                  path: routePaths.taskList,
+                  element: <TaskListPage api={runtime.api} />,
+                },
+                {
+                  path: routePaths.taskDetail,
+                  element: <TaskDetailPage api={runtime.api} />,
+                },
                 {
                   path: routePaths.projectTimeline,
                   element: <ProjectTimelinePage />,

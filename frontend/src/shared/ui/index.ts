@@ -38,3 +38,5 @@ export type {
 } from './settings-dialogs/change-confirmation'
 export { UnsavedChangesDialog } from './settings-dialogs/unsaved-changes-dialog'
 export type { UnsavedChangesDialogProps } from './settings-dialogs/unsaved-changes-dialog'
+
+export { TaskDetailLink } from './task-detail-link'
