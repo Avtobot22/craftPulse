@@ -1,5 +1,11 @@
-export { ApiClient } from './client'
-export type { ApiPath, ApiResponse, Decoder, RequestOptions } from './client'
+export { ApiClient, isStrongETag } from './client'
+export type {
+  ApiPath,
+  ApiResponse,
+  Decoder,
+  RequestOptions,
+  VersionedRequestOptions,
+} from './client'
 export { ApiError, fieldErrorsByPointer } from './problem'
 export type {
   ApiProblem,
