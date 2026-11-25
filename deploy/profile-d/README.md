@@ -4,7 +4,7 @@
 
 ## Ресурсы
 
-На VPS 8 vCPU и около 15 ГиБ RAM. GitLab, Jenkins и SonarQube работают на той же машине. Для craftPulse задаётся общий потолок 4 vCPU и 5,5 ГиБ. На запуске остаётся 416 MiB внутри этого потолка сверх суммы ограничений контейнеров. Основной запас памяти остаётся снаружи slice.
+На VPS 8 vCPU и около 15 ГиБ RAM. GitLab, Jenkins и SonarQube работают на той же машине. Для craftPulse задаётся общий потолок 4 vCPU и 5,5 ГиБ. Основной запас памяти остаётся снаружи slice.
 
 | Компонент | Лимит MiB | Дополнительная настройка |
 | --- | ---: | --- |
@@ -16,8 +16,12 @@
 | nginx с frontend | 96 | TLS, 25 MiB, ограничение частоты входа и webhook |
 | VictoriaMetrics и VictoriaLogs | 256 + 256 | Метрики 13 месяцев, логи 30 дней |
 | Grafana | 512 | Источник метрик и дашборд состояния |
+| Адаптер Git | 256 | 1 vCPU, `GOMEMLIMIT=96MiB`, пул БД 2 |
+| Адаптеры GitLab и Jira Cloud | По 48 | `GOMEMLIMIT=36MiB`, пул БД 2 |
 
-Запущенные сервисы ограничены суммарно 4704 MiB. С миграцией - 5216 MiB. Лимит swap равен лимиту памяти контейнера. На VPS оператор устанавливает [systemd slice](craftpulse-d.slice):
+Ядро и инфраструктура ограничены суммарно 4704 MiB. С тремя адаптерами и
+миграцией ядра сумма составляет 5568 MiB. На VPS оператор устанавливает
+[systemd slice](craftpulse-d.slice):
 
 ```sh
 sudo install -m 0644 craftpulse-d.slice /etc/systemd/system/craftpulse-d.slice
@@ -27,55 +31,120 @@ sudo systemctl start craftpulse-d.slice
 
 В файле окружения укажи `CGROUP_PARENT=craftpulse-d.slice`. Для устойчивости при совместных сборках проверь `systemctl show craftpulse-d.slice -p CPUQuotaPerSecUSec -p MemoryMax -p MemorySwapMax` и фактическую память у источников перед запуском.
 
-## Секреты и TLS
+## Подготовка к первому выкату
 
-[stand.sops.json](stand.sops.json) хранится в Git рядом с Compose. Это позволяет восстановить конфигурацию из того же коммита, которым описана установка. Шифрование даёт доступ двум получателям из [правил SOPS](../../.sops.yaml). Один ключ уже используется оператором. Второй подготовлен для передачи ответственному за продукт. Закрытые ключи хранятся вне сервера и Git. Файл содержит новые секреты для чистой установки профиля.
+На Linux-стенде нужны Docker Engine, Compose v2, Python 3.9+ и age. На машине оператора
+нужны Python 3.9+, OpenSSH, ORAS, SOPS, age и OpenSSL. Если пакеты реестра закрытые,
+выполни вход в GHCR на обоих компьютерах под учётными записями, от которых
+запускаются ORAS и Docker. На стенде Docker запускается от root.
 
-На машине оператора, где доступен закрытый ключ age, выполни из корня репозитория. Скрипт `prepare.py` должен быть в том же checkout на VPS. Каталог секретов создаётся атомарно один раз. Каждый файл читается только UID процесса, которому передаётся в Compose.
+1. Размести checkout с командой выката в `/opt/craftpulse/profile-d`. Подключись
+   через проверенный SSH-ключ хоста. У оператора должен быть доступ к запуску
+   `rollout_host.py` через `sudo -n`. Checkout и файлы настроек, которые читает
+   команда от root, должны быть доступны на запись только администратору стенда.
+2. Создай `deploy/profile-d/.env` по [.env.example](.env.example). Задай
+   `CGROUP_PARENT=craftpulse-d.slice`, `BIND_IP=127.0.0.1`,
+   `SITE_URL=https://craftpulse.defects.team` и `EDGE_PROXY_IP=172.31.84.1`.
+   Выкат сам задаёт `SECRETS_DIR`, `CHECK_PROFILES_PATH` и ссылки на образы.
+3. Создай `deploy/profile-d/rollout.json` по [rollout.example.json](rollout.example.json).
+   Укажи каталог TLS с `tls-cert.pem` (цепочка площадки) и `tls-key.pem`, YAML-каталог
+   профилей проверок нужного выпуска и публичного получателя резервных копий age.
+   В `install` задай параметры служебной организации и её OIDC-клиента.
+   `installation_networks` и `source_private_networks` задают сетевые области
+   адаптеров. При прямом доступе к локальному GitLab добавь его адрес в разрешённую
+   область источников, если он находится в приватной сети.
+4. На машине оператора дополни [stand.sops.json](stand.sops.json) через `sops edit`.
+   Сохрани исходные пароли БД и мастер-ключи действующего стенда. Добавь
+   `oidc_client_secrets` как объект «slug организации → секрет клиента».
+   Для встроенных адаптеров добавь объект `adapters`, где имя без префикса
+   `craftpulse-adapter-` указывает на `owner_password`, `app_password`,
+   `master_key` (32 байта в Base64) и `service_key`. Добавь PEM сертификата и
+   закрытого ключа внутреннего центра в `adapter_ca_cert` и `adapter_ca_key`.
+   Центр должен иметь назначение CA и срок действия больше года. Используй один
+   центр для установки, чтобы новый выпуск ядра доверял уже запущенным адаптерам.
+   Для хранения ключей используй получателей из [.sops.yaml](../../.sops.yaml).
+
+Для новой установки создай центр на рабочей станции в закрытом каталоге:
+
+```sh
+umask 077
+openssl req -x509 -newkey ed25519 -nodes -days 1826 \
+  -subj '/CN=craftPulse installation CA' \
+  -addext 'basicConstraints=critical,CA:TRUE' \
+  -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+  -keyout adapter-ca.key -out adapter-ca.pem
+```
+
+Перенеси PEM из этих файлов в соответствующие поля через `sops edit`.
+Храни закрытый ключ центра в зашифрованном комплекте установки.
+
+В CI публикуются [OCI-образы и манифест](../../docs/oci-release.md). Закрытый ключ
+age и ключ центра остаются на машине оператора. SOPS расшифровывает документ в
+памяти, команда передаёт по SSH только манифест, имена запрошенных адаптеров и
+отдельные файлы процессов. Для адаптеров OpenSSL выдаёт сертификаты на 365 дней
+с DNS-именами Compose. Ядро и проверки адаптеров используют сертификат центра.
+
+## Выкат
+
+На машине оператора из корня checkout выполни:
 
 ```sh
 export SOPS_AGE_KEY_FILE=/secure/operator.age.txt
-sudo -v
-sops decrypt deploy/profile-d/stand.sops.json |
-  sudo python3 deploy/profile-d/prepare.py materialize /var/lib/craftpulse-profile-d-secrets
+python3 deploy/profile-d/rollout.py deploy <SHA>
 ```
 
-Если checkout и Docker находятся на VPS, путь к закрытому ключу остаётся на рабочей станции:
+Для другой площадки перед `deploy` укажи `--host`, `--stand-dir` или `--state`.
+Подкоманда принимает полный SHA из успешного прогона OCI. Чтобы взять отдельный
+зашифрованный файл, передай `deploy --bundle /secure/stand.sops.json <SHA>`.
+Первый выкат создаёт инфраструктуру профиля D, базы выбранных адаптеров и
+служебную организацию. Для действующего профиля первый успешный запуск задаёт
+выпуск, к которому команда сможет возвращаться автоматически.
+
+Выкат скачивает образы ядра, frontend и выбранных адаптеров по digest. Перед
+повышением версии схемы он снимает `pg_dump -Fc` под ролью копирования, шифрует
+архив публичным ключом age и сохраняет его в каталоге `backups/` на хосте.
+Миграции выполняются последовательно под ролями-владельцами. После них
+Compose перезапускает `worker` с SIGTERM и 90 с на остановку, затем `api` и по
+одному адаптеры с новым образом или изменившимися параметрами. Для каждого
+процесса скрипт ждёт совпадения SHA в `/version` и готовности в `/readyz`.
+Операцию завершает протокол `api install` с исходом `passed` и SHA выпуска.
+Параллельный запуск на том же стенде отклоняется.
+
+## Откат
+
+При сбое после начала переключения команда возвращает последний успешный выпуск
+и проверяет его `/version` и `/readyz`. Исходная команда завершается ненулевым
+кодом и после успешного возврата. Первый выкат без сохранённого выпуска
+останавливает новые процессы приложения. При потерянном SSH-соединении прочитай
+журнал. Следующий запуск восстановит сохранённый выпуск, если переключение
+было прервано.
+
+Для выбора ранее успешно установленного выпуска выполни:
 
 ```sh
-sops decrypt deploy/profile-d/stand.sops.json |
-  ssh defects 'sudo -n python3 /opt/craftpulse/profile-d/deploy/profile-d/prepare.py materialize /var/lib/craftpulse-profile-d-secrets'
+python3 deploy/profile-d/rollout.py rollback <прежний-SHA>
 ```
 
-В `SECRETS_DIR` укажи созданный каталог. Установи файлы `tls-cert.pem` (цепочка, 0444) и `tls-key.pem` (закрытый ключ сервиса, 0400) в этот каталог от root. На новом VPS оставь `BIND_IP=127.0.0.1`, укажи `SITE_URL=https://craftpulse.defects.team` и `EDGE_PROXY_IP=172.31.84.1` для локального Caddy. В самостоятельной установке можно публиковать порты 80 и 443 напрямую. Порты Grafana, VictoriaLogs и readiness worker привязаны к loopback.
+Ручной откат использует сохранённую конфигурацию выпуска и также выполняет
+`api install`. Схема базы остаётся на применённой версии. Для отката нужны
+доступные digest, совместимость кода с текущей схемой и действующие сертификаты
+адаптеров выбранного выпуска.
 
-## Запуск стенда
+Журнал на стенде находится в
+`/var/lib/craftpulse-profile-d/rollout/journal.jsonl`. Каждая запись содержит
+SHA, digest образов, время, исход и признак отката. `state.json` указывает на
+активный выпуск. Каталог `releases/` хранит приватные файлы процессов и конфигурацию
+для отката. Оставляй каталоги выпусков, которые нужны для возврата или всё ещё
+смонтированы в контейнеры инфраструктуры.
 
-Нужны Docker Engine с systemd cgroup и Compose v2, Python 3.9+, SOPS и age на машине оператора. Получи `release-manifest.json` по [инструкции поставки OCI](../../docs/oci-release.md). Выбирай релиз, в котором `api` и `worker` уже поддерживают `healthcheck`. Укажи в `CHECK_PROFILES_PATH` абсолютный путь к YAML-каталогу профилей проверок этого выпуска. API читает каталог при старте. Файл должен быть доступен для чтения UID 65532. Формат описан в [ТЗ](../../docs/technical-specification/technical-specification.md).
-
-```sh
-cd deploy/profile-d
-cp .env.example .env
-# Укажи SECRETS_DIR, SITE_URL, EDGE_PROXY_IP, CGROUP_PARENT и CHECK_PROFILES_PATH.
-python3 prepare.py release-env /secure/release-manifest.json >> .env
-docker compose -f compose.yaml -f compose.stand.yaml config --quiet
-docker compose -f compose.yaml -f compose.stand.yaml up -d --wait
-docker compose -f compose.yaml -f compose.stand.yaml ps -a
-docker compose -f compose.yaml -f compose.stand.yaml logs migrate
-```
-
-Для инициализации организаций и первого администратора используй параметры `api install` из [backend/.env.example](../../backend/.env.example). Запусти `docker compose -f compose.yaml -f compose.stand.yaml run --rm api /usr/local/bin/api install`, передав `INSTALL_ORGANIZATIONS` и `ORG_<SLUG>_*` через операторское дополнение к Compose с отдельными файловыми монтированиями для OIDC-секретов. При обновлении действующей базы используй исходные зашифрованные ключи этой базы и её резервную копию.
-
-Проверь `/readyz` приложения через nginx и worker на `http://127.0.0.1:18082/readyz`. Контейнерные пробы API и worker обращаются к `/livez`. Если БД недоступна, `/readyz` отвечает 503, а `/livez` продолжает отвечать, пока жив процесс. nginx повторяет запрос при 503, если за DNS-именем API есть другой экземпляр. Для заявок с побочными эффектами nginx сохраняет стандартные ограничения на повторы.
-
-При повторном `up` сравни `SELECT id, version_id, is_applied, tstamp FROM goose_db_version ORDER BY id` в базе craftpulse. Если Compose запустит завершённый сервис повторно, goose сверит версию без новых записей. Сравни вывод `docker stats` с контейнерными лимитами, а пик памяти slice с общим лимитом.
-
-```sh
-slice_path=$(systemctl show craftpulse-d.slice -p ControlGroup --value)
-cat "/sys/fs/cgroup${slice_path}/memory.peak"
-```
-
-Проверь `413` запросом 26 MiB, `429` серией запросов к входу, перенаправление HTTP → HTTPS и наличие логов и метрик в сервисах наблюдаемости.
+Для приёмки выкати два опубликованных SHA, второй с повышением версии схемы.
+На стенде сравни `/version`, запись успешного протокола и
+`SELECT version_id, is_applied, tstamp FROM goose_db_version ORDER BY id`.
+Проверь, что файл `*.dump.age` появился перед применением новой миграции.
+На отдельной установке выкати третий SHA с YAML-каталогом профилей, который API
+отвергает при старте. Журнал должен показать сбой и успешный автоматический
+возврат второго SHA. Верни первый SHA вручную и проверь, что версия кода
+изменилась, а записи миграций сохранились.
 
 ## Локальный запуск
 

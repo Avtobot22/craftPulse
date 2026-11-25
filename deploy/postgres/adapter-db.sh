@@ -21,22 +21,23 @@ app="adapter_${name}"
 psql -v ON_ERROR_STOP=1 --username "${POSTGRES_USER:-postgres}" --dbname postgres \
     -v owner="$owner" -v app="$app" \
     -v owner_password="$owner_password" -v app_password="$app_password" <<'SQL'
-CREATE ROLE :"owner" LOGIN PASSWORD :'owner_password';
-CREATE ROLE :"app" LOGIN NOBYPASSRLS PASSWORD :'app_password';
+SET log_min_duration_statement = -1;
+SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'owner', :'owner_password')
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'owner') \gexec
+SELECT format('CREATE ROLE %I LOGIN NOBYPASSRLS PASSWORD %L', :'app', :'app_password')
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'app') \gexec
 
-CREATE DATABASE :"app"
-    OWNER :"owner"
-    TEMPLATE template0
-    ENCODING 'UTF8'
-    LOCALE_PROVIDER builtin
-    BUILTIN_LOCALE 'C.UTF-8';
+SELECT format(
+    'CREATE DATABASE %I OWNER %I TEMPLATE template0 ENCODING ''UTF8'' LOCALE_PROVIDER builtin BUILTIN_LOCALE ''C.UTF-8''',
+    :'app', :'owner'
+) WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'app') \gexec
 ALTER DATABASE :"app" SET timezone TO 'UTC';
 REVOKE ALL ON DATABASE :"app" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"app" TO :"app", craftpulse_backup;
 
 \connect :"app"
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-CREATE SCHEMA adapter AUTHORIZATION :"owner";
+CREATE SCHEMA IF NOT EXISTS adapter AUTHORIZATION :"owner";
 GRANT USAGE ON SCHEMA adapter TO :"app", craftpulse_backup;
 ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA adapter
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app";

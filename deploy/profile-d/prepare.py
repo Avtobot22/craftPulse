@@ -34,26 +34,19 @@ def generated_values():
     return values
 
 
-def materialize(values, destination):
-    if os.name != "posix" or os.geteuid() != 0:
-        raise ValueError("materialize on Linux as root so container UID restrictions are applied")
+def runtime_files(values):
     for name in (*_PASSWORDS, "core_master_key"):
         value = values.get(name)
         if not isinstance(value, str) or not value or any(ch in value for ch in "\r\n\0"):
             raise ValueError(f"invalid required secret: {name}")
     if len(base64.b64decode(values["core_master_key"], validate=True)) != 32:
         raise ValueError("core_master_key must encode 32 bytes")
-    destination = destination.resolve()
-    if destination.is_relative_to(_ROOT) or destination.exists():
-        raise ValueError("use a new secrets directory outside the checkout")
-    if not destination.parent.is_dir():
-        raise ValueError("create the parent directory before materializing")
     objects = {"identities": [{
         "name": "craftpulse",
         "credentials": [{"accessKey": "craftpulse", "secretKey": values["object_key"]}],
         "actions": ["Read:craftpulse", "Write:craftpulse", "List:craftpulse", "Tagging:craftpulse"],
     }]}
-    files = {
+    return {
         "postgres-password": (_POSTGRES_UID, values["postgres_password"]),
         "postgres-owner-password": (_POSTGRES_UID, values["owner_password"]),
         "postgres-app-password": (_POSTGRES_UID, values["app_password"]),
@@ -65,6 +58,17 @@ def materialize(values, destination):
         "grafana-password": (_GRAFANA_UID, values["grafana_password"]),
         "seaweedfs.json": (_SEAWEEDFS_UID, json.dumps(objects)),
     }
+
+
+def materialize(values, destination):
+    if os.name != "posix" or os.geteuid() != 0:
+        raise ValueError("materialize on Linux as root so container UID restrictions are applied")
+    destination = destination.resolve()
+    if destination.is_relative_to(_ROOT) or destination.exists():
+        raise ValueError("use a new secrets directory outside the checkout")
+    if not destination.parent.is_dir():
+        raise ValueError("create the parent directory before materializing")
+    files = runtime_files(values)
     with tempfile.TemporaryDirectory(prefix=".profile-d-", dir=destination.parent) as tmp:
         staged = Path(tmp) / "secrets"
         staged.mkdir(mode=0o700)
