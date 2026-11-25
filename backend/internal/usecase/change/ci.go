@@ -189,22 +189,37 @@ func (u *UseCase) CIConfiguration(ctx context.Context, s entity.Subject, project
 	return entity.CIConfiguration{System: system, VersionNo: m.version.VersionNo, Snippet: string(raw), Variables: vars}, nil
 }
 
+// SummaryCheckJobs separates expectations for the two summary audiences.
+type SummaryCheckJobs struct {
+	All, Public []string
+}
+
 // summaryCheckJobs mirrors the generated CI jobs for the repository's profile rows.
 // Imported reports share one job; several components can share the same builtin job.
-func (u *UseCase) summaryCheckJobs(entries []entity.ProfileEntry) []string {
-	var jobs []string
+func (u *UseCase) summaryCheckJobs(entries []entity.ProfileEntry) SummaryCheckJobs {
+	var jobs SummaryCheckJobs
 	for _, e := range entries {
 		p, ok := u.profiles[e.ProfileID]
 		if !ok {
 			continue
 		}
+		var key string
 		switch {
 		case e.Mode == entity.CheckModeBuiltin:
-			jobs = append(jobs, _builtinJobPrefix+p.ID)
+			key = _builtinJobPrefix + p.ID
 		case p.ReportFormat != "":
-			jobs = append(jobs, _importJob)
+			key = _importJob
+		default:
+			continue
+		}
+		jobs.All = append(jobs.All, key)
+		if !entity.SensitiveSummaryAnalysis(e.AnalysisKind) {
+			jobs.Public = append(jobs.Public, key)
 		}
 	}
-	slices.Sort(jobs)
-	return slices.Compact(jobs)
+	slices.Sort(jobs.All)
+	slices.Sort(jobs.Public)
+	jobs.All = slices.Compact(jobs.All)
+	jobs.Public = slices.Compact(jobs.Public)
+	return jobs
 }

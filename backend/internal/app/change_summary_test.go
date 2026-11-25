@@ -105,6 +105,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	firstReceipt := e.readCI(t, receipt, e.token.Value)
 	require.Equal(t, "accepted", firstReceipt.Status)
 	assert.Nil(t, firstReceipt.ResultURL)
+	assert.NotNil(t, firstReceipt.RetryAfter)
 
 	// Even a collected pipeline cannot replace an explicit MR target from the package.
 	pipelineManifest := ciManifest("42")
@@ -119,7 +120,11 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	first := e.submit(t, mrPage(h1, "v1", e.clock.Now()))
 	require.NotNil(t, first.SourceInstanceID)
 	mr := mrID(t, e.normalized, "9001")
-	assert.Nil(t, e.readCI(t, receipt, e.token.Value).ResultURL)
+	pendingReceipt := e.readCI(t, receipt, e.token.Value)
+	assert.Equal(t, "accepted", pendingReceipt.Status)
+	assert.Nil(t, pendingReceipt.ResultURL)
+	require.NotNil(t, pendingReceipt.RetryAfter)
+	assert.Positive(t, *pendingReceipt.RetryAfter)
 	job := entity.ChangeSummaryJob{OrganizationID: e.orgID, MRID: mr}
 	source := &summaryTestAdapter{source: entity.AreaSource{
 		InstanceID: *first.SourceInstanceID, Kind: entity.ScopeRepository, NativeScopeID: "42",
@@ -184,7 +189,8 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	}}
 	e.submit(t, emptySecurityReports(h1))
 	e.submit(t, e.codeReport(t, h1, "feature", "8102", sarifOf(), "success", "complete"))
-	run()
+	link := e.awaitCIResult(t, receipt, run)
+	assert.Equal(t, "/merge-requests/"+mr.String()+"/summary?head_sha="+h1, link)
 	ready := checkReady(h1, "running")
 	assertItem(ready, "resolved", "", 1)
 	assertItem(ready, "accepted", "", 1)
@@ -218,9 +224,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	onFetch = func() {}
 
 	// Head A remains the target as the MR advances.
-	link := e.readCI(t, receipt, e.token.Value).ResultURL
-	require.NotNil(t, link)
-	assert.Equal(t, "/merge-requests/"+mr.String()+"/summary?head_sha="+h1, *link)
+	assert.Equal(t, &link, e.readCI(t, receipt, e.token.Value).ResultURL)
 
 	e.submit(t, page2)
 	e.submit(t, emptySecurityReports(h2))
@@ -235,7 +239,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	})))
 	run()
 	ready = checkReady(h2, "reports_missing")
-	assert.Equal(t, link, e.readCI(t, receipt, e.token.Value).ResultURL)
+	assert.Equal(t, &link, e.readCI(t, receipt, e.token.Value).ResultURL)
 	assertItem(ready, "not_evaluated", "scan_missing", 2)
 	assertItem(ready, "resolved", "", 0)
 
@@ -311,7 +315,12 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, new(float32(3)), full.Expected.MissingChecks.Numerator)
 	assert.Equal(t, new(float32(4)), full.Expected.MissingChecks.Denominator)
 	assert.Equal(t, new(float32(0.75)), full.Expected.MissingChecks.Value)
-	receiptPath := "/api/v1" + *link
+	require.NotNil(t, plain.Expected)
+	assert.Equal(t, openapi.DataState("ASSESSED"), plain.Expected.MissingChecks.State)
+	assert.Equal(t, new(float32(0)), plain.Expected.MissingChecks.Numerator)
+	assert.Equal(t, new(float32(1)), plain.Expected.MissingChecks.Denominator)
+	assert.Equal(t, new(float32(0)), plain.Expected.MissingChecks.Value)
+	receiptPath := "/api/v1" + link
 	fromReceipt := decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, security, receiptPath, "MergeRequestSummary"))
 	assert.Equal(t, h1, fromReceipt.HeadSha)
 	assert.Equal(t, "stale", string(fromReceipt.Status))
@@ -331,13 +340,31 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 		assert.NotEqual(t, new(openapi.AnalysisKind("sast")), item.AnalysisKind)
 	}
 	assert.Equal(t, "pending", string(full.Publication.Status))
-	_, err = e.owner.Exec(t.Context(), `UPDATE change.summary_revision SET publication_status = 'succeeded',
-		publication_external_id = 'comment-1', published_at = built_at WHERE id = $1`, ready)
-	require.NoError(t, err)
+	record := func(id uuid.UUID, outcome entity.SummaryPublication) bool {
+		t.Helper()
+		applied, err := u.RecordSummaryPublication(t.Context(), entity.OutboundPublishJob{
+			OrganizationID: e.orgID, MRID: mr, SummaryRevisionID: entity.ID(id),
+		}, outcome)
+		require.NoError(t, err)
+		return applied
+	}
+	assert.True(t, record(withChild, entity.SummaryPublication{Status: "failed", ErrorCode: new("write_permission_missing")}))
+	assert.True(t, record(ready, entity.SummaryPublication{Status: "unknown", ErrorCode: new("provider_error")}))
+	assert.Equal(t, "unknown", string(read(security, "").Publication.Status))
+	assert.True(t, record(ready, entity.SummaryPublication{Status: "succeeded", ExternalID: new("comment-1")}))
+	assert.False(t, record(ready, entity.SummaryPublication{Status: "failed", ErrorCode: new("provider_error")}))
 	published := read(security, "").Publication
 	assert.Equal(t, "succeeded", string(published.Status))
 	assert.Equal(t, new("comment-1"), published.ExternalId)
 	assert.NotNil(t, published.PublishedAt)
+	assert.Nil(t, published.ErrorCode)
+	var childRevision int
+	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT revision_no FROM change.summary_revision WHERE id = $1`, withChild).Scan(&childRevision))
+	failed := read(e.lead, fmt.Sprintf("?revision_no=%d", childRevision)).Publication
+	assert.Equal(t, "failed", string(failed.Status))
+	assert.Equal(t, new("write_permission_missing"), failed.ErrorCode)
+	assert.Nil(t, failed.ExternalId)
+	assert.Nil(t, failed.PublishedAt)
 	old := read(security, "?revision_no=1")
 	assert.Equal(t, &base, old.BaseSha)
 	assert.Equal(t, h1, old.HeadSha)
@@ -357,6 +384,18 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	e.clock.Advance(time.Second)
 	page = mrPage(h3, "v3", e.clock.Now())
 	e.submit(t, page)
+	require.Equal(t, ready, checkReady(h2, "complete"))
+	selectors := []string{"", "?head_sha=" + h2, fmt.Sprintf("?revision_no=%d", full.RevisionNo)}
+	for _, actor := range []*browser{security, e.lead} {
+		for _, selector := range selectors {
+			prior := read(actor, selector)
+			assert.Equal(t, ready, prior.Id)
+			assert.Equal(t, h2, prior.HeadSha)
+			assert.Equal(t, "stale", string(prior.Status))
+			assert.Equal(t, new("new_head"), prior.StaleReason)
+		}
+	}
+	require.Equal(t, ready, checkReady(h2, "complete"))
 	e.submit(t, e.codeReport(t, h3, "feature", "8106", sarifOf(hit{rule: "observed", path: "src/main.go", line: 3})))
 	run()
 	assertItem(checkReady(h3, "running"), "newly_observed", "", 1)

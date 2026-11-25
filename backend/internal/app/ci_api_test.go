@@ -584,16 +584,17 @@ func TestCIUpload_ResultLinkWaitsForPipelineVersion(t *testing.T) {
 	n.drain(t)
 	pipelineID := runID(t, n, "5001")
 	result := e.readCI(t, id, e.token.Value)
-	assert.Nil(t, result.RetryAfter)
+	assert.NotNil(t, result.RetryAfter)
 	assert.Nil(t, result.ResultURL)
 
 	manifest := ciManifest("42")
 	manifest.Source.InstanceKey = _checksInstance
-	e.imported(t, e.admin, pack(t, manifest, mrRecord(t, "ci_run", "5001", "", "v1", envelope.CiRunV1{
-		ProjectNativeId: "42", RefName: "main", Sha: sha, NativeStatus: "success", Outcome: "success",
-		StartedAt: new(e.clock.Now()), FinishedAt: new(e.clock.Now()),
-	})))
-	n.drain(t)
-	result = e.readCI(t, id, e.token.Value)
-	assert.Equal(t, new("/pipelines/"+pipelineID.String()), result.ResultURL)
+	link := e.awaitCIResult(t, id, func() {
+		e.imported(t, e.admin, pack(t, manifest, mrRecord(t, "ci_run", "5001", "", "v1", envelope.CiRunV1{
+			ProjectNativeId: "42", RefName: "main", Sha: sha, NativeStatus: "success", Outcome: "success",
+			StartedAt: new(e.clock.Now()), FinishedAt: new(e.clock.Now()),
+		})))
+		n.drain(t)
+	})
+	assert.Equal(t, "/pipelines/"+pipelineID.String(), link)
 }

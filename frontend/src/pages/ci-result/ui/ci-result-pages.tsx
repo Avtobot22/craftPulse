@@ -5,7 +5,7 @@ import { Link, useParams, useSearchParams } from 'react-router'
 import { ApiError, readArray, readRecord, readString } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import { ErrorState, LoadingState } from '@/shared/ui'
-import { readSummary } from '../api/read-summary'
+import { readSummary, type Summary } from '../api/read-summary'
 import { SummaryMetrics } from './summary-metrics'
 
 function ResultPage({
@@ -59,6 +59,21 @@ function readPipeline(value: unknown) {
   }
 }
 
+const publicationLabels: Record<Summary['publication']['status'], string> = {
+  not_requested: 'Публикация комментария не запрошена',
+  pending: 'Комментарий ожидает публикации',
+  succeeded: 'Комментарий опубликован',
+  failed: 'Не удалось опубликовать комментарий',
+  unknown: 'Исход публикации комментария неизвестен',
+  stale: 'Публикация комментария отменена',
+}
+
+const publicationReasons = new Map([
+  ['write_permission_missing', 'нет права записи в MR'],
+  ['head_changed', 'появился новый коммит'],
+  ['provider_error', 'ошибка Git-хостинга'],
+])
+
 export function MergeRequestSummaryPage({ api }: { api: ApiClient }) {
   const { mergeRequestId = '' } = useParams()
   const [params] = useSearchParams()
@@ -81,6 +96,9 @@ export function MergeRequestSummaryPage({ api }: { api: ApiClient }) {
     retry: false,
   })
   const summary = query.data
+  const errorCode = summary?.publication.errorCode
+  const publicationReason =
+    errorCode && (publicationReasons.get(errorCode) ?? errorCode)
   return (
     <ResultPage
       title="Сводка MR"
@@ -101,6 +119,10 @@ export function MergeRequestSummaryPage({ api }: { api: ApiClient }) {
               Открыть pipeline
             </Link>
           )}
+          <p>
+            {publicationLabels[summary.publication.status]}
+            {publicationReason && ` (${publicationReason})`}
+          </p>
           <SummaryMetrics summary={summary} />
           {summary.limited && <p>Часть данных скрыта правами доступа.</p>}
           {summary.items.length > 0 && (

@@ -22,6 +22,7 @@ type SummaryStore interface {
 	SummaryProfileAt(context.Context, entity.ID, entity.ID, time.Time) (entity.CheckProfileVersion, error)
 	StaleSummaries(context.Context, entity.ID, entity.ID, string) error
 	SaveSummary(context.Context, entity.ID, *entity.SummaryRevision) (bool, error)
+	SaveSummaryPublication(context.Context, entity.OutboundPublishJob, entity.SummaryPublication) (bool, error)
 }
 
 // SummaryFacts reads normalize facts and locks their knowledge counter at finalization.
@@ -41,7 +42,7 @@ type SummarySource interface {
 // SummaryCalculations applies the reusable calc definitions to selected normalize facts.
 type SummaryCalculations interface {
 	SummaryPipeline(context.Context, entity.ID, entity.SummaryMR) (entity.CIRun, error)
-	SummarizeMetrics(context.Context, entity.ID, entity.SummaryMR, entity.CIRun, []string, *entity.SummaryRevision) error
+	SummarizeMetrics(context.Context, entity.ID, entity.SummaryMR, entity.CIRun, SummaryCheckJobs, *entity.SummaryRevision) error
 	AnalysisFacts(context.Context, entity.ID, entity.AnalysisScope, int64, time.Time) (entity.AnalysisFacts, error)
 	SummarizeFindings(entity.SummaryFindingComparison, []entity.ExceptionVersion) ([]entity.SummaryFindingValues, []entity.RevisionInput)
 }
@@ -54,6 +55,29 @@ type SummaryDeps struct {
 	Calculations   SummaryCalculations
 	Queue          repo.JobQueue
 	ObserveLatency func(float64)
+}
+
+// RecordSummaryPublication records a publisher's outcome against the revision it attempted.
+// A resolved outcome is stable across redelivery. An unknown outcome can be reconciled later.
+func (u *UseCase) RecordSummaryPublication(ctx context.Context, job entity.OutboundPublishJob, result entity.SummaryPublication) (bool, error) {
+	switch result.Status {
+	case "succeeded":
+		if result.ExternalID == nil || *result.ExternalID == "" {
+			return false, errorf("successful summary publication has no external ID")
+		}
+		result.PublishedAt, result.ErrorCode = new(u.d.Clock.Now()), nil
+	case "failed", "unknown", "stale":
+		result.PublishedAt, result.ExternalID = nil, nil
+	default:
+		return false, errorf("invalid summary publication outcome %q", result.Status)
+	}
+	var applied bool
+	err := u.d.Tx.InOrgTx(ctx, job.OrganizationID, func(ctx context.Context) error {
+		var err error
+		applied, err = u.d.Summary.Store.SaveSummaryPublication(ctx, job, result)
+		return err
+	})
+	return err == nil && applied, err
 }
 
 // RunSummary checks the live head before building and again before queuing publication. The final check of

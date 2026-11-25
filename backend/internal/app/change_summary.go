@@ -59,10 +59,11 @@ func addSummaryValue(v *entity.SummaryRevision, kind string, value any) error {
 }
 
 func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID, mr entity.SummaryMR, run entity.CIRun,
-	jobs []string, v *entity.SummaryRevision,
+	jobs change.SummaryCheckJobs, v *entity.SummaryRevision,
 ) error {
 	points, definitions := s.calculator.CalculateSummaryCI(run)
-	checks, checkDefinition := s.calculator.CalculateSummaryChecks(mr, run, jobs)
+	checks, checkDefinition := s.calculator.CalculateSummaryChecks(mr, run, jobs.All)
+	publicChecks, _ := s.calculator.CalculateSummaryChecks(mr, run, jobs.Public)
 	reports, reportDefinition := s.calculator.CalculateSummaryCompleteness(mr, v.ExpectedReports, v.CompleteReports)
 	points = append(points, checks, reports)
 	definitions = append(definitions, checkDefinition, reportDefinition)
@@ -98,8 +99,9 @@ func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID
 		AttemptVersions []entity.ID          `json:"attempt_versions,omitempty"`
 		Metrics         []entity.SeriesPoint `json:"metrics"`
 		Display         *entity.SummaryCI    `json:"display,omitempty"`
+		PublicChecks    entity.SeriesPoint   `json:"public_checks"`
 		PublicReports   entity.SeriesPoint   `json:"public_reports"`
-	}{run.Run.RunID, runs, attempts, points, display, publicReports}); err != nil {
+	}{run.Run.RunID, runs, attempts, points, display, publicChecks, publicReports}); err != nil {
 		return err
 	}
 	facts, err := s.TestCoverageFacts(ctx, org, entity.ReportScope{AreaID: mr.AreaID, SHA: mr.HeadSHA, KnownSeq: mr.KnowledgeSeq})
@@ -140,7 +142,7 @@ func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID
 		diff = entity.MRDiff{}
 	}
 	in := calc.MRStructureInput{Diff: diff, Coverage: patch}
-	streams, err := s.summaryCode(ctx, org, mr, v.CodePairs, &in)
+	streams, err := s.summaryCode(ctx, org, mr, v, &in)
 	if err != nil {
 		return err
 	}
@@ -231,7 +233,7 @@ type summaryCodeMetrics struct {
 }
 
 func (s summaryCalculations) summaryCode(ctx context.Context, org entity.ID, mr entity.SummaryMR,
-	pairs []entity.SummaryCodePair, in *calc.MRStructureInput,
+	v *entity.SummaryRevision, in *calc.MRStructureInput,
 ) ([]summaryCodeMetrics, error) {
 	type stream struct {
 		component entity.ID
@@ -239,7 +241,18 @@ func (s summaryCalculations) summaryCode(ctx context.Context, org entity.ID, mr 
 	}
 	streams := make(map[stream]*calc.MRStructureInput)
 	var order []stream
-	for _, pair := range pairs {
+	// Keep a slot for each configured stream even when neither report arrived.
+	for _, expected := range v.ExpectedReports {
+		if expected.Kind != entity.AnalysisCode {
+			continue
+		}
+		k := stream{expected.ComponentID, expected.Language}
+		if streams[k] == nil {
+			streams[k] = &calc.MRStructureInput{Diff: in.Diff}
+			order = append(order, k)
+		}
+	}
+	for _, pair := range v.CodePairs {
 		k := stream{pair.ComponentID, pair.Head.Language}
 		entry := streams[k]
 		if entry == nil {

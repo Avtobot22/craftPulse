@@ -19,7 +19,7 @@ export default defineConfig({
     },
   },
   test: {
-    server: { deps: { inline: ['@gravity-ui/uikit'] } },
+    server: { deps: { inline: ['@gravity-ui/uikit', '@gravity-ui/charts'] } },
     environment: 'jsdom',
     setupFiles: ['./src/app/test/setup-tests.ts'],
     clearMocks: true,

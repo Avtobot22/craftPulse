@@ -105,16 +105,18 @@ func (m *summaryMetrics) read(i *entity.SummaryItem, security bool) error {
 		var v struct {
 			Display       *entity.SummaryCI
 			Metrics       []entity.SeriesPoint
+			PublicChecks  entity.SeriesPoint `json:"public_checks"`
 			PublicReports entity.SeriesPoint `json:"public_reports"`
 		}
 		if err := json.Unmarshal(i.Value, &v); err != nil {
 			return err
 		}
-		m.ci, m.reports = v.Display, v.PublicReports.Point
+		// Older snapshots have no public I08. The full point is only safe for security readers.
+		m.ci, m.checks, m.reports = v.Display, v.PublicChecks.Point, v.PublicReports.Point
 		for idx := range v.Metrics {
 			p := &v.Metrics[idx]
 			switch {
-			case p.MetricID == "I08":
+			case p.MetricID == "I08" && security:
 				m.checks = p.Point
 			case p.MetricID == "I09" && security:
 				m.reports = p.Point
@@ -182,20 +184,38 @@ func (m *summaryMetrics) readStructure(body json.RawMessage) error {
 		m.complexity = addSummaryCounts(m.complexity, summaryCount(stream.Complexity.State, stream.Complexity.ReasonCode, increased))
 		m.clones = addSummaryCounts(m.clones, stream.Clones)
 	}
+	for _, p := range []*entity.Point{&m.complexity, &m.clones} {
+		if p.Value != nil && p.MissingCount > 0 {
+			p.State, p.ReasonCode = entity.StateProvisional, "scan_incomplete"
+		}
+	}
 	return nil
 }
 
-func addSummaryCounts(a, b entity.Point) entity.Point {
-	if a.State == "" || a.Value == nil && b.Value != nil {
-		return b
-	}
-	if a.Value != nil && b.Value != nil {
-		a.Value = new(*a.Value + *b.Value)
-		if b.State == entity.StateProvisional {
-			a.State = entity.StateProvisional
+func addSummaryCounts(total, stream entity.Point) entity.Point {
+	if stream.Value == nil {
+		total.MissingCount++
+		if total.State == "" {
+			total.State, total.ReasonCode = stream.State, stream.ReasonCode
 		}
+		return total
 	}
-	return a
+	if total.Value == nil {
+		stream.MissingCount += total.MissingCount
+		return stream
+	}
+	total.Value = new(*total.Value + *stream.Value)
+	if total.Numerator != nil && stream.Numerator != nil {
+		total.Numerator = new(*total.Numerator + *stream.Numerator)
+	} else {
+		total.Numerator = nil
+	}
+	total.ExcludedCount += stream.ExcludedCount
+	total.MissingCount += stream.MissingCount
+	if stream.State == entity.StateProvisional && total.State != entity.StateProvisional {
+		total.State, total.ReasonCode = stream.State, stream.ReasonCode
+	}
+	return total
 }
 
 func summaryMetric(unit string, p entity.Point) openapi.MetricValue {

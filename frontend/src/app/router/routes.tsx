@@ -8,6 +8,12 @@ import { InstallationPage } from '@/pages/installation'
 import { WelcomePage } from '@/pages/welcome'
 import { OrganizationPage } from '@/pages/organization'
 import { UsersPage } from '@/pages/users'
+import { WorkflowSettingsPage } from '@/pages/workflow-settings'
+import { TargetSettingsPage } from '@/pages/target-settings'
+import { TeamReportPage } from '@/pages/team-report'
+import { MetricPassportPage } from '@/pages/metric-passport'
+import { MetricCohortPage } from '@/pages/metric-cohort'
+import { SavedViewPage } from '@/pages/saved-view'
 import { routePaths } from '@/shared/config'
 import type { AppRuntime } from '../initialization/runtime'
 import { ProtectedRoute } from './protected-route'
@@ -60,6 +66,30 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 {
                   path: '/pipelines/:pipelineId',
                   element: <PipelinePage api={runtime.api} />,
+                },
+                {
+                  path: routePaths.workflowSettings,
+                  element: <WorkflowSettingsPage />,
+                },
+                {
+                  path: routePaths.targetSettings,
+                  element: <TargetSettingsPage />,
+                },
+                {
+                  path: routePaths.teamReport,
+                  element: <TeamReportPage />,
+                },
+                {
+                  path: routePaths.metricPassport,
+                  element: <MetricPassportPage />,
+                },
+                {
+                  path: routePaths.metricCohort,
+                  element: <MetricCohortPage />,
+                },
+                {
+                  path: routePaths.savedView,
+                  element: <SavedViewPage />,
                 },
                 { path: '*', element: <UnavailablePage /> },
               ],

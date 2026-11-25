@@ -84,6 +84,16 @@ func (r *Repo) SaveSummary(ctx context.Context, org entity.ID, v *entity.Summary
 	return true, conn.SendBatch(ctx, batch).Close()
 }
 
+// SaveSummaryPublication applies an outcome only to the revision for which publication was queued.
+func (r *Repo) SaveSummaryPublication(ctx context.Context, job entity.OutboundPublishJob, result entity.SummaryPublication) (bool, error) {
+	tag, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE change.summary_revision
+		SET publication_status = $4, publication_external_id = $5, publication_error_code = $6, published_at = $7
+		WHERE (organization_id, mr_id, id) = ($1, $2, $3) AND publication_status IN ('pending', 'unknown')`,
+		uuid.UUID(job.OrganizationID), uuid.UUID(job.MRID), uuid.UUID(job.SummaryRevisionID),
+		result.Status, result.ExternalID, result.ErrorCode, result.PublishedAt)
+	return tag.RowsAffected() == 1, err
+}
+
 // LastGoodSummary identifies the last complete revision and its build time, including history.
 func (r *Repo) LastGoodSummary(ctx context.Context, org, mr entity.ID) (entity.SummaryRevision, error) {
 	var v entity.SummaryRevision
@@ -127,11 +137,16 @@ func (r *Repo) ReadSummary(ctx context.Context, org, mr entity.ID, no *int, head
 	var goodAt *time.Time
 	err := postgres.Conn(ctx, r.pool).QueryRow(ctx, `
 		SELECT s.id, p.project_id, s.revision_no, s.head_sha, COALESCE(s.base_sha, ''),
-		       s.status, s.pipeline_state, s.built_at, COALESCE(s.stale_reason, ''),
+		       CASE WHEN live.new_head THEN 'stale' ELSE s.status END,
+		       s.pipeline_state, s.built_at,
+		       CASE WHEN live.new_head THEN 'new_head' ELSE COALESCE(s.stale_reason, '') END,
 		       s.publication_status, s.publication_external_id, s.publication_error_code, s.published_at,
 		       g.revision_no, g.head_sha, g.built_at
 		FROM change.summary_revision s
 		JOIN change.profile_version p ON (p.organization_id,p.id) = (s.organization_id,s.profile_version_id)
+		LEFT JOIN normalize.mr_version m ON (m.organization_id,m.mr_id) = (s.organization_id,s.mr_id)
+			AND m.superseded_seq IS NULL
+		CROSS JOIN LATERAL (SELECT s.status = 'ready' AND m.head_sha <> s.head_sha AS new_head) live
 		LEFT JOIN LATERAL (
 			SELECT revision_no, head_sha, built_at FROM change.summary_revision
 			WHERE organization_id = s.organization_id AND mr_id = s.mr_id AND revision_no <= s.revision_no

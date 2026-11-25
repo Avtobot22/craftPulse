@@ -61,10 +61,22 @@ function readMetrics(value: unknown, labels: Readonly<Record<string, string>>) {
 export function readSummary(value: unknown) {
   const summary = readRecord(value)
   const ci = summary.ci === null ? null : readRecord(summary.ci)
+  const publication = readRecord(summary.publication)
   return {
     head: readString(summary.head_sha),
     status: readString(summary.status),
     pipelineId: ci && readString(ci.pipeline_id),
+    publication: {
+      status: readEnum(publication.status, [
+        'not_requested',
+        'pending',
+        'succeeded',
+        'failed',
+        'unknown',
+        'stale',
+      ]),
+      errorCode: readNullableString(publication.error_code),
+    },
     coverage: readMetric(summary.coverage_changed_lines),
     tests: readMetrics(summary.tests, {
       passed: 'Пройдено',

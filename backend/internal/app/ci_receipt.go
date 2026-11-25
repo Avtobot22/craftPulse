@@ -51,6 +51,8 @@ func (u receiptIntake) Receipt(ctx context.Context, s entity.Subject, id entity.
 		} else if pipeline != nil {
 			rc.ResultURL = "/pipelines/" + pipeline.String()
 		}
+		// Normalization can finish before collection or the summary worker.
+		rc.CIResultPending = rc.ResultURL == ""
 		return nil
 	})
 	return rc, err
