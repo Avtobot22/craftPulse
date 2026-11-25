@@ -13,6 +13,7 @@ import {
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser, SessionController } from '@/shared/auth'
 import { contentGridProps, layoutSizes, routePaths } from '@/shared/config'
+import type { ReportPointFocus, TeamReportScope } from '@/shared/config'
 import { ErrorState, LoadingState } from '@/shared/ui'
 import {
   changeScope,
@@ -86,7 +87,7 @@ export function HomePage({
   const current = useOutletContext<CurrentUser>()
   const location = useLocation()
   const navigate = useNavigate()
-  const outlet = useOutlet()
+  const [reportFocus, setReportFocus] = useState<ReportPointFocus>()
   const content = useRef<HTMLElement>(null)
   const navButton = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -133,6 +134,14 @@ export function HomePage({
       current.actions.includes(action) &&
       (action !== 'process.manage' || ownsProcess),
   )
+  const outlet = useOutlet({
+    ...(scope.team ? { team: scope.team } : {}),
+    ...(scope.project ? { project: scope.project } : {}),
+    projects: scope.projectChoices ?? [],
+    canManageProcess: allowed.some(({ action }) => action === 'process.manage'),
+    focus: reportFocus?.locationKey === location.key ? reportFocus : undefined,
+    rememberPoint: setReportFocus,
+  } satisfies TeamReportScope)
   const currentSetting = active && allowed.includes(active) ? active : undefined
   const isProcessSetting = active?.action === 'process.manage'
   const isReport = reportPaths.some((path) =>

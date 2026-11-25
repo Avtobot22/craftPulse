@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useQuery, focusManager } from '@tanstack/react-query'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createBrowserRouter, createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { listTeams, listServices } from '@/shared/api'
@@ -17,6 +17,11 @@ import { AppProviders } from '../initialization/app-providers'
 import { createAppRuntime } from '../initialization/runtime'
 import type { AppRuntime } from '../initialization/runtime'
 import { createAppRoutes } from './routes'
+
+beforeAll(async () => {
+  // Keep the first transform of the lazy route outside DOM assertion timeouts.
+  await import('@/pages/team-report')
+})
 
 const cleanups: (() => void)[] = []
 const [team] = teams.data

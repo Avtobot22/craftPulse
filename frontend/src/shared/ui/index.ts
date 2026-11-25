@@ -18,13 +18,6 @@ export { TechnicalValue } from './technical-value'
 export type { TechnicalValueProps } from './technical-value'
 export { useNotifications } from './notifications'
 export type { NotificationOptions } from './notifications'
-export { SeriesChart } from './series-chart/series-chart'
-export type {
-  ChartPoint,
-  ChartPointSelection,
-  ChartSeries,
-  SeriesChartProps,
-} from './series-chart/series-chart'
 import './states.css'
 export { ChangeConfirmationDialog } from './settings-dialogs/change-confirmation-dialog'
 export type {

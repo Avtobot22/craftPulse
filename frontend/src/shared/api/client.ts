@@ -25,7 +25,9 @@ type MutationBody<P extends ApiPath, M extends MutationMethod> =
 export type Decoder<T> = (value: unknown) => T
 export interface RequestOptions {
   signal?: AbortSignal
-  query?: Readonly<Record<string, string | number | boolean | undefined>>
+  query?: Readonly<
+    Record<string, string | number | boolean | readonly string[] | undefined>
+  >
   pathParams?: Readonly<Record<string, string>>
 }
 export interface VersionedRequestOptions extends RequestOptions {
@@ -90,6 +92,20 @@ export class ApiClient {
     return this.request(method, path, body, decode, options, true)
   }
 
+  startSeriesRefresh<T>(
+    seriesId: string,
+    decode: Decoder<T>,
+  ): Promise<ApiResponse<T>> {
+    return this.request(
+      'POST',
+      '/series/{series_id}/refreshes',
+      undefined,
+      decode,
+      { pathParams: { series_id: seriesId } },
+      false,
+    )
+  }
+
   logout(): Promise<ApiResponse<void>> {
     return this.request(
       'POST',
@@ -115,7 +131,9 @@ export class ApiClient {
     )
     const query = new URLSearchParams()
     for (const [key, value] of Object.entries(options.query ?? {})) {
-      if (value !== undefined) query.set(key, String(value))
+      if (typeof value === 'object')
+        for (const item of value) query.append(key, item)
+      else if (value !== undefined) query.set(key, String(value))
     }
     const search = query.toString()
     return '/api/v1' + resolved + (search ? '?' + search : '')
