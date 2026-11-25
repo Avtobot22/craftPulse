@@ -140,7 +140,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, check
 	})
 }
 
-func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) error {
+func RunWorker(cfg config.Config, adapters config.Adapters, site config.Site, log zerolog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -215,10 +215,14 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 		return err
 	}
 	changes := newSummarizer(pool, normalizer, orgs, clock.System{}, exceptions, summary)
+	publisher, err := newPublisher(pool, changes, connections, site.URL, reg)
+	if err != nil {
+		return err
+	}
 	workers := river.NewWorkers()
 	kinds := workerctrl.Register(workers, workerctrl.Deps{
 		Probes: connections, Packages: packages, Collection: collection, Normalizer: normalizer, Calculator: calculator,
-		Retention: purges, Identifier: changes, DecisionExpiry: exceptions, ExceptionProjector: changes, Summaries: changes,
+		Retention: purges, Identifier: changes, DecisionExpiry: exceptions, ExceptionProjector: changes, Summaries: changes, Publisher: publisher,
 	})
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Int("job_kinds", kinds).Msg("worker started")

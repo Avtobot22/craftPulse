@@ -3,10 +3,9 @@ import { useSyncExternalStore } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router'
 import { UnavailablePage } from '@/pages/unavailable'
 import { ApiError } from '@/shared/api'
-import { routePaths } from '@/shared/config'
 import { ErrorState, LoadingState } from '@/shared/ui'
 import type { AppRuntime } from '../initialization/runtime'
-import { expiredPath } from './session-navigation'
+import { sessionEndPath } from './session-navigation'
 
 export function ProtectedRoute({ runtime }: { runtime: AppRuntime }) {
   const state = useSyncExternalStore(
@@ -14,14 +13,8 @@ export function ProtectedRoute({ runtime }: { runtime: AppRuntime }) {
     runtime.session.getSnapshot,
   )
   const location = useLocation()
-  if (state === 'expired')
-    return (
-      <Navigate
-        to={expiredPath(location.pathname + location.search + location.hash)}
-        replace
-      />
-    )
-  if (state === 'signed-out') return <Navigate to={routePaths.login} replace />
+  if (state === 'expired' || state === 'signed-out')
+    return <Navigate to={sessionEndPath(state, location)} replace />
   return <SessionGate runtime={runtime} />
 }
 

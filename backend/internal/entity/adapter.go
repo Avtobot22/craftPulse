@@ -11,6 +11,8 @@ const (
 	OpAuthorizeURL      AdapterOp = "authorize_url"
 	OpPutCredentials    AdapterOp = "put_credentials"
 	OpDeleteCredentials AdapterOp = "delete_credentials" //nolint:gosec // an operation name, not a credential
+	OpPublish           AdapterOp = "publish"
+	OpFindPublished     AdapterOp = "find_published"
 	OpProbe             AdapterOp = "probe"
 	OpFetch             AdapterOp = "fetch"
 	OpManifest          AdapterOp = "manifest"

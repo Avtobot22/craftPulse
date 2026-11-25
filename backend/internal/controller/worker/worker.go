@@ -17,7 +17,13 @@ import (
 
 const _minSnooze = time.Second
 
+// Publisher handles updates of MR comments.
+type Publisher interface {
+	RunPublish(context.Context, entity.OutboundPublishJob, func(context.Context) error, bool) error
+}
+
 type Deps struct {
+	Publisher Publisher
 	Summaries interface {
 		RunSummary(context.Context, entity.ChangeSummaryJob, func(context.Context) error) error
 	}
@@ -65,6 +71,10 @@ func Register(w *river.Workers, d Deps) int {
 	}
 	if d.Summaries != nil {
 		river.AddWorker(w, &summaryWorker{summaries: d.Summaries})
+		count++
+	}
+	if d.Publisher != nil {
+		river.AddWorker(w, &publishWorker{publisher: d.Publisher})
 		count++
 	}
 	return count
@@ -333,4 +343,13 @@ type summaryWorker struct {
 
 func (w *summaryWorker) Work(ctx context.Context, job *river.Job[entity.ChangeSummaryJob]) error {
 	return snooze(w.summaries.RunSummary(ctx, job.Args, completeIn(job)))
+}
+
+type publishWorker struct {
+	river.WorkerDefaults[entity.OutboundPublishJob]
+	publisher Publisher
+}
+
+func (w *publishWorker) Work(ctx context.Context, job *river.Job[entity.OutboundPublishJob]) error {
+	return snooze(w.publisher.RunPublish(ctx, job.Args, completeIn(job), job.Attempt >= job.MaxAttempts))
 }

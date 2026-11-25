@@ -271,3 +271,40 @@ groups:
                   operator: {type: and}
                   query: {params: [B]}
                   reducer: {type: last, params: []}
+      - uid: cp-outbound-publication-late
+        title: Публикация комментария MR заняла больше двух минут
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: За последние 10 минут комментарий MR опубликован позже 120 секунд после готовности отчётов (NFR-04).
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                sum(increase(craftpulse_outbound_report_to_publish_seconds_count{service="worker"}[10m])) -
+                sum(increase(craftpulse_outbound_report_to_publish_seconds_bucket{service="worker",le="120"}[10m]))
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [0]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}

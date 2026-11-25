@@ -1,0 +1,404 @@
+package outbound
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
+)
+
+type publicationFixture struct {
+	summary                  entity.SummaryPublication
+	result                   entity.Publication
+	actions                  []entity.Publication
+	audit                    []entity.AuditEvent
+	calls                    []string
+	note                     string
+	last                     entity.PublishInput
+	creates, completed       int
+	loseReply, denied, stale bool
+	denyLookup               bool
+	delayVisibility          bool
+	pendingCreate            entity.ID
+	publishErr               error
+	savedID                  string
+	lookupMiss               bool
+}
+
+func (*publicationFixture) InOrgTx(ctx context.Context, _ entity.ID, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (f *publicationFixture) PublicationSummary(context.Context, entity.ID, entity.ID) (entity.SummaryPublication, error) {
+	return f.summary, nil
+}
+
+func (*publicationFixture) LoginSlug(context.Context, entity.ID) (string, error) {
+	return "demo-org", nil
+}
+
+func (f *publicationFixture) CheckPublicationHead(context.Context, entity.ID, *entity.SummaryPublication) (bool, error) {
+	f.calls = append(f.calls, "head")
+	if f.stale {
+		return false, entity.ErrPublicationHeadChanged
+	}
+	return true, nil
+}
+
+func (f *publicationFixture) FinishPublication(ctx context.Context, _, _, _ entity.ID, p entity.Publication, complete func(context.Context) error) error {
+	if p.Status != "" {
+		f.result, f.summary.Revision.Publication = p, p
+	}
+	if complete != nil {
+		return complete(ctx)
+	}
+	return nil
+}
+
+func (f *publicationFixture) FindPublished(_ context.Context, _, _ entity.ID, in entity.PublicationTarget) (string, error) {
+	f.calls = append(f.calls, "find")
+	if in.Marker != f.summary.Revision.MRID.String() || in.Kind != entity.MRComment {
+		return "", errors.New("unexpected target")
+	}
+	if f.denyLookup {
+		return "", &entity.AdapterError{Class: entity.CallSource, Code: entity.SourceAuth}
+	}
+	if f.lookupMiss {
+		return "", nil
+	}
+	return f.note, nil
+}
+
+func (f *publicationFixture) Publish(_ context.Context, _, _ entity.ID, in entity.PublishInput) (entity.Publication, error) {
+	f.calls = append(f.calls, "publish")
+	f.last = in
+	if f.publishErr != nil {
+		return entity.Publication{}, f.publishErr
+	}
+	if f.denied {
+		return entity.Publication{Status: entity.PublicationFailed, ErrorCode: entity.WritePermissionMissing}, nil
+	}
+	if in.ExternalID == "" {
+		f.creates++
+		if !f.delayVisibility {
+			f.note = strconv.Itoa(f.creates)
+		}
+	}
+	if f.loseReply {
+		f.loseReply = false
+		return entity.Publication{}, errors.New("response lost")
+	}
+	return entity.Publication{Status: entity.PublicationSucceeded, ExternalID: f.note}, nil
+}
+
+func (f *publicationFixture) Start(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, time.Time) (entity.ID, error) {
+	f.actions = append(f.actions, entity.Publication{Status: "intent"})
+	return entity.ID{byte(len(f.actions))}, nil
+}
+
+func (f *publicationFixture) ReserveCreate(_ context.Context, _, action entity.ID, _ entity.PublicationTarget) (externalID string, reserved bool, err error) {
+	if f.savedID != "" || !f.pendingCreate.IsZero() {
+		return f.savedID, false, nil
+	}
+	f.pendingCreate = action
+	return "", true, nil
+}
+
+func (f *publicationFixture) Finish(_ context.Context, _, action, _, _ entity.ID, _ entity.PublicationTarget, p entity.Publication, _ time.Time) error {
+	f.actions[len(f.actions)-1] = p
+	if p.Status == entity.PublicationSucceeded || p.Status != entity.PublicationUnknown && f.pendingCreate == action {
+		f.pendingCreate = entity.ID{}
+	}
+	if p.Status == entity.PublicationSucceeded {
+		f.savedID = p.ExternalID
+	}
+	return nil
+}
+
+func (f *publicationFixture) SaveTarget(_ context.Context, _, _, _ entity.ID, _ entity.PublicationTarget, id string, _ time.Time) error {
+	f.pendingCreate = entity.ID{}
+	f.savedID = id
+	return nil
+}
+
+func (f *publicationFixture) Record(_ context.Context, e entity.AuditEvent) error {
+	f.audit = append(f.audit, e)
+	return nil
+}
+
+func newPublicationFixture() *publicationFixture {
+	return &publicationFixture{
+		summary: entity.SummaryPublication{
+			MR: entity.SummaryMR{MRVersion: entity.MRVersion{HeadSHA: "current-head"}},
+			Revision: entity.SummaryRevision{
+				MRID:          entity.ID{2},
+				ID:            entity.ID{3},
+				No:            1,
+				HeadSHA:       "current-head",
+				Status:        "ready",
+				PipelineState: "complete",
+			},
+			ConnectionID: entity.ID{4},
+		},
+	}
+}
+
+func (f *publicationFixture) run(t *testing.T, finalAttempt bool) error {
+	u := New(Deps{Changes: f, Adapter: f, Logins: f, Store: f, Audit: f, Tx: f, Clock: clock.System{}, SiteURL: "https://craftpulse.example"})
+	job := entity.OutboundPublishJob{OrganizationID: entity.ID{5}, MRID: f.summary.Revision.MRID, SummaryRevisionID: entity.ID{3}}
+	return u.RunPublish(t.Context(), job, func(context.Context) error { f.completed++; return nil }, finalAttempt)
+}
+
+func TestPublicationRepeatedDelivery(t *testing.T) {
+	t.Parallel()
+	f := newPublicationFixture()
+	for i := range 3 {
+		f.summary.Revision.No = i + 1
+		f.summary.Revision.ID = entity.ID{byte(3 + i)}
+		f.summary.Revision.Publication = entity.Publication{}
+		if err := f.run(t, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.run(t, false); err != nil {
+		t.Fatal(err)
+	}
+	if f.creates != 1 || f.result.ExternalID != "1" || len(f.actions) != 3 || f.completed != 4 ||
+		!strings.Contains(f.last.Markdown, "revision_no=3") || f.last.HeadSHA != "current-head" || f.result.PublishedAt == nil {
+		t.Fatalf("unexpected publication: creates=%d, actions=%v, result=%+v, body=%s", f.creates, f.actions, f.result, f.last.Markdown)
+	}
+	if !slices.Equal(f.calls, []string{"find", "head", "publish", "find", "head", "publish", "find", "head", "publish"}) {
+		t.Fatalf("unexpected adapter calls: %v", f.calls)
+	}
+}
+
+func TestPublicationRecoversLostReply(t *testing.T) {
+	t.Parallel()
+	f := newPublicationFixture()
+	f.loseReply = true
+	if err := f.run(t, false); !errors.Is(err, errUnknown) || f.result.Status != entity.PublicationUnknown || f.completed != 0 {
+		t.Fatalf("lost reply: err=%v, result=%+v, completed=%d", err, f.result, f.completed)
+	}
+	if err := f.run(t, false); err != nil {
+		t.Fatal(err)
+	}
+	if f.creates != 1 || f.last.ExternalID != "1" || f.result.Status != entity.PublicationSucceeded ||
+		f.actions[0].Status != entity.PublicationUnknown || f.audit[1].Details["status"] != entity.PublicationUnknown {
+		t.Fatalf("reconciliation: creates=%d, result=%+v, actions=%+v", f.creates, f.result, f.actions)
+	}
+}
+
+func TestPublicationUsesSavedIDWhenNewBotCannotFindComment(t *testing.T) {
+	t.Parallel()
+	f := newPublicationFixture()
+	if err := f.run(t, false); err != nil {
+		t.Fatal(err)
+	}
+	f.summary.Revision.No++
+	f.summary.Revision.ID = entity.ID{6}
+	f.summary.Revision.Publication = entity.Publication{}
+	f.lookupMiss, f.denied = true, true
+	if err := f.run(t, false); err != nil {
+		t.Fatal(err)
+	}
+	if f.last.ExternalID != "1" || f.creates != 1 || f.savedID != "1" || !f.pendingCreate.IsZero() ||
+		f.result.Status != entity.PublicationFailed || f.result.ErrorCode != entity.WritePermissionMissing ||
+		!slices.Equal(f.calls, []string{"find", "head", "publish", "find", "head", "publish"}) {
+		t.Fatalf("new bot: input=%+v, creates=%d, saved=%q, pending=%v, result=%+v, calls=%v",
+			f.last, f.creates, f.savedID, f.pendingCreate, f.result, f.calls)
+	}
+}
+
+func TestPublicationRetriesCreateAfterConfirmedRefusal(t *testing.T) {
+	t.Parallel()
+	for _, refusal := range []*entity.AdapterError{
+		{Class: entity.CallContractUnsupported},
+		{Class: entity.CallAdapterUnavailable, Code: entity.AdapterKeyRejected},
+		{Class: entity.CallSource, Code: "not_supported"},
+	} {
+		t.Run(refusal.Error(), func(t *testing.T) {
+			f := newPublicationFixture()
+			f.publishErr = refusal
+			err := f.run(t, false)
+			if !errors.Is(err, refusal) || errors.Is(err, errUnknown) || f.result.Status != entity.PublicationFailed ||
+				f.actions[0].Status != entity.PublicationFailed || !f.pendingCreate.IsZero() || f.creates != 0 {
+				t.Fatalf("refused create: err=%v, result=%+v, actions=%v, pending=%v, creates=%d",
+					err, f.result, f.actions, f.pendingCreate, f.creates)
+			}
+
+			f.publishErr = nil
+			if err := f.run(t, false); err != nil || f.creates != 1 || f.result.Status != entity.PublicationSucceeded ||
+				!slices.Equal(f.calls, []string{"find", "head", "publish", "find", "head", "publish"}) {
+				t.Fatalf("create after recovery: err=%v, creates=%d, result=%+v, calls=%v", err, f.creates, f.result, f.calls)
+			}
+		})
+	}
+}
+
+func TestPublicationWaitsForAmbiguousCreateAcrossRevisions(t *testing.T) {
+	t.Parallel()
+	f := newPublicationFixture()
+	f.loseReply, f.delayVisibility = true, true
+	if err := f.run(t, false); !errors.Is(err, errUnknown) {
+		t.Fatalf("first create: %v", err)
+	}
+	f.summary.Revision.No++
+	f.summary.Revision.ID = entity.ID{6}
+	f.summary.Revision.Publication = entity.Publication{}
+	if err := f.run(t, false); !errors.Is(err, errUnknown) || f.creates != 1 || f.completed != 0 ||
+		f.result.Status != entity.PublicationUnknown {
+		t.Fatalf("unresolved create: err=%v, creates=%d, completed=%d, outcome=%+v", err, f.creates, f.completed, f.result)
+	}
+	if err := f.run(t, true); err != nil || f.creates != 1 || f.completed != 1 || f.pendingCreate.IsZero() {
+		t.Fatalf("final lookup: err=%v, creates=%d, completed=%d, pending=%v", err, f.creates, f.completed, f.pendingCreate)
+	}
+	f.note = "1"
+	if err := f.run(t, false); err != nil || f.creates != 1 || f.last.ExternalID != "1" ||
+		f.result.Status != entity.PublicationSucceeded || !strings.Contains(f.last.Markdown, "revision_no=2") {
+		t.Fatalf("late create: err=%v, creates=%d, outcome=%+v, input=%+v", err, f.creates, f.result, f.last)
+	}
+}
+
+func TestPublicationReconcilesFinalUnknownAttempt(t *testing.T) {
+	t.Parallel()
+	f := newPublicationFixture()
+	f.loseReply = true
+	if err := f.run(t, true); err != nil || f.completed != 1 || f.result.Status != entity.PublicationSucceeded ||
+		f.result.ExternalID != "1" || f.actions[0].Status != entity.PublicationUnknown || f.creates != 1 ||
+		!slices.Equal(f.calls, []string{"find", "head", "publish", "find"}) {
+		t.Fatalf("final attempt: err=%v, completed=%d, result=%+v", err, f.completed, f.result)
+	}
+}
+
+func TestPublicationFinalUnknownUpdateDoesNotConfirmExistingNoteBody(t *testing.T) {
+	t.Parallel()
+	f := newPublicationFixture()
+	f.note, f.loseReply = "1", true
+	if err := f.run(t, true); err != nil || f.completed != 1 || f.creates != 0 ||
+		f.result.Status != entity.PublicationUnknown ||
+		!slices.Equal(f.calls, []string{"find", "head", "publish"}) {
+		t.Fatalf("ambiguous update: err=%v, outcome=%+v, calls=%v", err, f.result, f.calls)
+	}
+}
+
+func TestPublicationSuppressesStaleHeadAndRecordsDenial(t *testing.T) {
+	t.Parallel()
+	t.Run("head changed after lookup", func(t *testing.T) {
+		f := newPublicationFixture()
+		f.stale = true
+		if err := f.run(t, false); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(f.calls, []string{"find", "head"}) || f.result.Status != entity.PublicationStale ||
+			f.actions[0].Status != entity.PublicationStale || f.completed != 1 {
+			t.Fatalf("stale head: calls=%v, result=%+v", f.calls, f.result)
+		}
+	})
+	t.Run("write bot lookup denied", func(t *testing.T) {
+		f := newPublicationFixture()
+		f.denyLookup = true
+		if err := f.run(t, false); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(f.calls, []string{"find"}) || f.result.Status != entity.PublicationFailed ||
+			f.result.ErrorCode != entity.WritePermissionMissing || f.summary.Revision.Status != "ready" ||
+			f.completed != 1 || f.audit[1].Outcome != entity.AuditDenied {
+			t.Fatalf("lookup denied: calls=%v, result=%+v", f.calls, f.result)
+		}
+	})
+	t.Run("write denied", func(t *testing.T) {
+		f := newPublicationFixture()
+		f.denied = true
+		if err := f.run(t, false); err != nil {
+			t.Fatal(err)
+		}
+		if f.result.Status != entity.PublicationFailed || f.result.ErrorCode != entity.WritePermissionMissing ||
+			f.summary.Revision.Status != "ready" || f.creates != 0 || f.audit[1].Outcome != entity.AuditDenied || !f.pendingCreate.IsZero() {
+			t.Fatalf("denied: result=%+v, revision=%+v", f.result, f.summary.Revision)
+		}
+	})
+	t.Run("permission missing from adapter", func(t *testing.T) {
+		f := newPublicationFixture()
+		f.publishErr = &entity.AdapterError{Class: entity.CallSource, Code: "permission_missing"}
+		if err := f.run(t, false); err != nil || f.result.Status != entity.PublicationFailed ||
+			f.result.ErrorCode != entity.WritePermissionMissing || !f.pendingCreate.IsZero() {
+			t.Fatalf("denied adapter response: err=%v, result=%+v, pending=%v", err, f.result, f.pendingCreate)
+		}
+	})
+}
+
+func TestPublicationRendersPublicSummary(t *testing.T) {
+	t.Parallel()
+	f := newPublicationFixture()
+	v := &f.summary.Revision
+	v.Items = []entity.SummaryItem{
+		{Kind: "resolved", RequiredRight: "security"},
+		{Kind: "resolved", RequiredRight: "none"},
+		{Kind: "not_evaluated", RequiredRight: "none", AnalysisKind: "docs", ReasonCode: "report_missing"},
+		{Kind: "tests", RequiredRight: "none", Value: json.RawMessage(`{"State":"ok","Counts":{"Passed":5,"Failed":1}}`)},
+		{Kind: "ci_attempts", RequiredRight: "none", Value: json.RawMessage(`{"metrics":[{"MetricID":"I03","State":"ok","Numerator":1,"Denominator":2}]}`)},
+		{Kind: "coverage", RequiredRight: "none", Value: json.RawMessage(`{"Patch":{"State":"not_evaluated","ReasonCode":"coverage_line_map_missing","Value":0.5},"Size":{"State":"PROVISIONAL","Total":{"Files":2,"Added":3,"Deleted":4}},"Code":[{"Language":"go","Complexity":{"State":"ASSESSED","Deltas":[{"Delta":2}]},"Clones":{"State":"ok","Value":1}},{"Language":"js","Complexity":{"State":"NOT_EVALUATED","ReasonCode":"incomparable_base"}}]}`)},
+	}
+	for i := 1; i <= 4; i++ {
+		id := entity.ID{byte(i)}
+		v.Items = append(v.Items, entity.SummaryItem{
+			Kind: "new", Rank: new(i), FindingID: &id, OccurrenceID: &id, RequiredRight: "security", Severity: "critical",
+			Value: json.RawMessage(`{"Rule":"secret-rule","Path":"secret-path","Reason":"secret-evidence"}`),
+		})
+	}
+	for _, i := range []int{5, 8, 9, 10, 7, 6} {
+		id := entity.ID{byte(i)}
+		severity := "low"
+		var rank *int
+		if i <= 7 {
+			severity = "high"
+		}
+		if i == 5 {
+			rank = new(5)
+		}
+		v.Items = append(v.Items, entity.SummaryItem{
+			Kind: "new", Rank: rank, FindingID: &id, OccurrenceID: &id, RequiredRight: "none", Severity: severity,
+			Value: json.RawMessage(fmt.Sprintf(`{"rule":"rule-%d","path":"main.go","line":12}`, i)),
+		})
+	}
+	if err := f.run(t, false); err != nil {
+		t.Fatal(err)
+	}
+	text := f.last.Markdown
+	for _, want := range []string{
+		"Есть закрытые результаты", "Устранено сигналов: 1", "head_sha", "current-head", "revision_no=1&org_slug=demo-org",
+		"rule-5", "rule-6", "rule-7", "rule-8", "rule-9", "main.go:12", "report_missing", "прошло 5",
+		"fail → pass", "C15", "файлов 2, +3/−4 строк", "C16", "выросла у 1 из 1 функций, новых 0", "C17",
+		"incomparable_base", "coverage_line_map_missing", "50.00%",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in %s", want, text)
+		}
+	}
+	if strings.Contains(text, "secret-") || strings.Contains(text, "rule-10") || strings.Contains(text, "flaky") ||
+		strings.Count(text, "выросла у") != 1 || strings.Count(text, "#finding-") != 5 ||
+		strings.Index(text, "rule-6") > strings.Index(text, "rule-7") ||
+		strings.Index(text, "rule-7") > strings.Index(text, "rule-8") {
+		t.Fatalf("unexpected Markdown: %s", text)
+	}
+}
+
+func TestPublicationRendersMissingDiffWithoutSizeCounts(t *testing.T) {
+	t.Parallel()
+	v := entity.SummaryRevision{Items: []entity.SummaryItem{{
+		Kind: "coverage", Value: json.RawMessage(`{"Size":{"State":"NOT_EVALUATED","ReasonCode":"mr_diff_missing",
+			"Total":{"Files":0,"Added":0,"Deleted":0}}}`),
+	}}}
+	text := render("https://craftpulse.example", "demo-org", &v)
+	if !strings.Contains(text, "mr_diff_missing") || strings.Contains(text, "файлов ") {
+		t.Fatalf("unexpected size in Markdown: %s", text)
+	}
+}
