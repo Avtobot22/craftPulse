@@ -570,6 +570,7 @@ const (
 	MrEventV2ReviewStateApproved         MrEventV2ReviewState = "approved"
 	MrEventV2ReviewStateChangesRequested MrEventV2ReviewState = "changes_requested"
 	MrEventV2ReviewStateCommented        MrEventV2ReviewState = "commented"
+	MrEventV2ReviewStateDismissed        MrEventV2ReviewState = "dismissed"
 	MrEventV2ReviewStateLessThannil      MrEventV2ReviewState = "<nil>"
 )
 
@@ -581,6 +582,8 @@ func (e MrEventV2ReviewState) Valid() bool {
 	case MrEventV2ReviewStateChangesRequested:
 		return true
 	case MrEventV2ReviewStateCommented:
+		return true
+	case MrEventV2ReviewStateDismissed:
 		return true
 	case MrEventV2ReviewStateLessThannil:
 		return true

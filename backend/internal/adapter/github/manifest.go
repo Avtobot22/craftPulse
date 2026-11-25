@@ -1,7 +1,9 @@
 package github
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 
@@ -32,7 +34,7 @@ func (a *Adapter) Manifest(ctx context.Context, call adaptersdk.Call, in adapter
 	if err != nil {
 		return adaptersdk.ManifestPage{}, err
 	}
-	items, err := s.selectPulls(ctx, repo, in.Period, cursor, nil, in.Limit+1)
+	items, err := s.reconcilePulls(ctx, repo, in, cursor)
 	if err != nil {
 		return adaptersdk.ManifestPage{}, err
 	}
@@ -50,4 +52,24 @@ func (a *Adapter) Manifest(ctx context.Context, call adaptersdk.Call, in adapter
 		out.NextCursor = &next
 	}
 	return out, nil
+}
+
+// An update can move an unread PR to a page we already visited. Compare the
+// entire scanned prefix, including items outside the requested upper bound,
+// before publishing a page or advancing its cursor.
+func (s source) reconcilePulls(ctx context.Context, repo repository, in adaptersdk.ManifestInput, cursor *adaptersdk.Cursor) ([]coordinate, error) {
+	var previous []byte
+	for range 4 {
+		fingerprint := sha256.New()
+		items, err := s.selectPulls(ctx, repo, in.Period, cursor, nil, in.Limit+1, fingerprint)
+		if err != nil {
+			return nil, err
+		}
+		current := fingerprint.Sum(nil)
+		if bytes.Equal(previous, current) {
+			return items, nil
+		}
+		previous = current
+	}
+	return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "GitHub pull listing changed during manifest reconciliation")
 }

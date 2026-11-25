@@ -93,9 +93,17 @@ func (s source) readHistory(ctx context.Context, repo repository, h *history) er
 	if !h.seenDraft && !h.seenReady && !h.pull.Draft && !h.truncated {
 		h.readyAt = &h.pull.OpenedAt
 	}
-	// A current head is visible even when GitHub does not expose its transition.
-	h.truncated = h.truncated || !h.accountsOnly && !h.currentRevision
-	return nil
+	if h.accountsOnly || h.currentRevision {
+		return nil
+	}
+	// Ordinary pushes need not appear in the issue timeline. The PR details
+	// provide a snapshot at updated_at, without proving a push time.
+	head, base := h.pull.Head.SHA, h.pull.Base.SHA
+	if !validSHA(base) {
+		h.truncated = true
+		base = ""
+	}
+	return h.revision("snapshot/"+head+"/"+base, head, optional(base), h.pull.UpdatedAt)
 }
 
 var timelineKinds = map[string]envelope.MrEventV2EventKind{
@@ -125,7 +133,8 @@ func (h *history) add(collection, native string, item historyItem) error {
 		switch state := envelope.MrEventV2ReviewState(strings.ToLower(item.State)); state {
 		case "pending":
 			return nil // Draft reviews have not been submitted.
-		case "approved", "changes_requested", "commented":
+		case envelope.MrEventV2ReviewStateApproved, envelope.MrEventV2ReviewStateChangesRequested,
+			envelope.MrEventV2ReviewStateCommented, envelope.MrEventV2ReviewStateDismissed:
 			review = &state
 		default:
 			h.truncated = true
@@ -166,27 +175,25 @@ func (h *history) add(collection, native string, item historyItem) error {
 		}
 	case envelope.MrEventV2EventKindHeadPushed:
 		sha := item.HeadSHA
-		if sha == "" {
+		if !validSHA(sha) {
 			sha = item.CommitID
 		}
-		if validSHA(sha) {
-			head = &sha
-		}
-		if head == nil || at == nil {
+		if !validSHA(sha) {
 			h.truncated = true
-		} else {
+			return nil // The canonical head transition requires a SHA.
+		}
+		head = &sha
+		if at != nil {
 			var base *string
 			if validSHA(item.BaseSHA) {
 				base = &item.BaseSHA
 			} else {
-				h.truncated = true
+				h.truncated = true // The timeline did not supply the historical base.
 			}
-			rec := object("mr_revision", id(h.pull.ID), key, h.observed)
-			err := writeRecord(h.page, rec, envelope.MrRevisionV1{MrNativeId: id(h.pull.ID), HeadSha: sha, BaseSha: base, CreatedAt: *at})
-			if err != nil {
+			if err := h.revision(key, sha, base, *at); err != nil {
 				return err
 			}
-			h.currentRevision = h.currentRevision || sha == h.pull.Head.SHA
+			h.currentRevision = h.currentRevision || sha == h.pull.Head.SHA && base != nil && *base == h.pull.Base.SHA
 		}
 	case envelope.MrEventV2EventKindApproval,
 		envelope.MrEventV2EventKindClosed,
@@ -204,6 +211,11 @@ func (h *history) add(collection, native string, item historyItem) error {
 		MrNativeId: id(h.pull.ID), EventKind: kind, ActorAccountNativeId: actor.nativeID(),
 		TargetAccountNativeId: target, HeadSha: head, ReviewState: review, SystemNote: &system, EventTimeUnknown: &unknown,
 	})
+}
+
+func (h *history) revision(key, head string, base *string, at time.Time) error {
+	rec := object("mr_revision", id(h.pull.ID), key, h.observed)
+	return writeRecord(h.page, rec, envelope.MrRevisionV1{MrNativeId: id(h.pull.ID), HeadSha: head, BaseSha: base, CreatedAt: at})
 }
 
 func validSHA(sha string) bool {

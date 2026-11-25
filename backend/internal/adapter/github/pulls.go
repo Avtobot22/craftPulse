@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"hash"
 	"net/url"
 	"slices"
 	"time"
@@ -61,7 +62,7 @@ var errBeforeWindow = errors.New("GitHub listing reached the lower bound")
 // GitHub lists newest first. Keep only the earliest pending coordinates plus
 // lookahead so advancing the cursor cannot skip older items or timestamp ties.
 func (s source) selectPulls(ctx context.Context, repo repository, period adaptersdk.Period, cursor *adaptersdk.Cursor,
-	keys []adaptersdk.ObjectKey, limit int,
+	keys []adaptersdk.ObjectKey, limit int, fingerprint hash.Hash,
 ) ([]coordinate, error) {
 	var after coordinate
 	if cursor != nil {
@@ -102,6 +103,10 @@ func (s source) selectPulls(ctx context.Context, repo repository, period adapter
 	err := walk(ctx, s, "pulls", repo.path()+"/pulls", query, false, func(p pull) error {
 		if err := p.validate(repo.ID); err != nil {
 			return err
+		}
+		if fingerprint != nil {
+			line := id(p.ID) + "/" + id(int64(p.Number)) + "/" + p.UpdatedAt.UTC().Format(time.RFC3339Nano) + "\n"
+			_, _ = fingerprint.Write([]byte(line))
 		}
 		if targeted {
 			if wanted[p.ID] {
@@ -179,7 +184,7 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 		}
 	}
 	limit := min(in.Limit, _pullPageLimit)
-	items, err := s.selectPulls(ctx, repo, in.Period, in.Cursor, in.ObjectKeys, limit+1)
+	items, err := s.selectPulls(ctx, repo, in.Period, in.Cursor, in.ObjectKeys, limit+1, nil)
 	if err != nil {
 		return nil, err
 	}

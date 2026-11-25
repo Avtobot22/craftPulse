@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/adapter/github"
 	"github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk"
 	"github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk/contracttest"
+	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
 
@@ -34,6 +36,8 @@ type githubFixture struct {
 	responses map[string]json.RawMessage
 	failure   atomic.Int32
 	moved     atomic.Bool
+	reorder   atomic.Bool
+	firstPage atomic.Int32
 }
 
 func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +52,10 @@ func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		page = 1
 	}
 	if path == "/repos/demo/project-7/pulls" && r.URL.Query().Get("per_page") != "1" {
+		if f.reorder.Load() {
+			f.serveReorderedPulls(w, page)
+			return
+		}
 		switch failure := f.failure.Load(); {
 		case failure == -1:
 			<-r.Context().Done()
@@ -89,6 +97,34 @@ func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body = json.RawMessage(strings.ReplaceAll(string(body), "2026-11-21T10:05:00+03:00", "2026-11-21T10:07:00+03:00"))
 	}
 	_, _ = w.Write(body)
+}
+
+// After page one is returned, pull 31 jumps to the top and displaces pull 30
+// onto page two. The first scan sees pull 30 twice and misses pull 31.
+func (f *githubFixture) serveReorderedPulls(w http.ResponseWriter, page int) {
+	numbers := make([]int, 0, 60)
+	if page != 1 || f.firstPage.Add(1) > 1 {
+		numbers = append(numbers, 31)
+	}
+	for n := 1; n <= 60; n++ {
+		if len(numbers) != 0 && numbers[0] == 31 && n == 31 {
+			continue
+		}
+		numbers = append(numbers, n)
+	}
+	if page == 1 {
+		w.Header().Set("Link", `<https://api.github.com/repositories/7/pulls?page=2>; rel="next"`)
+	}
+	rows := make([]json.RawMessage, 0, 30)
+	now := time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)
+	for _, n := range numbers[(page-1)*30 : page*30] {
+		at := now.Add(-time.Duration(n) * time.Minute)
+		if n == 31 {
+			at = now
+		}
+		rows = append(rows, json.RawMessage(fmt.Sprintf(`{"id":%d,"number":%d,"updated_at":%q,"base":{"repo":{"id":7}}}`, 500+n, n, at.Format(time.RFC3339))))
+	}
+	_ = json.NewEncoder(w).Encode(rows)
 }
 
 func newGitHubFixture(t *testing.T) (gitLabTestEnv, *githubFixture) {
@@ -169,7 +205,27 @@ func TestGitHubAdapterReadsHistoryAndManifest(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 2, kinds["mr_revision"])
-	assert.Equal(t, 113, kinds["mr_event"])
+	assert.Equal(t, 112, kinds["mr_event"])
+	require.Len(t, p.Manifest.Selection.Truncated, 1)
+	assert.Equal(t, "501", p.Manifest.Selection.Truncated[0].NativeId, "historical base SHA is missing")
+	for _, row := range result.Records {
+		if row.Kind != "mr_revision" {
+			continue
+		}
+		rec, ok, err := p.Record(row.No)
+		require.NoError(t, err)
+		require.True(t, ok)
+		var revision envelope.MrRevisionV1
+		require.NoError(t, json.Unmarshal(rec.Payload, &revision))
+		if rec.NativeId == "timeline/305" {
+			assert.Equal(t, strings.Repeat("3", 40), revision.HeadSha)
+			assert.Nil(t, revision.BaseSha)
+		} else {
+			assert.Equal(t, strings.Repeat("1", 40), revision.HeadSha)
+			require.NotNil(t, revision.BaseSha)
+			assert.Equal(t, strings.Repeat("2", 40), *revision.BaseSha)
+		}
+	}
 	m := e.target.Manifest
 	status, body := e.call(t, http.MethodPost, "manifest", m)
 	require.Equal(t, http.StatusOK, status)
@@ -266,5 +322,74 @@ func TestGitHubAdapterSourceFailures(t *testing.T) {
 		if tc.code == adaptersdk.AdapterErrorCodeRateLimited {
 			assert.NotNil(t, got.RetryAt)
 		}
+	}
+}
+
+func TestGitHubAdapterReconcilesMovedManifestPR(t *testing.T) {
+	t.Parallel()
+	e, f := newGitHubFixture(t)
+	f.reorder.Store(true)
+	in := e.target.Manifest
+	in.Limit = 100
+	status, body := e.call(t, http.MethodPost, "manifest", in)
+	require.Equal(t, http.StatusOK, status)
+	var got adaptersdk.ManifestPage
+	require.NoError(t, json.Unmarshal(body, &got))
+	assert.Nil(t, got.NextCursor)
+	assert.GreaterOrEqual(t, f.firstPage.Load(), int32(3))
+	want := make([]string, 0, 60)
+	for n := 1; n <= 60; n++ {
+		want = append(want, strconv.Itoa(500+n))
+	}
+	ids := make([]string, 0, len(got.Items))
+	for _, p := range got.Items {
+		ids = append(ids, p.NativeId)
+	}
+	assert.ElementsMatch(t, want, ids)
+	require.NotEmpty(t, got.Items)
+	assert.Equal(t, "531", got.Items[len(got.Items)-1].NativeId)
+}
+
+func TestGitHubAdapterSnapshotsOrdinaryPushAndDismissedReview(t *testing.T) {
+	t.Parallel()
+	e, _ := newGitHubFixture(t)
+	in := e.target.Fetch
+	in.Scope.NativeScopeId = "8"
+	// Addressed rereads use the same snapshot and produce the same revisions.
+	revisions := make(map[string]string)
+	for _, keys := range [][]adaptersdk.ObjectKey{{}, {{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "601"}}} {
+		in.ObjectKeys = keys
+		p, result := e.fetch(t, in)
+		assert.Empty(t, p.Manifest.Selection.Truncated)
+		assert.Equal(t, envelope.ManifestCompletenessComplete, p.Manifest.Completeness)
+		var snapshots, reviews int
+		for _, row := range result.Records {
+			rec, ok, err := p.Record(row.No)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.NotNil(t, row.SourceRevision)
+			assert.Equal(t, row.Hash, *row.SourceRevision)
+			if first, ok := revisions[rec.NativeId]; ok {
+				assert.Equal(t, first, row.Hash)
+			} else {
+				revisions[rec.NativeId] = row.Hash
+			}
+			switch row.Kind {
+			case "mr_revision":
+				snapshots++
+				var revision envelope.MrRevisionV1
+				require.NoError(t, json.Unmarshal(rec.Payload, &revision))
+				assert.Equal(t, strings.Repeat("1", 40), revision.HeadSha)
+				require.NotNil(t, revision.BaseSha)
+				assert.Equal(t, strings.Repeat("2", 40), *revision.BaseSha)
+				assert.Equal(t, "2026-11-21T10:05:00+03:00", revision.CreatedAt.Format(time.RFC3339))
+			case "mr_event":
+				reviews++
+				assert.Equal(t, "reviews/408", rec.NativeId)
+				assert.Contains(t, string(rec.Payload), `"review_state":"dismissed"`)
+			}
+		}
+		assert.Equal(t, 1, snapshots)
+		assert.Equal(t, 1, reviews)
 	}
 }
