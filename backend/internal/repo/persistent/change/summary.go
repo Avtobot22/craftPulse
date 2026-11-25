@@ -17,7 +17,9 @@ import (
 // StaleSummaries invalidates the ready revision when the source advances to another head.
 func (r *Repo) StaleSummaries(ctx context.Context, org, mr entity.ID, head string) error {
 	_, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE change.summary_revision
-		SET status = 'stale', stale_reason = 'new_head'
+		SET status = 'stale', stale_reason = 'new_head',
+			publication_error_code = CASE WHEN publication_status = 'pending' THEN 'head_changed' ELSE publication_error_code END,
+			publication_status = CASE WHEN publication_status = 'pending' THEN 'stale' ELSE publication_status END
 		WHERE organization_id = $1 AND mr_id = $2 AND status = 'ready' AND head_sha <> $3`, uuid.UUID(org), uuid.UUID(mr), head)
 	return err
 }
@@ -34,7 +36,8 @@ func (r *Repo) SaveSummary(ctx context.Context, org entity.ID, v *entity.Summary
 	if bytes.Equal(prior, v.InputHash) {
 		return false, nil
 	}
-	_, err = conn.Exec(ctx, `UPDATE change.summary_revision SET status = 'superseded'
+	_, err = conn.Exec(ctx, `UPDATE change.summary_revision SET status = 'superseded',
+		publication_status = CASE WHEN publication_status = 'pending' THEN 'stale' ELSE publication_status END
 		WHERE organization_id = $1 AND mr_id = $2 AND status = 'ready'`, uuid.UUID(org), uuid.UUID(v.MRID))
 	if err != nil {
 		return false, err
@@ -42,11 +45,11 @@ func (r *Repo) SaveSummary(ctx context.Context, org entity.ID, v *entity.Summary
 	var revisionID uuid.UUID
 	err = conn.QueryRow(ctx, `INSERT INTO change.summary_revision
 		(organization_id, mr_id, revision_no, head_sha, base_sha, profile_version_id, status,
-		 pipeline_state, input_hash, knowledge_seq, built_at)
+		 pipeline_state, input_hash, knowledge_seq, built_at, reports_ready_at, publication_status)
 		SELECT $1, $2, COALESCE(max(revision_no), 0) + 1, $3, NULLIF($4, ''), $5, 'ready',
-			$6, $7, $8, $9 FROM change.summary_revision WHERE organization_id = $1 AND mr_id = $2
+			$6, $7, $8, $9, $10, CASE WHEN $6 = 'running' THEN 'not_requested' ELSE 'pending' END FROM change.summary_revision WHERE organization_id = $1 AND mr_id = $2
 		RETURNING id`, uuid.UUID(org), uuid.UUID(v.MRID), v.HeadSHA, v.BaseSHA, uuid.UUID(v.ProfileVersionID), v.PipelineState, v.InputHash,
-		v.KnowledgeSeq, v.BuiltAt).Scan(&revisionID)
+		v.KnowledgeSeq, v.BuiltAt, reportReadyAt(v)).Scan(&revisionID)
 	if err != nil {
 		return false, err
 	}
@@ -114,4 +117,11 @@ func scanSummaryProfile(row pgx.Row) (ChangeProfileVersion, error) {
 	err := row.Scan(&v.OrganizationID, &v.ID, &v.ProjectID, &v.VersionNo, &v.BaseVersionNo,
 		&v.ContentHash, &v.KnownSeq, &v.ConfirmedBy, &v.ConfirmedAt, &v.ConfirmationID)
 	return v, err
+}
+
+func reportReadyAt(v *entity.SummaryRevision) *time.Time {
+	if v.PipelineState != "complete" || v.ReportsReadyAt.IsZero() {
+		return nil
+	}
+	return &v.ReportsReadyAt
 }

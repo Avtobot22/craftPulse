@@ -56,6 +56,11 @@ func (u *UseCase) OrganizationBySlug(ctx context.Context, slug string) (entity.I
 	return u.d.Repo.OrganizationBySlug(ctx, slug)
 }
 
+// LoginSlug returns the organization slug used by the public login route.
+func (u *UseCase) LoginSlug(ctx context.Context, orgID entity.ID) (string, error) {
+	return u.d.Repo.LoginSlug(ctx, orgID)
+}
+
 // RegisterLogin creates the login route /o/<slug> and the provider registration with an encrypted client secret.
 func (u *UseCase) RegisterLogin(ctx context.Context, orgID entity.ID, slug string, p entity.OIDCProvider) error {
 	blob, version, err := u.d.Keyring.SealEnvelope([]byte(p.ClientSecret.Value()), ClientSecretAAD(orgID))
