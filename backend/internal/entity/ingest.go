@@ -50,8 +50,18 @@ const (
 	RecordMissingSourceID = "missing_source_id"
 )
 
+// CIResultCoordinates identify the package target even before source versions exist.
+type CIResultCoordinates struct {
+	PipelineID, AreaID  ID
+	MRID                *ID // Known MR from receipts stored before native coordinates were saved.
+	MRNativeID, HeadSHA string
+}
+
 // Receipt is one received package (DR-003); the records of the source live only in its stored object.
 type Receipt struct {
+	CIResultPending  bool
+	ResultURL        string
+	CIResult         *CIResultCoordinates
 	ID               ID
 	OrganizationID   ID
 	Channel          ReceiptChannel

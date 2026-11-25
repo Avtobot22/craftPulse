@@ -1,4 +1,5 @@
 import type { RouteObject } from 'react-router'
+import { PipelinePage } from '@/pages/ci-result'
 import { HomePage } from '@/pages/home'
 import { MergeRequestSummaryPage } from '@/pages/merge-request-summary'
 import { LoginPage } from '@/pages/login'
@@ -68,6 +69,10 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 { path: routePaths.users, element: <UsersPage /> },
                 { path: routePaths.users + '/:userId', element: <UsersPage /> },
+                {
+                  path: '/pipelines/:pipelineId',
+                  element: <PipelinePage api={runtime.api} />,
+                },
                 {
                   path: routePaths.workflowSettings,
                   element: <WorkflowSettingsPage />,

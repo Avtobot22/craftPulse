@@ -41,7 +41,7 @@ type SummarySource interface {
 // SummaryCalculations applies the reusable calc definitions to selected normalize facts.
 type SummaryCalculations interface {
 	SummaryPipeline(context.Context, entity.ID, entity.SummaryMR) (entity.CIRun, error)
-	SummarizeMetrics(context.Context, entity.ID, entity.SummaryMR, entity.CIRun, *entity.SummaryRevision) error
+	SummarizeMetrics(context.Context, entity.ID, entity.SummaryMR, entity.CIRun, SummaryCheckJobs, *entity.SummaryRevision) error
 	AnalysisFacts(context.Context, entity.ID, entity.AnalysisScope, int64, time.Time) (entity.AnalysisFacts, error)
 	SummarizeFindings(entity.SummaryFindingComparison, []entity.ExceptionVersion) ([]entity.SummaryFindingValues, []entity.RevisionInput)
 }
@@ -268,8 +268,11 @@ func (u *UseCase) buildSummary(ctx context.Context, org entity.ID, mr entity.Sum
 			// Keep the pipeline running while awaiting reports or a terminal outcome.
 		}
 	}
-	if err := u.d.Summary.Calculations.SummarizeMetrics(ctx, org, mr, run, v); err != nil {
+	if err := u.d.Summary.Calculations.SummarizeMetrics(ctx, org, mr, run, u.summaryCheckJobs(entries), v); err != nil {
 		return nil, time.Time{}, err
+	}
+	if !v.ComparableBase {
+		v.BaseSHA = ""
 	}
 	entity.RankSummary(v.Items)
 	if err := hashSummary(v); err != nil {

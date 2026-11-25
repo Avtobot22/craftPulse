@@ -55,7 +55,7 @@ func actionsSnippet(jobs map[string]gitlabJob, variables []entity.CIVariable) ([
 		scanEnv := map[string]string{
 			_varToken: uploadSecretRef, _varURL: "${{ vars.CRAFTPULSE_URL }}",
 		}
-		if name == "craftpulse-import" {
+		if name == _importJob {
 			for _, variable := range variables {
 				if strings.HasPrefix(variable.Name, _reportVar) {
 					scanEnv[variable.Name] = "${{ vars." + variable.Name + " }}"

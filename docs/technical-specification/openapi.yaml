@@ -2903,6 +2903,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/MergeRequestId'
         - {name: revision_no, in: query, schema: {type: integer, minimum: 1}}
+        - name: head_sha
+          in: query
+          description: Ограничивает выбор ревизиями указанного head. Без revision_no возвращается последняя ревизия этого head.
+          schema: {$ref: '#/components/schemas/GitSha'}
       responses:
         '200':
           description: Сводка.

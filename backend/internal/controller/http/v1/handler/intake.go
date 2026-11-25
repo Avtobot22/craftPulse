@@ -252,8 +252,9 @@ func (h *intake) GetReceipt(ctx context.Context, req openapi.GetReceiptRequestOb
 		RecordCount: rc.RecordCount, AcceptedCount: rc.AcceptedCount, RejectedCount: rc.RejectedCount,
 		ReplayCount: rc.ReplayCount, ConflictCount: rc.ConflictCount, ReasonCode: optional(rc.ReasonCode),
 		DuplicateOf: uuidPtr(rc.DuplicateOf), AffectedMetrics: ingest.AffectedMetrics(rc.SchemaID),
+		ResultUrl: optional(rc.ResultURL),
 	}
-	if rc.Status == entity.ReceiptQuarantined {
+	if rc.Status == entity.ReceiptQuarantined || rc.CIResultPending {
 		n := _receiptPoll
 		out.RetryAfterSeconds = &n
 	}

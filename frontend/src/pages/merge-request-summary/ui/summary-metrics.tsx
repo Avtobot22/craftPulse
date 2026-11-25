@@ -23,6 +23,11 @@ const expectedLabels = {
   missing_reports: 'Отсутствующие отчёты',
 } satisfies Record<keyof NonNullable<Summary['expected']>, string>
 
+const changeReasons = new Map([
+  ['incomparable_base', 'Нет сопоставимой базы'],
+  ['mr_diff_missing', 'Нет данных об изменённых строках'],
+])
+
 function MetricGroup<K extends string>({
   title,
   values,
@@ -36,14 +41,20 @@ function MetricGroup<K extends string>({
     <section>
       <h3>{title}</h3>
       <dl>
-        {(Object.keys(labels) as K[]).map((key) => (
-          <div key={key}>
-            <dt>{labels[key]}</dt>
-            <dd>
-              <MetricValue value={values[key]} />
-            </dd>
-          </div>
-        ))}
+        {(Object.keys(labels) as K[]).map((key) => {
+          const value = values[key]
+          const reason =
+            value.reason_code && changeReasons.get(value.reason_code)
+          return (
+            <div key={key}>
+              <dt>{labels[key]}</dt>
+              <dd>
+                <MetricValue value={value} />
+                {reason && <p>{reason}</p>}
+              </dd>
+            </div>
+          )
+        })}
       </dl>
     </section>
   )
@@ -68,7 +79,7 @@ export function SummaryMetrics({
       )}
       {expected && (
         <MetricGroup
-          title="Ожидаемые проверки"
+          title="Ожидаемые проверки и отчёты"
           values={expected}
           labels={expectedLabels}
         />

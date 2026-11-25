@@ -80,3 +80,25 @@ func TestCheckCompleteness_NoConfiguredExpectations(t *testing.T) {
 		assert.Empty(t, p.Contributions)
 	}
 }
+
+func TestCalculateSummaryChecks_UsesFinalAttemptsOfSelectedPipeline(t *testing.T) {
+	t.Parallel()
+	root, child, other := entity.ID{1}, entity.ID{2}, entity.ID{3}
+	run := entity.CIRun{
+		Run:      entity.CIRunVersion{RunID: root},
+		Children: []entity.CIRunVersion{{RunID: child}},
+		Attempts: []entity.CIAttemptVersion{
+			{RunID: root, JobKey: "craftpulse-go-default", AttemptNo: 1, Outcome: entity.CIFailed},
+			{RunID: root, JobKey: "craftpulse-go-default", AttemptNo: 2, Outcome: entity.CIRunning},
+			{RunID: child, JobKey: "craftPulse (advisory)/craftpulse-import", AttemptNo: 1, Outcome: entity.CISuccess},
+			{RunID: other, JobKey: "craftpulse-trivy-default", AttemptNo: 1, Outcome: entity.CISuccess},
+			{RunID: root, JobKey: "unconfigured", AttemptNo: 1, Outcome: entity.CISuccess},
+		},
+	}
+	keys := []string{"craftpulse-go-default", "craftpulse-import", "craftpulse-trivy-default"}
+	point, input := New(Deps{}).CalculateSummaryChecks(entity.SummaryMR{AreaID: entity.ID{4}}, run, keys)
+	assert.Equal(t, "I08", input.ID)
+	assertReading(t, point.Point, entity.StateAssessed, num(2.0/3))
+	assert.Equal(t, num(2), point.Numerator)
+	assert.Equal(t, num(3), point.Denominator)
+}

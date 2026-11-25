@@ -559,3 +559,42 @@ func TestCIUpload_WorkerTransactionRetry(t *testing.T) {
 	require.NoError(t, reg.Register(metrics.ci))
 	assert.Equal(t, 1.0, ciMetric(t, reg, "accepted", ""))
 }
+
+func TestCIUpload_ResultLinkWaitsForPipelineVersion(t *testing.T) {
+	t.Parallel()
+	e := newCIEnv(t)
+	orgs, _, err := newOrgAccess(e.app, e.clock, e.connect, nil)
+	require.NoError(t, err)
+	norm, err := newNormalize(e.app, e.store, e.uc, orgs, nil, e.clock)
+	require.NoError(t, err)
+	n := &normalizeEnv{ingestEnv: e.ingestEnv, norm: norm}
+	const sha = "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"
+	data := ciPackage(t, func(files map[string][]byte) {
+		files[envelope.ScanManifestName] = bytes.ReplaceAll(files[envelope.ScanManifestName],
+			[]byte(`"mr_native_id": "9001"`), []byte(`"mr_native_id": null`))
+	})
+	out := e.uploadCI(t, e.token.Value, data)
+	require.Equal(t, http.StatusAccepted, out.Code, out.Body.String())
+	id := decode[acceptedBody](t, out).ReceiptID
+	require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(id)))
+	waiting := e.readCI(t, id, e.token.Value)
+	assert.NotNil(t, waiting.RetryAfter)
+	assert.Nil(t, waiting.ResultURL)
+
+	n.drain(t)
+	pipelineID := runID(t, n, "5001")
+	result := e.readCI(t, id, e.token.Value)
+	assert.NotNil(t, result.RetryAfter)
+	assert.Nil(t, result.ResultURL)
+
+	manifest := ciManifest("42")
+	manifest.Source.InstanceKey = _checksInstance
+	link := e.awaitCIResult(t, id, func() {
+		e.imported(t, e.admin, pack(t, manifest, mrRecord(t, "ci_run", "5001", "", "v1", envelope.CiRunV1{
+			ProjectNativeId: "42", RefName: "main", Sha: sha, NativeStatus: "success", Outcome: "success",
+			StartedAt: new(e.clock.Now()), FinishedAt: new(e.clock.Now()),
+		})))
+		n.drain(t)
+	})
+	assert.Equal(t, "/pipelines/"+pipelineID.String(), link)
+}

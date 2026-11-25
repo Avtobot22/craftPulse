@@ -38,6 +38,7 @@ type receiptBody struct {
 	DuplicateOf     *uuid.UUID `json:"duplicate_of"`
 	AffectedMetrics []string   `json:"affected_metrics"`
 	RetryAfter      *int       `json:"retry_after_seconds"`
+	ResultURL       *string    `json:"result_url"`
 }
 
 type acceptedBody struct {

@@ -236,6 +236,11 @@ func (u *UseCase) record(ctx context.Context, p *entity.PreparedPackage) (entity
 		return entity.Receipt{}, err
 	}
 	if rc.AcceptedCount > 0 || p.HasScanManifest {
+		if rc.Channel == entity.ChannelCI {
+			if err := u.RecordCIResult(ctx, org, rc.ID, nil, true); err != nil {
+				return entity.Receipt{}, err
+			}
+		}
 		queue := entity.QueueBulk
 		if rc.Channel == entity.ChannelCI {
 			queue = entity.QueueInteractive

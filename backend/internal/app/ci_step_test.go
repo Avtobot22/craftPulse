@@ -1,12 +1,16 @@
 package app
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -15,6 +19,44 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 )
+
+type ciReceiptTransport struct{ router http.Handler }
+
+func (tr ciReceiptTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.RemoteAddr = "10.20.1.2:1234"
+	rec := httptest.NewRecorder()
+	tr.router.ServeHTTP(rec, req)
+	return rec.Result(), nil
+}
+
+// awaitCIResult observes at least one server response before making the result available.
+func (e *ciEnv) awaitCIResult(t *testing.T, id uuid.UUID, makeAvailable func()) string {
+	t.Helper()
+	site, err := url.Parse(_site)
+	require.NoError(t, err)
+	polls := 0
+	client, err := ci.NewClient(&ci.Job{Site: site, Token: e.token.Value}, ci.ClientConfig{
+		HTTP: &http.Client{Transport: ciReceiptTransport{e.router}},
+		Sleep: func(context.Context, time.Duration) error {
+			polls++
+			if polls == 2 {
+				makeAvailable()
+			}
+			require.LessOrEqual(t, polls, 2, "receipt still pending after its result was built")
+			return nil
+		},
+	})
+	require.NoError(t, err)
+	result, err := client.Await(t.Context(), &ciapi.ReceiptAccepted{
+		ReceiptId: id, Status: ciapi.ReceiptAcceptedStatusQuarantined,
+	}, 15*time.Second)
+	require.NoError(t, err)
+	require.NotNil(t, result.ResultUrl)
+	assert.Nil(t, result.RetryAfterSeconds)
+	assert.Equal(t, 2, polls)
+	return *result.ResultUrl
+}
 
 func TestCIUpload_AcceptsPackageOfTheCIStep(t *testing.T) {
 	t.Parallel()

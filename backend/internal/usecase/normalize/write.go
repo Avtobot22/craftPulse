@@ -48,6 +48,9 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 	if err := w.writeCIFacts(ctx, in); err != nil {
 		return nil, err
 	}
+	if err := w.recordCIResult(ctx, in); err != nil {
+		return nil, err
+	}
 	if err := w.reports(ctx, in); err != nil {
 		return nil, err
 	}
@@ -93,6 +96,9 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 // keys are the identities a part names: areas, tasks, MRs, CI runs and reports with the objects they refer to.
 func (in *input) keys() []entity.SourceKey {
 	set := map[entity.SourceKey]bool{in.area: true}
+	if in.ciResult != nil {
+		set[in.ciResult.run] = true
+	}
 	for _, t := range in.tasks {
 		set[t.key], set[t.area] = true, true
 		if t.parent != nil {

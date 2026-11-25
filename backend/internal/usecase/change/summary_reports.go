@@ -126,8 +126,12 @@ func (u *UseCase) summaryMissing(ctx context.Context, org entity.ID, mr entity.S
 		}
 	}
 	v.PipelineState = "reports_missing"
+	right := "none"
+	if entity.SensitiveSummaryAnalysis(e.AnalysisKind) {
+		right = "security"
+	}
 	v.Items = append(v.Items, entity.SummaryItem{
-		Kind: "not_evaluated", ComponentID: &e.ComponentID, AnalysisKind: e.AnalysisKind, ReasonCode: reason, RequiredRight: "none",
+		Mode: e.Mode, Kind: "not_evaluated", ComponentID: &e.ComponentID, AnalysisKind: e.AnalysisKind, ReasonCode: reason, RequiredRight: right,
 	})
 	return nil
 }
@@ -180,6 +184,7 @@ func (u *UseCase) summaryFindings(ctx context.Context, org entity.ID, mr entity.
 	}
 	q := entity.TechnicalComparisonQuery{ComponentID: e.ComponentID, BaseSHA: mr.BaseSHA, HeadSHA: mr.HeadSHA, Kind: e.AnalysisKind}
 	result := CompareReports(q, base, head, identities)
+	v.ComparableBase = v.ComparableBase || result.Comparable
 	headOccurrences := summaryOccurrences(head.Occurrences, identities)
 	var baseOccurrences map[entity.ID][]entity.ReportOccurrence
 	if base != nil {
@@ -196,6 +201,7 @@ func (u *UseCase) summaryFindings(ctx context.Context, org entity.ID, mr entity.
 	if err != nil {
 		return err
 	}
+	start := len(v.Items)
 	for _, f := range result.Findings {
 		os, report := headOccurrences[f.ID], head.ID
 		switch f.Lifecycle {
@@ -210,6 +216,9 @@ func (u *UseCase) summaryFindings(ctx context.Context, org entity.ID, mr entity.
 			continue
 		}
 		summaryFinding(&calculation, report, f, os, versions, severities, v)
+	}
+	for i := start; i < len(v.Items); i++ {
+		v.Items[i].Mode = e.Mode
 	}
 	values, definitions := u.d.Summary.Calculations.SummarizeFindings(calculation, versions)
 	v.FindingValues = append(v.FindingValues, values...)

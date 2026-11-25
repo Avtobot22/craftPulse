@@ -46,6 +46,7 @@ type Authorizer interface {
 }
 
 type Deps struct {
+	Summaries        Summaries
 	Tasks            TaskDeps
 	ReviewCalculator ReviewCalculator
 	ProjectAreas     ProjectAreas
@@ -64,7 +65,6 @@ type Deps struct {
 	Clock            clock.Clock
 	NewID            func() (entity.ID, error)
 
-	Publications         SummaryPublications
 	SummaryFindingRights SummaryFindingRights
 }
 

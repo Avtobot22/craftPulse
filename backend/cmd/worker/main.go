@@ -25,15 +25,16 @@ func main() {
 	environ := env.ToMap(os.Environ())
 	cfg, err := config.Load(environ)
 	adapters, adaptersErr := config.LoadAdapters(environ)
+	checks, checksErr := config.LoadChecks(environ)
 	site, siteErr := config.LoadSite(environ)
-	if err := errors.Join(err, adaptersErr, siteErr); err != nil {
+	if err := errors.Join(err, adaptersErr, checksErr, siteErr); err != nil {
 		boot.Fatal().Err(err).Msg("config")
 	}
 	log, err := logger.New(os.Stdout, cfg.LogLevel, _service, append(cfg.Secrets(), adapters.Secrets()...))
 	if err != nil {
 		boot.Fatal().Err(err).Msg("logger")
 	}
-	if err := app.RunWorker(cfg, adapters, site, log); err != nil {
+	if err := app.RunWorker(cfg, adapters, checks, site, log); err != nil {
 		log.Fatal().Err(err).Msg("worker stopped with error")
 	}
 }

@@ -45,7 +45,7 @@ var Operations = map[string]Operation{
 	"GET /merge-requests":                                          {ID: "listMergeRequests", Action: "mr.read", Query: []string{"area_id", "cursor", "limit", "project_id", "review_wait", "sort", "state"}, IfMatch: false},
 	"GET /merge-requests/:merge_request_id":                        {ID: "getMergeRequest", Action: "mr.read", Query: []string{}, IfMatch: false},
 	"GET /merge-requests/:merge_request_id/review-route":           {ID: "getReviewRoute", Action: "mr.read", Query: []string{}, IfMatch: false},
-	"GET /merge-requests/:merge_request_id/summary":                {ID: "getMergeRequestSummary", Action: "mr.read", Query: []string{"revision_no"}, IfMatch: false},
+	"GET /merge-requests/:merge_request_id/summary":                {ID: "getMergeRequestSummary", Action: "mr.read", Query: []string{"head_sha", "revision_no"}, IfMatch: false},
 	"GET /metric-definitions":                                      {ID: "listMetricDefinitions", Action: "report.read", Query: []string{"cursor", "limit"}, IfMatch: false},
 	"GET /mirror-groups":                                           {ID: "listMirrorGroups", Action: "tasks.read", Query: []string{"cursor", "limit", "project_id"}, IfMatch: false},
 	"GET /o/:org_slug/callback":                                    {ID: "completeLogin", Action: "public", Query: []string{"code", "error", "iss", "state"}, IfMatch: false},

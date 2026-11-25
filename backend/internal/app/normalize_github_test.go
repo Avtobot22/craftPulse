@@ -81,6 +81,7 @@ func TestNormalizeGitHub_PullRequestEvents(t *testing.T) {
 		{id: "note-1", kind: "comment", actor: "100", minute: 7, system: true},
 		{id: "draft-1", kind: "draft", actor: "100", minute: 8},
 		{id: "push-1", kind: "head_pushed", actor: "100", minute: 9},
+		{id: "review-4", kind: "review", actor: "300", state: "dismissed", minute: 10},
 	}
 	records := make([]*envelope.Record, 0, 4+len(events))
 	records = append(records,
@@ -121,6 +122,7 @@ func TestNormalizeGitHub_PullRequestEvents(t *testing.T) {
 		{"comment-1", "comment", 6, entity.PersonUnknown},
 		{"draft-1", "draft", 8, entity.PersonUnknown},
 		{"push-1", "head_pushed", 9, entity.PersonUnknown},
+		{"review-4", "review", 10, entity.PersonUnknown},
 	}, rows, "a comment-only review is a comment, an approval is a review and an approval, a system note is no answer")
 
 	var proposed string
@@ -139,7 +141,10 @@ func TestNormalizeGitHub_PullRequestEvents(t *testing.T) {
 		e.drain(t)
 	}
 	assert.Equal(t, 1, e.n(t, "SELECT count(*) FROM normalize.mr_version"))
-	assert.Equal(t, 9, e.n(t, "SELECT count(*) FROM normalize.mr_event"))
+	assert.Equal(t, 10, e.n(t, "SELECT count(*) FROM normalize.mr_event"))
+	var dismissed string
+	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT review_state FROM normalize.mr_event WHERE event_key = 'review-4'").Scan(&dismissed))
+	assert.Equal(t, "dismissed", dismissed)
 }
 
 type actionsJob struct {
