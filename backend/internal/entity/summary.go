@@ -1,7 +1,10 @@
 package entity
 
 import (
+	"bytes"
+	"cmp"
 	"encoding/json"
+	"slices"
 	"time"
 )
 
@@ -111,4 +114,43 @@ type SummaryFindingValues struct {
 type SummaryReportEvidence struct {
 	ExpectedReport
 	ReportID ID
+}
+
+func severityOrder(s string) int {
+	switch s {
+	case "critical":
+		return 0
+	case "high":
+		return 1
+	case "medium":
+		return 2
+	case "low":
+		return 3
+	case "info":
+		return 4
+	default:
+		return 5
+	}
+}
+
+// CompareSummarySignals orders findings by severity and stable identity.
+func CompareSummarySignals(a, b *SummaryItem) int {
+	return cmp.Or(cmp.Compare(severityOrder(a.Severity), severityOrder(b.Severity)),
+		cmp.Compare(b.RequiredRight, a.RequiredRight), cmp.Compare(a.AnalysisKind, b.AnalysisKind),
+		bytes.Compare(a.FindingID[:], b.FindingID[:]), bytes.Compare(a.OccurrenceID[:], b.OccurrenceID[:]))
+}
+
+// RankSummary assigns the top five ranks for the supplied audience.
+func RankSummary(items []SummaryItem) {
+	var candidates []int
+	for i := range items {
+		items[i].Rank = nil
+		if items[i].Kind == FindingNew && items[i].FindingID != nil && items[i].OccurrenceID != nil {
+			candidates = append(candidates, i)
+		}
+	}
+	slices.SortStableFunc(candidates, func(a, b int) int { return CompareSummarySignals(&items[a], &items[b]) })
+	for rank, index := range candidates[:min(5, len(candidates))] {
+		items[index].Rank = new(rank + 1)
+	}
 }

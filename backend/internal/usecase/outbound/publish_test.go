@@ -25,6 +25,7 @@ type publicationFixture struct {
 	last                     entity.PublishInput
 	creates, completed       int
 	loseReply, denied, stale bool
+	denyLookup               bool
 }
 
 func (*publicationFixture) InOrgTx(ctx context.Context, _ entity.ID, fn func(context.Context) error) error {
@@ -55,6 +56,9 @@ func (f *publicationFixture) FindPublished(_ context.Context, _, _ entity.ID, in
 	if in.Marker != f.summary.Revision.MRID.String() || in.Kind != entity.MRComment {
 		return "", errors.New("unexpected target")
 	}
+	if f.denyLookup {
+		return "", &entity.AdapterError{Class: entity.CallSource, Code: entity.SourceAuth}
+	}
 	return f.note, nil
 }
 
@@ -82,6 +86,10 @@ func (f *publicationFixture) Start(context.Context, entity.ID, entity.ID, entity
 
 func (f *publicationFixture) Finish(_ context.Context, _, _, _, _ entity.ID, _ entity.PublicationTarget, p entity.Publication, _ time.Time) error {
 	f.actions[len(f.actions)-1] = p
+	return nil
+}
+
+func (*publicationFixture) SaveTarget(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, string, time.Time) error {
 	return nil
 }
 
@@ -152,12 +160,25 @@ func TestPublicationRecoversLostReply(t *testing.T) {
 	}
 }
 
-func TestPublicationCompletesFinalUnknownAttempt(t *testing.T) {
+func TestPublicationReconcilesFinalUnknownAttempt(t *testing.T) {
 	t.Parallel()
 	f := newPublicationFixture()
 	f.loseReply = true
-	if err := f.run(t, true); err != nil || f.completed != 1 || f.result.Status != entity.PublicationUnknown {
+	if err := f.run(t, true); err != nil || f.completed != 1 || f.result.Status != entity.PublicationSucceeded ||
+		f.result.ExternalID != "1" || f.actions[0].Status != entity.PublicationUnknown || f.creates != 1 ||
+		!slices.Equal(f.calls, []string{"find", "head", "publish", "find"}) {
 		t.Fatalf("final attempt: err=%v, completed=%d, result=%+v", err, f.completed, f.result)
+	}
+}
+
+func TestPublicationFinalLookupDoesNotConfirmAnExistingNoteBody(t *testing.T) {
+	t.Parallel()
+	f := newPublicationFixture()
+	f.note, f.loseReply = "1", true
+	if err := f.run(t, true); err != nil || f.completed != 1 || f.creates != 0 ||
+		f.result.Status != entity.PublicationUnknown ||
+		!slices.Equal(f.calls, []string{"find", "head", "publish", "find"}) {
+		t.Fatalf("ambiguous update: err=%v, outcome=%+v, calls=%v", err, f.result, f.calls)
 	}
 }
 
@@ -172,6 +193,17 @@ func TestPublicationSuppressesStaleHeadAndRecordsDenial(t *testing.T) {
 		if !slices.Equal(f.calls, []string{"find", "head"}) || f.result.Status != entity.PublicationStale ||
 			f.actions[0].Status != entity.PublicationStale || f.completed != 1 {
 			t.Fatalf("stale head: calls=%v, result=%+v", f.calls, f.result)
+		}
+	})
+	t.Run("write bot lookup denied", func(t *testing.T) {
+		f := newPublicationFixture()
+		f.denyLookup = true
+		if err := f.run(t, false); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(f.calls, []string{"find"}) || f.result.Status != entity.PublicationFailed ||
+			f.result.ErrorCode != entity.WritePermissionMissing || f.summary.Revision.Status != "ready" {
+			t.Fatalf("lookup denied: calls=%v, result=%+v", f.calls, f.result)
 		}
 	})
 	t.Run("write denied", func(t *testing.T) {

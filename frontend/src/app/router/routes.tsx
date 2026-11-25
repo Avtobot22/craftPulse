@@ -1,5 +1,6 @@
 import type { RouteObject } from 'react-router'
 import { HomePage } from '@/pages/home'
+import { MergeRequestSummaryPage } from '@/pages/merge-request-summary'
 import { LoginPage } from '@/pages/login'
 import { SessionExpiredPage } from '@/pages/session-expired'
 import { UnavailablePage } from '@/pages/unavailable'
@@ -46,6 +47,10 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                   element: <InstallationPage />,
                 },
                 { path: routePaths.welcome, element: <WelcomePage /> },
+                {
+                  path: '/merge-requests/:mr/summary',
+                  element: <MergeRequestSummaryPage api={runtime.api} />,
+                },
                 {
                   path: routePaths.organization,
                   element: <OrganizationPage />,

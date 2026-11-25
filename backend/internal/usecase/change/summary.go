@@ -271,7 +271,7 @@ func (u *UseCase) buildSummary(ctx context.Context, org entity.ID, mr entity.Sum
 	if err := u.d.Summary.Calculations.SummarizeMetrics(ctx, org, mr, run, v); err != nil {
 		return nil, time.Time{}, err
 	}
-	rankSummary(v.Items)
+	entity.RankSummary(v.Items)
 	if err := hashSummary(v); err != nil {
 		return nil, time.Time{}, err
 	}

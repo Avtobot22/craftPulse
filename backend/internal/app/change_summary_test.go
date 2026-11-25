@@ -8,19 +8,25 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	httpctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/http"
+	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/openapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/oidc"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/change"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
+	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
 
 type summaryTestAdapter struct {
@@ -248,6 +254,8 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, ready, checkReady(h2, "reports_missing"))
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'change.summary' AND state = 'available'`))
 	onFetch = func() {}
+	previous, err := u.PublicationSummary(t.Context(), e.orgID, mr)
+	require.NoError(t, err)
 	run()
 	ready = checkReady(h2, "complete")
 	assert.Equal(t, 6, count(t, `SELECT count(*) FROM change.summary_item WHERE summary_revision_id = $1
@@ -255,6 +263,34 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, 5, count(t, `SELECT count(*) FROM change.summary_item WHERE summary_revision_id = $1 AND rank BETWEEN 1 AND 5`, ready))
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish'
 		AND state = 'available'`))
+
+	// Reproduce an upgrade from jobs whose arguments had no uniqueness key.
+	_, err = e.owner.Exec(t.Context(), `UPDATE river_job SET unique_key = NULL WHERE kind = 'outbound.publish'`)
+	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), `INSERT INTO river_job (kind, args, queue, max_attempts)
+		SELECT kind, args || jsonb_build_object('summary_revision_id', $1::text), queue, max_attempts
+		FROM river_job WHERE kind = 'outbound.publish' AND state = 'available'`, uuid.NewString())
+	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), `DELETE FROM goose_db_version WHERE version_id = 56`)
+	require.NoError(t, err)
+	_, err = migrate(t.Context(), e.owner)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish' AND state = 'cancelled'`))
+	// Legacy jobs still occupy the slot while active, even for simultaneous producers.
+	var enqueueWG sync.WaitGroup
+	for range 2 {
+		enqueueWG.Go(func() {
+			assert.NoError(t, persistent.NewTransactor(e.app).InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
+				if _, err := deps.Facts.SummaryMR(ctx, e.orgID, mr, true); err != nil {
+					return err
+				}
+				return deps.Queue.Enqueue(ctx, entity.OutboundPublishJob{
+					OrganizationID: e.orgID, MRID: mr, SummaryRevisionID: entity.ID(ready),
+				}, entity.QueueInteractive)
+			}))
+		})
+	}
+	enqueueWG.Wait()
 
 	enqueue()
 	run()
@@ -267,6 +303,11 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT connection_id FROM connect.connection_scope
 		WHERE organization_id = $1 AND area_id = $2`, uuid.UUID(e.orgID), e.areas["42"]).Scan(&connectionID))
 	source.source.ConnectionID = entity.ID(connectionID)
+	require.Equal(t, h2, previous.Revision.HeadSHA)
+	previous.ConnectionID = source.source.ConnectionID
+	current, err := u.CheckPublicationHead(t.Context(), e.orgID, &previous)
+	require.NoError(t, err)
+	assert.False(t, current, "a superseded revision cannot publish even when the head is unchanged")
 	adapter := &summaryNoteAdapter{}
 	publisher, err := newPublisher(e.app, u, adapter, _site, prometheus.NewRegistry())
 	require.NoError(t, err)
@@ -278,7 +319,10 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	require.NoError(t, json.Unmarshal(args, &publishJob))
 	require.NotEqual(t, entity.ID(ready), publishJob.SummaryRevisionID)
 	require.NoError(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false))
-	published, err := u.Publication(t.Context(), e.orgID, mr, entity.ID(ready))
+	var no int
+	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT revision_no FROM change.summary_revision WHERE id = $1`, ready).Scan(&no))
+	read, err := u.ReadSummary(t.Context(), e.orgID, mr, &no)
+	published := read.Publication
 	require.NoError(t, err)
 	assert.Equal(t, entity.PublicationSucceeded, published.Status)
 	assert.Equal(t, "101", published.ExternalID)
@@ -309,4 +353,27 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 		assert.False(t, last.BuiltAt.IsZero())
 		return nil
 	}))
+
+	// A deep link reads the specified historical revision and its own saved denial.
+	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
+		return deps.Publication.SavePublication(ctx, e.orgID, previous.Revision.ID, entity.Publication{
+			Status: entity.PublicationFailed, ErrorCode: entity.WritePermissionMissing,
+		})
+	}))
+	m := e.modules(t)
+	m.code = newView(e.app, viewModules{code: e.norm, rights: m.access}, e.clock)
+	reg := prometheus.NewRegistry()
+	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, m)
+	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
+	summaryPath := fmt.Sprintf("/api/v1/merge-requests/%s/summary", mr)
+	old := decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, e.adminBrowser,
+		fmt.Sprintf("%s?revision_no=%d", summaryPath, previous.Revision.No), "MergeRequestSummary"))
+	assert.Equal(t, uuid.UUID(previous.Revision.ID), old.Id)
+	assert.Equal(t, h2, old.HeadSha)
+	assert.Equal(t, openapi.MergeRequestSummaryPublicationStatus(entity.PublicationFailed), old.Publication.Status)
+	require.NotNil(t, old.Publication.ErrorCode)
+	assert.Equal(t, entity.WritePermissionMissing, *old.Publication.ErrorCode)
+	assert.Equal(t, http.StatusBadRequest, e.do(t, e.adminBrowser, http.MethodGet, summaryPath+"?revision_no=0", nil).Code)
+	assert.Equal(t, http.StatusNotFound, e.do(t, e.adminBrowser, http.MethodGet, summaryPath+"?revision_no=2147483647", nil).Code)
+
 }

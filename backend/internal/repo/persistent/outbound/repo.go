@@ -53,8 +53,14 @@ func (r *Repo) Finish(ctx context.Context, org, action, connection, revision ent
 	if err != nil || outcome.Status != entity.PublicationSucceeded {
 		return err
 	}
-	_, err = conn.Exec(ctx, `UPDATE outbound.target SET connection_id = $4, last_summary_revision_id = $5,
+	return r.SaveTarget(ctx, org, connection, revision, target, outcome.ExternalID, now)
+}
+
+func (r *Repo) SaveTarget(ctx context.Context, org, connection, revision entity.ID, target entity.PublicationTarget,
+	externalID string, now time.Time,
+) error {
+	_, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE outbound.target SET connection_id = $4, last_summary_revision_id = $5,
 		external_id = $6, updated_at = $7 WHERE organization_id = $1 AND target_kind = $2 AND target_marker = $3`,
-		uuid.UUID(org), target.Kind, target.Marker, uuid.UUID(connection), uuid.UUID(revision), outcome.ExternalID, now)
+		uuid.UUID(org), target.Kind, target.Marker, uuid.UUID(connection), uuid.UUID(revision), externalID, now)
 	return err
 }

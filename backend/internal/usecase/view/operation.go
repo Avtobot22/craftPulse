@@ -46,7 +46,6 @@ type Authorizer interface {
 }
 
 type Deps struct {
-	Publications     SummaryPublications
 	ReviewCalculator ReviewCalculator
 	ProjectAreas     ProjectAreas
 	Code             CodeFacts
@@ -63,6 +62,9 @@ type Deps struct {
 	Access           Authorizer
 	Clock            clock.Clock
 	NewID            func() (entity.ID, error)
+
+	Publications         SummaryPublications
+	SummaryFindingRights SummaryFindingRights
 }
 
 type UseCase struct {

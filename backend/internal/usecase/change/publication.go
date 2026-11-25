@@ -11,7 +11,8 @@ type PublicationStore interface {
 	PublicationRevision(context.Context, entity.ID, entity.ID) (entity.SummaryRevision, error)
 	PublicationItems(context.Context, entity.ID, entity.ID) ([]entity.SummaryItem, error)
 	SavePublication(context.Context, entity.ID, entity.ID, entity.Publication) error
-	Publication(context.Context, entity.ID, entity.ID, entity.ID) (entity.Publication, error)
+	SummaryRevision(context.Context, entity.ID, entity.ID, *int) (entity.SummaryRevision, error)
+	SummaryItems(context.Context, entity.ID, entity.ID) ([]entity.SummaryItem, error)
 }
 
 func (u *UseCase) PublicationSummary(ctx context.Context, org, mr entity.ID) (entity.SummaryPublication, error) {
@@ -61,7 +62,19 @@ func (u *UseCase) CheckPublicationHead(ctx context.Context, org entity.ID, s *en
 		return false, errPublicationConnectionChanged
 	}
 	head, err := u.readPublicationHead(ctx, org, source, mr.Source)
-	return head == s.Revision.HeadSHA, err
+	if err != nil || head != s.Revision.HeadSHA {
+		return false, err
+	}
+	var latest entity.SummaryRevision
+	err = u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		latest, err = u.d.Summary.Publication.PublicationRevision(ctx, org, mr.MRID)
+		return err
+	})
+	if errors.Is(err, entity.ErrNotFound) {
+		return false, nil
+	}
+	return latest.ID == s.Revision.ID && latest.Status == "ready", err
 }
 
 var errPublicationConnectionChanged = errors.New("change: publication connection changed")
@@ -100,13 +113,17 @@ func (u *UseCase) FinishPublication(ctx context.Context, org, mr, revision entit
 	return nil
 }
 
-// Publication reads the outcome for a revision after the caller checks access to its MR.
-func (u *UseCase) Publication(ctx context.Context, org, mr, revision entity.ID) (entity.Publication, error) {
-	var p entity.Publication
+// ReadSummary retrieves the selected immutable summary and its current publication outcome.
+func (u *UseCase) ReadSummary(ctx context.Context, org, mr entity.ID, no *int) (entity.SummaryRevision, error) {
+	var v entity.SummaryRevision
 	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
 		var err error
-		p, err = u.d.Summary.Publication.Publication(ctx, org, mr, revision)
+		v, err = u.d.Summary.Publication.SummaryRevision(ctx, org, mr, no)
+		if err != nil {
+			return err
+		}
+		v.Items, err = u.d.Summary.Publication.SummaryItems(ctx, org, v.ID)
 		return err
 	})
-	return p, err
+	return v, err
 }
