@@ -17,7 +17,9 @@ import (
 // StaleSummaries invalidates the ready revision when the source advances to another head.
 func (r *Repo) StaleSummaries(ctx context.Context, org, mr entity.ID, head string) error {
 	_, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE change.summary_revision
-		SET status = 'stale', stale_reason = 'new_head'
+		SET status = 'stale', stale_reason = 'new_head',
+			publication_error_code = CASE WHEN publication_status = 'pending' THEN 'head_changed' ELSE publication_error_code END,
+			publication_status = CASE WHEN publication_status = 'pending' THEN 'stale' ELSE publication_status END
 		WHERE organization_id = $1 AND mr_id = $2 AND status = 'ready' AND head_sha <> $3`, uuid.UUID(org), uuid.UUID(mr), head)
 	return err
 }
@@ -34,7 +36,8 @@ func (r *Repo) SaveSummary(ctx context.Context, org entity.ID, v *entity.Summary
 	if bytes.Equal(prior, v.InputHash) {
 		return false, nil
 	}
-	_, err = conn.Exec(ctx, `UPDATE change.summary_revision SET status = 'superseded'
+	_, err = conn.Exec(ctx, `UPDATE change.summary_revision SET status = 'superseded',
+		publication_status = CASE WHEN publication_status = 'pending' THEN 'stale' ELSE publication_status END
 		WHERE organization_id = $1 AND mr_id = $2 AND status = 'ready'`, uuid.UUID(org), uuid.UUID(v.MRID))
 	if err != nil {
 		return false, err

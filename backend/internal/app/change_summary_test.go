@@ -84,7 +84,10 @@ func summaryReadAPI(t *testing.T, e *identityEnv, instance entity.ID) {
 
 type summaryNoteAdapter struct {
 	found, body string
+	externalID  string
+	publishErr  error
 	unknown     bool
+	denied      bool
 	writes      int
 }
 
@@ -93,7 +96,14 @@ func (a *summaryNoteAdapter) FindPublished(context.Context, entity.ID, entity.ID
 }
 
 func (a *summaryNoteAdapter) Publish(_ context.Context, _, _ entity.ID, in entity.PublishInput) (entity.Publication, error) {
+	if a.publishErr != nil {
+		return entity.Publication{}, a.publishErr
+	}
 	a.writes++
+	a.externalID = in.ExternalID
+	if a.denied {
+		return entity.Publication{Status: entity.PublicationFailed, ErrorCode: entity.WritePermissionMissing}, nil
+	}
 	if a.unknown {
 		return entity.Publication{Status: entity.PublicationUnknown}, nil
 	}
@@ -302,8 +312,13 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	onFetch = func() {}
 	previous, err := u.PublicationSummary(t.Context(), e.orgID, mr)
 	require.NoError(t, err)
+	require.Equal(t, "pending", previous.Revision.Publication.Status)
 	run()
 	ready = checkReady(h2, "complete")
+	historical, err := u.ReadSummary(t.Context(), e.orgID, mr, &previous.Revision.No)
+	require.NoError(t, err)
+	assert.Equal(t, "superseded", historical.Status)
+	assert.Equal(t, entity.PublicationStale, historical.Publication.Status)
 	assert.Equal(t, 6, count(t, `SELECT count(*) FROM change.summary_item WHERE summary_revision_id = $1
 		AND item_kind = 'new' AND required_right = 'security'`, ready))
 	assert.Equal(t, 5, count(t, `SELECT count(*) FROM change.summary_item WHERE summary_revision_id = $1 AND rank BETWEEN 1 AND 5`, ready))
@@ -317,6 +332,9 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	_, err = provider.DownTo(t.Context(), 55)
 	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), `UPDATE change.summary_revision SET publication_status = 'pending' WHERE id = $1`,
+		uuid.UUID(previous.Revision.ID))
+	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `UPDATE river_job SET unique_key = NULL WHERE kind = 'outbound.publish'`)
 	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `INSERT INTO river_job (kind, args, queue, max_attempts)
@@ -325,6 +343,9 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	_, err = migrate(t.Context(), e.owner)
 	require.NoError(t, err)
+	historical, err = u.ReadSummary(t.Context(), e.orgID, mr, &previous.Revision.No)
+	require.NoError(t, err)
+	assert.Equal(t, entity.PublicationStale, historical.Publication.Status)
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish' AND state = 'cancelled'`))
 	// Legacy jobs still occupy the slot while active, even for simultaneous producers.
 	var enqueueWG sync.WaitGroup
@@ -368,6 +389,11 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	var publishJob entity.OutboundPublishJob
 	require.NoError(t, json.Unmarshal(args, &publishJob))
 	require.NotEqual(t, entity.ID(ready), publishJob.SummaryRevisionID)
+	adapter.publishErr = &entity.AdapterError{Class: entity.CallContractUnsupported}
+	require.ErrorIs(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false), entity.ErrContractUnsupported)
+	assert.Zero(t, count(t, `SELECT count(*) FROM outbound.target WHERE pending_create_action_id IS NOT NULL`))
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.action WHERE status = 'failed'`))
+	adapter.publishErr = nil
 	for range 2 {
 		require.Error(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false))
 		require.Equal(t, 1, adapter.writes)
@@ -400,6 +426,14 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	run()
 	latestReady := checkReady(h2, "complete")
 	require.NotEqual(t, ready, latestReady)
+	adapter.found, adapter.denied = "", true
+	require.NoError(t, publisher.RunPublish(t.Context(), publishJob, nil, false))
+	assert.Equal(t, "101", adapter.externalID)
+	failed, err := u.ReadSummary(t.Context(), e.orgID, mr, nil)
+	require.NoError(t, err)
+	assert.Equal(t, entity.PublicationFailed, failed.Publication.Status)
+	assert.Equal(t, entity.WritePermissionMissing, failed.Publication.ErrorCode)
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.target WHERE external_id = '101' AND pending_create_action_id IS NULL`))
 	base = strings.Repeat("e", 40)
 	h3 := strings.Repeat("d", 40)
 	e.clock.Advance(time.Second)
@@ -416,7 +450,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, new("new_head"), stale.StaleReason)
 	assert.Equal(t, openapi.MergeRequestSummaryPublicationStatus(entity.PublicationStale), stale.Publication.Status)
 	assert.Equal(t, publishedBody, adapter.body)
-	assert.Equal(t, 2, adapter.writes)
+	assert.Equal(t, 3, adapter.writes)
 
 	// An unrelated base SHA leaves complete head findings newly observed and keeps the last good revision.
 	e.submit(t, page)

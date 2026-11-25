@@ -227,8 +227,9 @@ func (a *Adapter) Publish(ctx context.Context, call adaptersdk.Call, in adapters
 	if err != nil {
 		return publicationLookupError(err)
 	}
+	// A rotated token can belong to a different bot and miss the existing note.
 	if noteID == 0 && in.ExternalId != nil {
-		return failedPublication("provider_error"), nil
+		return failedPublication(_writePermissionMissing), nil
 	}
 	if in.ExpectedHeadSha != nil {
 		if err := s.checkPublicationHead(ctx, mr, *in.ExpectedHeadSha); err != nil {

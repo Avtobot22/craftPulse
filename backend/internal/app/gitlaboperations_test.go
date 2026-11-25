@@ -20,6 +20,7 @@ import (
 
 const (
 	_gitLabWriteToken    = "fixture-gitlab-writer-145"
+	_gitLabNewWriteToken = "fixture-gitlab-writer-146"
 	_gitLabWebhookSecret = "fixture-gitlab-hook-145"
 	_glProject           = "/api/v4/projects/7"
 	_glMRPath            = _glProject + "/merge_requests/1"
@@ -60,7 +61,7 @@ func (f *gitLabOperationFixture) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	switch r.Header.Get("PRIVATE-TOKEN") {
 	case _gitLabToken:
 		f.serveAccess(w, r)
-	case _gitLabWriteToken:
+	case _gitLabWriteToken, _gitLabNewWriteToken:
 		f.serveBot(w, r)
 	default:
 		w.WriteHeader(http.StatusUnauthorized)
@@ -106,6 +107,10 @@ func (f *gitLabOperationFixture) serveAccess(w http.ResponseWriter, r *http.Requ
 func (f *gitLabOperationFixture) serveBot(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/api/v4/user":
+		if r.Header.Get("PRIVATE-TOKEN") == _gitLabNewWriteToken {
+			_, _ = io.WriteString(w, `{"id":10,"state":"active"}`)
+			return
+		}
 		_, _ = w.Write(f.recorded["bot"])
 	case "/api/v4/personal_access_tokens/self":
 		if f.noWriteScope.Load() {
@@ -115,6 +120,8 @@ func (f *gitLabOperationFixture) serveBot(w http.ResponseWriter, r *http.Request
 		_, _ = w.Write(f.recorded["write_scope"])
 	case _glProject, "/api/v4/projects/8":
 		_, _ = w.Write(f.recorded[r.URL.Path])
+	case _glProject + "/members/all/10":
+		_, _ = io.WriteString(w, `{"id":10,"state":"active","access_level":30}`)
 	case _glProject + "/members/all/9":
 		if f.botRoleMissing.Load() {
 			w.WriteHeader(http.StatusNotFound)
@@ -215,7 +222,7 @@ func readGitLabOperation[T any](t *testing.T, e gitLabTestEnv, operation string,
 
 func assertGitLabOperationSecrets(t *testing.T, value string) {
 	t.Helper()
-	for _, secret := range []string{_gitLabToken, _gitLabWriteToken, _gitLabWebhookSecret} {
+	for _, secret := range []string{_gitLabToken, _gitLabWriteToken, _gitLabNewWriteToken, _gitLabWebhookSecret} {
 		assert.NotContains(t, value, secret)
 	}
 }
@@ -425,6 +432,15 @@ func TestContract_GitLabPublishAndFindPublished(t *testing.T) {
 	status, body = e.call(t, http.MethodPost, "publish", in)
 	assert.Equal(t, http.StatusConflict, status, string(body))
 	assert.Contains(t, string(body), "head_conflict")
+
+	f.movedHead.Store(false)
+	gitLabCredential(t, e, adaptersdk.CredentialsInputPurposeWriteBot, _gitLabNewWriteToken)
+	assert.False(t, readGitLabOperation[adaptersdk.FindPublishedResult](t, e, "find-published", find).Found)
+	in.ExternalId = found.ExternalId
+	out = readGitLabOperation[adaptersdk.PublishResult](t, e, "publish", in)
+	assert.Equal(t, adaptersdk.PublishResultOutcomeFailed, out.Outcome)
+	require.NotNil(t, out.ReasonCode)
+	assert.Equal(t, "write_permission_missing", *out.ReasonCode)
 	f.mu.Lock()
 	assert.Equal(t, 1, f.creates)
 	assert.Equal(t, 2, f.updates)

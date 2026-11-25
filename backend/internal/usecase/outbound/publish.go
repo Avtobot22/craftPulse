@@ -32,7 +32,8 @@ type LoginRoutes interface {
 type Store interface {
 	SaveTarget(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, string, time.Time) error
 	Start(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, time.Time) (entity.ID, error)
-	ReserveCreate(context.Context, entity.ID, entity.ID, entity.PublicationTarget) (bool, error)
+	// ReserveCreate returns the saved external ID if it exists, or whether a create was reserved.
+	ReserveCreate(context.Context, entity.ID, entity.ID, entity.PublicationTarget) (externalID string, reserved bool, err error)
 	Finish(context.Context, entity.ID, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, entity.Publication, time.Time) error
 }
 
@@ -193,16 +194,16 @@ func (u *UseCase) publish(ctx context.Context, org, action entity.ID, s *entity.
 	markdown := render(u.d.SiteURL, slug, &s.Revision)
 	externalID, err := u.d.Adapter.FindPublished(ctx, org, s.ConnectionID, target)
 	if err != nil {
-		if isSourceError(err, entity.SourceAuth) {
+		if isWriteDenied(err) {
 			return denied, false, nil
 		}
 		return failed, false, err
 	}
-	canWrite := externalID != ""
-	if !canWrite {
+	var reserved bool
+	if externalID == "" {
 		err = u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 			var err error
-			canWrite, err = u.d.Store.ReserveCreate(ctx, org, action, target)
+			externalID, reserved, err = u.d.Store.ReserveCreate(ctx, org, action, target)
 			return err
 		})
 		if err != nil {
@@ -220,7 +221,7 @@ func (u *UseCase) publish(ctx context.Context, org, action entity.ID, s *entity.
 		return entity.Publication{Status: entity.PublicationStale}, false, nil
 	}
 	// A missed marker does not prove that the earlier POST cannot still commit.
-	if !canWrite {
+	if externalID == "" && !reserved {
 		return unknown, false, errUnknown
 	}
 	result, err := u.d.Adapter.Publish(ctx, org, s.ConnectionID, entity.PublishInput{
@@ -229,17 +230,34 @@ func (u *UseCase) publish(ctx context.Context, org, action entity.ID, s *entity.
 	switch {
 	case isSourceError(err, "head_conflict"):
 		return stale, false, nil
-	case isSourceError(err, entity.SourceAuth):
+	case isWriteDenied(err):
 		return denied, false, nil
-	case isSourceError(err, entity.SourceRateLimited), errors.Is(err, entity.ErrConnectionPaused):
+	case isSourceError(err, entity.SourceRateLimited), errors.Is(err, entity.ErrConnectionPaused), publishRejected(err):
 		return failed, false, err
 	case err != nil:
-		return unknown, externalID == "", errors.Join(errUnknown, err)
+		return unknown, reserved, errors.Join(errUnknown, err)
 	case result.Status == entity.PublicationUnknown:
-		return unknown, externalID == "", errUnknown
+		return unknown, reserved, errUnknown
 	default:
 		return result, false, nil
 	}
+}
+
+func isWriteDenied(err error) bool {
+	return isSourceError(err, entity.SourceAuth) || isSourceError(err, "permission_missing")
+}
+
+func publishRejected(err error) bool {
+	// Only explicit refusals prove that a create did not reach the provider.
+	if errors.Is(err, entity.ErrContractUnsupported) {
+		return true
+	}
+	ae, ok := errors.AsType[*entity.AdapterError](err)
+	if !ok {
+		return false
+	}
+	return ae.Class == entity.CallAdapterUnavailable && (ae.Code == entity.AdapterKeyRejected || ae.Code == entity.AdapterNotConfigured) ||
+		ae.Class == entity.CallSource && (ae.Code == "invalid_request" || ae.Code == "not_supported")
 }
 
 func isSourceError(err error, code string) bool {

@@ -8,4 +8,11 @@ export const routePaths = Object.freeze({
   mergeRequestSummary: '/merge-requests/:mr/summary',
   organization: '/organization/structure',
   users: '/users',
+  workflowSettings: '/settings/process',
+  targetSettings: '/settings/targets',
+  teamReport: '/reports/team',
+  metricPassport: '/reports/revisions/:revisionId/metrics/:metricId',
+  metricCohort:
+    '/reports/revisions/:revisionId/metrics/:metricId/points/:pointStart',
+  savedView: '/reports/saved-views/:savedViewId',
 })

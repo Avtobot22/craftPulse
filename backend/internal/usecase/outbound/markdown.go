@@ -123,7 +123,10 @@ func renderStructure(b *strings.Builder, raw json.RawMessage) {
 		Size  struct {
 			State      entity.DataState
 			ReasonCode string
-			Total      struct{ Files, Added, Deleted int }
+			Total      struct {
+				Files          int
+				Added, Deleted int64
+			}
 		}
 		Code []struct {
 			Language   string
@@ -138,19 +141,26 @@ func renderStructure(b *strings.Builder, raw json.RawMessage) {
 	if json.Unmarshal(raw, &m) != nil {
 		return
 	}
-	fmt.Fprintf(b, "- C15 Размер изменения: %s, файлов %d, +%d/−%d строк\n",
-		state(m.Size.State, m.Size.ReasonCode), m.Size.Total.Files, m.Size.Total.Added, m.Size.Total.Deleted)
+	fmt.Fprintf(b, "- C15 Размер изменения: %s", state(m.Size.State, m.Size.ReasonCode))
+	if hasStructureCounts(m.Size.State) {
+		fmt.Fprintf(b, ", файлов %d, +%d/−%d строк", m.Size.Total.Files, m.Size.Total.Added, m.Size.Total.Deleted)
+	}
+	b.WriteByte('\n')
 	for i := range m.Code {
 		c := &m.Code[i]
 		label := inline(c.Language)
-		increased := 0
-		for _, f := range c.Complexity.Deltas {
-			if f.Delta != nil && *f.Delta > 0 {
-				increased++
+		fmt.Fprintf(b, "- C16 Сложность (%s): %s", label, state(c.Complexity.State, c.Complexity.ReasonCode))
+		if hasStructureCounts(c.Complexity.State) {
+			increased := 0
+			for _, f := range c.Complexity.Deltas {
+				if f.Delta != nil && *f.Delta > 0 {
+					increased++
+				}
 			}
+			fmt.Fprintf(b, ", выросла у %d из %d функций, новых %d",
+				increased, len(c.Complexity.Deltas), len(c.Complexity.NewFunctions))
 		}
-		fmt.Fprintf(b, "- C16 Сложность (%s): %s, выросла у %d из %d функций, новых %d\n",
-			label, state(c.Complexity.State, c.Complexity.ReasonCode), increased, len(c.Complexity.Deltas), len(c.Complexity.NewFunctions))
+		b.WriteByte('\n')
 		fmt.Fprintf(b, "- C17 Новые дубли (%s): %s\n", label, point(c.Clones))
 	}
 	label := state(m.Patch.State, m.Patch.ReasonCode)
@@ -158,6 +168,10 @@ func renderStructure(b *strings.Builder, raw json.RawMessage) {
 		label += fmt.Sprintf(", %.2f%%", 100**m.Patch.Value)
 	}
 	fmt.Fprintf(b, "- Покрытие изменённых строк: %s\n", label)
+}
+
+func hasStructureCounts(s entity.DataState) bool {
+	return s == entity.StateAssessed || s == entity.StateProvisional
 }
 
 func point(p entity.Point) string {

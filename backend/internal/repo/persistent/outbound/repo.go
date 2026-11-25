@@ -44,11 +44,22 @@ func (r *Repo) Start(ctx context.Context, org, connection, revision entity.ID, t
 	return entity.ID(id), err
 }
 
-func (r *Repo) ReserveCreate(ctx context.Context, org, action entity.ID, target entity.PublicationTarget) (bool, error) {
-	tag, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE outbound.target SET pending_create_action_id = $4
-		WHERE organization_id = $1 AND target_kind = $2 AND target_marker = $3 AND pending_create_action_id IS NULL`,
+func (r *Repo) ReserveCreate(ctx context.Context, org, action entity.ID, target entity.PublicationTarget) (externalID string, reserved bool, err error) {
+	conn := postgres.Conn(ctx, r.pool)
+	tag, err := conn.Exec(ctx, `UPDATE outbound.target SET pending_create_action_id = $4
+		WHERE organization_id = $1 AND target_kind = $2 AND target_marker = $3
+		AND pending_create_action_id IS NULL AND external_id IS NULL`,
 		uuid.UUID(org), target.Kind, target.Marker, uuid.UUID(action))
-	return tag.RowsAffected() == 1, err
+	if err != nil {
+		return "", false, err
+	}
+	if tag.RowsAffected() == 1 {
+		return "", true, nil
+	}
+	err = conn.QueryRow(ctx, `SELECT COALESCE(external_id, '') FROM outbound.target
+		WHERE organization_id = $1 AND target_kind = $2 AND target_marker = $3`,
+		uuid.UUID(org), target.Kind, target.Marker).Scan(&externalID)
+	return externalID, false, err
 }
 
 func (r *Repo) Finish(ctx context.Context, org, action, connection, revision entity.ID, target entity.PublicationTarget,

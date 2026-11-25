@@ -28,6 +28,9 @@ type publicationFixture struct {
 	denyLookup               bool
 	delayVisibility          bool
 	pendingCreate            entity.ID
+	publishErr               error
+	savedID                  string
+	lookupMiss               bool
 }
 
 func (*publicationFixture) InOrgTx(ctx context.Context, _ entity.ID, fn func(context.Context) error) error {
@@ -68,12 +71,18 @@ func (f *publicationFixture) FindPublished(_ context.Context, _, _ entity.ID, in
 	if f.denyLookup {
 		return "", &entity.AdapterError{Class: entity.CallSource, Code: entity.SourceAuth}
 	}
+	if f.lookupMiss {
+		return "", nil
+	}
 	return f.note, nil
 }
 
 func (f *publicationFixture) Publish(_ context.Context, _, _ entity.ID, in entity.PublishInput) (entity.Publication, error) {
 	f.calls = append(f.calls, "publish")
 	f.last = in
+	if f.publishErr != nil {
+		return entity.Publication{}, f.publishErr
+	}
 	if f.denied {
 		return entity.Publication{Status: entity.PublicationFailed, ErrorCode: entity.WritePermissionMissing}, nil
 	}
@@ -95,12 +104,12 @@ func (f *publicationFixture) Start(context.Context, entity.ID, entity.ID, entity
 	return entity.ID{byte(len(f.actions))}, nil
 }
 
-func (f *publicationFixture) ReserveCreate(_ context.Context, _, action entity.ID, _ entity.PublicationTarget) (bool, error) {
-	if !f.pendingCreate.IsZero() {
-		return false, nil
+func (f *publicationFixture) ReserveCreate(_ context.Context, _, action entity.ID, _ entity.PublicationTarget) (externalID string, reserved bool, err error) {
+	if f.savedID != "" || !f.pendingCreate.IsZero() {
+		return f.savedID, false, nil
 	}
 	f.pendingCreate = action
-	return true, nil
+	return "", true, nil
 }
 
 func (f *publicationFixture) Finish(_ context.Context, _, action, _, _ entity.ID, _ entity.PublicationTarget, p entity.Publication, _ time.Time) error {
@@ -108,11 +117,15 @@ func (f *publicationFixture) Finish(_ context.Context, _, action, _, _ entity.ID
 	if p.Status == entity.PublicationSucceeded || p.Status != entity.PublicationUnknown && f.pendingCreate == action {
 		f.pendingCreate = entity.ID{}
 	}
+	if p.Status == entity.PublicationSucceeded {
+		f.savedID = p.ExternalID
+	}
 	return nil
 }
 
-func (f *publicationFixture) SaveTarget(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, string, time.Time) error {
+func (f *publicationFixture) SaveTarget(_ context.Context, _, _, _ entity.ID, _ entity.PublicationTarget, id string, _ time.Time) error {
 	f.pendingCreate = entity.ID{}
+	f.savedID = id
 	return nil
 }
 
@@ -180,6 +193,53 @@ func TestPublicationRecoversLostReply(t *testing.T) {
 	if f.creates != 1 || f.last.ExternalID != "1" || f.result.Status != entity.PublicationSucceeded ||
 		f.actions[0].Status != entity.PublicationUnknown || f.audit[1].Details["status"] != entity.PublicationUnknown {
 		t.Fatalf("reconciliation: creates=%d, result=%+v, actions=%+v", f.creates, f.result, f.actions)
+	}
+}
+
+func TestPublicationUsesSavedIDWhenNewBotCannotFindComment(t *testing.T) {
+	t.Parallel()
+	f := newPublicationFixture()
+	if err := f.run(t, false); err != nil {
+		t.Fatal(err)
+	}
+	f.summary.Revision.No++
+	f.summary.Revision.ID = entity.ID{6}
+	f.summary.Revision.Publication = entity.Publication{}
+	f.lookupMiss, f.denied = true, true
+	if err := f.run(t, false); err != nil {
+		t.Fatal(err)
+	}
+	if f.last.ExternalID != "1" || f.creates != 1 || f.savedID != "1" || !f.pendingCreate.IsZero() ||
+		f.result.Status != entity.PublicationFailed || f.result.ErrorCode != entity.WritePermissionMissing ||
+		!slices.Equal(f.calls, []string{"find", "head", "publish", "find", "head", "publish"}) {
+		t.Fatalf("new bot: input=%+v, creates=%d, saved=%q, pending=%v, result=%+v, calls=%v",
+			f.last, f.creates, f.savedID, f.pendingCreate, f.result, f.calls)
+	}
+}
+
+func TestPublicationRetriesCreateAfterConfirmedRefusal(t *testing.T) {
+	t.Parallel()
+	for _, refusal := range []*entity.AdapterError{
+		{Class: entity.CallContractUnsupported},
+		{Class: entity.CallAdapterUnavailable, Code: entity.AdapterKeyRejected},
+		{Class: entity.CallSource, Code: "not_supported"},
+	} {
+		t.Run(refusal.Error(), func(t *testing.T) {
+			f := newPublicationFixture()
+			f.publishErr = refusal
+			err := f.run(t, false)
+			if !errors.Is(err, refusal) || errors.Is(err, errUnknown) || f.result.Status != entity.PublicationFailed ||
+				f.actions[0].Status != entity.PublicationFailed || !f.pendingCreate.IsZero() || f.creates != 0 {
+				t.Fatalf("refused create: err=%v, result=%+v, actions=%v, pending=%v, creates=%d",
+					err, f.result, f.actions, f.pendingCreate, f.creates)
+			}
+
+			f.publishErr = nil
+			if err := f.run(t, false); err != nil || f.creates != 1 || f.result.Status != entity.PublicationSucceeded ||
+				!slices.Equal(f.calls, []string{"find", "head", "publish", "find", "head", "publish"}) {
+				t.Fatalf("create after recovery: err=%v, creates=%d, result=%+v, calls=%v", err, f.creates, f.result, f.calls)
+			}
+		})
 	}
 }
 
@@ -265,6 +325,14 @@ func TestPublicationSuppressesStaleHeadAndRecordsDenial(t *testing.T) {
 			t.Fatalf("denied: result=%+v, revision=%+v", f.result, f.summary.Revision)
 		}
 	})
+	t.Run("permission missing from adapter", func(t *testing.T) {
+		f := newPublicationFixture()
+		f.publishErr = &entity.AdapterError{Class: entity.CallSource, Code: "permission_missing"}
+		if err := f.run(t, false); err != nil || f.result.Status != entity.PublicationFailed ||
+			f.result.ErrorCode != entity.WritePermissionMissing || !f.pendingCreate.IsZero() {
+			t.Fatalf("denied adapter response: err=%v, result=%+v, pending=%v", err, f.result, f.pendingCreate)
+		}
+	})
 }
 
 func TestPublicationRendersPublicSummary(t *testing.T) {
@@ -277,7 +345,7 @@ func TestPublicationRendersPublicSummary(t *testing.T) {
 		{Kind: "not_evaluated", RequiredRight: "none", AnalysisKind: "docs", ReasonCode: "report_missing"},
 		{Kind: "tests", RequiredRight: "none", Value: json.RawMessage(`{"State":"ok","Counts":{"Passed":5,"Failed":1}}`)},
 		{Kind: "ci_attempts", RequiredRight: "none", Value: json.RawMessage(`{"metrics":[{"MetricID":"I03","State":"ok","Numerator":1,"Denominator":2}]}`)},
-		{Kind: "coverage", RequiredRight: "none", Value: json.RawMessage(`{"Patch":{"State":"not_evaluated","ReasonCode":"coverage_line_map_missing","Value":0.5},"Size":{"State":"ok","Total":{"Files":2,"Added":3,"Deleted":4}},"Code":[{"Language":"go","Complexity":{"State":"ok","Deltas":[{"Delta":2}]},"Clones":{"State":"ok","Value":1}}]}`)},
+		{Kind: "coverage", RequiredRight: "none", Value: json.RawMessage(`{"Patch":{"State":"not_evaluated","ReasonCode":"coverage_line_map_missing","Value":0.5},"Size":{"State":"PROVISIONAL","Total":{"Files":2,"Added":3,"Deleted":4}},"Code":[{"Language":"go","Complexity":{"State":"ASSESSED","Deltas":[{"Delta":2}]},"Clones":{"State":"ok","Value":1}},{"Language":"js","Complexity":{"State":"NOT_EVALUATED","ReasonCode":"incomparable_base"}}]}`)},
 	}
 	for i := 1; i <= 4; i++ {
 		id := entity.ID{byte(i)}
@@ -308,15 +376,29 @@ func TestPublicationRendersPublicSummary(t *testing.T) {
 	for _, want := range []string{
 		"Есть закрытые результаты", "Устранено сигналов: 1", "head_sha", "current-head", "revision_no=1&org_slug=demo-org",
 		"rule-5", "rule-6", "rule-7", "rule-8", "rule-9", "main.go:12", "report_missing", "прошло 5",
-		"fail → pass", "C15", "C16", "C17", "coverage_line_map_missing", "50.00%",
+		"fail → pass", "C15", "файлов 2, +3/−4 строк", "C16", "выросла у 1 из 1 функций, новых 0", "C17",
+		"incomparable_base", "coverage_line_map_missing", "50.00%",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in %s", want, text)
 		}
 	}
 	if strings.Contains(text, "secret-") || strings.Contains(text, "rule-10") || strings.Contains(text, "flaky") ||
-		strings.Count(text, "#finding-") != 5 || strings.Index(text, "rule-6") > strings.Index(text, "rule-7") ||
+		strings.Count(text, "выросла у") != 1 || strings.Count(text, "#finding-") != 5 ||
+		strings.Index(text, "rule-6") > strings.Index(text, "rule-7") ||
 		strings.Index(text, "rule-7") > strings.Index(text, "rule-8") {
 		t.Fatalf("unexpected Markdown: %s", text)
+	}
+}
+
+func TestPublicationRendersMissingDiffWithoutSizeCounts(t *testing.T) {
+	t.Parallel()
+	v := entity.SummaryRevision{Items: []entity.SummaryItem{{
+		Kind: "coverage", Value: json.RawMessage(`{"Size":{"State":"NOT_EVALUATED","ReasonCode":"mr_diff_missing",
+			"Total":{"Files":0,"Added":0,"Deleted":0}}}`),
+	}}}
+	text := render("https://craftpulse.example", "demo-org", &v)
+	if !strings.Contains(text, "mr_diff_missing") || strings.Contains(text, "файлов ") {
+		t.Fatalf("unexpected size in Markdown: %s", text)
 	}
 }
