@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -33,11 +34,18 @@ const _githubToken = "fixture-github-secret"
 var githubResponses []byte
 
 type githubFixture struct {
-	responses map[string]json.RawMessage
-	failure   atomic.Int32
-	moved     atomic.Bool
-	reorder   atomic.Bool
-	firstPage atomic.Int32
+	responses           map[string]json.RawMessage
+	failure             atomic.Int32
+	moved               atomic.Bool
+	reorder             atomic.Bool
+	firstPage           atomic.Int32
+	commentCount        atomic.Int32
+	firstComments       atomic.Int32
+	commentPageFailure  atomic.Int32
+	activityUnavailable atomic.Bool
+	activityRefChanged  atomic.Bool
+	firstActivity       atomic.Int32
+	forkUnavailable     atomic.Bool
 }
 
 func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +58,21 @@ func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page == 0 {
 		page = 1
+	}
+	switch path {
+	case "/repositories/9":
+		if f.forkUnavailable.Load() {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	case "/repos/demo/project-8/issues/1/comments":
+		if count := f.commentCount.Load(); count > 0 {
+			f.serveLongComments(w, page, int(count))
+			return
+		}
+	case "/repos/demo/fork/activity":
+		f.serveActivity(w, r)
+		return
 	}
 	if path == "/repos/demo/project-7/pulls" && r.URL.Query().Get("per_page") != "1" {
 		if f.reorder.Load() {
@@ -93,8 +116,83 @@ func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		alias := strings.Replace(path, "/repos/demo/project-7", "/repositories/7", 1)
 		w.Header().Set("Link", "<https://api.github.com"+alias+"?page="+next+">; rel=\"next\"")
 	}
-	if f.moved.Load() && (path == "/repos/demo/project-7/pulls/2" || path == "/repos/demo/project-7/pulls" && page == 2) {
+	if f.moved.Load() && (path == "/repos/demo/project-7/pulls/2" || path == "/repos/demo/project-7/pulls" && page == 2 ||
+		path == "/repos/demo/project-8/pulls/1") {
 		body = json.RawMessage(strings.ReplaceAll(string(body), "2026-11-21T10:05:00+03:00", "2026-11-21T10:07:00+03:00"))
+	}
+	if path == "/repos/demo/project-8/pulls/1" && f.activityRefChanged.Load() {
+		body = json.RawMessage(strings.ReplaceAll(string(body), `"ref": "topic"`, `"ref": "new-topic"`))
+	}
+	_, _ = w.Write(body)
+}
+
+const (
+	_longCommentCount        = 4001
+	_commentContinuationPage = 10
+)
+
+func (f *githubFixture) serveLongComments(w http.ResponseWriter, page, count int) {
+	if page == 1 {
+		f.firstComments.Add(1)
+	}
+	const perPage = 30
+	start, end := (page-1)*perPage+1, min(page*perPage, count)
+	var failure int32
+	if page == _commentContinuationPage {
+		failure = f.commentPageFailure.Load()
+	}
+	switch {
+	case failure >= http.StatusBadRequest:
+		w.WriteHeader(int(failure))
+		return
+	case failure == http.StatusOK:
+		w.Header().Set("Link", fmt.Sprintf(`<https://api.github.com/repositories/8/issues/1/comments?page=%d; rel="next"`, page+1))
+	case end < count:
+		w.Header().Set("Link", fmt.Sprintf(`<https://api.github.com/repositories/8/issues/1/comments?page=%d>; rel="next"`, page+1))
+	}
+	rows := make([]json.RawMessage, 0, end-start+1)
+	for n := start; n <= end; n++ {
+		author := 201
+		if n == _longCommentCount-1 {
+			author = 207
+		}
+		rows = append(rows, json.RawMessage(fmt.Sprintf(`{"id":%d,"user":{"id":%d},"created_at":"2026-11-21T10:04:00+03:00"}`, n, author)))
+	}
+	_ = json.NewEncoder(w).Encode(rows)
+}
+
+func (f *githubFixture) serveActivity(w http.ResponseWriter, r *http.Request) {
+	if f.activityUnavailable.Load() {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	query := r.URL.Query()
+	ref, token := "refs/heads/topic", "page/2="
+	if f.activityRefChanged.Load() {
+		ref, token = "refs/heads/new-topic", "moved/page/2="
+	}
+	if query.Get("ref") != ref || query.Get("activity_type") != "push" || query.Get("direction") != "desc" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	key := r.URL.Path
+	if after := query.Get("after"); after != "" {
+		if after != token {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		key += "?after=page/2="
+	} else {
+		f.firstActivity.Add(1)
+		w.Header().Set("Link", `<https://api.github.com/repositories/9/activity?after=`+url.QueryEscape(token)+`>; rel="next"`)
+	}
+	body, ok := f.responses[key]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if ref != "refs/heads/topic" {
+		body = json.RawMessage(strings.ReplaceAll(string(body), "refs/heads/topic", ref))
 	}
 	_, _ = w.Write(body)
 }
@@ -204,7 +302,7 @@ func TestGitHubAdapterReadsHistoryAndManifest(t *testing.T) {
 			assert.Contains(t, string(record.Payload), `"account_kind":"bot"`)
 		}
 	}
-	assert.Equal(t, 2, kinds["mr_revision"])
+	assert.Equal(t, 1, kinds["mr_revision"])
 	assert.Equal(t, 112, kinds["mr_event"])
 	require.Len(t, p.Manifest.Selection.Truncated, 1)
 	assert.Equal(t, "501", p.Manifest.Selection.Truncated[0].NativeId, "historical base SHA is missing")
@@ -217,14 +315,9 @@ func TestGitHubAdapterReadsHistoryAndManifest(t *testing.T) {
 		require.True(t, ok)
 		var revision envelope.MrRevisionV1
 		require.NoError(t, json.Unmarshal(rec.Payload, &revision))
-		if rec.NativeId == "timeline/305" {
-			assert.Equal(t, strings.Repeat("3", 40), revision.HeadSha)
-			assert.Nil(t, revision.BaseSha)
-		} else {
-			assert.Equal(t, strings.Repeat("1", 40), revision.HeadSha)
-			require.NotNil(t, revision.BaseSha)
-			assert.Equal(t, strings.Repeat("2", 40), *revision.BaseSha)
-		}
+		assert.Equal(t, "timeline/305", rec.NativeId)
+		assert.Equal(t, strings.Repeat("3", 40), revision.HeadSha)
+		assert.Nil(t, revision.BaseSha)
 	}
 	m := e.target.Manifest
 	status, body := e.call(t, http.MethodPost, "manifest", m)
@@ -328,6 +421,7 @@ func TestGitHubAdapterSourceFailures(t *testing.T) {
 func TestGitHubAdapterReconcilesMovedManifestPR(t *testing.T) {
 	t.Parallel()
 	e, f := newGitHubFixture(t)
+	e.probe(t)
 	f.reorder.Store(true)
 	in := e.target.Manifest
 	in.Limit = 100
@@ -350,46 +444,225 @@ func TestGitHubAdapterReconcilesMovedManifestPR(t *testing.T) {
 	assert.Equal(t, "531", got.Items[len(got.Items)-1].NativeId)
 }
 
-func TestGitHubAdapterSnapshotsOrdinaryPushAndDismissedReview(t *testing.T) {
+func TestGitHubAdapterReadsOrdinaryPushesAndDismissedReview(t *testing.T) {
 	t.Parallel()
-	e, _ := newGitHubFixture(t)
+	e, f := newGitHubFixture(t)
+	e.probe(t)
 	in := e.target.Fetch
 	in.Scope.NativeScopeId = "8"
-	// Addressed rereads use the same snapshot and produce the same revisions.
 	revisions := make(map[string]string)
-	for _, keys := range [][]adaptersdk.ObjectKey{{}, {{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "601"}}} {
-		in.ObjectKeys = keys
-		p, result := e.fetch(t, in)
-		assert.Empty(t, p.Manifest.Selection.Truncated)
-		assert.Equal(t, envelope.ManifestCompletenessComplete, p.Manifest.Completeness)
-		var snapshots, reviews int
-		for _, row := range result.Records {
-			rec, ok, err := p.Record(row.No)
-			require.NoError(t, err)
-			require.True(t, ok)
-			require.NotNil(t, row.SourceRevision)
-			assert.Equal(t, row.Hash, *row.SourceRevision)
-			if first, ok := revisions[rec.NativeId]; ok {
-				assert.Equal(t, first, row.Hash)
-			} else {
-				revisions[rec.NativeId] = row.Hash
+	for i := range 2 {
+		if i > 0 {
+			in.ObjectKeys = []adaptersdk.ObjectKey{{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "601"}}
+			f.moved.Store(true)
+		}
+		p, records := githubRecords(t, e, in)
+		require.Len(t, p.Manifest.Selection.Truncated, 1)
+		assert.Equal(t, "601", p.Manifest.Selection.Truncated[0].NativeId)
+		assert.Equal(t, envelope.ManifestCompletenessPartial, p.Manifest.Completeness)
+		var heads, pushes []string
+		var dismissed bool
+		for _, rec := range records {
+			if rec.NativeId == "reviews/408" {
+				dismissed = assert.Contains(t, string(rec.Payload), `"review_state":"dismissed"`)
 			}
-			switch row.Kind {
-			case "mr_revision":
-				snapshots++
+			if !strings.HasPrefix(rec.NativeId, "activity/9/") {
+				continue
+			}
+			key := string(rec.RecordKind) + "/" + rec.NativeId
+			hash, err := envelope.ContentHash(&rec)
+			require.NoError(t, err)
+			require.NotNil(t, rec.SourceRevision)
+			assert.Equal(t, hash, *rec.SourceRevision)
+			if i == 0 {
+				revisions[key] = hash
+			} else {
+				assert.Equal(t, revisions[key], hash)
+			}
+			if rec.RecordKind == "mr_event" {
+				var event envelope.MrEventV2
+				require.NoError(t, json.Unmarshal(rec.Payload, &event))
+				require.NotNil(t, rec.EventTime)
+				require.NotNil(t, event.HeadSha)
+				assert.Equal(t, envelope.MrEventV2EventKindHeadPushed, event.EventKind)
+				pushes = append(pushes, *event.HeadSha+" "+rec.EventTime.Format(time.RFC3339))
+			} else {
 				var revision envelope.MrRevisionV1
 				require.NoError(t, json.Unmarshal(rec.Payload, &revision))
-				assert.Equal(t, strings.Repeat("1", 40), revision.HeadSha)
-				require.NotNil(t, revision.BaseSha)
-				assert.Equal(t, strings.Repeat("2", 40), *revision.BaseSha)
-				assert.Equal(t, "2026-11-21T10:05:00+03:00", revision.CreatedAt.Format(time.RFC3339))
-			case "mr_event":
-				reviews++
-				assert.Equal(t, "reviews/408", rec.NativeId)
-				assert.Contains(t, string(rec.Payload), `"review_state":"dismissed"`)
+				assert.Nil(t, revision.BaseSha)
+				heads = append(heads, revision.HeadSha+" "+revision.CreatedAt.Format(time.RFC3339))
 			}
 		}
-		assert.Equal(t, 1, snapshots)
-		assert.Equal(t, 1, reviews)
+		want := []string{strings.Repeat("1", 40) + " 2026-11-21T10:03:00+03:00", strings.Repeat("3", 40) + " 2026-11-21T10:01:00+03:00"}
+		assert.ElementsMatch(t, want, heads)
+		assert.ElementsMatch(t, want, pushes)
+		assert.True(t, dismissed)
 	}
+
+	f.activityUnavailable.Store(true)
+	p, records := githubRecords(t, e, in)
+	require.Len(t, p.Manifest.Selection.Truncated, 1)
+	assert.Equal(t, "601", p.Manifest.Selection.Truncated[0].NativeId)
+	pr, ok := records["merge_request/601"]
+	require.True(t, ok)
+	assert.Contains(t, string(pr.Payload), strings.Repeat("1", 40))
+	assert.Contains(t, string(pr.Payload), strings.Repeat("2", 40))
+	for _, rec := range records {
+		assert.NotEqual(t, "mr_revision", string(rec.RecordKind))
+	}
+}
+
+func TestGitHubAdapterContinuesLongHistory(t *testing.T) {
+	t.Parallel()
+	e, f := newGitHubFixture(t)
+	e.probe(t)
+	f.commentCount.Store(_longCommentCount)
+	in := e.target.Fetch
+	in.Scope.NativeScopeId = "8"
+	p, first := githubRecords(t, e, in)
+	require.Len(t, p.Manifest.Selection.Truncated, 1)
+	assert.Equal(t, "601", p.Manifest.Selection.Truncated[0].NativeId)
+	assert.True(t, p.Manifest.Selection.End)
+	assert.Nil(t, p.Manifest.Selection.NextCursor)
+	assert.NotContains(t, first, "mr_event/comments/4001")
+
+	in.ObjectKeys = []adaptersdk.ObjectKey{{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "601"}}
+	seen := make(map[string]struct{}, _longCommentCount)
+	for page := 1; ; page++ {
+		require.LessOrEqual(t, page, 25, "history cursor did not reach the end")
+		p, records := githubRecords(t, e, in)
+		for key := range records {
+			if strings.HasPrefix(key, "mr_event/comments/") {
+				require.NotContains(t, seen, key)
+				seen[key] = struct{}{}
+			}
+		}
+		if p.Manifest.Selection.End {
+			assert.Nil(t, p.Manifest.Selection.NextCursor)
+			break
+		}
+		next := p.Manifest.Selection.NextCursor
+		require.NotNil(t, next)
+		assert.Contains(t, next.NativeId, "history/601/")
+		in.Cursor = &adaptersdk.Cursor{ModifiedAt: next.ModifiedAt, NativeId: next.NativeId}
+		if page == 1 {
+			for _, tc := range []struct {
+				status int32
+				code   adaptersdk.AdapterErrorCode
+			}{
+				{http.StatusForbidden, adaptersdk.AdapterErrorCodeAuth},
+				{http.StatusNotFound, adaptersdk.AdapterErrorCodeUnavailable},
+				{http.StatusOK, adaptersdk.AdapterErrorCodeUnavailable}, // Malformed Link.
+			} {
+				f.commentPageFailure.Store(tc.status)
+				status, body := e.call(t, http.MethodPost, "fetch", in)
+				require.GreaterOrEqual(t, status, 400)
+				var failure adaptersdk.AdapterError
+				require.NoError(t, json.Unmarshal(body, &failure))
+				require.Equal(t, tc.code, failure.Code)
+			}
+			f.commentPageFailure.Store(0)
+		}
+	}
+	require.Len(t, seen, _longCommentCount)
+	assert.Contains(t, seen, "mr_event/comments/4001")
+	assert.Equal(t, int32(2), f.firstComments.Load(), "only the initial read and the start of addressed reading visit comments page 1")
+
+	in.SchemaId = adaptersdk.FetchInputSchemaIdAccounts
+	in.Cursor, in.ObjectKeys = nil, []adaptersdk.ObjectKey{}
+	_, accounts := githubRecords(t, e, in)
+	assert.Contains(t, accounts, "account/207", "account collection still reaches the 4,000th comment")
+}
+
+func TestGitHubAdapterContinuesActivityForSameHeadRef(t *testing.T) {
+	t.Parallel()
+	e, f := newGitHubFixture(t)
+	e.probe(t)
+	// Eight pages of comments leave room for exactly one page of repository activity.
+	f.commentCount.Store(240)
+	in := e.target.Fetch
+	in.Scope.NativeScopeId = "8"
+	in.ObjectKeys = []adaptersdk.ObjectKey{{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "601"}}
+	p, first := githubRecords(t, e, in)
+	assert.Contains(t, first, "mr_event/activity/9/91")
+	assert.NotContains(t, first, "mr_event/activity/9/89")
+	next := p.Manifest.Selection.NextCursor
+	require.NotNil(t, next)
+	in.Cursor = &adaptersdk.Cursor{ModifiedAt: next.ModifiedAt, NativeId: next.NativeId}
+
+	f.forkUnavailable.Store(true)
+	status, body := e.call(t, http.MethodPost, "fetch", in)
+	require.GreaterOrEqual(t, status, 400)
+	var failure adaptersdk.AdapterError
+	require.NoError(t, json.Unmarshal(body, &failure))
+	assert.Equal(t, adaptersdk.AdapterErrorCodeUnavailable, failure.Code)
+	f.forkUnavailable.Store(false)
+
+	f.moved.Store(true)
+	p, resumed := githubRecords(t, e, in)
+	assert.True(t, p.Manifest.Selection.End)
+	assert.Equal(t, envelope.ManifestCompletenessPartial, p.Manifest.Completeness)
+	assert.Contains(t, resumed, "mr_event/activity/9/89")
+	assert.NotContains(t, resumed, "mr_event/activity/9/91")
+	assert.NotContains(t, resumed, "mr_event/comments/1")
+	assert.Equal(t, int32(1), f.firstActivity.Load())
+
+	f.moved.Store(false)
+	f.activityRefChanged.Store(true)
+	p, restarted := githubRecords(t, e, in)
+	assert.True(t, p.Manifest.Selection.End)
+	assert.Equal(t, envelope.ManifestCompletenessPartial, p.Manifest.Completeness)
+	assert.Contains(t, restarted, "mr_event/activity/9/91")
+	assert.Contains(t, restarted, "mr_event/activity/9/89")
+	assert.NotContains(t, restarted, "mr_event/comments/1")
+	assert.Equal(t, int32(2), f.firstActivity.Load())
+}
+
+func TestGitHubAdapterKeepsReviewTeamsDistinct(t *testing.T) {
+	t.Parallel()
+	e, _ := newGitHubFixture(t)
+	e.probe(t)
+	in := e.target.Fetch
+	in.Scope.NativeScopeId = "8"
+	_, records := githubRecords(t, e, in)
+	pr, ok := records["merge_request/601"]
+	require.True(t, ok)
+	var snapshot envelope.MergeRequestV1
+	require.NoError(t, json.Unmarshal(pr.Payload, &snapshot))
+	require.NotNil(t, snapshot.ReviewerField)
+	assert.True(t, *snapshot.ReviewerField)
+	require.NotNil(t, snapshot.ReviewerAccountNativeIds)
+	assert.ElementsMatch(t, []string{"201", "team/202"}, *snapshot.ReviewerAccountNativeIds)
+	assert.NotContains(t, records, "mr_event/timeline/413", "an unknown team cannot be replayed as a reviewer")
+	for _, tc := range []struct {
+		id, target string
+		kind       envelope.MrEventV2EventKind
+	}{
+		{"410", "team/201", envelope.MrEventV2EventKindReviewerAssigned},
+		{"411", "team/202", envelope.MrEventV2EventKindReviewerAssigned},
+		{"412", "team/201", envelope.MrEventV2EventKindReviewerRemoved},
+	} {
+		rec, ok := records["mr_event/timeline/"+tc.id]
+		require.True(t, ok)
+		var event envelope.MrEventV2
+		require.NoError(t, json.Unmarshal(rec.Payload, &event))
+		require.NotNil(t, event.TargetAccountNativeId)
+		assert.Equal(t, tc.target, *event.TargetAccountNativeId)
+		assert.Equal(t, tc.kind, event.EventKind)
+	}
+}
+
+func githubRecords(t *testing.T, e gitLabTestEnv, in adaptersdk.FetchInput) (pkg *envelope.Package, records map[string]envelope.Record) {
+	t.Helper()
+	p, result := e.fetch(t, in)
+	records = make(map[string]envelope.Record, len(result.Records))
+	for _, row := range result.Records {
+		rec, ok, err := p.Record(row.No)
+		require.NoError(t, err)
+		require.True(t, ok)
+		key := row.Kind + "/" + rec.NativeId
+		require.NotContains(t, records, key)
+		records[key] = *rec
+	}
+	return p, records
 }

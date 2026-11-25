@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,7 +15,13 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 )
 
-const _historyLimit = 4000
+const (
+	_historyPageBudget   = 12
+	_activityCollection  = 4
+	_accountHistoryLimit = 4000
+)
+
+var errAccountHistoryLimit = errors.New("GitHub account history reached the per-collection item limit")
 
 type endpoint struct{ name, path string }
 
@@ -41,6 +48,12 @@ type history struct {
 	seenDraft       bool
 	seenReady       bool
 	currentRevision bool
+	activityCovered bool
+}
+
+type historyPosition struct {
+	collection int
+	page       string
 }
 
 type historyItem struct {
@@ -51,6 +64,7 @@ type historyItem struct {
 	Actor             account         `json:"actor"`
 	User              account         `json:"user"`
 	RequestedReviewer account         `json:"requested_reviewer"`
+	RequestedTeam     team            `json:"requested_team"`
 	CreatedAt         *time.Time      `json:"created_at"`
 	SubmittedAt       *time.Time      `json:"submitted_at"`
 	CommitID          string          `json:"commit_id"`
@@ -59,51 +73,110 @@ type historyItem struct {
 	PerformedViaApp   json.RawMessage `json:"performed_via_github_app"`
 }
 
-var errHistoryLimit = errors.New("GitHub history reached the per-PR item limit")
+func (s source) readHistory(ctx context.Context, repo repository, h *history, pos historyPosition) (*historyPosition, error) {
+	if h.accountsOnly {
+		return nil, s.readAccountHistory(ctx, repo, h)
+	}
+	endpoints := historyEndpoints(repo, h.pull)
+	seen := make(map[string]struct{})
+	for range _historyPageBudget {
+		var next string
+		var err error
+		if pos.collection < len(endpoints) {
+			next, err = s.readHistoryPage(ctx, endpoints[pos.collection], h, pos.page, seen)
+		} else {
+			next, err = s.readActivityPage(ctx, repo, h, pos.page, seen)
+		}
+		switch {
+		case pos.page == "" && unavailableScope(err):
+			h.truncated = true
+		case err != nil:
+			return nil, err
+		}
+		if next != "" {
+			pos.page = next
+			continue
+		}
+		if pos.collection == 0 && !h.seenDraft && !h.seenReady && !h.pull.Draft && !h.truncated {
+			h.readyAt = &h.pull.OpenedAt
+		}
+		pos = historyPosition{collection: pos.collection + 1}
+		if pos.collection > _activityCollection {
+			// A timeline transition at the current head does not rule out earlier ordinary pushes.
+			h.truncated = h.truncated || !h.currentRevision || !h.activityCovered
+			return nil, nil
+		}
+	}
+	return &pos, nil
+}
 
-func (s source) readHistory(ctx context.Context, repo repository, h *history) error {
+func (s source) readAccountHistory(ctx context.Context, repo repository, h *history) error {
 	for _, ep := range historyEndpoints(repo, h.pull) {
-		seen := make(map[string]struct{})
 		count := 0
+		seen := make(map[string]struct{})
 		err := walk(ctx, s, ep.name, ep.path, url.Values{"per_page": {"30"}}, false, func(item historyItem) error {
 			count++
-			if count > _historyLimit {
-				return errHistoryLimit
+			if count > _accountHistoryLimit {
+				return errAccountHistoryLimit
 			}
-			native := item.NodeID
-			if item.ID > 0 {
-				native = id(item.ID)
-			}
-			if native != "" {
-				if _, ok := seen[native]; ok {
-					h.truncated = true
-					return nil
-				}
-				seen[native] = struct{}{}
-			}
-			return h.add(ep.name, native, item)
+			return h.addHistoryItem(ep.name, item, seen)
 		})
 		switch {
-		case errors.Is(err, errHistoryLimit), unavailableScope(err):
+		case errors.Is(err, errAccountHistoryLimit), unavailableScope(err):
 			h.truncated = true
 		case err != nil:
 			return err
 		}
 	}
-	if !h.seenDraft && !h.seenReady && !h.pull.Draft && !h.truncated {
-		h.readyAt = &h.pull.OpenedAt
+	return nil
+}
+
+func (s source) readHistoryPage(ctx context.Context, ep endpoint, h *history, page string, seen map[string]struct{}) (string, error) {
+	query := url.Values{"per_page": {"30"}}
+	current := 1
+	if page != "" {
+		query.Set("page", page)
+		current, _ = strconv.Atoi(page) // The continuation cursor was validated at the boundary.
 	}
-	if h.accountsOnly || h.currentRevision {
+	links, err := arrayPage(ctx, s, ep.name, ep.path, query, current > 1, func(item historyItem) error {
+		return h.addHistoryItem(ep.name, item, seen)
+	})
+	if err != nil {
+		return "", err
+	}
+	next, err := nextPage(links, current)
+	if next == 0 {
+		return "", err
+	}
+	return strconv.Itoa(next), nil
+}
+
+func (h *history) addHistoryItem(collection string, item historyItem, seen map[string]struct{}) error {
+	native := historyID(item.ID, item.NodeID)
+	if h.duplicate(seen, collection, native) {
 		return nil
 	}
-	// Ordinary pushes need not appear in the issue timeline. The PR details
-	// provide a snapshot at updated_at, without proving a push time.
-	head, base := h.pull.Head.SHA, h.pull.Base.SHA
-	if !validSHA(base) {
-		h.truncated = true
-		base = ""
+	return h.add(collection, native, item)
+}
+
+func historyID(n int64, node string) string {
+	if n > 0 {
+		return id(n)
 	}
-	return h.revision("snapshot/"+head+"/"+base, head, optional(base), h.pull.UpdatedAt)
+	return node
+}
+
+func (h *history) duplicate(seen map[string]struct{}, collection, native string) bool {
+	if native == "" {
+		return false
+	}
+	key := collection + "/" + native
+	_, exists := seen[key]
+	if exists {
+		h.truncated = true
+	}
+	seen[key] = struct{}{}
+	return exists
 }
 
 var timelineKinds = map[string]envelope.MrEventV2EventKind{
@@ -127,8 +200,17 @@ func (h *history) add(collection, native string, item historyItem) error {
 			return nil
 		}
 		actor = item.Actor
-		target = item.RequestedReviewer.nativeID()
-		h.remember(item.RequestedReviewer)
+		if kind == envelope.MrEventV2EventKindReviewerAssigned || kind == envelope.MrEventV2EventKindReviewerRemoved {
+			target = item.RequestedReviewer.nativeID()
+			h.remember(item.RequestedReviewer)
+			if target == nil {
+				target = item.RequestedTeam.nativeID()
+			}
+			if target == nil {
+				h.truncated = true
+				return nil // An unknown target cannot be matched to a later removal or assignment.
+			}
+		}
 	case "reviews":
 		switch state := envelope.MrEventV2ReviewState(strings.ToLower(item.State)); state {
 		case "pending":
@@ -205,12 +287,16 @@ func (h *history) add(collection, native string, item historyItem) error {
 		envelope.MrEventV2EventKindReviewerRemoved:
 		// These events require no additional history bookkeeping.
 	}
-	rec := object("mr_event", id(h.pull.ID), key, h.observed)
-	rec.PayloadSchema, rec.RecordClass, rec.EventTime = "mr_event/2", envelope.RecordRecordClassEvent, at
-	return writeRecord(h.page, rec, envelope.MrEventV2{
+	return h.event(key, at, envelope.MrEventV2{
 		MrNativeId: id(h.pull.ID), EventKind: kind, ActorAccountNativeId: actor.nativeID(),
 		TargetAccountNativeId: target, HeadSha: head, ReviewState: review, SystemNote: &system, EventTimeUnknown: &unknown,
 	})
+}
+
+func (h *history) event(key string, at *time.Time, payload envelope.MrEventV2) error {
+	rec := object("mr_event", id(h.pull.ID), key, h.observed)
+	rec.PayloadSchema, rec.RecordClass, rec.EventTime = "mr_event/2", envelope.RecordRecordClassEvent, at
+	return writeRecord(h.page, rec, payload)
 }
 
 func (h *history) revision(key, head string, base *string, at time.Time) error {
@@ -244,7 +330,7 @@ func (h *history) remember(u account) {
 		return
 	}
 	old, exists := h.accounts[u.ID]
-	if !exists && len(h.accounts) >= _historyLimit {
+	if h.accountsOnly && !exists && len(h.accounts) >= _accountHistoryLimit {
 		h.truncated = true
 		return
 	}

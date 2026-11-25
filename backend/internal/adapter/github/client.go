@@ -55,43 +55,43 @@ func (s source) get(ctx context.Context, operation, path string, dst any) error 
 }
 
 func nextPage(links []string, current int) (int, error) {
+	query, err := nextQuery(links)
+	if err != nil || query == nil {
+		return 0, err
+	}
+	n, err := strconv.Atoi(query.Get("page"))
+	if err != nil || n <= current || n-current != 1 {
+		return 0, adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "invalid GitHub next page")
+	}
+	return n, nil
+}
+
+func nextQuery(links []string) (url.Values, error) {
 	for _, header := range links {
 		for _, link := range strings.Split(header, ",") {
 			target, params, ok := strings.Cut(strings.TrimSpace(link), ">")
-			if !ok || !strings.Contains(params, `; rel="next"`) {
+			if !ok && strings.Contains(target, `; rel="next"`) {
+				return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "invalid GitHub next page")
+			}
+			if !strings.Contains(params, `; rel="next"`) {
 				continue
 			}
 			u, err := url.Parse(strings.TrimPrefix(target, "<"))
 			if err == nil && strings.HasPrefix(target, "<") && u.Scheme == "https" && u.Host == "api.github.com" &&
 				u.User == nil && u.Fragment == "" {
-				n, parseErr := strconv.Atoi(u.Query().Get("page"))
-				if parseErr == nil && n > current && n-current == 1 {
-					// Keep the original endpoint. GitHub can use numeric repository aliases in Link.
-					return n, nil
-				}
+				// Keep the original endpoint. GitHub can use numeric repository aliases in Link.
+				return u.Query(), nil
 			}
-			return 0, adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "invalid GitHub next page")
+			return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "invalid GitHub next page")
 		}
 	}
-	return 0, nil
+	return nil, nil
 }
 
 func walk[T any](ctx context.Context, s source, operation, path string, query url.Values, firstOnly bool, visit func(T) error) error {
-	raw := query.Encode()
 	for current := 1; ; {
-		resp, err := s.request(ctx, operation, path+"?"+raw) //nolint:bodyclose // DecodeJSONArray owns the body
+		links, err := arrayPage(ctx, s, operation, path, query, current > 1, visit)
 		if err != nil {
-			if !firstOnly && current > 1 && hasCode(err, adaptersdk.AdapterErrorCodeNotFound) {
-				return adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "GitHub next page is unavailable")
-			}
-			return err
-		}
-		links := resp.Header.Values("Link")
-		if err := adaptersdk.DecodeJSONArray(resp, visit); err != nil {
-			// A truncated transfer may look like incomplete JSON to the SDK.
-			if current > 1 && (errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF)) {
-				return adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "GitHub next page was cut short")
-			}
 			return err
 		}
 		if firstOnly {
@@ -102,9 +102,24 @@ func walk[T any](ctx context.Context, s source, operation, path string, query ur
 			return err
 		}
 		query.Set("page", strconv.Itoa(next))
-		raw = query.Encode()
 		current = next
 	}
+}
+
+func arrayPage[T any](ctx context.Context, s source, operation, path string, query url.Values, continuation bool, visit func(T) error) ([]string, error) {
+	resp, err := s.request(ctx, operation, path+"?"+query.Encode()) //nolint:bodyclose // DecodeJSONArray owns the body
+	if err != nil {
+		if continuation && hasCode(err, adaptersdk.AdapterErrorCodeNotFound) {
+			return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "GitHub next page is unavailable")
+		}
+		return nil, err
+	}
+	links := resp.Header.Values("Link")
+	err = adaptersdk.DecodeJSONArray(resp, visit)
+	if continuation && (errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF)) {
+		return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "GitHub next page was cut short")
+	}
+	return links, err
 }
 
 func hasCode(err error, code adaptersdk.AdapterErrorCode) bool {

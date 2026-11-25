@@ -13,6 +13,69 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const aPIKeyProjects = `-- name: APIKeyProjects :many
+SELECT g.project_id::uuid AS project_id
+FROM auth.api_key_grant g
+WHERE g.organization_id = $1 AND g.api_key_id = $2 AND g.project_id IS NOT NULL
+UNION
+SELECT t.project_id
+FROM auth.api_key_grant g
+JOIN org.team_project t ON t.organization_id = g.organization_id AND t.team_id = g.team_id
+WHERE g.organization_id = $1 AND g.api_key_id = $2
+    AND t.valid @> $3::timestamptz AND t.superseded_seq IS NULL
+`
+
+type APIKeyProjectsParams struct {
+	OrganizationID uuid.UUID
+	KeyID          uuid.UUID
+	At             time.Time
+}
+
+func (q *Queries) APIKeyProjects(ctx context.Context, arg APIKeyProjectsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, aPIKeyProjects, arg.OrganizationID, arg.KeyID, arg.At)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var project_id uuid.UUID
+		if err := rows.Scan(&project_id); err != nil {
+			return nil, err
+		}
+		items = append(items, project_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const activeAPIKeyByHash = `-- name: ActiveAPIKeyByHash :one
+SELECT organization_id, id, owner_user_id
+FROM auth.api_key
+WHERE token_hash = $1 AND revoked_at IS NULL
+    AND created_at <= $2::timestamptz AND expires_at > $2::timestamptz
+`
+
+type ActiveAPIKeyByHashParams struct {
+	TokenHash []byte
+	At        time.Time
+}
+
+type ActiveAPIKeyByHashRow struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	OwnerUserID    uuid.UUID
+}
+
+func (q *Queries) ActiveAPIKeyByHash(ctx context.Context, arg ActiveAPIKeyByHashParams) (ActiveAPIKeyByHashRow, error) {
+	row := q.db.QueryRow(ctx, activeAPIKeyByHash, arg.TokenHash, arg.At)
+	var i ActiveAPIKeyByHashRow
+	err := row.Scan(&i.OrganizationID, &i.ID, &i.OwnerUserID)
+	return i, err
+}
+
 const createLoginAttempt = `-- name: CreateLoginAttempt :exec
 INSERT INTO auth.login_attempt (cookie_hash, organization_id, state, nonce, pkce_verifier, issuer, return_path, created_at, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -519,6 +582,21 @@ func (q *Queries) PurgeSessions(ctx context.Context, arg PurgeSessionsParams) (i
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const revokeExposedAPIKey = `-- name: RevokeExposedAPIKey :exec
+UPDATE auth.api_key SET revoked_at = $1::timestamptz
+WHERE token_hash = $2 AND revoked_at IS NULL
+`
+
+type RevokeExposedAPIKeyParams struct {
+	At        time.Time
+	TokenHash []byte
+}
+
+func (q *Queries) RevokeExposedAPIKey(ctx context.Context, arg RevokeExposedAPIKeyParams) error {
+	_, err := q.db.Exec(ctx, revokeExposedAPIKey, arg.At, arg.TokenHash)
+	return err
 }
 
 const revokeUploadToken = `-- name: RevokeUploadToken :execrows

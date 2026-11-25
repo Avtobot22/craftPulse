@@ -31,16 +31,29 @@ type branch struct {
 
 type pull struct {
 	coordinate
-	Title     string     `json:"title"`
-	State     string     `json:"state"`
-	Draft     bool       `json:"draft"`
-	User      account    `json:"user"`
-	Base      branch     `json:"base"`
-	Head      branch     `json:"head"`
-	Reviewers *[]account `json:"requested_reviewers"`
-	OpenedAt  time.Time  `json:"created_at"`
-	MergedAt  *time.Time `json:"merged_at"`
-	ClosedAt  *time.Time `json:"closed_at"`
+	Title          string     `json:"title"`
+	State          string     `json:"state"`
+	Draft          bool       `json:"draft"`
+	User           account    `json:"user"`
+	Base           branch     `json:"base"`
+	Head           branch     `json:"head"`
+	Reviewers      *[]account `json:"requested_reviewers"`
+	RequestedTeams *[]team    `json:"requested_teams"`
+	OpenedAt       time.Time  `json:"created_at"`
+	MergedAt       *time.Time `json:"merged_at"`
+	ClosedAt       *time.Time `json:"closed_at"`
+}
+
+type team struct {
+	ID int64 `json:"id"`
+}
+
+func (t team) nativeID() *string {
+	if t.ID <= 0 {
+		return nil
+	}
+	// Team and user IDs can overlap. The canonical references need distinct keys.
+	return optional("team/" + id(t.ID))
 }
 
 func (p pull) validate(repoID int64) error {
@@ -160,6 +173,10 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 	if in.SchemaId == adaptersdk.FetchInputSchemaIdAccounts && len(in.ObjectKeys) != 0 {
 		return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeNotSupported, "GitHub accounts are read within the repository")
 	}
+	resume, err := parseHistoryCursor(in)
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, adaptersdk.SourceTimeout)
 	defer cancel()
 	s, err := a.bound(ctx, call)
@@ -184,14 +201,30 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 		}
 	}
 	limit := min(in.Limit, _pullPageLimit)
+	writtenAccounts := make(map[int64]bool)
+	if resume != nil {
+		if err := s.fetchPull(ctx, repo, resume.pull, in, m, page, writtenAccounts, resume); err != nil {
+			return nil, err
+		}
+		if m.Selection.End && slices.ContainsFunc(in.ObjectKeys, func(key adaptersdk.ObjectKey) bool {
+			n, ok := numeric(key.NativeId)
+			return ok && n > resume.pull.ID
+		}) {
+			m.Selection.End = false
+			m.Selection.NextCursor = &envelope.Cursor{ModifiedAt: resume.pull.UpdatedAt, NativeId: id(resume.pull.ID)}
+		}
+		return m, nil
+	}
 	items, err := s.selectPulls(ctx, repo, in.Period, in.Cursor, in.ObjectKeys, limit+1, nil)
 	if err != nil {
 		return nil, err
 	}
-	writtenAccounts := make(map[int64]bool)
 	for _, item := range items[:min(len(items), limit)] {
-		if err := s.fetchPull(ctx, repo, item, in, m, page, writtenAccounts); err != nil {
+		if err := s.fetchPull(ctx, repo, item, in, m, page, writtenAccounts, nil); err != nil {
 			return nil, err
+		}
+		if m.Selection.NextCursor != nil {
+			return m, nil
 		}
 	}
 	if len(items) > limit {
@@ -202,7 +235,9 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 	return m, nil
 }
 
-func (s source) fetchPull(ctx context.Context, repo repository, item coordinate, in adaptersdk.FetchInput, m *envelope.Manifest, page *adaptersdk.Page, writtenAccounts map[int64]bool) error {
+func (s source) fetchPull(ctx context.Context, repo repository, item coordinate, in adaptersdk.FetchInput,
+	m *envelope.Manifest, page *adaptersdk.Page, writtenAccounts map[int64]bool, resume *historyCursor,
+) error {
 	var p pull
 	path := repo.path() + "/pulls/" + id(int64(item.Number))
 	if err := s.get(ctx, "pull", path, &p); err != nil {
@@ -219,35 +254,86 @@ func (s source) fetchPull(ctx context.Context, repo repository, item coordinate,
 	}
 	accountsOnly := in.SchemaId == adaptersdk.FetchInputSchemaIdAccounts
 	h := history{pull: p, page: page, observed: m.CreatedAt, accounts: make(map[int64]account), accountsOnly: accountsOnly}
-	h.remember(p.User)
-	reviewers := make([]string, 0)
-	if p.Reviewers != nil {
-		for _, reviewer := range *p.Reviewers {
-			if reviewer.ID <= 0 {
-				continue
-			}
-			h.remember(reviewer)
-			reviewers = append(reviewers, id(reviewer.ID))
+	var pos historyPosition
+	var reviewers *[]string
+	if resume == nil {
+		h.remember(p.User)
+		reviewers = h.reviewers()
+	} else {
+		pos = resume.position
+		h.truncated = !item.UpdatedAt.Equal(p.UpdatedAt)
+		if resume.activityRef != "" && resume.activityRef != activityRefKey(p.Head) {
+			pos.page = ""
+			h.truncated = true
 		}
+		h.currentRevision = resume.currentRevision && !h.truncated
 	}
-	slices.Sort(reviewers)
-	reviewers = slices.Compact(reviewers)
-	if err := s.readHistory(ctx, repo, &h); err != nil {
+	next, err := s.readHistory(ctx, repo, &h, pos)
+	if err != nil {
 		return err
 	}
 	if err := s.writeAccounts(ctx, &h, writtenAccounts); err != nil {
 		return err
 	}
-	if accountsOnly {
-		if h.truncated {
-			m.Completeness = envelope.ManifestCompletenessPartial
+	if next != nil {
+		if len(in.ObjectKeys) == 0 {
+			h.truncated = true
+		} else {
+			m.Selection.End = false
+			m.Selection.NextCursor = historyNextCursor(p, *next, h.currentRevision)
 		}
-		return nil
 	}
 	if h.truncated {
 		m.Completeness = envelope.ManifestCompletenessPartial
-		m.Selection.Truncated = append(m.Selection.Truncated, envelope.TruncatedHistory{RecordKind: "merge_request", NativeId: id(p.ID)})
+		if !accountsOnly {
+			m.Selection.Truncated = append(m.Selection.Truncated, envelope.TruncatedHistory{
+				RecordKind: envelope.TruncatedHistoryRecordKindMergeRequest, NativeId: id(p.ID),
+			})
+		}
 	}
+	if accountsOnly || resume != nil {
+		return nil
+	}
+	return h.writePull(repo.ID, reviewers)
+}
+
+func (h *history) reviewers() *[]string {
+	var ids []string
+	complete := h.pull.Reviewers != nil && h.pull.RequestedTeams != nil
+	if h.pull.Reviewers != nil {
+		for _, reviewer := range *h.pull.Reviewers {
+			h.remember(reviewer)
+			native := reviewer.nativeID()
+			if native == nil {
+				complete = false
+				continue
+			}
+			ids = append(ids, *native)
+		}
+	}
+	if h.pull.RequestedTeams != nil {
+		for _, reviewer := range *h.pull.RequestedTeams {
+			native := reviewer.nativeID()
+			if native == nil {
+				complete = false
+				continue
+			}
+			ids = append(ids, *native)
+		}
+	}
+	if !complete {
+		return nil
+	}
+	if len(ids) == 0 {
+		ids = []string{}
+	}
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	return &ids
+}
+
+func (h *history) writePull(repoID int64, reviewers *[]string) error {
+	p := h.pull
 	state := envelope.MergeRequestV1State(p.State)
 	if p.MergedAt != nil {
 		state = envelope.MergeRequestV1StateMerged
@@ -255,15 +341,13 @@ func (s source) fetchPull(ctx context.Context, repo repository, item coordinate,
 	if !state.Valid() {
 		return adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidResponse, "unknown GitHub pull request state")
 	}
-	reviewerField := p.Reviewers != nil
+	reviewerField := reviewers != nil
 	record := envelope.MergeRequestV1{
-		ProjectNativeId: id(repo.ID), Iid: &p.Number, Title: optional(p.Title), State: state, Draft: p.Draft,
+		ProjectNativeId: id(repoID), Iid: &p.Number, Title: optional(p.Title), State: state, Draft: p.Draft,
 		AuthorAccountNativeId: p.User.nativeID(), SourceBranch: p.Head.Ref, TargetBranch: p.Base.Ref,
 		HeadSha: p.Head.SHA, BaseSha: optional(p.Base.SHA), OpenedAt: p.OpenedAt, ReadyAt: h.readyAt,
-		ClosedAt: p.ClosedAt, MergedAt: p.MergedAt, UpdatedAt: &p.UpdatedAt, ReviewerField: &reviewerField,
+		ClosedAt: p.ClosedAt, MergedAt: p.MergedAt, UpdatedAt: &p.UpdatedAt,
+		ReviewerField: &reviewerField, ReviewerAccountNativeIds: reviewers,
 	}
-	if reviewerField {
-		record.ReviewerAccountNativeIds = &reviewers
-	}
-	return writeRecord(page, object("merge_request", "", id(p.ID), m.CreatedAt), record)
+	return writeRecord(h.page, object("merge_request", "", id(p.ID), h.observed), record)
 }
