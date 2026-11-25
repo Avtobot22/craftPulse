@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -23,6 +25,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/change"
+	"github.com/Avtobot22/craftPulse/backend/migrations"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
@@ -88,10 +91,35 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 		})
 		return pack(t, m, r)
 	}
+	// The CI step can finish before GitLab has collected either the MR or its pipeline.
+	archive := ciPackage(t, func(files map[string][]byte) {
+		for _, name := range []string{envelope.ScanManifestName, envelope.RecordsName} {
+			files[name] = bytes.ReplaceAll(files[name], []byte("d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"), []byte(h1))
+		}
+	})
+	uploaded := e.uploadCI(t, e.token.Value, archive)
+	require.Equal(t, http.StatusAccepted, uploaded.Code, uploaded.Body.String())
+	receipt := decode[acceptedBody](t, uploaded).ReceiptID
+	require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(receipt)))
+	e.drain(t)
+	firstReceipt := e.readCI(t, receipt, e.token.Value)
+	require.Equal(t, "accepted", firstReceipt.Status)
+	assert.Nil(t, firstReceipt.ResultURL)
+
+	// Even a collected pipeline cannot replace an explicit MR target from the package.
+	pipelineManifest := ciManifest("42")
+	pipelineManifest.Source.InstanceKey = _checksInstance
+	e.submit(t, pack(t, pipelineManifest, mrRecord(t, "ci_run", "5001", "", "v1", envelope.CiRunV1{
+		ProjectNativeId: "42", RefName: "feature", Sha: h1, MrNativeId: new("9001"),
+		NativeStatus: "running", Outcome: "running", StartedAt: new(e.clock.Now()),
+	})))
+	assert.Nil(t, e.readCI(t, receipt, e.token.Value).ResultURL)
+
 	e.clock.Advance(time.Second)
 	first := e.submit(t, mrPage(h1, "v1", e.clock.Now()))
 	require.NotNil(t, first.SourceInstanceID)
 	mr := mrID(t, e.normalized, "9001")
+	assert.Nil(t, e.readCI(t, receipt, e.token.Value).ResultURL)
 	job := entity.ChangeSummaryJob{OrganizationID: e.orgID, MRID: mr}
 	source := &summaryTestAdapter{source: entity.AreaSource{
 		InstanceID: *first.SourceInstanceID, Kind: entity.ScopeRepository, NativeScopeID: "42",
@@ -189,16 +217,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Zero(t, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish'`))
 	onFetch = func() {}
 
-	// Keep the URL emitted for head A before advancing normalize to head B.
-	archive := ciPackage(t, func(files map[string][]byte) {
-		files[envelope.ScanManifestName] = bytes.ReplaceAll(files[envelope.ScanManifestName],
-			[]byte("d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"), []byte(h1))
-	})
-	uploaded := e.uploadCI(t, e.token.Value, archive)
-	require.Equal(t, http.StatusAccepted, uploaded.Code, uploaded.Body.String())
-	receipt := decode[acceptedBody](t, uploaded).ReceiptID
-	require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(receipt)))
-	e.drain(t)
+	// Head A remains the target as the MR advances.
 	link := e.readCI(t, receipt, e.token.Value).ResultURL
 	require.NotNil(t, link)
 	assert.Equal(t, "/merge-requests/"+mr.String()+"/summary?head_sha="+h1, *link)
@@ -320,6 +339,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, new("comment-1"), published.ExternalId)
 	assert.NotNil(t, published.PublishedAt)
 	old := read(security, "?revision_no=1")
+	assert.Equal(t, &base, old.BaseSha)
 	assert.Equal(t, h1, old.HeadSha)
 	assert.Equal(t, "stale", string(old.Status))
 	assert.Equal(t, "not_requested", string(old.Publication.Status))
@@ -342,6 +362,23 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assertItem(checkReady(h3, "running"), "newly_observed", "", 1)
 	current := read(security, "")
 	assert.Nil(t, current.BaseSha)
+	// A pre-upgrade revision stored the source base SHA even without comparison evidence.
+	db := stdlib.OpenDBFromPool(e.owner)
+	t.Cleanup(func() { _ = db.Close() })
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.Core())
+	require.NoError(t, err)
+	_, err = provider.DownTo(t.Context(), 57)
+	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), `UPDATE change.summary_revision SET base_sha = $1, status = 'superseded'
+		WHERE organization_id = $2 AND id = $3`, base, uuid.UUID(e.orgID), current.Id)
+	require.NoError(t, err)
+	_, err = provider.Up(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, old.BaseSha, read(security, "?revision_no=1").BaseSha)
+	legacy := read(security, fmt.Sprintf("?revision_no=%d", current.RevisionNo))
+	assert.Equal(t, current.Id, legacy.Id)
+	assert.Equal(t, "superseded", string(legacy.Status))
+	assert.Nil(t, legacy.BaseSha)
 	require.NotNil(t, current.LastGood)
 	assert.Equal(t, h2, current.LastGood.HeadSha)
 	tx := persistent.NewTransactor(e.app)

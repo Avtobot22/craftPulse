@@ -53,10 +53,10 @@ func (u *UseCase) RejectRecords(ctx context.Context, orgID, receiptID entity.ID,
 	})
 }
 
-// RecordCIResult records the normalized target in the transaction of the batch.
-func (u *UseCase) RecordCIResult(ctx context.Context, org, receipt entity.ID, pipeline, mr *entity.ID, head string, pending bool) error {
+// RecordCIResult records the package coordinates in the transaction of the batch.
+func (u *UseCase) RecordCIResult(ctx context.Context, org, receipt entity.ID, target *entity.CIResultCoordinates, pending bool) error {
 	return u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
-		return u.d.Repo.SaveCIResult(ctx, org, receipt, pipeline, mr, head, pending)
+		return u.d.Repo.SaveCIResult(ctx, org, receipt, target, pending)
 	})
 }
 
@@ -75,17 +75,9 @@ func (u *UseCase) Receipt(ctx context.Context, s entity.Subject, id entity.ID) (
 			return err
 		}
 		if rc.Channel == entity.ChannelCI {
-			pending, pipeline, mr, head, err := u.d.Repo.ReadCIResult(ctx, s.OrganizationID, id)
+			rc.CIResultPending, rc.CIResult, err = u.d.Repo.ReadCIResult(ctx, s.OrganizationID, id)
 			if err != nil {
 				return err
-			}
-			rc.CIResultPending = pending
-			// These routes apply session access checks when opened.
-			switch {
-			case !pending && mr != nil && head != "":
-				rc.ResultURL = "/merge-requests/" + mr.String() + "/summary?head_sha=" + head
-			case !pending && pipeline != nil:
-				rc.ResultURL = "/pipelines/" + pipeline.String()
 			}
 		}
 		receipts := []entity.Receipt{rc}

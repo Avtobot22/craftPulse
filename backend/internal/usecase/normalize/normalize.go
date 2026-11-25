@@ -21,7 +21,7 @@ const _partSize = 200
 
 // Ingest is the ingest module: a receipt with its accepted records, and the records normalize could not read.
 type Ingest interface {
-	RecordCIResult(context.Context, entity.ID, entity.ID, *entity.ID, *entity.ID, string, bool) error
+	RecordCIResult(context.Context, entity.ID, entity.ID, *entity.CIResultCoordinates, bool) error
 	Accepted(ctx context.Context, orgID, receiptID entity.ID) (entity.Receipt, []entity.IngestRecord, error)
 	RejectRecords(ctx context.Context, orgID, receiptID entity.ID, reasons map[int]string) error
 }
@@ -140,7 +140,7 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 			return complete(ctx)
 		}
 		if rc.Channel == entity.ChannelCI {
-			if err := u.d.Ingest.RecordCIResult(ctx, org, rc.ID, nil, nil, "", false); err != nil {
+			if err := u.d.Ingest.RecordCIResult(ctx, org, rc.ID, nil, false); err != nil {
 				return err
 			}
 		}

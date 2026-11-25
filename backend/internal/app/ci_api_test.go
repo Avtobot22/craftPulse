@@ -560,7 +560,7 @@ func TestCIUpload_WorkerTransactionRetry(t *testing.T) {
 	assert.Equal(t, 1.0, ciMetric(t, reg, "accepted", ""))
 }
 
-func TestCIUpload_ResultLinks(t *testing.T) {
+func TestCIUpload_ResultLinkWaitsForPipelineVersion(t *testing.T) {
 	t.Parallel()
 	e := newCIEnv(t)
 	orgs, _, err := newOrgAccess(e.app, e.clock, e.connect, nil)
@@ -569,36 +569,31 @@ func TestCIUpload_ResultLinks(t *testing.T) {
 	require.NoError(t, err)
 	n := &normalizeEnv{ingestEnv: e.ingestEnv, norm: norm}
 	const sha = "d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"
-	manifest := mrManifest("42")
+	data := ciPackage(t, func(files map[string][]byte) {
+		files[envelope.ScanManifestName] = bytes.ReplaceAll(files[envelope.ScanManifestName],
+			[]byte(`"mr_native_id": "9001"`), []byte(`"mr_native_id": null`))
+	})
+	out := e.uploadCI(t, e.token.Value, data)
+	require.Equal(t, http.StatusAccepted, out.Code, out.Body.String())
+	id := decode[acceptedBody](t, out).ReceiptID
+	require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(id)))
+	waiting := e.readCI(t, id, e.token.Value)
+	assert.NotNil(t, waiting.RetryAfter)
+	assert.Nil(t, waiting.ResultURL)
+
+	n.drain(t)
+	pipelineID := runID(t, n, "5001")
+	result := e.readCI(t, id, e.token.Value)
+	assert.Nil(t, result.RetryAfter)
+	assert.Nil(t, result.ResultURL)
+
+	manifest := ciManifest("42")
 	manifest.Source.InstanceKey = _checksInstance
-	e.imported(t, e.admin, pack(t, manifest, mrRecord(t, "merge_request", "9001", "", "v1", envelope.MergeRequestV1{
-		ProjectNativeId: "42", Iid: new(7), State: "open", HeadSha: sha,
-		SourceBranch: "feature", TargetBranch: "main", OpenedAt: e.clock.Now(),
+	e.imported(t, e.admin, pack(t, manifest, mrRecord(t, "ci_run", "5001", "", "v1", envelope.CiRunV1{
+		ProjectNativeId: "42", RefName: "main", Sha: sha, NativeStatus: "success", Outcome: "success",
+		StartedAt: new(e.clock.Now()), FinishedAt: new(e.clock.Now()),
 	})))
 	n.drain(t)
-	mr := mrID(t, n, "9001")
-	for _, withMR := range []bool{true, false} {
-		data := ciPackage(t, func(files map[string][]byte) {
-			if !withMR {
-				files[envelope.ScanManifestName] = bytes.ReplaceAll(files[envelope.ScanManifestName],
-					[]byte(`"mr_native_id": "9001"`), []byte(`"mr_native_id": null`))
-			}
-		})
-		out := e.uploadCI(t, e.token.Value, data)
-		require.Equal(t, http.StatusAccepted, out.Code, out.Body.String())
-		id := decode[acceptedBody](t, out).ReceiptID
-		require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(id)))
-		waiting := e.readCI(t, id, e.token.Value)
-		assert.NotNil(t, waiting.RetryAfter)
-		assert.Nil(t, waiting.ResultURL)
-		n.drain(t)
-		result := e.readCI(t, id, e.token.Value)
-		assert.Nil(t, result.RetryAfter)
-		require.NotNil(t, result.ResultURL)
-		want := "/pipelines/" + runID(t, n, "5001").String()
-		if withMR {
-			want = "/merge-requests/" + mr.String() + "/summary?head_sha=" + sha
-		}
-		assert.Equal(t, want, *result.ResultURL)
-	}
+	result = e.readCI(t, id, e.token.Value)
+	assert.Equal(t, new("/pipelines/"+pipelineID.String()), result.ResultURL)
 }

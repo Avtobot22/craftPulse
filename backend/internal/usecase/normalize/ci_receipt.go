@@ -50,34 +50,11 @@ func (w *writer) recordCIResult(ctx context.Context, in *input) error {
 	if run.DeletedAt != nil || (run.CurrentAreaID != nil && *run.CurrentAreaID != area) {
 		return nil
 	}
-	versions, err := w.u.d.Repo.CurrentCIRunVersions(ctx, w.org, []entity.ID{run.ID})
-	if err != nil {
-		return err
-	}
-	var mr *entity.ID
 	head := target.sha
-	if len(versions) > 0 {
-		if versions[0].AreaID != area {
-			return nil
-		}
-		if target.sha == "" || versions[0].SHA == target.sha {
-			mr = versions[0].MRID
-			head = versions[0].SHA
-		}
-	}
-	if mr == nil && target.mr != "" && target.sha != "" {
-		found, err := w.u.d.Repo.MatchRunMRs(ctx, w.org, in.instance, []entity.RunMRMatch{
-			{MRNativeID: target.mr, AreaID: area, SHA: target.sha},
-		})
-		if err != nil {
-			return err
-		}
-		if id, ok := found[0]; ok {
-			mr = &id
-		}
-	}
 	if !entity.ValidGitSHA(head) {
-		mr, head = nil, ""
+		head = ""
 	}
-	return w.u.d.Ingest.RecordCIResult(ctx, w.org, in.receipt, &run.ID, mr, head, true)
+	return w.u.d.Ingest.RecordCIResult(ctx, w.org, in.receipt, &entity.CIResultCoordinates{
+		PipelineID: run.ID, AreaID: area, MRNativeID: target.mr, HeadSHA: head,
+	}, true)
 }

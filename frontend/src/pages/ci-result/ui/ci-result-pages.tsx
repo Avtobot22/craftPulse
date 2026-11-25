@@ -2,16 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { Text } from '@gravity-ui/uikit'
 import type { ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
-import {
-  ApiError,
-  readArray,
-  readBoolean,
-  readNullableString,
-  readRecord,
-  readString,
-} from '@/shared/api'
+import { ApiError, readArray, readRecord, readString } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import { ErrorState, LoadingState } from '@/shared/ui'
+import { readSummary } from '../api/read-summary'
+import { SummaryMetrics } from './summary-metrics'
 
 function ResultPage({
   title,
@@ -38,40 +33,14 @@ function ResultPage({
       {pending && <LoadingState />}
       {unavailable && <p>Результат недоступен или ещё не готов.</p>}
       {error && !unavailable && (
-        <ErrorState reason="Не удалось загрузить результат CI" onRetry={retry} />
+        <ErrorState
+          reason="Не удалось загрузить результат CI"
+          onRetry={retry}
+        />
       )}
       {!error && children}
     </section>
   )
-}
-
-function readSummary(value: unknown) {
-  const summary = readRecord(value)
-  const ci = summary.ci === null ? null : readRecord(summary.ci)
-  const expected =
-    summary.expected === undefined ? null : readRecord(summary.expected)
-  const checks = expected && readRecord(expected.missing_checks)
-  return {
-    head: readString(summary.head_sha),
-    status: readString(summary.status),
-    pipelineId: ci && readString(ci.pipeline_id),
-    checks:
-      checks &&
-      typeof checks.numerator === 'number' &&
-      typeof checks.denominator === 'number'
-        ? { missing: checks.numerator, total: checks.denominator }
-        : null,
-    limited: readBoolean(summary.access_limited),
-    items: readArray(summary.items, (value) => {
-      const item = readRecord(value)
-      return {
-        kind: readString(item.item_kind),
-        analysis:
-          item.analysis_kind === undefined ? null : readString(item.analysis_kind),
-        rule: readNullableString(item.rule_id),
-      }
-    }),
-  }
 }
 
 function readPipeline(value: unknown) {
@@ -132,12 +101,7 @@ export function MergeRequestSummaryPage({ api }: { api: ApiClient }) {
               Открыть pipeline
             </Link>
           )}
-          {summary.checks && (
-            <p>
-              Пропущено проверок: {summary.checks.missing} из{' '}
-              {summary.checks.total}
-            </p>
-          )}
+          <SummaryMetrics summary={summary} />
           {summary.limited && <p>Часть данных скрыта правами доступа.</p>}
           {summary.items.length > 0 && (
             <ul>
@@ -161,10 +125,14 @@ export function PipelinePage({ api }: { api: ApiClient }) {
   const query = useQuery({
     queryKey: ['pipeline', pipelineId],
     queryFn: async ({ signal }) => {
-      const response = await api.read('/pipelines/{pipeline_id}', readPipeline, {
-        signal,
-        pathParams: { pipeline_id: pipelineId },
-      })
+      const response = await api.read(
+        '/pipelines/{pipeline_id}',
+        readPipeline,
+        {
+          signal,
+          pathParams: { pipeline_id: pipelineId },
+        },
+      )
       return response.data
     },
     retry: false,

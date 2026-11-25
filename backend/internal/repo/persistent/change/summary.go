@@ -189,3 +189,13 @@ func (r *Repo) ReadSummaryItems(ctx context.Context, org, id entity.ID) ([]entit
 		return i, err
 	})
 }
+
+// HasBuiltSummary reports whether there is a revision for this exact head.
+func (r *Repo) HasBuiltSummary(ctx context.Context, org, mr entity.ID, head string) (bool, error) {
+	var exists bool
+	err := postgres.Conn(ctx, r.pool).QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM change.summary_revision
+		WHERE (organization_id, mr_id, head_sha) = ($1, $2, $3) AND built_at IS NOT NULL
+	)`, uuid.UUID(org), uuid.UUID(mr), head).Scan(&exists)
+	return exists, err
+}

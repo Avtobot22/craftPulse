@@ -434,31 +434,45 @@ func (r *Repo) FirstCIReceiptOfHash(ctx context.Context, orgID, projectID, exclu
 	return entity.ID(id), true, nil
 }
 
-// SaveCIResult retains coordinates found in an earlier part when the last part closes the receipt.
-func (r *Repo) SaveCIResult(ctx context.Context, org, receipt entity.ID, pipeline, mr *entity.ID, head string, pending bool) error {
+// SaveCIResult retains the coordinates of the first target across parts of the receipt.
+func (r *Repo) SaveCIResult(ctx context.Context, org, receipt entity.ID, target *entity.CIResultCoordinates, pending bool) error {
+	var pipeline, area *entity.ID
+	var nativeMR, head string
+	if target != nil {
+		pipeline, area = &target.PipelineID, &target.AreaID
+		nativeMR, head = target.MRNativeID, target.HeadSHA
+	}
 	_, err := postgres.Conn(ctx, r.pool).Exec(ctx, `
-		INSERT INTO ingest.ci_result AS r (organization_id, receipt_id, pending, pipeline_id, mr_id, head_sha)
-		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''))
+		INSERT INTO ingest.ci_result AS r (organization_id, receipt_id, pending, pipeline_id, area_id, mr_native_id, head_sha)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), NULLIF($7, ''))
 		ON CONFLICT (organization_id, receipt_id) DO UPDATE SET pending = EXCLUDED.pending,
 			pipeline_id = COALESCE(r.pipeline_id, EXCLUDED.pipeline_id),
-			mr_id = CASE WHEN r.pipeline_id IS NULL OR (r.pipeline_id = EXCLUDED.pipeline_id
-				AND (r.head_sha IS NULL OR r.head_sha = EXCLUDED.head_sha))
-				THEN COALESCE(r.mr_id, EXCLUDED.mr_id) ELSE r.mr_id END,
-			head_sha = CASE WHEN r.pipeline_id IS NULL OR (r.pipeline_id = EXCLUDED.pipeline_id
-				AND (r.mr_id IS NULL OR r.mr_id = EXCLUDED.mr_id))
-				THEN COALESCE(r.head_sha, EXCLUDED.head_sha) ELSE r.head_sha END`,
-		uuid.UUID(org), uuid.UUID(receipt), pending, nullID(pipeline), nullID(mr), head)
+			area_id = COALESCE(r.area_id, CASE WHEN r.pipeline_id IS NULL OR r.pipeline_id = EXCLUDED.pipeline_id THEN EXCLUDED.area_id END),
+			mr_native_id = COALESCE(r.mr_native_id, CASE
+				WHEN r.pipeline_id IS NULL OR (r.pipeline_id = EXCLUDED.pipeline_id AND
+					(r.area_id IS NULL OR r.area_id = EXCLUDED.area_id) AND
+					(r.head_sha IS NULL OR r.head_sha = EXCLUDED.head_sha)) THEN EXCLUDED.mr_native_id END),
+			head_sha = COALESCE(r.head_sha, CASE WHEN r.pipeline_id IS NULL OR (r.pipeline_id = EXCLUDED.pipeline_id AND
+				(r.area_id IS NULL OR r.area_id = EXCLUDED.area_id)) THEN EXCLUDED.head_sha END)`,
+		uuid.UUID(org), uuid.UUID(receipt), pending, nullID(pipeline), nullID(area), nativeMR, head)
 	return err
 }
 
-// ReadCIResult reads the normalization state and link target of a CI receipt.
-func (r *Repo) ReadCIResult(ctx context.Context, org, receipt entity.ID) (pending bool, pipelineID, mrID *entity.ID, head string, err error) {
-	var pipeline, mr uuid.NullUUID
-	err = postgres.Conn(ctx, r.pool).QueryRow(ctx, `
-		SELECT pending, pipeline_id, mr_id, COALESCE(head_sha, '') FROM ingest.ci_result
-		WHERE organization_id = $1 AND receipt_id = $2`, uuid.UUID(org), uuid.UUID(receipt)).Scan(&pending, &pipeline, &mr, &head)
+// ReadCIResult reads the normalization state and stored coordinates of a CI receipt.
+func (r *Repo) ReadCIResult(ctx context.Context, org, receipt entity.ID) (bool, *entity.CIResultCoordinates, error) {
+	var pending bool
+	var pipeline, area, mr uuid.NullUUID
+	var target entity.CIResultCoordinates
+	err := postgres.Conn(ctx, r.pool).QueryRow(ctx, `
+		SELECT pending, pipeline_id, area_id, mr_id, COALESCE(mr_native_id, ''), COALESCE(head_sha, '')
+		FROM ingest.ci_result WHERE (organization_id, receipt_id) = ($1, $2)`, uuid.UUID(org), uuid.UUID(receipt)).
+		Scan(&pending, &pipeline, &area, &mr, &target.MRNativeID, &target.HeadSHA)
 	if errors.Is(err, pgx.ErrNoRows) {
-		err = nil
+		return false, nil, nil
 	}
-	return pending, idPtr(pipeline), idPtr(mr), head, err
+	if err != nil || !pipeline.Valid {
+		return pending, nil, err
+	}
+	target.PipelineID, target.AreaID, target.MRID = entity.ID(pipeline.UUID), entity.ID(area.UUID), idPtr(mr)
+	return pending, &target, nil
 }

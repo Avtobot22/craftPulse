@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { listTeams, listServices } from '@/shared/api'
+import type { components } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import {
   currentUser,
@@ -115,6 +116,19 @@ describe('application routes', () => {
   it('opens a CI receipt at its historical MR head and links to the pipeline', async () => {
     const head = 'a'.repeat(40)
     const summaryPath = '/merge-requests/mr/summary?head_sha=' + head
+    const count = (value: number): components['schemas']['MetricValue'] => ({
+      state: 'ASSESSED',
+      value,
+      unit: 'count',
+      numerator: null,
+      denominator: null,
+      n: null,
+      bound: null,
+      low_sample: false,
+      excluded_count: 0,
+      missing_count: 0,
+      reason_code: null,
+    })
     const baseApi = mockApi()
     const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
       if (input === '/api/v1' + summaryPath) {
@@ -123,6 +137,35 @@ describe('application routes', () => {
             head_sha: head,
             status: 'stale',
             ci: { pipeline_id: 'run' },
+            tests: {
+              passed: count(12),
+              failed: count(0),
+              errored: count(0),
+              skipped: count(1),
+            },
+            change: {
+              lines_added: count(24),
+              lines_removed: count(5),
+              files_changed: count(3),
+              complexity_increased_functions: count(2),
+              new_clone_groups: {
+                ...count(0),
+                state: 'NOT_EVALUATED',
+                value: null,
+                reason_code: 'incomparable_base',
+              },
+            },
+            coverage_changed_lines: {
+              ...count(0.75),
+              state: 'PROVISIONAL',
+              unit: 'ratio',
+              numerator: 18,
+              denominator: 24,
+            },
+            expected: { missing_checks: count(0), missing_reports: count(1) },
+            not_evaluated: [
+              { analysis_kind: 'code', reason_code: 'scan_failed' },
+            ],
             access_limited: true,
             items: [{ item_kind: 'ci_attempts', rule_id: null }],
           }),
@@ -149,6 +192,29 @@ describe('application routes', () => {
     expect(screen.getByText('Историческая сводка')).toBeInTheDocument()
     expect(
       screen.getByText('Часть данных скрыта правами доступа.'),
+    ).toBeInTheDocument()
+
+    expect(screen.getByRole('heading', { name: 'Тесты' })).toBeInTheDocument()
+    expect(screen.getByText('Пройдено').nextElementSibling).toHaveTextContent(
+      '12',
+    )
+    expect(
+      screen.getByText('Не пройдено').nextElementSibling,
+    ).toHaveTextContent('0')
+    expect(
+      screen.getByText('Добавлено строк').nextElementSibling,
+    ).toHaveTextContent('24')
+    expect(
+      screen.getByText('Новые группы дублирования').nextElementSibling,
+    ).toHaveTextContent('Нет сопоставимой базы')
+    expect(
+      screen.getByText('Покрытие изменённых строк').nextElementSibling,
+    ).toHaveTextContent(/75\s*% \(18 из 24\).*частично/)
+    expect(
+      screen.getByText('Пропущено отчётов').nextElementSibling,
+    ).toHaveTextContent('1')
+    expect(
+      screen.getByText('code · Анализ завершился с ошибкой'),
     ).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('link', { name: 'Открыть pipeline' }))
