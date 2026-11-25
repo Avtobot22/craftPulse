@@ -51,8 +51,23 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	profile := e.confirm(t, project, `"0"`, uuid.New(),
 		row(e.goComponent, "go", "code", "builtin", "go-default"),
 		row(e.goComponent, "go", "sast", "import", "sarif-import"),
+		row(e.goComponent, "", "secrets", "builtin", "gitleaks-default"),
+		row(e.goComponent, "", "sca", "builtin", "trivy-default"),
 	)
 	require.Equal(t, http.StatusCreated, profile.Code, profile.Body.String())
+	emptySecurityReports := func(sha string) []byte {
+		t.Helper()
+		component := &envelope.ScanComponent{Id: &e.goComponent, PathPrefix: "services/billing"}
+		// Summary evidence must match the producer versions pinned in the test catalog.
+		return reportPackageOf(t, _checksInstance, sha,
+			reportSpec{name: "gitleaks.sarif", kind: "secrets", format: "sarif", producer: "gitleaks", version: "8.28.0",
+				profileID: "gitleaks-default", component: component, exit: "success", completeness: "complete",
+				content: []byte(`{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"gitleaks"}},"results":[]}]}`)},
+			reportSpec{name: "trivy.json", kind: "sca", format: "trivy_json", formatVersion: "2", producer: "trivy", version: "0.67.2",
+				profileID: "trivy-default", component: component, exit: "success", completeness: "complete",
+				content: []byte(`{"SchemaVersion":2,"ArtifactName":"services/billing","ArtifactType":"filesystem","Results":[]}`)},
+		)
+	}
 	base, h1, h2 := strings.Repeat("b", 40), strings.Repeat("a", 40), strings.Repeat("c", 40)
 	mrPage := func(head, version string, at time.Time) []byte {
 		t.Helper()
@@ -130,6 +145,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 			AreaID: entity.ID(e.areas["42"]), ComponentID: entity.ID(e.goComponent), FindingID: entity.ID(finds[0].identity),
 		}},
 	}}
+	e.submit(t, emptySecurityReports(h1))
 	e.submit(t, e.codeReport(t, h1, "feature", "8102", sarifOf(), "success", "complete"))
 	run()
 	ready := checkReady(h1, "running")
@@ -165,6 +181,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	onFetch = func() {}
 
 	e.submit(t, page2)
+	e.submit(t, emptySecurityReports(h2))
 	manifest := ciManifest("42")
 	manifest.Source.InstanceKey = _checksInstance
 	e.submit(t, pack(t, manifest, mrRecord(t, "ci_run", "58101", "", "v1", envelope.CiRunV1{
