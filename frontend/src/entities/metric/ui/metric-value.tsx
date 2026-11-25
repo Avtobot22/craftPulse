@@ -1,6 +1,7 @@
 import { Flex, Text } from '@gravity-ui/uikit'
 import type { components } from '@/shared/api'
 import { DataStateBadge } from '@/shared/ui'
+import type { DataState } from '@/shared/ui'
 
 type Value = components['schemas']['MetricValue']
 
@@ -16,11 +17,39 @@ const reasons: Readonly<Record<string, string>> = {
   event_order_conflict: 'Данные о порядке событий противоречат друг другу',
   mapping_missing: 'Соответствие статусов не настроено',
   collection_incomplete: 'Данные собраны не полностью',
+  as_of_only: 'Показатель рассчитывается только на дату среза',
+  watermark_missing:
+    'Нет отметки о свежести данных по одному или нескольким подключениям',
+  reconcile_missing: 'Сверка с источником ещё не проводилась',
+  reconcile_unfinished: 'Нет результата завершённой сверки с источником',
   scan_missing: 'Отчёт проверки отсутствует',
   report_missing: 'Отчёт проверки отсутствует',
   target_missing: 'Целевой срок не задан',
+  type_unknown: 'Тип задачи неизвестен',
   size_unknown: 'Размер задачи неизвестен',
+  no_start: 'В истории задачи нет даты начала работы',
+  code_required_policy_missing:
+    'Не настроено, для каких задач требуется изменение кода',
+  mr_unknown: 'Неизвестно, слит ли связанный запрос на слияние',
+  first_external_response:
+    'Первый ответ определён по комментарию другого участника',
+  reviewer_field_unavailable: 'Нет данных о назначении ревьюера',
+  pipeline_unknown: 'Нет данных о запуске CI',
+  expected_report_profile_unavailable: 'Нет настроек ожидаемых отчётов CI',
   no_runs_yet: 'Запусков ещё не было',
+}
+
+function normalizeState(state: unknown): DataState {
+  switch (state) {
+    case 'ASSESSED':
+    case 'PROVISIONAL':
+    case 'BOUNDED':
+    case 'NOT_EVALUATED':
+    case 'NOT_APPLICABLE':
+      return state
+    default:
+      return 'UNKNOWN'
+  }
 }
 
 function formatValue(
@@ -70,16 +99,9 @@ function formatValue(
 }
 
 export function MetricValue({ value }: MetricValueProps) {
-  const {
-    state,
-    unit,
-    numerator,
-    denominator,
-    n,
-    bound,
-    low_sample,
-    reason_code,
-  } = value
+  const { unit, numerator, denominator, n, bound, low_sample, reason_code } =
+    value
+  const state = normalizeState(value.state)
   const showCoverage = state === 'PROVISIONAL' || state === 'BOUNDED'
   const hasDenominator = denominator !== null && denominator > 0
   const missingDenominator =

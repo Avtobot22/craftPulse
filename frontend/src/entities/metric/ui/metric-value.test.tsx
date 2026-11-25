@@ -99,6 +99,81 @@ describe('MetricValue', () => {
     ).toBeInTheDocument()
   })
 
+  it.each([
+    [
+      'NOT_APPLICABLE',
+      'as_of_only',
+      'Показатель рассчитывается только на дату среза',
+    ],
+    [
+      'UNKNOWN',
+      'watermark_missing',
+      'Нет отметки о свежести данных по одному или нескольким подключениям',
+    ],
+    [
+      'NOT_EVALUATED',
+      'reconcile_missing',
+      'Сверка с источником ещё не проводилась',
+    ],
+    [
+      'NOT_EVALUATED',
+      'reconcile_unfinished',
+      'Нет результата завершённой сверки с источником',
+    ],
+    ['UNKNOWN', 'type_unknown', 'Тип задачи неизвестен'],
+    ['UNKNOWN', 'no_start', 'В истории задачи нет даты начала работы'],
+    [
+      'NOT_EVALUATED',
+      'code_required_policy_missing',
+      'Не настроено, для каких задач требуется изменение кода',
+    ],
+    [
+      'UNKNOWN',
+      'mr_unknown',
+      'Неизвестно, слит ли связанный запрос на слияние',
+    ],
+    [
+      'ASSESSED',
+      'first_external_response',
+      'Первый ответ определён по комментарию другого участника',
+    ],
+    [
+      'UNKNOWN',
+      'reviewer_field_unavailable',
+      'Нет данных о назначении ревьюера',
+    ],
+    ['UNKNOWN', 'pipeline_unknown', 'Нет данных о запуске CI'],
+    [
+      'NOT_EVALUATED',
+      'expected_report_profile_unavailable',
+      'Нет настроек ожидаемых отчётов CI',
+    ],
+  ] as const)(
+    'explains the report reason %s / %s',
+    (state, reason_code, label) => {
+      render(
+        <MetricValue
+          value={{
+            ...base,
+            state,
+            value: state === 'ASSESSED' ? base.value : null,
+            reason_code,
+          }}
+        />,
+      )
+      expect(screen.getByText(label)).toBeInTheDocument()
+    },
+  )
+
+  it('shows an unrecognized API state as unknown and hides its number', () => {
+    // A newer API can send strings outside the currently generated union.
+    const state = 'FUTURE_STATE' as MetricValueProps['value']['state']
+    render(<MetricValue value={{ ...base, state }} />)
+    expect(screen.getByText('неизвестно')).toBeInTheDocument()
+    expect(screen.getByText('Не рассчитано')).toBeInTheDocument()
+    expect(screen.queryByText('25 шт.')).not.toBeInTheDocument()
+  })
+
   it('explains conflicting event order for an unknown result', () => {
     render(
       <MetricValue
