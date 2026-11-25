@@ -14,14 +14,15 @@ type ChangeSummaryJob struct {
 func (ChangeSummaryJob) Kind() string       { return "change.summary" }
 func (ChangeSummaryJob) UniqueWhileActive() {}
 
-// OutboundPublishJob identifies the immutable summary offered to the publisher.
+// OutboundPublishJob coalesces publication of ready revisions for one MR.
 type OutboundPublishJob struct {
-	OrganizationID    ID `json:"organization_id"`
-	MRID              ID `json:"mr_id"`
+	OrganizationID    ID `json:"organization_id" river:"unique"`
+	MRID              ID `json:"mr_id" river:"unique"`
 	SummaryRevisionID ID `json:"summary_revision_id"`
 }
 
-func (OutboundPublishJob) Kind() string { return "outbound.publish" }
+func (OutboundPublishJob) Kind() string       { return "outbound.publish" }
+func (OutboundPublishJob) UniqueWhileActive() {}
 
 // SummaryMR is the normalized source identity and knowledge cut of an MR.
 type SummaryMR struct {
@@ -71,6 +72,8 @@ type SummaryRevision struct {
 	InputHash             []byte
 	KnowledgeSeq          int64
 	BuiltAt               time.Time
+	ReportsReadyAt        time.Time
+	Publication           Publication
 	StaleReason           string
 	Inputs                []SummaryInput
 	Items                 []SummaryItem

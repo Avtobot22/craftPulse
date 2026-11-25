@@ -3,6 +3,7 @@ package change
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"slices"
 	"time"
 
@@ -252,6 +253,9 @@ func summaryFinding(calculation *entity.SummaryFindingComparison, report entity.
 		coords := entity.FindingCoordinates{
 			FindingAccess: entity.FindingAccess{AreaID: calculation.AreaID, Kind: f.Kind}, ComponentID: calculation.ComponentID,
 			FindingID: f.ID, RuleID: o.RuleID, Path: o.Path, PackagePURL: o.PackagePURL,
+		}
+		if right == "none" {
+			item.Value, _ = json.Marshal(entity.SummarySignalLocation{Rule: o.RuleID, Path: o.Path, Package: o.PackagePURL, Line: o.LineStart})
 		}
 		calculation.Findings = append(calculation.Findings, entity.SummaryFinding{
 			FindingCoordinates: coords, OccurrenceID: o.ID, ReportID: report, Lifecycle: f.Lifecycle, Severity: item.Severity, LineStart: o.LineStart,

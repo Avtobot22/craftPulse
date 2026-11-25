@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +34,19 @@ func (a *summaryTestAdapter) AreaSources(context.Context, entity.ID, []entity.ID
 
 func (a *summaryTestAdapter) Fetch(_ context.Context, _, _ entity.ID, in entity.FetchInput) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(a.fetch(in))), nil
+}
+
+type summaryNoteAdapter struct {
+	found, body string
+}
+
+func (a *summaryNoteAdapter) FindPublished(context.Context, entity.ID, entity.ID, entity.PublicationTarget) (string, error) {
+	return a.found, nil
+}
+
+func (a *summaryNoteAdapter) Publish(_ context.Context, _, _ entity.ID, in entity.PublishInput) (entity.Publication, error) {
+	a.found, a.body = "101", in.Markdown
+	return entity.Publication{Status: entity.PublicationSucceeded, ExternalID: a.found}, nil
 }
 
 type summaryDecisions struct {
@@ -240,13 +254,41 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 		AND item_kind = 'new' AND required_right = 'security'`, ready))
 	assert.Equal(t, 5, count(t, `SELECT count(*) FROM change.summary_item WHERE summary_revision_id = $1 AND rank BETWEEN 1 AND 5`, ready))
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish'
-		AND args->>'summary_revision_id' = $1`, ready.String()))
+		AND state = 'available'`))
 
 	enqueue()
 	run()
 	assert.Equal(t, ready, checkReady(h2, "complete"))
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish'
-		AND args->>'summary_revision_id' = $1`, ready.String()))
+		AND state = 'available'`))
+
+	// River still holds the older payload. Delivery must read the revision that is ready now.
+	var connectionID uuid.UUID
+	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT connection_id FROM connect.connection_scope
+		WHERE organization_id = $1 AND area_id = $2`, uuid.UUID(e.orgID), e.areas["42"]).Scan(&connectionID))
+	source.source.ConnectionID = entity.ID(connectionID)
+	adapter := &summaryNoteAdapter{}
+	publisher, err := newPublisher(e.app, u, adapter, _site, prometheus.NewRegistry())
+	require.NoError(t, err)
+	var publishJobID int64
+	var args []byte
+	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT id, args FROM river_job
+		WHERE kind = 'outbound.publish' AND state = 'available'`).Scan(&publishJobID, &args))
+	var publishJob entity.OutboundPublishJob
+	require.NoError(t, json.Unmarshal(args, &publishJob))
+	require.NotEqual(t, entity.ID(ready), publishJob.SummaryRevisionID)
+	require.NoError(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false))
+	published, err := u.Publication(t.Context(), e.orgID, mr, entity.ID(ready))
+	require.NoError(t, err)
+	assert.Equal(t, entity.PublicationSucceeded, published.Status)
+	assert.Equal(t, "101", published.ExternalID)
+	assert.NotNil(t, published.PublishedAt)
+	assert.Contains(t, adapter.body, h2)
+	assert.Contains(t, adapter.body, "Есть закрытые результаты")
+	assert.NotContains(t, adapter.body, "new-0")
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.target WHERE external_id = '101'`))
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.action WHERE status = 'succeeded'`))
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM audit.event WHERE operation = 'outbound.publish' AND outcome = 'succeeded'`))
 
 	// An unrelated base SHA leaves complete head findings newly observed and keeps the last good revision.
 	base = strings.Repeat("e", 40)

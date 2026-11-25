@@ -215,6 +215,8 @@ type AddressChecker interface {
 
 // AdapterClient is the transport of adapter.yaml for connect; every error is *entity.AdapterError.
 type AdapterClient interface {
+	FindPublished(context.Context, entity.AdapterTarget, entity.PublicationTarget) (string, error)
+	Publish(context.Context, entity.AdapterTarget, entity.PublishInput) (entity.Publication, error)
 	ParseWebhook(context.Context, entity.AdapterTarget, entity.WebhookInput) (entity.WebhookResult, error)
 	AuthorizeURL(context.Context, entity.AdapterTarget, entity.SourceAuthorization) (string, error)
 	PutCredentials(ctx context.Context, t entity.AdapterTarget, in entity.CredentialsInput) error

@@ -37,7 +37,7 @@ func newSummaryDeps(pool *pgxpool.Pool, source change.SummarySource, normalizer 
 		return change.SummaryDeps{}, err
 	}
 	return change.SummaryDeps{
-		Store: changerepo.NewRepo(pool), Facts: normalizerepo.NewRepo(pool), Source: source, Queue: queue.New(jobs),
+		Store: changerepo.NewRepo(pool), Publication: changerepo.NewRepo(pool), Facts: normalizerepo.NewRepo(pool), Source: source, Queue: queue.New(jobs),
 		Calculations: summaryCalculations{UseCase: normalizer, calculator: calculator, objects: objects, facts: normalizerepo.NewRepo(pool)}, ObserveLatency: latency.Observe,
 	}, nil
 }
