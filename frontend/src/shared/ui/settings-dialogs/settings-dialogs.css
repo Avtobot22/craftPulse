@@ -1,0 +1,73 @@
+.cp-settings-dialog {
+  box-sizing: border-box;
+  width: 560px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  border: 0;
+  border-radius: var(--g-border-radius-xl);
+  background: var(--g-color-base-modal);
+  color: var(--g-color-text-primary);
+}
+
+.cp-settings-dialog_wide {
+  width: 720px;
+}
+
+.cp-settings-dialog::backdrop {
+  background: var(--g-color-sfx-veil);
+}
+
+.cp-settings-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.cp-settings-dialog p {
+  margin: 0 0 12px;
+}
+
+.cp-settings-dialog .cp-settings-dialog__progress:empty {
+  margin: 0;
+}
+
+.cp-settings-dialog__details {
+  display: grid;
+  gap: 4px;
+  margin: 16px 0;
+}
+
+.cp-settings-dialog__details dd {
+  margin: 0 0 8px;
+}
+
+.cp-settings-dialog__changes {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding-inline-start: 24px;
+}
+
+.cp-settings-dialog__changes strong,
+.cp-settings-dialog__changes span {
+  display: block;
+  white-space: pre-wrap;
+}
+
+.cp-settings-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+@media (max-width: 767px) {
+  .cp-settings-dialog__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
