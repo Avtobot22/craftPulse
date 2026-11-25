@@ -170,6 +170,44 @@ class RolloutTest(unittest.TestCase):
                 self.assertIn("--no-deps", args)
             self.assertEqual([args for label, args in calls if label == "verify"], ["adapter-git", "worker", "api"])
 
+    def test_source_network_policy_reaches_core_and_adapters(self):
+        settings = {
+            "tls_dir": "/etc/craftpulse/tls",
+            "installation_networks": "172.31.84.0/27",
+            "source_private_networks": "10.0.0.0/24",
+        }
+        for adapters in ([], ["git"]):
+            with self.subTest(adapters=adapters):
+                release = manifest(FIRST, 1, adapter=bool(adapters))
+                services = rollout_host.overrides(settings, adapters, release, "/tmp/secrets")["services"]
+                for service in ("api", "worker", *(f"adapter-{name}" for name in adapters)):
+                    env = services[service]["environment"]
+                    self.assertEqual(env["INSTALLATION_NETWORKS"], settings["installation_networks"])
+                    self.assertEqual(env["SOURCE_PRIVATE_NETWORKS"], settings["source_private_networks"])
+
+    def test_renewed_tls_files_trigger_adapter_restart_for_same_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stand = rollout_host.Stand(Path(directory))
+            release = {**manifest(FIRST, 1, adapter=True), "adapters": ["git"]}
+            previous = {**release, "snapshot": "previous"}
+            candidate = {**release, "snapshot": "candidate"}
+            for snapshot in (previous, candidate):
+                secrets = stand.path(snapshot) / "secrets"
+                adapter = secrets / "adapters/git"
+                adapter.mkdir(parents=True)
+                (secrets / "adapter-ca.pem").write_bytes(b"same CA")
+                for filename in rollout.ADAPTER_FILES:
+                    (adapter / filename).write_bytes(filename.encode())
+
+            with patch.object(stand, "compose", return_value=b"running-container"):
+                self.assertFalse(stand.adapter_changed(candidate, previous, "git"))
+                for filename in ("tls-cert.pem", "tls-key.pem"):
+                    with self.subTest(filename=filename):
+                        credential = stand.path(candidate) / "secrets/adapters/git" / filename
+                        credential.write_bytes(b"renewed")
+                        self.assertTrue(stand.adapter_changed(candidate, previous, "git"))
+                        credential.write_bytes(filename.encode())
+
     def test_adapter_resources_follow_profile_budget(self):
         release = manifest(FIRST, 1, adapter=True)
         release["images"]["craftpulse-adapter-gitlab"] = release["images"]["craftpulse-adapter-git"]

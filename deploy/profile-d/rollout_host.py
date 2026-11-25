@@ -84,25 +84,29 @@ def install_config(settings, files):
 
 
 def overrides(settings, adapters, manifest, secret_dir):
-    env = {"ADAPTER_CA_FILE": "/run/secrets/adapter-ca.pem"}
-    trust = f"{secret_dir}/adapter-ca.pem:/run/secrets/adapter-ca.pem:ro"
+    network_env = {
+        "INSTALLATION_NETWORKS": settings.get("installation_networks", ""),
+        "SOURCE_PRIVATE_NETWORKS": settings.get("source_private_networks", ""),
+    }
     services = {"nginx": {"volumes": [
         f"{settings['tls_dir']}/tls-cert.pem:/run/secrets/tls-cert.pem:ro",
         f"{settings['tls_dir']}/tls-key.pem:/run/secrets/tls-key.pem:ro",
     ]}}
-    if not adapters:
-        return {"services": services}
-
-    keys = "/run/secrets/adapter-keys"
-    env.update({
-        "BUILTIN_ADAPTERS": ",".join(f"{PROVIDERS.get(name, name)}=https://adapter-{name}:8443" for name in adapters),
-        "ADAPTER_SERVICE_KEYS_DIR": keys,
-    })
-    for core in ("api", "worker"):
-        services[core] = {"environment": env, "volumes": [trust] + [
+    core = {"environment": dict(network_env)}
+    if adapters:
+        keys = "/run/secrets/adapter-keys"
+        core["environment"].update({
+            "ADAPTER_CA_FILE": "/run/secrets/adapter-ca.pem",
+            "BUILTIN_ADAPTERS": ",".join(
+                f"{PROVIDERS.get(name, name)}=https://adapter-{name}:8443" for name in adapters
+            ),
+            "ADAPTER_SERVICE_KEYS_DIR": keys,
+        })
+        core["volumes"] = [f"{secret_dir}/adapter-ca.pem:/run/secrets/adapter-ca.pem:ro"] + [
             f"{secret_dir}/adapters/{name}/service-key:{keys}/{PROVIDERS.get(name, name)}:ro"
             for name in adapters
-        ]}
+        ]
+    services.update(api=core, worker=core)
     for name in adapters:
         service = f"adapter-{name}"
         database = f"adapter_{name}"
@@ -129,8 +133,7 @@ def overrides(settings, adapters, manifest, secret_dir):
                 **common_env, "HTTP_ADDR": ":8443",
                 "TLS_CERT_FILE": "/run/secrets/tls-cert.pem", "TLS_KEY_FILE": "/run/secrets/tls-key.pem",
                 "ADAPTER_SERVICE_KEY_FILE": "/run/secrets/service-key",
-                "INSTALLATION_NETWORKS": settings.get("installation_networks", ""),
-                "SOURCE_PRIVATE_NETWORKS": settings.get("source_private_networks", ""),
+                **network_env,
             },
             "volumes": [volume("app-password", "db-password")] + [volume(file, file) for file in
                         ("master-key", "service-key", "tls-cert.pem", "tls-key.pem")],
@@ -380,7 +383,7 @@ class Stand:
         relative = f"secrets/adapters/{name}"
         before, after = self.path(previous), self.path(release)
         if any((before / relative / file).read_bytes() != (after / relative / file).read_bytes()
-               for file in ("master-key", "app-password", "service-key")):
+               for file in ("master-key", "app-password", "service-key", "tls-cert.pem", "tls-key.pem")):
             return True
         if (before / "secrets/adapter-ca.pem").read_bytes() != (after / "secrets/adapter-ca.pem").read_bytes():
             return True
