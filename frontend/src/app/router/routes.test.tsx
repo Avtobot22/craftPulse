@@ -153,6 +153,50 @@ describe('application routes', () => {
     ).toBeInTheDocument()
   })
 
+  it('opens the exact revision from an MR comment and shows the publication refusal', async () => {
+    const mr = '0193a5b0-b0b0-7000-8000-000000000001'
+    const summaryURL = `/merge-requests/${mr}/summary?revision_no=3`
+    const fallback = mockApi()
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (input !== '/api/v1' + summaryURL) return fallback(input, init)
+      return Promise.resolve(
+        jsonResponse({
+          merge_request_id: mr,
+          revision_no: 3,
+          head_sha: 'a'.repeat(40),
+          base_sha: null,
+          built_at: null,
+          status: 'superseded',
+          pipeline_state: 'complete',
+          stale_reason: null,
+          access_limited: true,
+          publication: {
+            status: 'failed',
+            error_code: 'write_permission_missing',
+            published_at: null,
+            external_id: null,
+          },
+          coverage_changed_lines: {
+            state: 'NOT_EVALUATED',
+            reason_code: 'report_missing',
+            value: null,
+          },
+          ci: null,
+          items: [],
+          not_evaluated: [],
+        }),
+      )
+    })
+    mount(summaryURL + '&org_slug=example', fetcher)
+    expect(
+      await screen.findByRole('heading', { name: 'Сводка MR, ревизия 3' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('У бота нет права записи в MR.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Есть закрытые результаты.')).toBeInTheDocument()
+  })
+
   it('never requests private data on a public route', async () => {
     const fetcher = vi.fn<typeof fetch>()
     mount('/login/example', fetcher)

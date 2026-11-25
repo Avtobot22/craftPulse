@@ -5,6 +5,7 @@ export const routePaths = Object.freeze({
   unavailable: '/access-denied',
   installation: '/installation',
   welcome: '/welcome',
+  mergeRequestSummary: '/merge-requests/:mr/summary',
   organization: '/organization/structure',
   users: '/users',
   workflowSettings: '/settings/process',

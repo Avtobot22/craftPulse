@@ -1,11 +1,25 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { matchPath, Outlet, useLocation, useNavigate } from 'react-router'
+import type { Location } from 'react-router'
 import { ToasterComponent, useToaster } from '@gravity-ui/uikit'
-import { safeReturnTo } from '@/shared/auth'
+import {
+  createLoginPageUrl,
+  isOrganizationSlug,
+  safeReturnTo,
+} from '@/shared/auth'
 import { routePaths } from '@/shared/config'
 import type { AppRuntime } from '../initialization/runtime'
 
-export function expiredPath(path: string): string {
+export function sessionEndPath(
+  state: 'expired' | 'signed-out',
+  { pathname, search, hash }: Location,
+): string {
+  const path = pathname + search + hash
+  if (matchPath(routePaths.mergeRequestSummary, pathname)) {
+    const orgSlug = new URLSearchParams(search).get('org_slug')
+    if (isOrganizationSlug(orgSlug)) return createLoginPageUrl(orgSlug, path)
+  }
+  if (state === 'signed-out') return routePaths.login
   return `${routePaths.sessionExpired}?${new URLSearchParams({ return_to: safeReturnTo(path) }).toString()}`
 }
 
@@ -24,15 +38,13 @@ export function SessionNavigation({ runtime }: { runtime: AppRuntime }) {
     '/o/:orgSlug',
     routePaths.sessionExpired,
   ].some((pattern) => matchPath(pattern, location.pathname) !== null)
-  const path = location.pathname + location.search + location.hash
   useEffect(() => {
     if (handled.current === state) return
     handled.current = state
     if (isPublicAuthRoute) return
-    if (state === 'expired') void navigate(expiredPath(path), { replace: true })
-    else if (state === 'signed-out')
-      void navigate(routePaths.login, { replace: true })
-  }, [state, navigate, path, isPublicAuthRoute])
+    if (state === 'expired' || state === 'signed-out')
+      void navigate(sessionEndPath(state, location), { replace: true })
+  }, [state, navigate, location, isPublicAuthRoute])
   useEffect(() => {
     if (isPublicAuthRoute) toaster.removeAll()
   }, [isPublicAuthRoute, toaster])

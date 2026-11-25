@@ -34,6 +34,16 @@ func (r *Repo) OrganizationBySlug(ctx context.Context, slug string) (entity.ID, 
 	return entity.ID(id), true, nil
 }
 
+// LoginSlug resolves the public login route for an organization.
+func (r *Repo) LoginSlug(ctx context.Context, orgID entity.ID) (string, error) {
+	var slug string
+	err := postgres.Conn(ctx, r.pool).QueryRow(ctx, `SELECT slug FROM auth.login_route WHERE organization_id = $1`, uuid.UUID(orgID)).Scan(&slug)
+	if err != nil {
+		return "", fmt.Errorf("auth: get organization login slug: %w", err)
+	}
+	return slug, nil
+}
+
 func (r *Repo) CreateLoginRoute(ctx context.Context, slug string, orgID entity.ID) error {
 	err := New(postgres.Conn(ctx, r.pool)).CreateLoginRoute(ctx, CreateLoginRouteParams{Slug: slug, OrganizationID: uuid.UUID(orgID)})
 	if err != nil {

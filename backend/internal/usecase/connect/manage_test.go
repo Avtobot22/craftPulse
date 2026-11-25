@@ -1,6 +1,7 @@
 package connect
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,4 +38,17 @@ func TestGitLabConnectionCredentialsSkipsBlankOptionalFields(t *testing.T) {
 	assert.Equal(t, []entity.CredentialsInput{
 		{Purpose: "collect", Secret: `{"token":"reader"}`},
 	}, in)
+}
+
+func TestWriteBotAuthDoesNotSettleCollectorAccess(t *testing.T) {
+	t.Parallel()
+	u := New(Deps{})
+	c := entity.Connection{AdapterKind: entity.AdapterBuiltin, ContractVersion: ContractVersions[0]}
+	refusal := &entity.AdapterError{Class: entity.CallSource, Code: entity.SourceAuth}
+	for _, op := range []entity.AdapterOp{entity.OpFindPublished, entity.OpPublish} {
+		err := u.invoke(t.Context(), c, op, func(context.Context, entity.AdapterTarget) error {
+			return refusal
+		})
+		require.ErrorIs(t, err, refusal)
+	}
 }
