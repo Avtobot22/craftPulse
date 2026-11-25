@@ -332,5 +332,4 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	})))
 	noRevision := "/api/v1/merge-requests/" + mrID(t, e.normalized, "9002").String() + "/summary"
 	assert.Equal(t, http.StatusNotFound, e.do(t, e.lead, http.MethodGet, noRevision, nil).Code)
-
 }

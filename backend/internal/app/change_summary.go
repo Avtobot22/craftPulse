@@ -77,8 +77,13 @@ func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID
 	var runs, attempts []entity.ID
 	if !run.Run.RunID.IsZero() {
 		summary := s.calculator.SummarizeRun(run)
-		display = &entity.SummaryCI{PipelineID: run.Run.RunID, ParentPipelineID: run.Run.ParentRunID,
-			Outcome: run.Run.Outcome, Attempts: summary.AttemptsTotal, RetriedJobs: summary.RetriedJobs}
+		display = &entity.SummaryCI{
+			PipelineID:       run.Run.RunID,
+			ParentPipelineID: run.Run.ParentRunID,
+			Outcome:          run.Run.Outcome,
+			Attempts:         summary.AttemptsTotal,
+			RetriedJobs:      summary.RetriedJobs,
+		}
 		runs = make([]entity.ID, 1, len(run.Children)+1)
 		runs[0] = run.Run.ID
 		for i := range run.Children {

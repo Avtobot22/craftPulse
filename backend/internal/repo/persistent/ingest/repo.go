@@ -448,10 +448,9 @@ func (r *Repo) SaveCIResult(ctx context.Context, org, receipt entity.ID, pipelin
 }
 
 // ReadCIResult reads the normalization state and link target of a CI receipt.
-func (r *Repo) ReadCIResult(ctx context.Context, org, receipt entity.ID) (bool, *entity.ID, *entity.ID, error) {
-	var pending bool
+func (r *Repo) ReadCIResult(ctx context.Context, org, receipt entity.ID) (pending bool, pipelineID, mrID *entity.ID, err error) {
 	var pipeline, mr uuid.NullUUID
-	err := postgres.Conn(ctx, r.pool).QueryRow(ctx, `
+	err = postgres.Conn(ctx, r.pool).QueryRow(ctx, `
 		SELECT pending, pipeline_id, mr_id FROM ingest.ci_result
 		WHERE organization_id = $1 AND receipt_id = $2`, uuid.UUID(org), uuid.UUID(receipt)).Scan(&pending, &pipeline, &mr)
 	if errors.Is(err, pgx.ErrNoRows) {

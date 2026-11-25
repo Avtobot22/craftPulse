@@ -111,7 +111,8 @@ func (m *summaryMetrics) read(i *entity.SummaryItem, security bool) error {
 			return err
 		}
 		m.ci, m.reports = v.Display, v.PublicReports.Point
-		for _, p := range v.Metrics {
+		for idx := range v.Metrics {
+			p := &v.Metrics[idx]
 			switch {
 			case p.MetricID == "I08":
 				m.checks = p.Point
@@ -170,7 +171,8 @@ func (m *summaryMetrics) readStructure(body json.RawMessage) error {
 	m.added = summaryCount(v.Size.State, v.Size.ReasonCode, v.Size.Total.Added)
 	m.removed = summaryCount(v.Size.State, v.Size.ReasonCode, v.Size.Total.Deleted)
 	m.files = summaryCount(v.Size.State, v.Size.ReasonCode, v.Size.Total.Files)
-	for _, stream := range v.Code {
+	for idx := range v.Code {
+		stream := &v.Code[idx]
 		var increased int64
 		for _, p := range stream.Complexity.Deltas {
 			if p.Delta != nil && *p.Delta > 0 {
@@ -211,8 +213,13 @@ func (m *summaryMetrics) apply(out *openapi.MergeRequestSummary) {
 		LinesAdded                   openapi.MetricValue `json:"lines_added"`
 		LinesRemoved                 openapi.MetricValue `json:"lines_removed"`
 		NewCloneGroups               openapi.MetricValue `json:"new_clone_groups"`
-	}{summaryMetric("count", m.complexity), summaryMetric("count", m.files), summaryMetric("count", m.added),
-		summaryMetric("count", m.removed), summaryMetric("count", m.clones)}
+	}{
+		ComplexityIncreasedFunctions: summaryMetric("count", m.complexity),
+		FilesChanged:                 summaryMetric("count", m.files),
+		LinesAdded:                   summaryMetric("count", m.added),
+		LinesRemoved:                 summaryMetric("count", m.removed),
+		NewCloneGroups:               summaryMetric("count", m.clones),
+	}
 	out.Tests = &struct {
 		Errored openapi.MetricValue `json:"errored"`
 		Failed  openapi.MetricValue `json:"failed"`
@@ -227,8 +234,8 @@ func (m *summaryMetrics) apply(out *openapi.MergeRequestSummary) {
 		out.Ci = &struct {
 			Attempts         int                                  `json:"attempts"`
 			Outcome          openapi.MergeRequestSummaryCiOutcome `json:"outcome"`
-			ParentPipelineId *uuid.UUID                           `json:"parent_pipeline_id,omitempty"`
-			PipelineId       uuid.UUID                            `json:"pipeline_id"`
+			ParentPipelineId *uuid.UUID                           `json:"parent_pipeline_id,omitempty"` //nolint:revive // Match the generated OpenAPI type.
+			PipelineId       uuid.UUID                            `json:"pipeline_id"`                  //nolint:revive // Match the generated OpenAPI type.
 			RetriedJobs      int                                  `json:"retried_jobs"`
 		}{c.Attempts, openapi.MergeRequestSummaryCiOutcome(c.Outcome), uuidPtr(c.ParentPipelineID), uuid.UUID(c.PipelineID), c.RetriedJobs}
 	}
