@@ -106,6 +106,9 @@ type StructureRepo interface {
 // AuthRepo serves login routes, login attempts and sessions outside row-level security and provider
 // registrations under it.
 type AuthRepo interface {
+	ActiveAPIKey(ctx context.Context, hash []byte, at time.Time) (entity.Subject, error)
+	APIKeyProjects(ctx context.Context, org, key entity.ID, at time.Time) ([]entity.ID, error)
+	RevokeExposedAPIKey(ctx context.Context, hash []byte, at time.Time) error
 	// PurgeLoginAttempts and PurgeSessions delete up to limit rows expired by before and report how many went.
 	PurgeLoginAttempts(ctx context.Context, before time.Time, limit int) (int64, error)
 	PurgeSessions(ctx context.Context, before time.Time, limit int) (int64, error)
@@ -387,6 +390,7 @@ type NormalizeRepo interface {
 	TaskRevisions(ctx context.Context, orgID entity.ID, taskIDs []entity.ID) (map[entity.ID][]entity.Revision, error)
 	SupersedeTaskVersions(ctx context.Context, orgID entity.ID, ids []entity.ID, seq int64, at time.Time) error
 	InsertTaskVersions(ctx context.Context, orgID entity.ID, versions []entity.TaskVersion) error
+	TaskViewFacts(ctx context.Context, org, area, task entity.ID, seq int64, allowed []entity.ID) ([]entity.TaskVersion, []entity.TaskEvent, error)
 	// TaskVersionsAt and TaskEventsAt skip tasks with their own restriction that are not among allowed.
 	TaskVersionsAt(ctx context.Context, orgID, areaID entity.ID, seq int64, allowed []entity.ID) ([]entity.TaskVersion, error)
 	CurrentTasksByNative(ctx context.Context, orgID, areaID entity.ID, nativeIDs []string) (map[string]entity.TaskVersion, error)

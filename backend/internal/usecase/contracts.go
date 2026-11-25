@@ -62,6 +62,11 @@ type Protocols interface {
 	LatestProtocol(ctx context.Context) (entity.Protocol, error)
 }
 
+type APIKeys interface {
+	AuthenticateAPIKey(context.Context, string) (entity.Subject, error)
+	RejectExposedAPIKey(context.Context, string) error
+}
+
 type UploadTokens interface {
 	CreateUploadToken(context.Context, entity.Subject, entity.ID) (entity.UploadToken, entity.Secret, error)
 	ListUploadTokens(context.Context, entity.Subject, entity.ID, int, *entity.AuditKey) (entity.UploadTokenPage, error)
@@ -245,6 +250,11 @@ type SourceLinks interface {
 	StartSourceLink(context.Context, entity.Subject, entity.ID, string, string) (string, error)
 	CompleteSourceLink(context.Context, entity.Subject, entity.SourceLinkCallback) string
 	DeleteSourceLink(context.Context, entity.Subject, entity.ID) error
+}
+
+type TaskViews interface {
+	ListTasks(context.Context, entity.Subject, entity.Scope, entity.TaskViewQuery) (entity.TaskViewPage, error)
+	GetTask(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.TaskDetail, error)
 }
 
 // CodeDetails serves MR, pipelines and their attempts after source access checks.

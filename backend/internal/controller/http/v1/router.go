@@ -22,6 +22,7 @@ type Deps struct {
 	RunnerNetwork  []netip.Prefix
 	TrustedProxies []string
 	UploadTokens   usecase.UploadTokens
+	APIKeys        usecase.APIKeys
 	Handler        *handler.Handler
 	Logins         usecase.Logins
 	Access         usecase.Access
@@ -41,6 +42,7 @@ func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
 		})
 	guard := []gin.HandlerFunc{
 		middleware.Operation(openapi.Operations),
+		middleware.APIKeyAuthentication(d.APIKeys),
 		middleware.UploadAuthentication(d.UploadTokens),
 		middleware.CIIngress(d.RunnerNetwork),
 		middleware.Authenticate(d.Logins, d.SiteOrigin),

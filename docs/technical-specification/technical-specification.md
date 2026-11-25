@@ -1516,7 +1516,7 @@ API craftPulse и API провайдеров разделены: браузер,
 |---|---|---|
 | `public` | Без входа: начало входа, возврат провайдера, webhook | Маршрут организации или подключения |
 | `session.read`, `session.manage`, `profile.manage` | Любой вошедший пользователь | Своя сессия, настройки и фоновые операции; для операции также проверяются исходное действие и область |
-| `org.read`, `report.read`, `tasks.read`, `mr.read`, `ci.read`, `findings.read`, `docs.read` | Любая роль; ключ API - только `org.read` и `report.read` | Назначенные команды, проекты и сервисы. Находки безопасности требуют `security_access`, wiki - `wiki_access` и доступа пользователя к Confluence |
+| `org.read`, `report.read`, `tasks.read`, `mr.read`, `ci.read`, `findings.read`, `docs.read` | Любая роль; ключ API - `org.read`, `report.read` и `tasks.read` только для `listTasks` | Назначенные команды, проекты и сервисы. Находки безопасности требуют `security_access`, wiki - `wiki_access` и доступа пользователя к Confluence |
 | `export.create` | Любая роль; ключ API | Текущая область, файл - только запросившему |
 | `org.manage`, `users.manage`, `accounts.manage`, `api_keys.manage`, `connections.manage`, `sync.read`, `installation.read`, `audit.read`, `ci_rates.manage` | `administrator` | Организация; содержимое закрытого кода, безопасности и wiki администратор не получает (SEC-15) |
 | `imports.create` | `administrator`, `tech_lead` | Области, где у пользователя есть право импорта |
@@ -1662,7 +1662,7 @@ API craftPulse и API провайдеров разделены: браузер,
 |---|---|---|---|---|---|
 | `getProjectOverview` | `GET /api/v1/projects/{project_id}/overview` | Обзор проекта. FR-024, FR-029, UC-14, UC-19; UI-22 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1overview/get) |
 | `listProjectTimeline` | `GET /api/v1/projects/{project_id}/timeline` | События проекта на дату. FR-030, UC-20; UI-26 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1projects~1{project_id}~1timeline/get) |
-| `listTasks` | `GET /api/v1/tasks` | Задачи в доступной области. FR-024, FR-029, UC-14, UC-19; UI-22 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1tasks/get) |
+| `listTasks` | `GET /api/v1/tasks` | Задачи в доступной области. FR-024, FR-029, UC-14, UC-19; UI-22 | `tasks.read`; сессия, ключ API | M0 | [контракт](openapi.yaml#/paths/~1tasks/get) |
 | `getTask` | `GET /api/v1/tasks/{task_id}` | Карточка задачи с наблюдением о задержке. FR-029, FR-024, UC-19, UC-14; UI-25 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1tasks~1{task_id}/get) |
 | `listTaskEvents` | `GET /api/v1/tasks/{task_id}/events` | История задачи. FR-029, FR-030, UC-19, UC-20; UI-25, UI-24 | `tasks.read`; сессия | M0 | [контракт](openapi.yaml#/paths/~1tasks~1{task_id}~1events/get) |
 | `decideLink` | `POST /api/v1/links/{link_id}/decisions` | Подтвердить или отклонить связь-кандидат. FR-024, FR-029, FR-007, UC-19, FR-055, UC-45; UI-25, UI-17, UI-41 | `links.decide`; сессия | M0 | [контракт](openapi.yaml#/paths/~1links~1{link_id}~1decisions/post) |
@@ -6352,7 +6352,7 @@ GitHub.com, Jenkins и SonarQube и области видов `ci_project` и `a
 | Бот записи комментариев MR | Адаптер `gitlab` | Отдельная учётная запись с правом комментировать только в проектах, где включена публикация | Замена так же; отзыв в GitLab переводит публикацию в ошибку без потери сводки на сайте |
 | Токен пользователя Jira или Confluence | Адаптер `jiracloud` или `confluencecloud` | Только scopes чтения выбранного API в пределах прав пользователя; `offline_access` для обновления | Новый refresh token атомарно заменяет использованный; отзыв согласия Atlassian или связи в craftPulse закрывает объекты источника для пользователя |
 | Токен загрузки CI | `auth` | Загрузка пакета и чтение профиля одного проекта | Два действующих токена на проект; прежний отзывается после замены переменной в CI |
-| Ключ API | `auth` | Чтение показателей и выгрузка в правах владельца | Срок не больше 365 дней, отзыв со следующего запроса |
+| Ключ API | `auth` | Чтение показателей, списка задач и выгрузка в правах владельца | Срок не больше 365 дней, отзыв со следующего запроса |
 | Служебный ключ адаптера | Секреты установки (раздел 14.2) | Вызов одного адаптера | Адаптер принимает новое и прежнее значение, пока ядро не перезапущено с новым |
 
 Runner клиента получает только токен загрузки своего проекта в маскированной переменной CI. Токенов источников, ключей адаптеров и токена бота в CI нет (NFR-014).

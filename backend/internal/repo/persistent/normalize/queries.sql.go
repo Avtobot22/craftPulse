@@ -3417,6 +3417,145 @@ func (q *Queries) ReadSecurityFindings(ctx context.Context, arg ReadSecurityFind
 	return items, nil
 }
 
+const readTaskViewEvents = `-- name: ReadTaskViewEvents :many
+SELECT e.organization_id, e.id, e.task_id, e.area_id, e.event_key, e.source_revision, e.content_hash, e.known_seq, e.superseded_seq, e.superseded_at, e.receipt_id, e.record_no, e.event_kind, e.field_native_id, e.before_value, e.after_value, e.before_account_id, e.after_account_id, e.actor_account_id, e.event_time, e.event_offset_s, e.observed_at, e.observed_via FROM normalize.task_event e
+JOIN normalize.source_object o ON o.organization_id = e.organization_id AND o.id = e.task_id
+WHERE e.organization_id = $1 AND e.area_id = $2 AND e.task_id = $3
+    AND e.known_seq <= $4
+    AND (e.superseded_seq IS NULL OR e.superseded_seq > $4)
+    AND o.current_area_id = e.area_id AND o.deleted_at IS NULL
+    AND (NOT o.restricted OR o.id = ANY ($5::uuid[]))
+ORDER BY e.event_time, e.id
+`
+
+type ReadTaskViewEventsParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	TaskID         uuid.UUID
+	KnownSeq       int64
+	Allowed        []uuid.UUID
+}
+
+func (q *Queries) ReadTaskViewEvents(ctx context.Context, arg ReadTaskViewEventsParams) ([]NormalizeTaskEvent, error) {
+	rows, err := q.db.Query(ctx, readTaskViewEvents,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.TaskID,
+		arg.KnownSeq,
+		arg.Allowed,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeTaskEvent
+	for rows.Next() {
+		var i NormalizeTaskEvent
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.TaskID,
+			&i.AreaID,
+			&i.EventKey,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.EventKind,
+			&i.FieldNativeID,
+			&i.BeforeValue,
+			&i.AfterValue,
+			&i.BeforeAccountID,
+			&i.AfterAccountID,
+			&i.ActorAccountID,
+			&i.EventTime,
+			&i.EventOffsetS,
+			&i.ObservedAt,
+			&i.ObservedVia,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const readTaskViewVersion = `-- name: ReadTaskViewVersion :many
+SELECT v.organization_id, v.id, v.task_id, v.area_id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.source_updated_at, v.task_key, v.title, v.type_native_id, v.status_native_id, v.resolution_native_id, v.created_src_at, v.size_native, v.team_native, v.assignee_account_id, v.parent_task_id, v.restriction_native, v.raw_fields FROM normalize.task_version v
+JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.task_id
+WHERE v.organization_id = $1 AND v.area_id = $2 AND v.task_id = $3
+    AND v.known_seq <= $4
+    AND (v.superseded_seq IS NULL OR v.superseded_seq > $4)
+    AND o.current_area_id = v.area_id AND o.deleted_at IS NULL
+    AND (NOT o.restricted OR o.id = ANY ($5::uuid[]))
+`
+
+type ReadTaskViewVersionParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	TaskID         uuid.UUID
+	KnownSeq       int64
+	Allowed        []uuid.UUID
+}
+
+func (q *Queries) ReadTaskViewVersion(ctx context.Context, arg ReadTaskViewVersionParams) ([]NormalizeTaskVersion, error) {
+	rows, err := q.db.Query(ctx, readTaskViewVersion,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.TaskID,
+		arg.KnownSeq,
+		arg.Allowed,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NormalizeTaskVersion
+	for rows.Next() {
+		var i NormalizeTaskVersion
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.ID,
+			&i.TaskID,
+			&i.AreaID,
+			&i.KnownSeq,
+			&i.SupersededSeq,
+			&i.SupersededAt,
+			&i.ReceiptID,
+			&i.RecordNo,
+			&i.SourceRevision,
+			&i.ContentHash,
+			&i.ObservedAt,
+			&i.SourceUpdatedAt,
+			&i.TaskKey,
+			&i.Title,
+			&i.TypeNativeID,
+			&i.StatusNativeID,
+			&i.ResolutionNativeID,
+			&i.CreatedSrcAt,
+			&i.SizeNative,
+			&i.TeamNative,
+			&i.AssigneeAccountID,
+			&i.ParentTaskID,
+			&i.RestrictionNative,
+			&i.RawFields,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const readTestExecutions = `-- name: ReadTestExecutions :many
 WITH ranked AS (
     SELECT x.id, x.report_id, x.test_case_id, x.attempt_id, x.suite, x.config_fingerprint,
