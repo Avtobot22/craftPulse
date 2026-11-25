@@ -40,3 +40,19 @@ export type {
   ServiceParams,
 } from './organization'
 export type { components, operations, paths } from './generated/schema'
+
+export { getTask, listTasks } from './task-queries'
+export type { TaskListParams } from './task-queries'
+export { listProjectTimeline, listTaskEvents } from './timeline-queries'
+export type {
+  ProjectTimelineParams,
+  TaskEventsParams,
+  TimelineEvent,
+} from './timeline-queries'
+export { getMergeRequest, listMergeRequests } from './merge-request-queries'
+export type {
+  MergeRequestListParams,
+  ReviewWait,
+} from './merge-request-queries'
+export { getPipeline, listPipelineAttempts } from './pipeline-queries'
+export type { PipelineAttemptsParams } from './pipeline-queries'
