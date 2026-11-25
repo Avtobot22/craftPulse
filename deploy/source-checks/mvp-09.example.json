@@ -1,0 +1,551 @@
+{
+  "sources": {
+    "github": {
+      "base_url": "https://api.github.com",
+      "github_api_version": "2022-11-28",
+      "credential_env": "CP223_GITHUB_TOKEN"
+    },
+    "github_user": {
+      "base_url": "https://api.github.com",
+      "github_api_version": "2022-11-28",
+      "credential_env": "CP223_GITHUB_USER_TOKEN"
+    },
+    "github_public": {
+      "base_url": "https://api.github.com",
+      "github_api_version": "2022-11-28"
+    },
+    "github_rate": {
+      "base_url": "https://api.github.com",
+      "github_api_version": "2022-11-28",
+      "credential_env": "CP223_GITHUB_RATE_TOKEN"
+    },
+    "jenkins": {
+      "base_url": "https://jenkins.defects.team",
+      "auth_prefix": "Basic ",
+      "credential_env": "CP223_JENKINS_BASIC"
+    },
+    "jenkins_user": {
+      "base_url": "https://jenkins.defects.team",
+      "auth_prefix": "Basic ",
+      "credential_env": "CP223_JENKINS_USER_BASIC"
+    },
+    "sonar": {
+      "base_url": "https://sonar.defects.team",
+      "credential_env": "CP223_SONAR_TOKEN"
+    },
+    "sonar_user": {
+      "base_url": "https://sonar.defects.team",
+      "credential_env": "CP223_SONAR_USER_TOKEN"
+    }
+  },
+  "checks": [
+    {
+      "name": "github_permission_direct",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/collaborators/direct-fixture/permission",
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["permission", "role_name", "user.login"]
+    },
+    {
+      "name": "github_permission_team",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/collaborators/team-fixture/permission",
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["permission", "role_name", "user.login"]
+    },
+    {
+      "name": "github_permission_no_access",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/collaborators/no-access-fixture/permission",
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["permission", "role_name", "user.login"]
+    },
+    {
+      "name": "github_permission_second_org",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/collaborators/second-org-fixture/permission",
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["permission", "role_name", "user.login"]
+    },
+    {
+      "name": "github_permission_control",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-control/collaborators/direct-fixture/permission",
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["permission", "role_name"]
+    },
+    {
+      "name": "github_private_user",
+      "source": "github_user",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private",
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["private", "permissions.pull"]
+    },
+    {
+      "name": "github_user_identity",
+      "source": "github_user",
+      "path": "/user",
+      "observe": ["login", "id"]
+    },
+    {
+      "name": "github_public",
+      "source": "github_public",
+      "path": "/repos/craftpulse-mvp/cp89-org-a",
+      "expect_fields": {"private": false},
+      "budget_ms": 2000
+    },
+    {
+      "name": "github_public_permission",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a/collaborators/no-access-fixture/permission",
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["permission", "role_name"]
+    },
+    {
+      "name": "github_pr_timeline",
+      "timeline_ids": true,
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/issues/1/timeline",
+      "mode": "github",
+      "query": {"per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 2
+    },
+    {
+      "name": "github_pr_reviews",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/pulls/1/reviews",
+      "mode": "github",
+      "query": {"per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 2
+    },
+    {
+      "name": "github_pr_review_comments",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/pulls/1/comments",
+      "mode": "github",
+      "query": {"per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 2
+    },
+    {
+      "name": "github_pr_issue_comments",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/issues/1/comments",
+      "mode": "github",
+      "query": {"per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 2
+    },
+    {
+      "name": "github_pulls",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/pulls",
+      "mode": "github",
+      "query": {"state": "all", "sort": "updated", "direction": "desc", "per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 2,
+      "observe_rows": ["updated_at"]
+    },
+    {
+      "name": "github_pulls_drift",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/pulls",
+      "mode": "github",
+      "query": {"state": "all", "sort": "updated", "direction": "desc", "per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 2,
+      "observe_rows": ["updated_at"],
+      "pause_after_first": true,
+      "allow_drift": true,
+      "pause_message": "Create a new PR and edit an unread PR. Wait for both to be visible before resuming."
+    },
+    {
+      "name": "github_runs",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/actions/runs",
+      "mode": "github",
+      "query": {"created": "2026-11-01..2026-11-30", "per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 2,
+      "items": "workflow_runs",
+      "observe_rows": ["created_at", "updated_at", "run_attempt", "head_sha", "head_branch"]
+    },
+    {
+      "name": "github_runs_drift",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/actions/runs",
+      "mode": "github",
+      "query": {"created": "2026-11-01..2026-11-30", "per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 2,
+      "items": "workflow_runs",
+      "observe_rows": ["created_at", "updated_at", "run_attempt", "head_sha", "head_branch"],
+      "pause_after_first": true,
+      "allow_drift": true,
+      "pause_message": "Rerun an unread run inside the creation window and start a new run. Wait for updated_at and run_attempt to change and for the new run to appear."
+    },
+    {
+      "name": "github_run",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/actions/runs/123456789",
+      "observe": ["run_attempt", "updated_at"]
+    },
+    {
+      "name": "github_attempt_1",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/actions/runs/123456789/attempts/1",
+      "expect_fields": {"run_attempt": 1},
+      "observe": ["head_sha", "head_branch", "status", "conclusion"]
+    },
+    {
+      "name": "github_jobs_attempt_1",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/actions/runs/123456789/attempts/1/jobs",
+      "mode": "github",
+      "query": {"per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 1,
+      "items": "jobs",
+      "observe_rows": ["run_attempt", "status", "conclusion"]
+    },
+    {
+      "name": "github_attempt_2",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/actions/runs/123456789/attempts/2",
+      "expect_fields": {"run_attempt": 2},
+      "observe": ["head_sha", "head_branch", "status", "conclusion"]
+    },
+    {
+      "name": "github_jobs_attempt_2",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/actions/runs/123456789/attempts/2/jobs",
+      "mode": "github",
+      "query": {"per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 1,
+      "items": "jobs",
+      "observe_rows": ["run_attempt", "status", "conclusion"]
+    },
+    {
+      "name": "github_artifacts",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/actions/runs/123456789/artifacts",
+      "mode": "github",
+      "query": {"per_page": 2},
+      "reference_query": {"per_page": 100},
+      "min_pages": 1,
+      "items": "artifacts",
+      "observe_rows": ["expired", "expires_at"]
+    },
+    {
+      "name": "github_artifact_live",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/actions/artifacts/1234567/zip",
+      "status": "observe"
+    },
+    {
+      "name": "github_artifact_expired",
+      "source": "github",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private/actions/artifacts/1234568/zip",
+      "status": "observe"
+    },
+    {
+      "name": "github_rate_baseline",
+      "source": "github_rate",
+      "path": "/rate_limit",
+      "observe": ["resources.core.limit", "resources.core.remaining", "resources.core.reset"]
+    },
+    {
+      "name": "github_rate_primary",
+      "source": "github_rate",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private",
+      "status": [403, 429],
+      "expect_rate_limit": "primary"
+    },
+    {
+      "name": "github_rate_secondary",
+      "source": "github_rate",
+      "path": "/repos/craftpulse-mvp/cp89-org-a-private",
+      "status": [403, 429],
+      "expect_rate_limit": "secondary"
+    },
+    {
+      "name": "jenkins_user_identity",
+      "source": "jenkins_user",
+      "path": "/whoAmI/api/json",
+      "observe": ["name", "authenticated"]
+    },
+    {
+      "name": "jenkins_allowed",
+      "source": "jenkins",
+      "path": "/job/cp90-org-a/api/json",
+      "query": {"tree": "name"},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["name"]
+    },
+    {
+      "name": "jenkins_second_org",
+      "source": "jenkins",
+      "path": "/job/cp90-org-b/api/json",
+      "query": {"tree": "name"},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["name"]
+    },
+    {
+      "name": "jenkins_control",
+      "source": "jenkins",
+      "path": "/job/cp90-control/api/json",
+      "query": {"tree": "name"},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["name"]
+    },
+    {
+      "name": "jenkins_user_allowed",
+      "source": "jenkins_user",
+      "path": "/job/cp90-org-a/api/json",
+      "query": {"tree": "name"},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["name"]
+    },
+    {
+      "name": "jenkins_user_second_org",
+      "source": "jenkins_user",
+      "path": "/job/cp90-org-b/api/json",
+      "query": {"tree": "name"},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["name"]
+    },
+    {
+      "name": "jenkins_user_control",
+      "source": "jenkins_user",
+      "path": "/job/cp90-control/api/json",
+      "query": {"tree": "name"},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["name"]
+    },
+    {
+      "name": "jenkins_other_user_record",
+      "source": "jenkins",
+      "path": "/user/viewer-fixture/api/json",
+      "query": {"tree": "id"},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["id"]
+    },
+    {
+      "name": "jenkins_builds",
+      "source": "jenkins",
+      "path": "/job/cp90-org-a/api/json",
+      "mode": "jenkins",
+      "query": {"tree": "allBuilds[number,timestamp,building,result]{0,2}"},
+      "reference_query": {"tree": "allBuilds[number,timestamp,building,result]{0,100}"},
+      "min_pages": 2,
+      "items": "allBuilds",
+      "id": "number",
+      "observe_rows": ["timestamp", "building", "result"]
+    },
+    {
+      "name": "jenkins_builds_drift",
+      "source": "jenkins",
+      "path": "/job/cp90-org-a/api/json",
+      "mode": "jenkins",
+      "query": {"tree": "allBuilds[number,timestamp,building,result]{0,2}"},
+      "reference_query": {"tree": "allBuilds[number,timestamp,building,result]{0,100}"},
+      "min_pages": 2,
+      "items": "allBuilds",
+      "id": "number",
+      "observe_rows": ["timestamp", "building", "result"],
+      "pause_after_first": true,
+      "allow_drift": true,
+      "pause_message": "Queue a fixture build, wait for its number to appear at the start, then resume."
+    },
+    {
+      "name": "jenkins_git_build",
+      "source": "jenkins",
+      "path": "/job/cp90-org-a/123/api/json",
+      "query": {"tree": "number,actions[lastBuiltRevision[SHA1,branch[name,SHA1]]]"},
+      "observe": ["number", "actions"]
+    },
+    {
+      "name": "sonar_version",
+      "source": "sonar",
+      "path": "/api/system/status",
+      "observe": ["version", "status"]
+    },
+    {
+      "name": "sonar_user_identity",
+      "source": "sonar_user",
+      "path": "/api/users/current",
+      "observe": ["login", "isLoggedIn"]
+    },
+    {
+      "name": "sonar_allowed",
+      "source": "sonar",
+      "path": "/api/issues/search",
+      "query": {"components": "cp90-org-a", "p": 1, "ps": 1},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["paging.total"]
+    },
+    {
+      "name": "sonar_second_org",
+      "source": "sonar",
+      "path": "/api/issues/search",
+      "query": {"components": "cp90-org-b", "p": 1, "ps": 1},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["paging.total"]
+    },
+    {
+      "name": "sonar_control",
+      "source": "sonar",
+      "path": "/api/issues/search",
+      "query": {"components": "cp90-control", "p": 1, "ps": 1},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["paging.total"]
+    },
+    {
+      "name": "sonar_user_allowed",
+      "source": "sonar_user",
+      "path": "/api/issues/search",
+      "query": {"components": "cp90-org-a", "p": 1, "ps": 1},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["paging.total"]
+    },
+    {
+      "name": "sonar_user_second_org",
+      "source": "sonar_user",
+      "path": "/api/issues/search",
+      "query": {"components": "cp90-org-b", "p": 1, "ps": 1},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["paging.total"]
+    },
+    {
+      "name": "sonar_user_control",
+      "source": "sonar_user",
+      "path": "/api/issues/search",
+      "query": {"components": "cp90-control", "p": 1, "ps": 1},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["paging.total"]
+    },
+    {
+      "name": "sonar_other_user_permissions",
+      "source": "sonar",
+      "path": "/api/permissions/users",
+      "query": {"projectKey": "cp90-org-a", "permission": "user", "selected": "all", "q": "viewer-fixture", "p": 1, "ps": 100},
+      "status": "observe",
+      "budget_ms": 2000,
+      "observe": ["paging.total"],
+      "items": "users",
+      "observe_rows": ["login", "selected"]
+    },
+    {
+      "name": "sonar_issues",
+      "source": "sonar",
+      "path": "/api/issues/search",
+      "mode": "sonar",
+      "query": {"components": "cp90-org-a", "p": 1, "s": "UPDATE_DATE", "asc": "false", "ps": 2},
+      "reference_query": {"ps": 100},
+      "min_pages": 2,
+      "items": "issues",
+      "id": "key",
+      "observe_rows": ["updateDate", "status"]
+    },
+    {
+      "name": "sonar_issues_drift",
+      "source": "sonar",
+      "path": "/api/issues/search",
+      "mode": "sonar",
+      "query": {"components": "cp90-org-a", "p": 1, "s": "UPDATE_DATE", "asc": "false", "ps": 2},
+      "reference_query": {"ps": 100},
+      "min_pages": 2,
+      "items": "issues",
+      "id": "key",
+      "observe_rows": ["updateDate", "status"],
+      "pause_after_first": true,
+      "allow_drift": true,
+      "pause_message": "Update two unread issues and wait for both to move to the start of the same search."
+    },
+    {
+      "name": "sonar_issues_depth_20",
+      "source": "sonar",
+      "path": "/api/issues/search",
+      "query": {"components": "cp90-org-a", "p": 20, "ps": 500, "s": "UPDATE_DATE", "asc": "false"},
+      "status": "observe",
+      "items": "issues",
+      "observe": ["paging.pageIndex", "paging.pageSize", "paging.total"]
+    },
+    {
+      "name": "sonar_issues_depth_21",
+      "source": "sonar",
+      "path": "/api/issues/search",
+      "query": {"components": "cp90-org-a", "p": 21, "ps": 500, "s": "UPDATE_DATE", "asc": "false"},
+      "status": "observe",
+      "items": "issues",
+      "observe": ["paging.pageIndex", "paging.pageSize", "paging.total"]
+    },
+    {
+      "name": "sonar_analyses",
+      "source": "sonar",
+      "path": "/api/project_analyses/search",
+      "mode": "sonar",
+      "query": {"project": "cp90-org-a", "p": 1, "ps": 2},
+      "reference_query": {"ps": 100},
+      "min_pages": 1,
+      "items": "analyses",
+      "id": "key",
+      "observe_rows": ["revision", "date"]
+    },
+    {
+      "name": "sonar_branches",
+      "source": "sonar",
+      "path": "/api/project_branches/list",
+      "query": {"project": "cp90-org-a"},
+      "status": "observe",
+      "observe": ["branches"]
+    },
+    {
+      "name": "sonar_pull_requests",
+      "source": "sonar",
+      "path": "/api/project_pull_requests/list",
+      "query": {"project": "cp90-org-a"},
+      "status": "observe",
+      "observe": ["pullRequests"]
+    },
+    {
+      "name": "sonar_branch_issues",
+      "source": "sonar",
+      "path": "/api/issues/search",
+      "query": {"components": "cp90-org-a", "branch": "branch-fixture", "ps": 1},
+      "status": "observe",
+      "observe": ["paging.total"]
+    },
+    {
+      "name": "sonar_pr_issues",
+      "source": "sonar",
+      "path": "/api/issues/search",
+      "query": {"components": "cp90-org-a", "pullRequest": "1", "ps": 1},
+      "status": "observe",
+      "observe": ["paging.total"]
+    }
+  ]
+}
