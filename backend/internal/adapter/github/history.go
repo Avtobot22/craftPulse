@@ -104,6 +104,8 @@ func (s source) readHistory(ctx context.Context, repo repository, h *history, po
 			next, err = s.readActivityPage(ctx, repo, h, pos.page, seen)
 		}
 		switch {
+		case pos.collection < len(endpoints) && hasCode(err, adaptersdk.AdapterErrorCodeAuth):
+			return nil, err
 		case pos.page == "" && unavailableScope(err):
 			h.truncated = true
 		case err != nil:

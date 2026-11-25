@@ -47,8 +47,14 @@ type githubFixture struct {
 	firstActivity       atomic.Int32
 	forkUnavailable     atomic.Bool
 	historyScenario     atomic.Int32
+	historyFailure      atomic.Pointer[githubHistoryFailure]
 	manyAuthors         atomic.Bool
 	manyReviewers       atomic.Bool
+}
+
+type githubHistoryFailure struct {
+	path   string
+	status int
 }
 
 func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +67,10 @@ func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page == 0 {
 		page = 1
+	}
+	if failure := f.historyFailure.Load(); failure != nil && path == failure.path && page == 1 {
+		w.WriteHeader(failure.status)
+		return
 	}
 	switch path {
 	case "/repositories/9":
@@ -474,6 +484,30 @@ func TestGitHubAdapterSourceFailures(t *testing.T) {
 		assert.Equal(t, tc.code, got.Code)
 		if tc.code == adaptersdk.AdapterErrorCodeRateLimited {
 			assert.NotNil(t, got.RetryAt)
+		}
+	}
+}
+
+func TestGitHubAdapterRejectsFetchWhenPullHistoryAccessIsLost(t *testing.T) {
+	t.Parallel()
+	e, f := newGitHubFixture(t)
+	e.probe(t)
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{"timeline", "/repos/demo/project-7/issues/1/timeline"},
+		{"reviews", "/repos/demo/project-7/pulls/1/reviews"},
+	} {
+		for _, upstreamStatus := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+			t.Run(fmt.Sprintf("%s/%d", tc.name, upstreamStatus), func(t *testing.T) {
+				f.historyFailure.Store(&githubHistoryFailure{path: tc.path, status: upstreamStatus})
+				status, body := e.call(t, http.MethodPost, "fetch", e.target.Fetch)
+				require.Equal(t, http.StatusForbidden, status)
+				var failure adaptersdk.AdapterError
+				require.NoError(t, json.Unmarshal(body, &failure))
+				assert.Equal(t, adaptersdk.AdapterErrorCodeAuth, failure.Code)
+			})
 		}
 	}
 }
