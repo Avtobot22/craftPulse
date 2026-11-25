@@ -164,7 +164,8 @@ func (c *Client) Await(ctx context.Context, accepted *ciapi.ReceiptAccepted, wai
 			return nil, err
 		case r == nil:
 			delay = max(delay, retryAfter)
-		case r.Status == ciapi.ReceiptStatusQuarantined:
+		case r.Status == ciapi.ReceiptStatusQuarantined ||
+			(r.Channel == ciapi.ReceiptChannelCi && r.RetryAfterSeconds != nil && r.ResultUrl == nil):
 			delay = seconds(r.RetryAfterSeconds, _pollDelay)
 		case r.Status == ciapi.ReceiptStatusDuplicate && r.DuplicateOf != nil && *r.DuplicateOf != id:
 			id, delay = *r.DuplicateOf, 0

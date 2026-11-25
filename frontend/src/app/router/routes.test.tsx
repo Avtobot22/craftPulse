@@ -161,6 +161,159 @@ describe('application routes', () => {
     ).toBeInTheDocument()
   })
 
+  it('opens a CI receipt at its historical MR head and links to the pipeline', async () => {
+    const head = 'a'.repeat(40)
+    const mr = '0193a5b0-b0b0-7000-8000-000000000001'
+    const pipeline = '0193a5b0-c0c0-7000-8000-000000000001'
+    const summaryPath = '/merge-requests/' + mr + '/summary?head_sha=' + head
+    const count = (value: number): components['schemas']['MetricValue'] => ({
+      state: 'ASSESSED',
+      value,
+      unit: 'count',
+      numerator: null,
+      denominator: null,
+      n: null,
+      bound: null,
+      low_sample: false,
+      excluded_count: 0,
+      missing_count: 0,
+      reason_code: null,
+    })
+    const baseApi = mockApi({
+      ...currentUser,
+      actions: ['session.read', 'mr.read', 'ci.read'],
+    })
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (input === '/api/v1' + summaryPath) {
+        return Promise.resolve(
+          jsonResponse({
+            id: '0193a5b0-d0d0-7000-8000-000000000001',
+            merge_request_id: mr,
+            revision_no: 1,
+            head_sha: head,
+            base_sha: null,
+            built_at: null,
+            status: 'stale',
+            pipeline_state: 'complete',
+            stale_reason: 'new_head',
+            ci: {
+              pipeline_id: pipeline,
+              outcome: 'success',
+              attempts: 1,
+              retried_jobs: 0,
+            },
+            publication: {
+              status: 'failed',
+              error_code: 'write_permission_missing',
+              published_at: null,
+              external_id: null,
+            },
+            tests: {
+              passed: count(12),
+              failed: count(0),
+              errored: count(0),
+              skipped: count(1),
+            },
+            change: {
+              lines_added: count(24),
+              lines_removed: count(5),
+              files_changed: count(3),
+              complexity_increased_functions: count(2),
+              new_clone_groups: {
+                ...count(0),
+                state: 'NOT_EVALUATED',
+                value: null,
+                reason_code: 'incomparable_base',
+              },
+            },
+            coverage_changed_lines: {
+              ...count(0.75),
+              state: 'PROVISIONAL',
+              unit: 'ratio',
+              numerator: 18,
+              denominator: 24,
+            },
+            expected: { missing_checks: count(0), missing_reports: count(1) },
+            last_good: {
+              head_sha: 'b'.repeat(40),
+              revision_no: 2,
+              built_at: '2026-11-08T12:35:00Z',
+            },
+            not_evaluated: [
+              { analysis_kind: 'code', reason_code: 'scan_failed' },
+            ],
+            access_limited: true,
+            access_notes: [{ code: 'restricted_by_access' }],
+            redactions: ['items'],
+            items: [
+              {
+                item_no: 1,
+                item_kind: 'ci_attempts',
+                rule_id: null,
+                location: null,
+                rank: null,
+                finding_id: null,
+                severity: null,
+              },
+            ],
+          } satisfies components['schemas']['MergeRequestSummary']),
+        )
+      }
+      if (input === '/api/v1/pipelines/' + pipeline) {
+        return Promise.resolve(
+          jsonResponse({
+            ref_name: 'feature',
+            sha: head,
+            outcome: 'success',
+            reports: [],
+          }),
+        )
+      }
+      return baseApi(input, init)
+    })
+
+    mount(summaryPath, fetcher)
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Сводка MR, ревизия 1',
+        level: 1,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByTitle(head)).toBeInTheDocument()
+    expect(screen.getByTitle('b'.repeat(40))).toBeInTheDocument()
+    expect(screen.getByText('Историческая сводка')).toBeInTheDocument()
+    expect(
+      screen.getByText('У бота нет права записи в MR.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Есть закрытые результаты.')).toBeInTheDocument()
+
+    expect(screen.getByRole('heading', { name: 'Тесты' })).toBeInTheDocument()
+    expect(screen.getByText('Прошли').nextElementSibling).toHaveTextContent(
+      '12',
+    )
+    expect(screen.getByText('Упали').nextElementSibling).toHaveTextContent('0')
+    expect(
+      screen.getByText('Добавленные строки').nextElementSibling,
+    ).toHaveTextContent('24')
+    expect(
+      screen.getByText('Новые группы клонов').nextElementSibling,
+    ).toHaveTextContent('Нет сопоставимой базы')
+    expect(
+      screen.getByRole('heading', { name: 'Покрытие изменённых строк' })
+        .nextElementSibling,
+    ).toHaveTextContent(/75\s*%.*частично.*18 из 24/)
+    expect(
+      screen.getByText('Отсутствующие отчёты').nextElementSibling,
+    ).toHaveTextContent('1')
+    expect(screen.getByText('Анализ завершился с ошибкой')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('link', { name: 'Открыть pipeline' }))
+    expect(
+      await screen.findByRole('heading', { name: 'Pipeline', level: 1 }),
+    ).toBeInTheDocument()
+    expect(await screen.findByText('Исход: success')).toBeInTheDocument()
+  })
+
   it('never requests private data on a public route', async () => {
     const fetcher = vi.fn<typeof fetch>()
     mount('/login/example', fetcher)
@@ -947,6 +1100,31 @@ describe('technical screen routes', () => {
     expect(screen.getByText('Есть закрытые результаты.')).toBeVisible()
     expect(screen.getByText('Принята', { exact: false })).toBeVisible()
     expect(screen.getByText('не проверено')).toBeVisible()
+  })
+
+  it('rejects a different head when the requested revision is already cached', async () => {
+    const mismatchedURL = summaryURL + '&head_sha=' + 'b'.repeat(40)
+    const fallback = mockTechnicalApi('mr.read')
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation((input, init) =>
+        input === '/api/v1' + mismatchedURL
+          ? Promise.resolve(jsonResponse(summaryFixture))
+          : fallback(input, init),
+      )
+    const { router } = mount(summaryURL, fetcher)
+    const heading = { name: 'Сводка MR, ревизия 3' }
+    expect(await screen.findByRole('heading', heading)).toBeVisible()
+
+    await act(() => router.navigate(mismatchedURL))
+    expect(
+      await screen.findByText('Не удалось загрузить сводку MR'),
+    ).toBeInTheDocument()
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1' + mismatchedURL,
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(screen.queryByRole('heading', heading)).not.toBeInTheDocument()
   })
 
   const links = [

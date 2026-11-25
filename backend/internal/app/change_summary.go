@@ -59,15 +59,30 @@ func addSummaryValue(v *entity.SummaryRevision, kind string, value any) error {
 }
 
 func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID, mr entity.SummaryMR, run entity.CIRun,
-	v *entity.SummaryRevision,
+	jobs change.SummaryCheckJobs, v *entity.SummaryRevision,
 ) error {
 	points, definitions := s.calculator.CalculateSummaryCI(run)
-	assessment, definition := s.calculator.CalculateSummaryCompleteness(mr, v.ExpectedReports, v.CompleteReports)
-	points = append(points, assessment)
-	definitions = append(definitions, definition)
+	checks, checkDefinition := s.calculator.CalculateSummaryChecks(mr, run, jobs.All)
+	publicChecks, _ := s.calculator.CalculateSummaryChecks(mr, run, jobs.Public)
+	reports, reportDefinition := s.calculator.CalculateSummaryCompleteness(mr, v.ExpectedReports, v.CompleteReports)
+	points = append(points, checks, reports)
+	definitions = append(definitions, checkDefinition, reportDefinition)
 	v.Definitions = append(v.Definitions, definitions...)
+	publicExpected := slices.DeleteFunc(slices.Clone(v.ExpectedReports), func(r entity.ExpectedReport) bool {
+		return entity.SensitiveSummaryAnalysis(r.Kind)
+	})
+	publicReports, _ := s.calculator.CalculateSummaryCompleteness(mr, publicExpected, v.CompleteReports)
+	var display *entity.SummaryCI
 	var runs, attempts []entity.ID
 	if !run.Run.RunID.IsZero() {
+		summary := s.calculator.SummarizeRun(run)
+		display = &entity.SummaryCI{
+			PipelineID:       run.Run.RunID,
+			ParentPipelineID: run.Run.ParentRunID,
+			Outcome:          run.Run.Outcome,
+			Attempts:         summary.AttemptsTotal,
+			RetriedJobs:      summary.RetriedJobs,
+		}
 		runs = make([]entity.ID, 1, len(run.Children)+1)
 		runs[0] = run.Run.ID
 		for i := range run.Children {
@@ -83,7 +98,10 @@ func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID
 		RunVersions     []entity.ID          `json:"run_versions,omitempty"`
 		AttemptVersions []entity.ID          `json:"attempt_versions,omitempty"`
 		Metrics         []entity.SeriesPoint `json:"metrics"`
-	}{run.Run.RunID, runs, attempts, points}); err != nil {
+		Display         *entity.SummaryCI    `json:"display,omitempty"`
+		PublicChecks    entity.SeriesPoint   `json:"public_checks"`
+		PublicReports   entity.SeriesPoint   `json:"public_reports"`
+	}{run.Run.RunID, runs, attempts, points, display, publicChecks, publicReports}); err != nil {
 		return err
 	}
 	facts, err := s.TestCoverageFacts(ctx, org, entity.ReportScope{AreaID: mr.AreaID, SHA: mr.HeadSHA, KnownSeq: mr.KnowledgeSeq})
@@ -124,11 +142,15 @@ func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID
 		diff = entity.MRDiff{}
 	}
 	in := calc.MRStructureInput{Diff: diff, Coverage: patch}
-	streams, err := s.summaryCode(ctx, org, mr, v.CodePairs, &in)
+	streams, err := s.summaryCode(ctx, org, mr, v, &in)
 	if err != nil {
 		return err
 	}
 	structure := s.calculator.CalculateMRStructure(&in)
+	v.ComparableBase = v.ComparableBase || (diff.Completeness == entity.MRDiffComplete || diff.Completeness == entity.MRDiffPartial)
+	if !v.ComparableBase {
+		v.ComparableBase = slices.ContainsFunc(v.CodePairs, func(pair entity.SummaryCodePair) bool { return pair.Comparable })
+	}
 	if len(streams) == 0 {
 		streams = []summaryCodeMetrics{{Complexity: structure.Complexity, Clones: structure.Clones}}
 	}
@@ -211,7 +233,7 @@ type summaryCodeMetrics struct {
 }
 
 func (s summaryCalculations) summaryCode(ctx context.Context, org entity.ID, mr entity.SummaryMR,
-	pairs []entity.SummaryCodePair, in *calc.MRStructureInput,
+	v *entity.SummaryRevision, in *calc.MRStructureInput,
 ) ([]summaryCodeMetrics, error) {
 	type stream struct {
 		component entity.ID
@@ -219,7 +241,18 @@ func (s summaryCalculations) summaryCode(ctx context.Context, org entity.ID, mr 
 	}
 	streams := make(map[stream]*calc.MRStructureInput)
 	var order []stream
-	for _, pair := range pairs {
+	// Keep a slot for each configured stream even when neither report arrived.
+	for _, expected := range v.ExpectedReports {
+		if expected.Kind != entity.AnalysisCode {
+			continue
+		}
+		k := stream{expected.ComponentID, expected.Language}
+		if streams[k] == nil {
+			streams[k] = &calc.MRStructureInput{Diff: in.Diff}
+			order = append(order, k)
+		}
+	}
+	for _, pair := range v.CodePairs {
 		k := stream{pair.ComponentID, pair.Head.Language}
 		entry := streams[k]
 		if entry == nil {

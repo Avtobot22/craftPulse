@@ -43,16 +43,19 @@ type SummaryInput struct {
 
 // SummaryItem is one visible row whose required right also governs its value.
 type SummaryItem struct {
-	Kind          string
-	FindingID     *ID
-	OccurrenceID  *ID
-	RequiredRight string
-	Rank          *int
-	ComponentID   *ID
-	AnalysisKind  string
-	ReasonCode    string
-	Severity      string
-	Value         json.RawMessage
+	Kind               string
+	FindingID          *ID
+	OccurrenceID       *ID
+	RequiredRight      string
+	Rank               *int
+	ComponentID        *ID
+	AnalysisKind       string
+	Mode               string
+	RuleID, Path       string
+	LineStart, LineEnd *int
+	ReasonCode         string
+	Severity           string
+	Value              json.RawMessage
 }
 
 // SummaryCodePair identifies the exact streams used by the MR structure definitions.
@@ -64,6 +67,7 @@ type SummaryCodePair struct {
 
 // SummaryRevision is the persisted lifecycle and content of one MR summary.
 type SummaryRevision struct {
+	ComparableBase        bool
 	ExpectedReports       []ExpectedReport
 	CompleteReports       []SummaryReportEvidence
 	ID                    ID
@@ -116,6 +120,44 @@ type SummaryReportEvidence struct {
 	ReportID ID
 }
 
+// SummaryRead is the revision and its persisted publication outcome. View filters Items before mapping them.
+type SummaryRead struct {
+	ID, MRID, ProjectID                                  ID
+	No                                                   int
+	HeadSHA, BaseSHA, Status, PipelineState, StaleReason string
+	BuiltAt                                              *time.Time
+	LastGood                                             *SummaryCheckpoint
+	Publication                                          Publication
+	Items                                                []SummaryItem
+	Redactions                                           []string
+	SecurityAllowed                                      bool
+}
+
+// SummaryCheckpoint identifies the last complete revision at the requested cut.
+type SummaryCheckpoint struct {
+	HeadSHA string
+	No      int
+	BuiltAt time.Time
+}
+
+// SummaryCI carries immutable display fields from the selected run.
+type SummaryCI struct {
+	PipelineID            ID
+	ParentPipelineID      *ID
+	Outcome               CIOutcome
+	Attempts, RetriedJobs int
+}
+
+// SensitiveSummaryAnalysis reports whether an analysis requires the security-data right.
+func SensitiveSummaryAnalysis(kind string) bool {
+	switch kind {
+	case AnalysisSAST, AnalysisSCA, AnalysisSecrets, AnalysisIaC, AnalysisImage:
+		return true
+	default:
+		return false
+	}
+}
+
 func severityOrder(s string) int {
 	switch s {
 	case "critical":
@@ -153,4 +195,27 @@ func RankSummary(items []SummaryItem) {
 	for rank, index := range candidates[:min(5, len(candidates))] {
 		items[index].Rank = new(rank + 1)
 	}
+}
+
+// FilterSecurity removes restricted rows without preserving their positions or their number.
+func (s *SummaryRead) FilterSecurity(allowed bool) {
+	s.SecurityAllowed = allowed
+	s.Redactions = []string{}
+	if !allowed {
+		items, notEvaluated := false, false
+		s.Items = slices.DeleteFunc(s.Items, func(i SummaryItem) bool {
+			hidden := i.RequiredRight == "security" ||
+				i.Kind == "not_evaluated" && SensitiveSummaryAnalysis(i.AnalysisKind)
+			items = items || hidden
+			notEvaluated = notEvaluated || hidden && i.Kind == "not_evaluated"
+			return hidden
+		})
+		if items {
+			s.Redactions = append(s.Redactions, "items")
+		}
+		if notEvaluated {
+			s.Redactions = append(s.Redactions, "not_evaluated")
+		}
+	}
+	RankSummary(s.Items)
 }

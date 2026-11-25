@@ -62,7 +62,8 @@ type reply struct {
 type fakeAPI struct {
 	t        *testing.T
 	doc      *openapi3.T
-	srv      *httptest.Server
+	url      string
+	client   *http.Client
 	mu       sync.Mutex
 	uploads  []reply
 	receipts []reply
@@ -73,10 +74,26 @@ type fakeAPI struct {
 
 func newFakeAPI(t *testing.T) *fakeAPI {
 	t.Helper()
-	f := &fakeAPI{t: t, doc: contract(t)}
-	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
-	t.Cleanup(f.srv.Close)
+	f := &fakeAPI{t: t, doc: contract(t), url: "https://craftpulse.example"}
+	f.client = &http.Client{Transport: f}
+	if os.Getenv("CRAFTPULSE_TEST_IMAGE") != "" {
+		// The CLI running in the image reaches the fixture over HTTP.
+		srv := httptest.NewServer(http.HandlerFunc(f.serve))
+		t.Cleanup(srv.Close)
+		f.url, f.client = srv.URL, srv.Client()
+	}
 	return f
+}
+
+func (f *fakeAPI) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.Body == nil {
+		r = r.Clone(r.Context())
+		r.Body = http.NoBody
+	}
+	defer r.Body.Close()
+	rec := httptest.NewRecorder()
+	f.serve(rec, r)
+	return rec.Result(), nil
 }
 
 func (f *fakeAPI) example(path, method, status string) map[string]any {
@@ -192,7 +209,7 @@ func newCLI(t *testing.T, api *fakeAPI) *cli {
 	t.Helper()
 	dir := t.TempDir()
 	c := &cli{t: t, api: api, dir: dir, env: map[string]string{
-		"CRAFTPULSE_URL": api.srv.URL, "CRAFTPULSE_UPLOAD_TOKEN": _token, "CRAFTPULSE_WORK_DIR": filepath.Join(dir, "state"),
+		"CRAFTPULSE_URL": api.url, "CRAFTPULSE_UPLOAD_TOKEN": _token, "CRAFTPULSE_WORK_DIR": filepath.Join(dir, "state"),
 		"CI_PROJECT_ID": "42", "CI_PROJECT_PATH": "demo/billing", "CI_PIPELINE_ID": "5001", "CI_JOB_ID": "7002",
 		"CI_COMMIT_SHA": _sha, "CI_COMMIT_REF_NAME": "demo/PA-1-change", "CI_MERGE_REQUEST_ID": "9001",
 		"CI_SERVER_HOST": "gitlab.example", "CI_SERVER_PORT": "443", "CI_SERVER_PROTOCOL": "https",
@@ -207,7 +224,7 @@ func (c *cli) run(args ...string) (code int, out string) {
 	c.t.Helper()
 	var buf bytes.Buffer
 	cfg := ci.ClientConfig{
-		HTTP:   c.api.srv.Client(),
+		HTTP:   c.api.client,
 		Jitter: func() float64 { return 0.5 },
 		Sleep: func(ctx context.Context, d time.Duration) error {
 			c.mu.Lock()
@@ -258,10 +275,17 @@ func checkPackage(t *testing.T, data []byte) *envelope.Result {
 func TestUpload_PrintsReceiptOfAcceptedPackageWithFindings(t *testing.T) {
 	api := newFakeAPI(t)
 	api.uploads = []reply{api.accepted("quarantined", 3)}
-	api.receipts = []reply{api.receipt("quarantined", nil), api.receipt("partial", func(b map[string]any) {
-		b["record_count"], b["accepted_count"], b["rejected_count"], b["replay_count"], b["conflict_count"] = 3, 1, 1, 1, 0
-		b["reason_code"] = "multiple_record_rejections"
-	})}
+	resultPath := "/merge-requests/0193a5b0-3333-7000-8000-000000000001/summary?head_sha=" + _sha
+	api.receipts = []reply{
+		api.receipt("quarantined", nil),
+		api.receipt("partial", func(b map[string]any) {
+			b["result_url"], b["retry_after_seconds"] = nil, 1
+		}),
+		api.receipt("partial", func(b map[string]any) {
+			b["record_count"], b["accepted_count"], b["rejected_count"], b["replay_count"], b["conflict_count"] = 3, 1, 1, 1, 0
+			b["reason_code"], b["result_url"] = "multiple_record_rejections", resultPath
+		}),
+	}
 	c := newCLI(t, api)
 
 	out := c.mustRun("profile", "--kind", "code")
@@ -278,8 +302,8 @@ func TestUpload_PrintsReceiptOfAcceptedPackageWithFindings(t *testing.T) {
 	assert.Contains(t, out, "receipt "+_receiptID+": partial")
 	assert.Contains(t, out, "records: 3 total, 1 accepted, 1 rejected, 1 replays, 0 conflicts")
 	assert.Contains(t, out, "reason: multiple_record_rejections")
-	assert.Contains(t, out, "result:\n"+api.srv.URL+"/teams/0193a5b0-3333-7000-8000-000000000001/report")
-	assert.Equal(t, 2, api.polls)
+	assert.Contains(t, out, "result:\n"+api.url+resultPath)
+	assert.Equal(t, 3, api.polls)
 
 	saved, err := os.ReadFile(c.path("package.tar.gz"))
 	require.NoError(t, err)
@@ -453,7 +477,7 @@ func TestToken_NeverPrinted(t *testing.T) {
 	out.WriteString(failed)
 
 	text := out.String()
-	assert.Contains(t, text, "debug: > GET "+api.srv.URL+"/api/v1/ci/check-profile; Authorization: [REDACTED]")
+	assert.Contains(t, text, "debug: > GET "+api.url+"/api/v1/ci/check-profile; Authorization: [REDACTED]")
 	for i := 0; i+8 <= len(_token); i++ {
 		require.NotContains(t, text, _token[i:i+8], "token part at %d", i)
 	}

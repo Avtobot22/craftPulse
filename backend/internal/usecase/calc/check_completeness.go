@@ -3,6 +3,7 @@ package calc
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -191,4 +192,28 @@ func (*UseCase) CalculateSummaryCompleteness(mr entity.SummaryMR, expected []ent
 	}
 	d := definition("I09")
 	return missingReports(&in), entity.RevisionInput{Kind: InputDefinition, ID: d.ID, Version: strconv.Itoa(d.Version)}
+}
+
+// CalculateSummaryChecks applies I08 to the configured jobs and the selected pipeline graph.
+func (*UseCase) CalculateSummaryChecks(mr entity.SummaryMR, run entity.CIRun, keys []string) (entity.SeriesPoint, entity.RevisionInput) {
+	checks := make([]ExpectedCheck, 0, len(keys))
+	expected := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		checks = append(checks, ExpectedCheck{Key: key})
+		expected[key] = true
+	}
+	facts := entity.CIFacts{Runs: append([]entity.CIRunVersion{run.Run}, run.Children...), Attempts: run.Attempts}
+	runs := ciRunsOf(facts)
+	for i := range runs {
+		for _, job := range runs[i].jobs {
+			last := job.attempts[len(job.attempts)-1]
+			key := strings.TrimPrefix(last.JobKey, "craftPulse (advisory)/")
+			if expected[key] {
+				checks = append(checks, ExpectedCheck{Key: key, JobID: job.id, Outcome: last.Outcome})
+			}
+		}
+	}
+	d := definition("I08")
+	in := CheckCompletenessInput{AreaID: mr.AreaID, AsOf: mr.ObservedAt, Checks: checks}
+	return missingChecks(&in), entity.RevisionInput{Kind: InputDefinition, ID: d.ID, Version: strconv.Itoa(d.Version)}
 }

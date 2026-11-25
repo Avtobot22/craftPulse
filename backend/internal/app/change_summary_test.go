@@ -52,7 +52,7 @@ func (summaryAccessSource) CheckAccess(context.Context, entity.ID, entity.ID, en
 	return entity.SourceAccessResult{Decisions: []entity.SourceAccessDecision{{Decision: entity.SourceAllowed}}}, nil
 }
 
-func summaryReadAPI(t *testing.T, e *identityEnv, instance entity.ID) {
+func summaryReadAPI(t *testing.T, e *identityEnv, instance entity.ID, readers ...entity.ID) {
 	t.Helper()
 	const nativeAccount = "summary-reader"
 	var accountID entity.ID
@@ -69,9 +69,11 @@ func summaryReadAPI(t *testing.T, e *identityEnv, instance entity.ID) {
 	require.NoError(t, err)
 	require.Len(t, assignments, 1)
 	require.Equal(t, entity.AssignmentSaved, assignments[0].Outcome)
-	_, err = e.owner.Exec(t.Context(), `UPDATE org.app_user SET person_id = $1 WHERE organization_id = $2 AND id = $3`,
-		uuid.UUID(person), uuid.UUID(e.orgID), uuid.UUID(e.admin.UserID))
-	require.NoError(t, err)
+	for _, reader := range append(readers, e.admin.UserID) {
+		_, err = e.owner.Exec(t.Context(), "UPDATE org.app_user SET person_id = $1 WHERE organization_id = $2 AND id = $3",
+			uuid.UUID(person), uuid.UUID(e.orgID), uuid.UUID(reader))
+		require.NoError(t, err)
+	}
 
 	orgs, rights, err := newOrgAccess(e.app, e.clock, summaryAccessSource{e.connect}, nil)
 	require.NoError(t, err)
@@ -159,10 +161,40 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 		})
 		return pack(t, m, r)
 	}
+	// The CI step can finish before GitLab has collected either the MR or its pipeline.
+	archive := ciPackage(t, func(files map[string][]byte) {
+		for _, name := range []string{envelope.ScanManifestName, envelope.RecordsName} {
+			files[name] = bytes.ReplaceAll(files[name], []byte("d2126fca9ecbc14c5b15c22bdd35268aabb5cdac"), []byte(h1))
+		}
+	})
+	uploaded := e.uploadCI(t, e.token.Value, archive)
+	require.Equal(t, http.StatusAccepted, uploaded.Code, uploaded.Body.String())
+	receipt := decode[acceptedBody](t, uploaded).ReceiptID
+	require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(receipt)))
+	e.drain(t)
+	firstReceipt := e.readCI(t, receipt, e.token.Value)
+	require.Equal(t, "accepted", firstReceipt.Status)
+	assert.Nil(t, firstReceipt.ResultURL)
+	assert.NotNil(t, firstReceipt.RetryAfter)
+
+	// Even a collected pipeline cannot replace an explicit MR target from the package.
+	pipelineManifest := ciManifest("42")
+	pipelineManifest.Source.InstanceKey = _checksInstance
+	e.submit(t, pack(t, pipelineManifest, mrRecord(t, "ci_run", "5001", "", "v1", envelope.CiRunV1{
+		ProjectNativeId: "42", RefName: "feature", Sha: h1, MrNativeId: new("9001"),
+		NativeStatus: "running", Outcome: "running", StartedAt: new(e.clock.Now()),
+	})))
+	assert.Nil(t, e.readCI(t, receipt, e.token.Value).ResultURL)
+
 	e.clock.Advance(time.Second)
 	first := e.submit(t, mrPage(h1, "v1", e.clock.Now()))
 	require.NotNil(t, first.SourceInstanceID)
 	mr := mrID(t, e.normalized, "9001")
+	pendingReceipt := e.readCI(t, receipt, e.token.Value)
+	assert.Equal(t, "accepted", pendingReceipt.Status)
+	assert.Nil(t, pendingReceipt.ResultURL)
+	require.NotNil(t, pendingReceipt.RetryAfter)
+	assert.Positive(t, *pendingReceipt.RetryAfter)
 	job := entity.ChangeSummaryJob{OrganizationID: e.orgID, MRID: mr}
 	source := &summaryTestAdapter{source: entity.AreaSource{
 		InstanceID: *first.SourceInstanceID, Kind: entity.ScopeRepository, NativeScopeID: "42",
@@ -179,7 +211,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	deps, err := newSummaryDeps(e.app, source, e.norm, new(calc.UseCase), e.store, prometheus.NewRegistry())
 	require.NoError(t, err)
 	decisions := &summaryDecisions{Decisions: e.decisions}
-	u := newSummarizer(e.app, e.norm, e.orgs, e.clock, decisions, deps)
+	u := newSummarizer(e.app, e.norm, e.orgs, e.clock, decisions, deps, e.catalog)
 	count := e.normalized.n
 	run := func() {
 		t.Helper()
@@ -227,7 +259,8 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	}}
 	e.submit(t, emptySecurityReports(h1))
 	e.submit(t, e.codeReport(t, h1, "feature", "8102", sarifOf(), "success", "complete"))
-	run()
+	link := e.awaitCIResult(t, receipt, run)
+	assert.Equal(t, "/merge-requests/"+mr.String()+"/summary?head_sha="+h1, link)
 	ready := checkReady(h1, "running")
 	assertItem(ready, "resolved", "", 1)
 	assertItem(ready, "accepted", "", 1)
@@ -260,6 +293,9 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Zero(t, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish'`))
 	onFetch = func() {}
 
+	// Head A remains the target as the MR advances.
+	assert.Equal(t, &link, e.readCI(t, receipt, e.token.Value).ResultURL)
+
 	e.submit(t, page2)
 	e.submit(t, emptySecurityReports(h2))
 	manifest := ciManifest("42")
@@ -267,9 +303,13 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	e.submit(t, pack(t, manifest, mrRecord(t, "ci_run", "58101", "", "v1", envelope.CiRunV1{
 		ProjectNativeId: "42", RefName: "feature", Sha: h2, MrNativeId: new("9001"), NativeStatus: "success",
 		Outcome: "success", StartedAt: new(e.clock.Now()), FinishedAt: new(e.clock.Now()),
+	}), mrRecord(t, "ci_attempt", "70101", "", "v1", envelope.CiAttemptV1{
+		RunNativeId: "58101", JobKey: "craftpulse-go-default", JobName: "craftpulse-go-default",
+		ConfigFingerprint: strings.Repeat("a", 64), AttemptNo: 1, NativeStatus: "success", Outcome: "success",
 	})))
 	run()
 	ready = checkReady(h2, "reports_missing")
+	assert.Equal(t, &link, e.readCI(t, receipt, e.token.Value).ResultURL)
 	assertItem(ready, "not_evaluated", "scan_missing", 2)
 	assertItem(ready, "resolved", "", 0)
 
@@ -325,7 +365,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish'
 		AND state = 'available'`))
 
-	// Reproduce an upgrade from jobs whose arguments had no uniqueness key.
+	// Reproduce an upgrade from jobs with no uniqueness key and revisions with no saved intent.
 	db := stdlib.OpenDBFromPool(e.owner)
 	defer db.Close()
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.Core())
@@ -334,6 +374,8 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `UPDATE change.summary_revision SET publication_status = 'pending' WHERE id = $1`,
 		uuid.UUID(previous.Revision.ID))
+	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), `UPDATE change.summary_revision SET publication_status = 'not_requested' WHERE id = $1`, ready)
 	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `UPDATE river_job SET unique_key = NULL WHERE kind = 'outbound.publish'`)
 	require.NoError(t, err)
@@ -363,6 +405,59 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	}
 	enqueueWG.Wait()
 
+	// Use the HTTP entry point and the same revisions built from imported facts.
+	security := e.exceptionActor(t, "summary-security", []roleInput{
+		{Role: "tech_lead", ProjectID: &project}, {Role: "security_access", ProjectID: &project},
+	})
+	outside := e.exceptionActor(t, "summary-outside", []roleInput{{Role: "tech_lead", ProjectID: &e.other}})
+	summaryReadAPI(t, e, *first.SourceInstanceID,
+		entity.ID(e.userID(t, e.orgID, "summary-security")), entity.ID(e.userID(t, e.orgID, _otherSub)))
+	summaryPath := "/api/v1/merge-requests/" + mr.String() + "/summary"
+	read := func(b *browser, suffix string) openapi.MergeRequestSummary {
+		t.Helper()
+		return decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, b, summaryPath+suffix, "MergeRequestSummary"))
+	}
+	full := read(security, "")
+	plain := read(e.lead, "")
+	assert.Equal(t, ready, full.Id)
+	assert.Equal(t, h2, plain.HeadSha)
+	require.NotNil(t, full.Expected)
+	assert.Equal(t, openapi.DataState("ASSESSED"), full.Expected.MissingChecks.State)
+	assert.Equal(t, new(float32(3)), full.Expected.MissingChecks.Numerator)
+	assert.Equal(t, new(float32(4)), full.Expected.MissingChecks.Denominator)
+	assert.Equal(t, new(float32(0.75)), full.Expected.MissingChecks.Value)
+	require.NotNil(t, plain.Expected)
+	assert.Equal(t, openapi.DataState("ASSESSED"), plain.Expected.MissingChecks.State)
+	assert.Equal(t, new(float32(0)), plain.Expected.MissingChecks.Numerator)
+	assert.Equal(t, new(float32(1)), plain.Expected.MissingChecks.Denominator)
+	assert.Equal(t, new(float32(0)), plain.Expected.MissingChecks.Value)
+	receiptPath := "/api/v1" + link
+	fromReceipt := decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, security, receiptPath, "MergeRequestSummary"))
+	assert.Equal(t, h1, fromReceipt.HeadSha)
+	assert.Equal(t, "stale", string(fromReceipt.Status))
+	assert.Equal(t, http.StatusNotFound, e.do(t, security, http.MethodGet,
+		fmt.Sprintf("%s&revision_no=%d", receiptPath, full.RevisionNo), nil).Code)
+	assert.Equal(t, http.StatusNotFound, e.do(t, outside, http.MethodGet, receiptPath, nil).Code)
+	assert.Equal(t, http.StatusNotFound, e.do(t, security, http.MethodGet, summaryPath+"?head_sha="+strings.Repeat("0", 40), nil).Code)
+	assert.Empty(t, full.Redactions)
+	assert.Equal(t, []string{"items"}, plain.Redactions)
+	assert.True(t, plain.AccessLimited)
+	assert.Len(t, full.Items, len(plain.Items)+6)
+	require.NotNil(t, full.Ci)
+	assert.Equal(t, uuid.UUID(runID(t, e.normalized, "58101")), full.Ci.PipelineId)
+	for i, item := range plain.Items {
+		assert.Equal(t, i+1, item.ItemNo)
+		assert.Nil(t, item.Rank)
+		assert.NotEqual(t, new(openapi.AnalysisKind("sast")), item.AnalysisKind)
+	}
+	assert.Equal(t, "pending", string(full.Publication.Status))
+	old := read(security, "?revision_no=1")
+	assert.Equal(t, &base, old.BaseSha)
+	assert.Equal(t, h1, old.HeadSha)
+	assert.Equal(t, "stale", string(old.Status))
+	assert.Equal(t, "not_requested", string(old.Publication.Status))
+	assert.Equal(t, http.StatusNotFound, e.do(t, outside, http.MethodGet, summaryPath, nil).Code)
+
 	enqueue()
 	run()
 	assert.Equal(t, ready, checkReady(h2, "complete"))
@@ -376,9 +471,9 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	source.source.ConnectionID = entity.ID(connectionID)
 	require.Equal(t, h2, previous.Revision.HeadSHA)
 	previous.ConnectionID = source.source.ConnectionID
-	current, err := u.CheckPublicationHead(t.Context(), e.orgID, &previous)
+	canPublish, err := u.CheckPublicationHead(t.Context(), e.orgID, &previous)
 	require.NoError(t, err)
-	assert.False(t, current, "a superseded revision cannot publish even when the head is unchanged")
+	assert.False(t, canPublish, "a superseded revision cannot publish even when the head is unchanged")
 	adapter := &summaryNoteAdapter{unknown: true}
 	publisher, err := newPublisher(e.app, u, adapter, _site, prometheus.NewRegistry())
 	require.NoError(t, err)
@@ -403,12 +498,17 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	require.NoError(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false))
 	var no int
 	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT revision_no FROM change.summary_revision WHERE id = $1`, ready).Scan(&no))
-	read, err := u.ReadSummary(t.Context(), e.orgID, mr, &no)
-	published := read.Publication
+	publishedRevision, err := u.ReadSummary(t.Context(), e.orgID, mr, &no)
+	published := publishedRevision.Publication
 	require.NoError(t, err)
 	assert.Equal(t, entity.PublicationSucceeded, published.Status)
 	assert.Equal(t, "101", published.ExternalID)
 	assert.NotNil(t, published.PublishedAt)
+	apiPublished := read(security, fmt.Sprintf("?revision_no=%d", no)).Publication
+	assert.Equal(t, openapi.MergeRequestSummaryPublicationStatus(entity.PublicationSucceeded), apiPublished.Status)
+	assert.Equal(t, new("101"), apiPublished.ExternalId)
+	assert.NotNil(t, apiPublished.PublishedAt)
+	assert.Nil(t, apiPublished.ErrorCode)
 	assert.Contains(t, adapter.body, h2)
 	assert.Contains(t, adapter.body, fmt.Sprintf("%s/merge-requests/%s/summary?revision_no=%d&org_slug=demo", _site, mr, no))
 	assert.Contains(t, adapter.body, "Есть закрытые результаты")
@@ -417,9 +517,6 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, 2, adapter.writes)
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.action WHERE status = 'succeeded'`))
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM audit.event WHERE operation = 'outbound.publish' AND outcome = 'succeeded'`))
-
-	summaryReadAPI(t, e, *first.SourceInstanceID)
-	summaryPath := fmt.Sprintf("/api/v1/merge-requests/%s/summary", mr)
 
 	e.clock.Advance(time.Second)
 	e.submit(t, sast(h2, "h2-retry", sarifOf(hits[:5]...)))
@@ -454,9 +551,38 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 
 	// An unrelated base SHA leaves complete head findings newly observed and keeps the last good revision.
 	e.submit(t, page)
+	require.Zero(t, count(t, "SELECT count(*) FROM change.summary_revision WHERE mr_id = $1 AND status = 'ready'", uuid.UUID(mr)))
+	selectors := []string{"", "?head_sha=" + h2, fmt.Sprintf("?revision_no=%d", stale.RevisionNo)}
+	for _, actor := range []*browser{security, e.lead} {
+		for _, selector := range selectors {
+			prior := read(actor, selector)
+			assert.Equal(t, latestReady, prior.Id)
+			assert.Equal(t, h2, prior.HeadSha)
+			assert.Equal(t, "stale", string(prior.Status))
+			assert.Equal(t, new("new_head"), prior.StaleReason)
+		}
+	}
+	require.Zero(t, count(t, "SELECT count(*) FROM change.summary_revision WHERE mr_id = $1 AND status = 'ready'", uuid.UUID(mr)))
 	e.submit(t, e.codeReport(t, h3, "feature", "8106", sarifOf(hit{rule: "observed", path: "src/main.go", line: 3})))
 	run()
 	assertItem(checkReady(h3, "running"), "newly_observed", "", 1)
+	current := read(security, "")
+	assert.Nil(t, current.BaseSha)
+	// A pre-upgrade revision stored the source base SHA even without comparison evidence.
+	_, err = provider.DownTo(t.Context(), 61)
+	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), `UPDATE change.summary_revision SET base_sha = $1, status = 'superseded'
+		WHERE organization_id = $2 AND id = $3`, base, uuid.UUID(e.orgID), current.Id)
+	require.NoError(t, err)
+	_, err = provider.Up(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, old.BaseSha, read(security, "?revision_no=1").BaseSha)
+	legacy := read(security, fmt.Sprintf("?revision_no=%d", current.RevisionNo))
+	assert.Equal(t, current.Id, legacy.Id)
+	assert.Equal(t, "superseded", string(legacy.Status))
+	assert.Nil(t, legacy.BaseSha)
+	require.NotNil(t, current.LastGood)
+	assert.Equal(t, h2, current.LastGood.HeadSha)
 	tx := persistent.NewTransactor(e.app)
 	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
 		last, err := deps.Store.LastGoodSummary(ctx, e.orgID, mr)
@@ -467,6 +593,15 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 		assert.False(t, last.BuiltAt.IsZero())
 		return nil
 	}))
+	// Another MR in the same visible repository has facts but has not been summarized.
+	manifestMR := mrManifest("42")
+	manifestMR.Source.InstanceKey = _checksInstance
+	e.submit(t, pack(t, manifestMR, mrRecord(t, "merge_request", "9002", "", "v1", envelope.MergeRequestV1{
+		ProjectNativeId: "42", Iid: new(8), State: "open", HeadSha: h3,
+		SourceBranch: "other", TargetBranch: "main", OpenedAt: e.clock.Now(),
+	})))
+	noRevision := "/api/v1/merge-requests/" + mrID(t, e.normalized, "9002").String() + "/summary"
+	assert.Equal(t, http.StatusNotFound, e.do(t, e.lead, http.MethodGet, noRevision, nil).Code)
 
 	// A deep link reads the specified historical revision and its own saved denial.
 	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
@@ -474,13 +609,15 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 			Status: entity.PublicationFailed, ErrorCode: entity.WritePermissionMissing,
 		})
 	}))
-	old := decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, e.adminBrowser,
+	denied := decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, e.adminBrowser,
 		fmt.Sprintf("%s?revision_no=%d", summaryPath, previous.Revision.No), "MergeRequestSummary"))
-	assert.Equal(t, uuid.UUID(previous.Revision.ID), old.Id)
-	assert.Equal(t, h2, old.HeadSha)
-	assert.Equal(t, openapi.MergeRequestSummaryPublicationStatus(entity.PublicationFailed), old.Publication.Status)
-	require.NotNil(t, old.Publication.ErrorCode)
-	assert.Equal(t, entity.WritePermissionMissing, *old.Publication.ErrorCode)
+	assert.Equal(t, uuid.UUID(previous.Revision.ID), denied.Id)
+	assert.Equal(t, h2, denied.HeadSha)
+	assert.Equal(t, openapi.MergeRequestSummaryPublicationStatus(entity.PublicationFailed), denied.Publication.Status)
+	require.NotNil(t, denied.Publication.ErrorCode)
+	assert.Equal(t, entity.WritePermissionMissing, *denied.Publication.ErrorCode)
+	assert.Nil(t, denied.Publication.ExternalId)
+	assert.Nil(t, denied.Publication.PublishedAt)
 	assert.Equal(t, http.StatusBadRequest, e.do(t, e.adminBrowser, http.MethodGet, summaryPath+"?revision_no=0", nil).Code)
 	assert.Equal(t, http.StatusNotFound, e.do(t, e.adminBrowser, http.MethodGet, summaryPath+"?revision_no=2147483647", nil).Code)
 }

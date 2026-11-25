@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -11,197 +14,259 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
 
-var errMalformedSummaryRevision = errors.New("invalid summary revision number")
+var errMalformedSummarySelector = errors.New("invalid summary selector")
 
 func (h *codeDetails) GetMergeRequestSummary(ctx context.Context, req openapi.GetMergeRequestSummaryRequestObject) (openapi.GetMergeRequestSummaryResponseObject, error) {
 	s, scope, err := subjectScope(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if no := req.Params.RevisionNo; no != nil && (*no < 1 || *no > 2147483647) {
-		return nil, errMalformedSummaryRevision
+	if no := req.Params.RevisionNo; no != nil && (*no < 1 || *no > math.MaxInt32) {
+		return nil, errMalformedSummarySelector
 	}
-	v, hidden, err := h.uc.MergeRequestSummary(ctx, s, scope, entity.ID(req.MergeRequestId), req.Params.RevisionNo)
+	if head := req.Params.HeadSha; head != nil && !entity.ValidGitSHA(*head) {
+		return nil, errMalformedSummarySelector
+	}
+	summary, err := h.uc.MergeRequestSummary(ctx, s, scope, entity.ID(req.MergeRequestId), req.Params.RevisionNo, req.Params.HeadSha)
 	if err != nil {
 		return nil, err
 	}
-	out, err := summaryBody(&v, hidden)
+	body, err := summaryBody(&summary)
 	if err != nil {
 		return nil, err
 	}
-	return openapi.GetMergeRequestSummary200JSONResponse(out), nil
+	return openapi.GetMergeRequestSummary200JSONResponse(body), nil
 }
 
-func summaryBody(v *entity.SummaryRevision, hidden bool) (openapi.MergeRequestSummary, error) {
+type summaryMetrics struct {
+	ci                                                  *entity.SummaryCI
+	coverage, added, removed, files, complexity, clones entity.Point
+	passed, failed, errored, skipped                    entity.Point
+	checks, reports                                     entity.Point
+}
+
+func summaryBody(s *entity.SummaryRead) (openapi.MergeRequestSummary, error) {
 	out := openapi.MergeRequestSummary{
-		Id: uuid.UUID(v.ID), MergeRequestId: uuid.UUID(v.MRID), RevisionNo: v.No,
-		Status: openapi.MergeRequestSummaryStatus(v.Status), HeadSha: v.HeadSHA, BaseSha: optional(v.BaseSHA),
-		PipelineState: openapi.MergeRequestSummaryPipelineState(v.PipelineState), StaleReason: optional(v.StaleReason),
-		Items: make([]openapi.SummaryItem, 0, len(v.Items)), Redactions: []string{}, AccessLimited: hidden,
-		AccessNotes: []openapi.AccessNote{}, CoverageChangedLines: summaryPoint("ratio", entity.Point{}),
+		Id: uuid.UUID(s.ID), MergeRequestId: uuid.UUID(s.MRID), RevisionNo: s.No,
+		Status: openapi.MergeRequestSummaryStatus(s.Status), HeadSha: s.HeadSHA, BaseSha: optional(s.BaseSHA),
+		PipelineState: openapi.MergeRequestSummaryPipelineState(s.PipelineState), BuiltAt: s.BuiltAt, StaleReason: optional(s.StaleReason),
+		Items: make([]openapi.SummaryItem, 0, len(s.Items)), Redactions: s.Redactions,
+		AccessLimited: len(s.Redactions) > 0, AccessNotes: []openapi.AccessNote{},
 	}
 	out.NotEvaluated = make([]struct {
 		AnalysisKind openapi.AnalysisKind `json:"analysis_kind"`
 		ReasonCode   string               `json:"reason_code"`
 	}, 0)
-	if !v.BuiltAt.IsZero() {
-		out.BuiltAt = &v.BuiltAt
-	}
-	if hidden {
+	if out.AccessLimited {
 		out.AccessNotes = accessNotes([]entity.AccessNote{{Code: entity.NoteRestricted}})
 	}
-	out.Publication.Status = openapi.MergeRequestSummaryPublicationStatus(v.Publication.Status)
-	out.Publication.ExternalId, out.Publication.ErrorCode = optional(v.Publication.ExternalID), optional(v.Publication.ErrorCode)
-	out.Publication.PublishedAt = v.Publication.PublishedAt
-	for i := range v.Items {
-		item := &v.Items[i]
-		row := openapi.SummaryItem{
-			ItemNo: i + 1, ItemKind: openapi.SummaryItemItemKind(item.Kind), FindingId: uuidPtr(item.FindingID),
-			Severity: optional(item.Severity), Rank: item.Rank,
-		}
-		if kind := openapi.AnalysisKind(item.AnalysisKind); kind.Valid() {
-			row.AnalysisKind = &kind
-			if item.Kind == "not_evaluated" {
-				out.NotEvaluated = append(out.NotEvaluated, struct {
-					AnalysisKind openapi.AnalysisKind `json:"analysis_kind"`
-					ReasonCode   string               `json:"reason_code"`
-				}{kind, item.ReasonCode})
-			}
-		}
-		if err := summaryItemValue(&out, &row, item); err != nil {
-			return openapi.MergeRequestSummary{}, err
-		}
-		out.Items = append(out.Items, row)
+	out.Publication.Status = openapi.MergeRequestSummaryPublicationStatus(s.Publication.Status)
+	out.Publication.ExternalId = optional(s.Publication.ExternalID)
+	out.Publication.ErrorCode = optional(s.Publication.ErrorCode)
+	out.Publication.PublishedAt = s.Publication.PublishedAt
+	if g := s.LastGood; g != nil {
+		out.LastGood = &struct {
+			BuiltAt    time.Time      `json:"built_at"`
+			HeadSha    openapi.GitSha `json:"head_sha"`
+			RevisionNo int            `json:"revision_no"`
+		}{g.BuiltAt, g.HeadSHA, g.No}
 	}
+	var m summaryMetrics
+	for i := range s.Items {
+		item := &s.Items[i]
+		out.Items = append(out.Items, summaryItemBody(item, i+1))
+		if item.Kind == "not_evaluated" {
+			out.NotEvaluated = append(out.NotEvaluated, struct {
+				AnalysisKind openapi.AnalysisKind `json:"analysis_kind"`
+				ReasonCode   string               `json:"reason_code"`
+			}{openapi.AnalysisKind(item.AnalysisKind), item.ReasonCode})
+		}
+		if err := m.read(item, s.SecurityAllowed); err != nil {
+			return out, fmt.Errorf("decode summary item %s: %w", item.Kind, err)
+		}
+	}
+	m.apply(&out)
 	return out, nil
 }
 
-func summaryItemValue(out *openapi.MergeRequestSummary, row *openapi.SummaryItem, item *entity.SummaryItem) error {
-	if len(item.Value) == 0 {
+func summaryItemBody(i *entity.SummaryItem, no int) openapi.SummaryItem {
+	out := openapi.SummaryItem{
+		ItemNo: no, ItemKind: openapi.SummaryItemItemKind(i.Kind), FindingId: uuidPtr(i.FindingID),
+		RuleId: optional(i.RuleID), Severity: optional(i.Severity), Rank: i.Rank,
+	}
+	if kind := openapi.AnalysisKind(i.AnalysisKind); kind.Valid() {
+		out.AnalysisKind = &kind
+	}
+	if mode := openapi.SummaryItemMode(i.Mode); mode.Valid() {
+		out.Mode = &mode
+	}
+	if i.Path != "" {
+		out.Location = &openapi.CodeLocation{Path: i.Path, LineStart: i.LineStart, LineEnd: i.LineEnd}
+	}
+	return out
+}
+
+func (m *summaryMetrics) read(i *entity.SummaryItem, security bool) error {
+	if len(i.Value) == 0 {
 		return nil
 	}
-	switch item.Kind {
-	case "coverage":
-		var data struct {
-			Patch entity.Point
-			Size  struct {
-				State      entity.DataState
-				ReasonCode string
-				Total      struct{ Added, Deleted, Files int64 }
-			}
-			Code []struct {
-				Complexity struct {
-					State      entity.DataState
-					ReasonCode string
-					Deltas     []struct{ Delta *int }
-				}
-				Clones entity.Point
-			}
+	switch i.Kind {
+	case "ci_attempts":
+		var v struct {
+			Display       *entity.SummaryCI
+			Metrics       []entity.SeriesPoint
+			PublicChecks  entity.SeriesPoint `json:"public_checks"`
+			PublicReports entity.SeriesPoint `json:"public_reports"`
 		}
-		if err := json.Unmarshal(item.Value, &data); err != nil {
+		if err := json.Unmarshal(i.Value, &v); err != nil {
 			return err
 		}
-		out.CoverageChangedLines = summaryPoint("ratio", data.Patch)
-		size := entity.Point{State: data.Size.State, ReasonCode: data.Size.ReasonCode}
-		var complexity, clones entity.Point
-		if len(data.Code) == 1 {
-			code := &data.Code[0]
-			complexity.State, complexity.ReasonCode = code.Complexity.State, code.Complexity.ReasonCode
-			var increased int64
-			for _, f := range code.Complexity.Deltas {
-				if f.Delta != nil && *f.Delta > 0 {
-					increased++
-				}
+		// Older snapshots have no public I08. The full point is only safe for security readers.
+		m.ci, m.checks, m.reports = v.Display, v.PublicChecks.Point, v.PublicReports.Point
+		for idx := range v.Metrics {
+			p := &v.Metrics[idx]
+			switch {
+			case p.MetricID == "I08" && security:
+				m.checks = p.Point
+			case p.MetricID == "I09" && security:
+				m.reports = p.Point
 			}
-			complexity = summaryCount(complexity, increased)
-			clones = code.Clones
-		}
-		out.Change = &struct {
-			ComplexityIncreasedFunctions openapi.MetricValue `json:"complexity_increased_functions"`
-			FilesChanged                 openapi.MetricValue `json:"files_changed"`
-			LinesAdded                   openapi.MetricValue `json:"lines_added"`
-			LinesRemoved                 openapi.MetricValue `json:"lines_removed"`
-			NewCloneGroups               openapi.MetricValue `json:"new_clone_groups"`
-		}{
-			ComplexityIncreasedFunctions: summaryPoint("count", complexity),
-			FilesChanged:                 summaryPoint("count", summaryCount(size, data.Size.Total.Files)),
-			LinesAdded:                   summaryPoint("count", summaryCount(size, data.Size.Total.Added)),
-			LinesRemoved:                 summaryPoint("count", summaryCount(size, data.Size.Total.Deleted)),
-			NewCloneGroups:               summaryPoint("count", clones),
 		}
 	case "tests":
-		var data entity.TestMetric
-		if err := json.Unmarshal(item.Value, &data); err != nil {
+		var v entity.TestMetric
+		if err := json.Unmarshal(i.Value, &v); err != nil {
 			return err
 		}
-		out.Tests = &struct {
-			Errored openapi.MetricValue `json:"errored"`
-			Failed  openapi.MetricValue `json:"failed"`
-			Passed  openapi.MetricValue `json:"passed"`
-			Skipped openapi.MetricValue `json:"skipped"`
-		}{}
-		point := entity.Point{State: data.State, ReasonCode: data.ReasonCode}
-		missing := summaryPoint("count", point)
-		out.Tests.Passed, out.Tests.Failed, out.Tests.Errored, out.Tests.Skipped = missing, missing, missing, missing
-		if c := data.Counts; c != nil {
-			out.Tests.Passed = summaryPoint("count", summaryCount(point, int64(c.Passed)))
-			out.Tests.Failed = summaryPoint("count", summaryCount(point, int64(c.Failed)))
-			out.Tests.Errored = summaryPoint("count", summaryCount(point, int64(c.Errors)))
-			out.Tests.Skipped = summaryPoint("count", summaryCount(point, int64(c.Skipped)))
+		m.passed, m.failed = summaryCount(v.State, v.ReasonCode, 0), summaryCount(v.State, v.ReasonCode, 0)
+		m.errored, m.skipped = m.passed, m.failed
+		if v.Counts != nil {
+			m.passed = summaryCount(v.State, v.ReasonCode, int64(v.Counts.Passed))
+			m.failed = summaryCount(v.State, v.ReasonCode, int64(v.Counts.Failed))
+			m.errored = summaryCount(v.State, v.ReasonCode, int64(v.Counts.Errors))
+			m.skipped = summaryCount(v.State, v.ReasonCode, int64(v.Counts.Skipped))
 		}
-	case "ci_attempts":
-		return summaryCI(out, item.Value)
-	default:
-		var loc struct {
-			entity.SummarySignalLocation
-			LineEnd *int `json:"line_end"`
+	case "coverage":
+		return m.readStructure(i.Value)
+	}
+	return nil
+}
+
+func summaryCount(state entity.DataState, reason string, n int64) entity.Point {
+	p := entity.Point{State: state, ReasonCode: reason}
+	if state == entity.StateAssessed || state == entity.StateProvisional {
+		p.Value = new(float64(n))
+	}
+	return p
+}
+
+func (m *summaryMetrics) readStructure(body json.RawMessage) error {
+	var v struct {
+		Patch entity.Point
+		Size  struct {
+			State      entity.DataState
+			ReasonCode string
+			Total      struct{ Files, Added, Deleted int64 }
 		}
-		if err := json.Unmarshal(item.Value, &loc); err != nil {
-			return err
+		Code []struct {
+			Complexity struct {
+				State      entity.DataState
+				ReasonCode string
+				Deltas     []struct{ Delta *int }
+			}
+			Clones entity.Point
 		}
-		row.RuleId = optional(loc.Rule)
-		if loc.Path != "" {
-			row.Location = &openapi.CodeLocation{Path: loc.Path, LineStart: loc.Line, LineEnd: loc.LineEnd}
+	}
+	if err := json.Unmarshal(body, &v); err != nil {
+		return err
+	}
+	m.coverage = v.Patch
+	m.added = summaryCount(v.Size.State, v.Size.ReasonCode, v.Size.Total.Added)
+	m.removed = summaryCount(v.Size.State, v.Size.ReasonCode, v.Size.Total.Deleted)
+	m.files = summaryCount(v.Size.State, v.Size.ReasonCode, v.Size.Total.Files)
+	for idx := range v.Code {
+		stream := &v.Code[idx]
+		var increased int64
+		for _, p := range stream.Complexity.Deltas {
+			if p.Delta != nil && *p.Delta > 0 {
+				increased++
+			}
+		}
+		m.complexity = addSummaryCounts(m.complexity, summaryCount(stream.Complexity.State, stream.Complexity.ReasonCode, increased))
+		m.clones = addSummaryCounts(m.clones, stream.Clones)
+	}
+	for _, p := range []*entity.Point{&m.complexity, &m.clones} {
+		if p.Value != nil && p.MissingCount > 0 {
+			p.State, p.ReasonCode = entity.StateProvisional, "scan_incomplete"
 		}
 	}
 	return nil
 }
 
-func summaryPoint(unit string, p entity.Point) openapi.MetricValue {
+func addSummaryCounts(total, stream entity.Point) entity.Point {
+	if stream.Value == nil {
+		total.MissingCount++
+		if total.State == "" {
+			total.State, total.ReasonCode = stream.State, stream.ReasonCode
+		}
+		return total
+	}
+	if total.Value == nil {
+		stream.MissingCount += total.MissingCount
+		return stream
+	}
+	total.Value = new(*total.Value + *stream.Value)
+	if total.Numerator != nil && stream.Numerator != nil {
+		total.Numerator = new(*total.Numerator + *stream.Numerator)
+	} else {
+		total.Numerator = nil
+	}
+	total.ExcludedCount += stream.ExcludedCount
+	total.MissingCount += stream.MissingCount
+	if stream.State == entity.StateProvisional && total.State != entity.StateProvisional {
+		total.State, total.ReasonCode = stream.State, stream.ReasonCode
+	}
+	return total
+}
+
+func summaryMetric(unit string, p entity.Point) openapi.MetricValue {
 	if p.State == "" {
 		p.State = entity.StateNotEvaluated
 	}
 	return metricValue(unit, &p)
 }
 
-func summaryCount(p entity.Point, count int64) entity.Point {
-	if p.State == entity.StateAssessed || p.State == entity.StateProvisional {
-		p.Value = new(float64(count))
+func (m *summaryMetrics) apply(out *openapi.MergeRequestSummary) {
+	out.CoverageChangedLines = summaryMetric("ratio", m.coverage)
+	out.Change = &struct {
+		ComplexityIncreasedFunctions openapi.MetricValue `json:"complexity_increased_functions"`
+		FilesChanged                 openapi.MetricValue `json:"files_changed"`
+		LinesAdded                   openapi.MetricValue `json:"lines_added"`
+		LinesRemoved                 openapi.MetricValue `json:"lines_removed"`
+		NewCloneGroups               openapi.MetricValue `json:"new_clone_groups"`
+	}{
+		ComplexityIncreasedFunctions: summaryMetric("count", m.complexity),
+		FilesChanged:                 summaryMetric("count", m.files),
+		LinesAdded:                   summaryMetric("count", m.added),
+		LinesRemoved:                 summaryMetric("count", m.removed),
+		NewCloneGroups:               summaryMetric("count", m.clones),
 	}
-	return p
-}
-
-func summaryCI(out *openapi.MergeRequestSummary, raw json.RawMessage) error {
-	var data struct {
-		PipelineID       uuid.UUID                            `json:"pipeline_id"`
-		Outcome          openapi.MergeRequestSummaryCiOutcome `json:"outcome"`
-		ParentPipelineID *uuid.UUID                           `json:"parent_pipeline_id"`
-		AttemptVersions  []uuid.UUID                          `json:"attempt_versions"`
-		RetriedJobs      int                                  `json:"retried_jobs"`
+	out.Tests = &struct {
+		Errored openapi.MetricValue `json:"errored"`
+		Failed  openapi.MetricValue `json:"failed"`
+		Passed  openapi.MetricValue `json:"passed"`
+		Skipped openapi.MetricValue `json:"skipped"`
+	}{summaryMetric("count", m.errored), summaryMetric("count", m.failed), summaryMetric("count", m.passed), summaryMetric("count", m.skipped)}
+	out.Expected = &struct {
+		MissingChecks  openapi.MetricValue `json:"missing_checks"`
+		MissingReports openapi.MetricValue `json:"missing_reports"`
+	}{summaryMetric("ratio", m.checks), summaryMetric("ratio", m.reports)}
+	if c := m.ci; c != nil {
+		out.Ci = &struct {
+			Attempts         int                                  `json:"attempts"`
+			Outcome          openapi.MergeRequestSummaryCiOutcome `json:"outcome"`
+			ParentPipelineId *uuid.UUID                           `json:"parent_pipeline_id,omitempty"` //nolint:revive,staticcheck // Match the generated OpenAPI type.
+			PipelineId       uuid.UUID                            `json:"pipeline_id"`                  //nolint:revive,staticcheck // Match the generated OpenAPI type.
+			RetriedJobs      int                                  `json:"retried_jobs"`
+		}{c.Attempts, openapi.MergeRequestSummaryCiOutcome(c.Outcome), uuidPtr(c.ParentPipelineID), uuid.UUID(c.PipelineID), c.RetriedJobs}
 	}
-	if err := json.Unmarshal(raw, &data); err != nil {
-		return err
-	}
-	if data.PipelineID != uuid.Nil {
-		if data.Outcome == "" {
-			data.Outcome = "unknown"
-		}
-		out.Ci = alloc(out.Ci)
-		out.Ci.Attempts = len(data.AttemptVersions)
-		out.Ci.Outcome = data.Outcome
-		out.Ci.ParentPipelineId = data.ParentPipelineID
-		out.Ci.PipelineId = data.PipelineID
-		out.Ci.RetriedJobs = data.RetriedJobs
-	}
-	return nil
 }

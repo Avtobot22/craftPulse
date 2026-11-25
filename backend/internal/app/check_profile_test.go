@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 
@@ -38,6 +39,7 @@ type checksEnv struct {
 	goComponent, docs uuid.UUID
 	otherComponent    uuid.UUID
 	areas             map[string]uuid.UUID
+	catalog           entity.CheckCatalog
 	orgs              *org.UseCase
 	norm              *normalize.UseCase
 	decisions         *decisionuc.UseCase
@@ -48,6 +50,7 @@ func newChecksEnv(t *testing.T) *checksEnv {
 	e := &checksEnv{ciEnv: newCIEnv(t), areas: map[string]uuid.UUID{}}
 	catalog, err := change.ReadCatalog("../usecase/change/testdata/catalog.yaml")
 	require.NoError(t, err)
+	e.catalog = catalog
 	orgs, _, err := newOrgAccess(e.app, e.clock, e.connect, nil)
 	require.NoError(t, err)
 	e.orgs = orgs
@@ -58,6 +61,7 @@ func newChecksEnv(t *testing.T) *checksEnv {
 	reg := prometheus.NewRegistry()
 	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg,
 		apiModules{orgs: orgs, access: e.rights, connections: e.connect, intake: e.uc, catalog: catalog, findingReports: e.norm, decisions: e.decisions})
+	api.RunnerNetwork = []netip.Prefix{netip.MustParsePrefix("10.20.0.0/16")}
 	e.router = httpctrl.NewRouter(zerolog.New(zerolog.SyncWriter(e.logs)), reg, health.Probes{Ready: &health.Readiness{}}, api)
 
 	e.other = e.tokenProject(t, e.orgID)

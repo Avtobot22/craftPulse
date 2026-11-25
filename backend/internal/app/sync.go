@@ -115,9 +115,10 @@ func newView(pool *pgxpool.Pool, m viewModules, c clock.Clock) *view.UseCase {
 	changeRepo := changerepo.NewRepo(pool)
 	changes := change.New(change.Deps{Repo: changeRepo, Tx: tx, Summary: change.SummaryDeps{Publication: changeRepo}})
 	return view.New(view.Deps{
-		Tasks: m.tasks,
-		Code:  m.code, ReviewCalculator: m.reviewCalculator, ProjectAreas: m.projectAreas, RunCalculator: m.runCalculator, SourceRights: m.rights,
-		PipelineChecks: changes, Publications: changes, SummaryFindingRights: m.rights,
+		Summaries: changeRepo,
+		Tasks:     m.tasks,
+		Code:      m.code, ReviewCalculator: m.reviewCalculator, ProjectAreas: m.projectAreas, RunCalculator: m.runCalculator, SourceRights: m.rights,
+		PipelineChecks: changes, SummaryFindingRights: m.rights,
 		CodeLinks: linkuc.New(linkuc.Deps{Repo: linkrepo.NewRepo(pool), Tx: tx}),
 		Repo:      viewrepo.NewRepo(pool), Tx: tx, Sync: m.collection, Series: m.series, Reports: m.reports,
 		Instances: m.instances, Access: m.rights, Clock: c, NewID: newID,

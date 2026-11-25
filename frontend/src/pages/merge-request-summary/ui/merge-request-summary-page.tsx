@@ -1,47 +1,65 @@
 import { useQuery } from '@tanstack/react-query'
-import { useParams, useSearchParams } from 'react-router'
+import { generatePath, Link, useParams, useSearchParams } from 'react-router'
 import { CommitSha, LastGoodResult } from '@/entities/check-report'
 import { MetricValue } from '@/entities/metric'
 import { RestrictedResults } from '@/entities/result-access'
-import { ApiError, getMergeRequestSummary } from '@/shared/api'
+import { ApiError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
-import { contractLabel, contractLabels, technicalLabels } from '@/shared/config'
+import {
+  contractLabel,
+  contractLabels,
+  routePaths,
+  technicalLabels,
+} from '@/shared/config'
 import { DataStateBadge, ErrorState, LoadingState } from '@/shared/ui'
+import { getSummaryQuery } from '../model/summary'
 import { SummaryMetrics } from './summary-metrics'
 import { SummarySignals } from './summary-signals'
 
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu
+const gitSha = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u
+const notEvaluatedReasons = {
+  ...technicalLabels.reportReason,
+  scan_failed: 'Анализ завершился с ошибкой',
+  import_failed: 'Не удалось импортировать отчёт',
+  scan_incomplete: 'Анализ выполнен частично',
+}
 
 export function MergeRequestSummaryPage({ api }: { api: ApiClient }) {
   const { mr = '' } = useParams()
   const [params] = useSearchParams()
+  const head = params.get('head_sha') ?? undefined
   const raw = params.get('revision_no')
   const revision = raw === null ? undefined : Number(raw)
   if (
     !uuid.test(mr) ||
+    (head !== undefined && !gitSha.test(head)) ||
     (raw !== null && (!/^[1-9][0-9]*$/u.test(raw) || Number(raw) > 2147483647))
   ) {
     return <p role="alert">Некорректная ссылка на сводку MR</p>
   }
-  return <SummaryContent api={api} mr={mr.toLowerCase()} revision={revision} />
+  return (
+    <SummaryContent
+      api={api}
+      mr={mr.toLowerCase()}
+      revision={revision}
+      head={head}
+    />
+  )
 }
 
 function SummaryContent({
   api,
   mr,
   revision,
+  head,
 }: {
   api: ApiClient
   mr: string
   revision: number | undefined
+  head: string | undefined
 }) {
-  const query = useQuery(
-    getMergeRequestSummary(
-      api,
-      mr,
-      revision === undefined ? {} : { revision_no: revision },
-    ),
-  )
+  const query = useQuery(getSummaryQuery(api, mr, revision, head))
   if (query.isPending) return <LoadingState />
   if (query.isError) {
     const unavailable =
@@ -80,6 +98,9 @@ function SummaryContent({
         {contractLabel(technicalLabels.summaryStatus, s.status)}
         {s.stale_reason && ` (${s.stale_reason})`}
       </p>
+      {(s.status === 'stale' || s.status === 'superseded') && (
+        <p>Историческая сводка</p>
+      )}
       {s.built_at && (
         <p>
           Собрана <time dateTime={s.built_at}>{s.built_at}</time>
@@ -116,10 +137,19 @@ function SummaryContent({
         {contractLabel(technicalLabels.pipelineState, s.pipeline_state)}
       </p>
       {s.ci && (
-        <p>
-          Исход CI {contractLabel(contractLabels.ciOutcome, s.ci.outcome)}.
-          Попыток {s.ci.attempts}, заданий с повтором {s.ci.retried_jobs}
-        </p>
+        <>
+          <p>
+            Исход CI {contractLabel(contractLabels.ciOutcome, s.ci.outcome)}.
+            Попыток {s.ci.attempts}, заданий с повтором {s.ci.retried_jobs}
+          </p>
+          <Link
+            to={generatePath(routePaths.pipeline, {
+              pipelineId: s.ci.pipeline_id,
+            })}
+          >
+            Открыть pipeline
+          </Link>
+        </>
       )}
       <h3>Покрытие изменённых строк</h3>
       <MetricValue value={s.coverage_changed_lines} />
@@ -133,10 +163,7 @@ function SummaryContent({
                 {contractLabel(technicalLabels.analysisKind, analysis_kind)}{' '}
                 <DataStateBadge
                   state="NOT_EVALUATED"
-                  reason={contractLabel(
-                    technicalLabels.reportReason,
-                    reason_code,
-                  )}
+                  reason={contractLabel(notEvaluatedReasons, reason_code)}
                 />
               </li>
             ))}

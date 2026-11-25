@@ -234,6 +234,8 @@ type AdapterClient interface {
 
 // IngestRepo is the journal of intake under row-level security.
 type IngestRepo interface {
+	SaveCIResult(context.Context, entity.ID, entity.ID, *entity.CIResultCoordinates, bool) error
+	ReadCIResult(context.Context, entity.ID, entity.ID) (bool, *entity.CIResultCoordinates, error)
 	ActivityReceiptConnections(ctx context.Context, orgID entity.ID, receipts []entity.ID) (map[entity.ID]entity.ID, error)
 	ActivityTruncations(ctx context.Context, orgID entity.ID, scopes []entity.ID, at time.Time) ([]entity.ActivityHistoryNotice, error)
 	ActivityCompleteReceipts(ctx context.Context, orgID entity.ID, receipts []entity.ID) (map[entity.ID]bool, error)

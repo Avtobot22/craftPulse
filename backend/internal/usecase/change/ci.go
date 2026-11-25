@@ -12,8 +12,10 @@ import (
 )
 
 const (
-	_varToken = "CRAFTPULSE_UPLOAD_TOKEN" //nolint:gosec // the name of the variable, not its value
-	_varURL   = "CRAFTPULSE_URL"
+	_builtinJobPrefix = "craftpulse-"
+	_importJob        = "craftpulse-import"
+	_varToken         = "CRAFTPULSE_UPLOAD_TOKEN" //nolint:gosec // the name of the variable, not its value
+	_varURL           = "CRAFTPULSE_URL"
 	// _reportVar names the variable of the path of a ready report of a kind the client points the import to.
 	_reportVar = "CRAFTPULSE_REPORT_"
 )
@@ -141,7 +143,7 @@ func (u *UseCase) CIConfiguration(ctx context.Context, s entity.Subject, project
 			continue
 		}
 		if e.Mode == entity.CheckModeBuiltin {
-			jobs["craftpulse-"+p.ID] = gitlabJob{
+			jobs[_builtinJobPrefix+p.ID] = gitlabJob{
 				Stage: "test", Image: p.Image + "@" + p.Digest, AllowFailure: true, Script: append(slices.Clone(p.Script), "craftpulse-ci upload"),
 			}
 			continue
@@ -166,7 +168,7 @@ func (u *UseCase) CIConfiguration(ctx context.Context, s entity.Subject, project
 			}
 			args = append(args, "--report", r)
 		}
-		jobs["craftpulse-import"] = gitlabJob{
+		jobs[_importJob] = gitlabJob{
 			Stage: "test", Image: u.d.Catalog.StepImage + "@" + u.d.Catalog.StepDigest, AllowFailure: true,
 			Script: []string{strings.Join(args, " "), "craftpulse-ci upload"},
 		}
@@ -185,4 +187,39 @@ func (u *UseCase) CIConfiguration(ctx context.Context, s entity.Subject, project
 	}
 	slices.SortStableFunc(vars[2:], func(a, b entity.CIVariable) int { return strings.Compare(a.Name, b.Name) })
 	return entity.CIConfiguration{System: system, VersionNo: m.version.VersionNo, Snippet: string(raw), Variables: vars}, nil
+}
+
+// SummaryCheckJobs separates expectations for the two summary audiences.
+type SummaryCheckJobs struct {
+	All, Public []string
+}
+
+// summaryCheckJobs mirrors the generated CI jobs for the repository's profile rows.
+// Imported reports share one job; several components can share the same builtin job.
+func (u *UseCase) summaryCheckJobs(entries []entity.ProfileEntry) SummaryCheckJobs {
+	var jobs SummaryCheckJobs
+	for _, e := range entries {
+		p, ok := u.profiles[e.ProfileID]
+		if !ok {
+			continue
+		}
+		var key string
+		switch {
+		case e.Mode == entity.CheckModeBuiltin:
+			key = _builtinJobPrefix + p.ID
+		case p.ReportFormat != "":
+			key = _importJob
+		default:
+			continue
+		}
+		jobs.All = append(jobs.All, key)
+		if !entity.SensitiveSummaryAnalysis(e.AnalysisKind) {
+			jobs.Public = append(jobs.Public, key)
+		}
+	}
+	slices.Sort(jobs.All)
+	slices.Sort(jobs.Public)
+	jobs.All = slices.Compact(jobs.All)
+	jobs.Public = slices.Compact(jobs.Public)
+	return jobs
 }
