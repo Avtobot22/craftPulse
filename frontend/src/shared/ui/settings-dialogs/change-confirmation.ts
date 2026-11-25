@@ -47,7 +47,8 @@ export interface ChangeConfirmationDialogProps<Draft, Result> {
     signal: AbortSignal,
   ) => Promise<Result>
   /** Read the resource afresh. Compare it with the draft and report only an outcome
-   * supported by the resource or an operation receipt. Keep unverified writes unknown.
+   * supported by the resource or an operation receipt. A new preview requires a
+   * different strong ETag. Reading the same ETag after a timeout leaves the outcome unknown.
    */
   recheck: (
     attempt: ChangeAttempt<Draft>,

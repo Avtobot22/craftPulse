@@ -13,6 +13,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   ApiClient,
   InvalidResponse,
+  isStrongETag,
   readRecord,
   readString,
 } from '@/shared/api'
@@ -176,11 +177,12 @@ function TestForm({
           recheck={async (attempt, reason, signal) => {
             const latest = await api.read(path, readSettings, { signal })
             const desiredName = attempt.draft.teams[0]?.name ?? name
-            if (reason === 'uncertain' && latest.data.name === desiredName) {
-              return { kind: 'applied', result: latest }
-            }
-            if (reason === 'uncertain' && latest.etag !== attempt.etag) {
-              return { kind: 'unknown' }
+            if (reason === 'uncertain') {
+              return isStrongETag(latest.etag) &&
+                latest.etag !== attempt.etag &&
+                latest.data.name === desiredName
+                ? { kind: 'applied', result: latest }
+                : { kind: 'unknown' }
             }
             return {
               kind: 'not-applied',
@@ -434,14 +436,39 @@ describe('UI-17', () => {
     expect(fetcher).toHaveBeenCalledTimes(3)
   })
 
-  it('разрешает повтор с тем же ключом только после перечитывания ресурса', async () => {
+  it('отклоняет отрицательный результат сверки с прежним ETag', async () => {
+    const proposal = prepare(
+      { data: { version: 1, name: 'Платформа', project: 'Core' }, etag: '"1"' },
+      'Инфраструктура',
+    )
+    render(
+      <ChangeConfirmationDialog
+        title="Подтверждение настроек"
+        scope="Организация"
+        consequences="Название команды изменится."
+        proposal={proposal}
+        submit={() => Promise.reject(new TypeError('Network'))}
+        recheck={() => Promise.resolve({ kind: 'not-applied', proposal })}
+        onSaved={vi.fn()}
+        onValidation={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(button(dialog, 'Подтвердить'))
+
+    expect(
+      await within(dialog).findByText('Исход сохранения пока неизвестен'),
+    ).toBeInTheDocument()
+  })
+
+  it('после таймаута ждёт подтверждения отложенной записи и не отправляет второй PUT', async () => {
+    let readCurrent = () => snapshot(1)
     const fetcher = vi
       .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(readCurrent()))
       .mockResolvedValueOnce(snapshot(1))
-      .mockRejectedValueOnce(new TypeError('Network'))
-      .mockRejectedValueOnce(new TypeError('Network'))
-      .mockResolvedValueOnce(snapshot(1))
-      .mockResolvedValueOnce(snapshot(2, 'Инфраструктура'))
+      .mockRejectedValueOnce(new DOMException('Timeout', 'TimeoutError'))
     await mount(fetcher)
     const dialog = open()
     fireEvent.click(button(dialog, 'Подтвердить'))
@@ -449,6 +476,7 @@ describe('UI-17', () => {
     expect(
       await within(dialog).findByText('Исход сохранения пока неизвестен'),
     ).toBeInTheDocument()
+    expect(button(dialog, 'Отмена')).toBeDisabled()
     expect(
       within(dialog).queryByRole('button', { name: 'Подтвердить' }),
     ).not.toBeInTheDocument()
@@ -456,17 +484,26 @@ describe('UI-17', () => {
     expect(dialog).toBeInTheDocument()
     fireEvent.click(button(dialog, 'Перечитать ресурс'))
     expect(
-      await within(dialog).findByText('Изменение не применилось'),
+      await within(dialog).findByText('Исход сохранения пока неизвестен'),
     ).toBeInTheDocument()
-    fireEvent.click(button(dialog, 'Подтвердить'))
+    expect(screen.getByText('Действующая версия: 1')).toBeInTheDocument()
 
-    expect(await screen.findByText('Действующая версия: 2')).toBeInTheDocument()
-    expect(fetcher.mock.calls[4]?.[1]?.headers).toEqual(
-      fetcher.mock.calls[1]?.[1]?.headers,
-    )
-    expect(fetcher.mock.calls[4]?.[1]?.body).toBe(
-      fetcher.mock.calls[1]?.[1]?.body,
-    )
+    readCurrent = () => snapshot(2, 'Инфраструктура')
+    fireEvent.click(button(dialog, 'Перечитать ресурс'))
+    expect(
+      await within(dialog).findByText('Изменение применилось'),
+    ).toBeInTheDocument()
+    fireEvent.click(button(dialog, 'Готово'))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('Действующая версия: 2')).toBeInTheDocument()
+    expect(fetcher.mock.calls.map(([, request]) => request?.method)).toEqual([
+      'GET',
+      'PUT',
+      'GET',
+      'GET',
+      'GET',
+    ])
   })
 })
 

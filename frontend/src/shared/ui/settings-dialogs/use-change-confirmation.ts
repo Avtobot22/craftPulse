@@ -37,7 +37,6 @@ export function useChangeConfirmation<Draft, Result>({
   })
   const active = useRef(false)
   const busy = useRef(false)
-  const lastAttempt = useRef<ChangeAttempt<Draft> | null>(null)
   useLayoutEffect(() => {
     active.current = true
     return () => {
@@ -91,19 +90,18 @@ export function useChangeConfirmation<Draft, Result>({
         setStatus({ kind: 'applied', attempt, result: outcome.result })
         return
       }
+      // The original write can still commit after a read of its baseline version.
       if (
         outcome.kind === 'not-applied' &&
-        isStrongETag(outcome.proposal.etag)
+        isStrongETag(outcome.proposal.etag) &&
+        outcome.proposal.etag !== attempt.etag
       ) {
-        const sameVersion = outcome.proposal.etag === attempt.etag
-        if (!sameVersion || reason === 'uncertain') {
-          setStatus({
-            kind: 'preview',
-            proposal: sameVersion ? attempt : outcome.proposal,
-            notice: reason === 'conflict' ? 'updated' : 'not-applied',
-          })
-          return
-        }
+        setStatus({
+          kind: 'preview',
+          proposal: outcome.proposal,
+          notice: reason === 'conflict' ? 'updated' : 'not-applied',
+        })
+        return
       }
     } catch (error) {
       if (!active.current || handleAuth(error)) return
@@ -112,12 +110,7 @@ export function useChangeConfirmation<Draft, Result>({
   }
 
   async function send(proposal: ChangeProposal<Draft>) {
-    const previous = lastAttempt.current
-    const attempt =
-      proposal === previous
-        ? previous
-        : { ...proposal, idempotencyKey: crypto.randomUUID() }
-    lastAttempt.current = attempt
+    const attempt = { ...proposal, idempotencyKey: crypto.randomUUID() }
     setStatus({ kind: 'saving', attempt })
     let result: Result
     try {
