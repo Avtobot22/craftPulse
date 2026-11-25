@@ -23,6 +23,19 @@ import {
 import { useScope } from '../model/use-scope'
 import './home-page.css'
 
+const report = {
+  path: routePaths.teamReport,
+  action: 'report.read',
+  label: 'Отчёт команды',
+}
+
+const reportPaths = [
+  report.path,
+  routePaths.metricPassport,
+  routePaths.metricCohort,
+  routePaths.savedView,
+]
+
 const settings = [
   {
     path: routePaths.installation,
@@ -38,6 +51,16 @@ const settings = [
     path: routePaths.users,
     action: 'users.manage',
     label: 'Пользователи и роли',
+  },
+  {
+    path: routePaths.workflowSettings,
+    action: 'process.manage',
+    label: 'Настройки процесса',
+  },
+  {
+    path: routePaths.targetSettings,
+    action: 'process.manage',
+    label: 'Целевые сроки',
   },
 ]
 
@@ -89,11 +112,21 @@ export function HomePage({
   const allowed = settings.filter(({ action }) =>
     current.actions.includes(action),
   )
+  const visibleSettings = allowed.filter(
+    ({ action }) => action !== 'process.manage' || scope.team,
+  )
   const currentSetting = active && allowed.includes(active) ? active : undefined
+  const isReport = reportPaths.some((path) =>
+    matchPath(path, location.pathname),
+  )
   const availableViews = views.filter(({ action }) =>
     current.actions.includes(action),
   )
-  const missing = Boolean(active && !currentSetting)
+  const missing =
+    Boolean(active && !currentSetting) ||
+    ((isReport || currentSetting?.action === 'process.manage') &&
+      scope.invalid) ||
+    (isReport && !current.actions.includes(report.action))
   const noArea =
     !hasAreas &&
     !currentSetting &&
@@ -126,7 +159,8 @@ export function HomePage({
 
   function updateArea(team: string, project?: string) {
     const { params: next, reset } = changeScope(params, team, project)
-    const nextPath = active?.path ?? routePaths.home
+    const nextPath =
+      active?.path ?? (isReport ? routePaths.teamReport : routePaths.home)
     if (!team) rememberScope(storageKey, '', '')
     void navigate(
       { pathname: nextPath, search: next.toString() },
@@ -182,8 +216,8 @@ export function HomePage({
 
   const teamError = scope.teams.isError && hasAreas
   const projectError = scope.projects.isError && !!scope.team
-  const overview = hasAreas && current.actions.includes('report.read')
-  const hasNavigation = overview || allowed.length > 0
+  const overview = hasAreas && current.actions.includes(report.action)
+  const hasNavigation = overview || visibleSettings.length > 0
   return (
     <div
       className={hasNavigation ? 'cp-shell' : 'cp-shell cp-shell--without-nav'}
@@ -345,12 +379,31 @@ export function HomePage({
                 Обзор
               </Link>
             )}
-            {allowed.length > 0 && (
+            {overview && scope.team && (
+              <Link
+                aria-current={
+                  location.pathname === report.path
+                    ? 'page'
+                    : isReport
+                      ? 'location'
+                      : undefined
+                }
+                to={goTo(report.path)}
+                onClick={() => {
+                  setMenuOpen(false)
+                  if (location.pathname === report.path && menuOpen)
+                    navButton.current?.focus()
+                }}
+              >
+                {report.label}
+              </Link>
+            )}
+            {visibleSettings.length > 0 && (
               <div role="group" aria-labelledby="settings-heading">
                 <Text id="settings-heading" as="h2" variant="subheader-1">
                   Настройки
                 </Text>
-                {allowed.map(({ path, label }) => (
+                {visibleSettings.map(({ path, label }) => (
                   <Link
                     key={path}
                     aria-current={active?.path === path ? 'page' : undefined}

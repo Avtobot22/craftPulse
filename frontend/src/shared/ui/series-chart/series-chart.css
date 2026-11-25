@@ -1,0 +1,78 @@
+.cp-series-chart__plot {
+  height: 280px;
+}
+
+.cp-series-chart fieldset label {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  margin-inline-end: 16px;
+}
+
+.cp-series-chart__table {
+  overflow-x: auto;
+}
+
+.cp-series-chart__table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.cp-series-chart__table th,
+.cp-series-chart__table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--g-color-line-generic);
+  text-align: start;
+}
+
+.cp-series-chart__table th:first-child {
+  min-width: 240px;
+}
+
+.cp-series-chart__table th:nth-child(2) {
+  min-width: 120px;
+}
+
+.cp-series-chart__table th:last-child {
+  min-width: 96px;
+}
+
+.cp-series-chart__table button {
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.cp-series-chart__table:focus-visible,
+.cp-series-chart__table button:focus-visible,
+.cp-series-chart__table button[aria-pressed='true'] {
+  outline: 2px solid var(--g-color-line-focus);
+  outline-offset: 2px;
+}
+
+.cp-series-chart__details {
+  display: none;
+  margin-block-start: 8px;
+}
+
+.cp-series-chart__table
+  button:is(:hover, :focus-visible, [aria-pressed='true'])
+  + .cp-series-chart__details {
+  display: block;
+}
+
+@media (max-width: 640px) {
+  .cp-series-chart__plot {
+    height: 240px;
+  }
+}
+
+.cp-series-chart__tooltip {
+  margin: 0;
+  padding: 8px 12px;
+  list-style: none;
+  font-size: 14px;
+  line-height: 20px;
+}

@@ -25,6 +25,7 @@ const admin = {
     'org.manage',
     'users.manage',
     'installation.read',
+    'process.manage',
   ],
 }
 const [team] = teams.data
@@ -105,6 +106,15 @@ describe('application routes', () => {
     ['/organization/structure', 'Структура организации'],
     ['/users', 'Пользователи и роли'],
     ['/users/123', 'Пользователи и роли'],
+    [`/settings/process?team_id=${team.id}`, 'Настройки процесса'],
+    [`/settings/targets?team_id=${team.id}`, 'Целевые сроки'],
+    [`/reports/team?team_id=${team.id}`, 'Отчёт команды'],
+    ['/reports/revisions/r1/metrics/T08', 'Паспорт показателя'],
+    [
+      '/reports/revisions/r1/metrics/T08/points/2026-10-01T00:00:00Z',
+      'Когорта точки',
+    ],
+    ['/reports/saved-views/view-1', 'Сохранённый срез'],
   ])('opens %s directly', async (path, heading) => {
     mount(path)
     expect(
@@ -261,6 +271,50 @@ describe('application routes', () => {
 })
 
 describe('UI-01', () => {
+  it('shows the team report and hides process settings for report.read alone', async () => {
+    mount(`/?team_id=${team.id}`, mockApi())
+    expect(
+      await screen.findByRole('link', { name: 'Отчёт команды' }),
+    ).toHaveAttribute('href', `/reports/team?team_id=${team.id}`)
+    expect(
+      screen.queryByRole('link', { name: 'Настройки процесса' }),
+    ).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Целевые сроки' })).toBeNull()
+  })
+
+  it('shows process settings for the selected team with process.manage', async () => {
+    mount(`/?team_id=${team.id}`, mockApi(admin))
+    expect(
+      await screen.findByRole('link', { name: 'Настройки процесса' }),
+    ).toHaveAttribute('href', `/settings/process?team_id=${team.id}`)
+    expect(screen.getByRole('link', { name: 'Целевые сроки' })).toHaveAttribute(
+      'href',
+      `/settings/targets?team_id=${team.id}`,
+    )
+  })
+
+  it.each([
+    ['/settings/process', 'process.manage'],
+    ['/settings/targets', 'process.manage'],
+    ['/reports/team', 'report.read'],
+    ['/reports/revisions/r1/metrics/T08', 'report.read'],
+    ['/reports/revisions/r1/metrics/T08/points/2026-10-01', 'report.read'],
+    ['/reports/saved-views/view-1', 'report.read'],
+  ])('blocks a deep link to %s without %s', async (path, action) => {
+    mount(
+      `${path}?team_id=${team.id}`,
+      mockApi({
+        ...admin,
+        actions: admin.actions.filter((entry) => entry !== action),
+      }),
+    )
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Объект или область недоступны',
+      }),
+    ).toBeInTheDocument()
+  })
+
   it('shows only implemented pages allowed by actions and blocks forbidden deep links', async () => {
     const { router } = mount(
       '/',
