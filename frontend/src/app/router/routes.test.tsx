@@ -195,8 +195,7 @@ describe('application routes', () => {
 
   it('clears visible private data for 401 on another endpoint and does not restore it on Back', async () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation((url) => {
-      if (url === '/api/v1/me')
-        return Promise.resolve(jsonResponse(admin))
+      if (url === '/api/v1/me') return Promise.resolve(jsonResponse(admin))
       if (url === '/api/v1/teams') return Promise.resolve(jsonResponse(teams))
       return Promise.resolve(problemResponse('auth_required', 401))
     })
@@ -320,9 +319,9 @@ describe('UI-01', () => {
       expect.objectContaining({ method: 'GET' }),
     )
     expect(screen.getAllByRole('option', { name: team.name })).toHaveLength(1)
-    expect(
-      screen.getAllByRole('option', { name: project.name }),
-    ).toHaveLength(1)
+    expect(screen.getAllByRole('option', { name: project.name })).toHaveLength(
+      1,
+    )
   })
 
   it('preserves view and period but drops the previous project, revision and object on scope change', async () => {
@@ -399,9 +398,8 @@ describe('UI-01', () => {
     const initialApi = mockApi()
     const nextApi = mockApi(nextUser, [secondTeam])
     let fetcher = initialApi
-    const { runtime } = mount(
-      `/?team_id=${team.id}`,
-      (input, init) => fetcher(input, init),
+    const { runtime } = mount(`/?team_id=${team.id}`, (input, init) =>
+      fetcher(input, init),
     )
     await screen.findByRole('option', { name: team.name })
     fetcher = nextApi

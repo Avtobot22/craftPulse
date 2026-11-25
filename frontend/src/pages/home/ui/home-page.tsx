@@ -74,7 +74,11 @@ export function HomePage({
   const skipScopeRestore =
     state && typeof state === 'object' && 'skipScopeRestore' in state
   const restore =
-    isHome && !location.search && !location.hash && hasAreas && !skipScopeRestore
+    isHome &&
+    !location.search &&
+    !location.hash &&
+    hasAreas &&
+    !skipScopeRestore
   const scope = useScope(api, hasAreas, storageKey, params, restore)
   const active = settings.find(
     ({ path }) =>
@@ -276,7 +280,10 @@ export function HomePage({
                     hash: location.hash,
                   },
                   {
-                    state: { scopeMessage: areaMessage, skipScopeRestore: true },
+                    state: {
+                      scopeMessage: areaMessage,
+                      skipScopeRestore: true,
+                    },
                   },
                 )
               }}
@@ -418,17 +425,19 @@ export function HomePage({
                   </Text>
                   <p>Обратитесь к администратору.</p>
                 </section>
-              ) : outlet ?? (
-                <section>
-                  <Text as="h1" variant="header-1">
-                    Обзор
-                  </Text>
-                  {scope.teams.data?.length === 0 ? (
-                    <p>Нет доступных команд. Обратитесь к администратору.</p>
-                  ) : !scope.team && !teamError ? (
-                    <p>Выберите команду и проект.</p>
-                  ) : null}
-                </section>
+              ) : (
+                (outlet ?? (
+                  <section>
+                    <Text as="h1" variant="header-1">
+                      Обзор
+                    </Text>
+                    {scope.teams.data?.length === 0 ? (
+                      <p>Нет доступных команд. Обратитесь к администратору.</p>
+                    ) : !scope.team && !teamError ? (
+                      <p>Выберите команду и проект.</p>
+                    ) : null}
+                  </section>
+                ))
               )}
             </div>
           </Grid>

@@ -219,14 +219,12 @@ describe('UI-02 and login errors', () => {
 describe('UI-03 after a 401 on an edited form', () => {
   it('hides old content and toasts, keeps the route and never replays a submission after login', async () => {
     const submit = vi.fn()
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockImplementation((url) => {
-        if (url === '/api/v1/me')
-          return Promise.resolve(jsonResponse(currentUser))
-        if (url === '/api/v1/teams') return Promise.resolve(jsonResponse(teams))
-        return Promise.resolve(problemResponse('auth_required', 401))
-      })
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((url) => {
+      if (url === '/api/v1/me')
+        return Promise.resolve(jsonResponse(currentUser))
+      if (url === '/api/v1/teams') return Promise.resolve(jsonResponse(teams))
+      return Promise.resolve(problemResponse('auth_required', 401))
+    })
     function EditedForm({ app }: { app: AppRuntime }) {
       const [value, setValue] = useState('')
       const notifications = useNotifications()
