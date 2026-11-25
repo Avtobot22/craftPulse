@@ -25,7 +25,7 @@ type MutationBody<P extends ApiPath, M extends MutationMethod> =
 export type Decoder<T> = (value: unknown) => T
 export interface RequestOptions {
   signal?: AbortSignal
-  query?: Readonly<Record<string, string | number | undefined>>
+  query?: Readonly<Record<string, string | number | boolean | undefined>>
   pathParams?: Readonly<Record<string, string>>
 }
 export interface VersionedRequestOptions extends RequestOptions {

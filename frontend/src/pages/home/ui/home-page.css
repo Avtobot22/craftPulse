@@ -100,7 +100,7 @@
   background: var(--g-color-base-generic-hover);
 }
 
-.cp-shell__navigation a[aria-current='page'] {
+.cp-shell__navigation a:is([aria-current='page'], [aria-current='location']) {
   border-inline-start-color: var(--g-color-line-brand);
   background: var(--g-color-base-selection);
   font-weight: 600;

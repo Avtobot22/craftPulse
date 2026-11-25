@@ -7,15 +7,17 @@ export function changeScope(
   current: URLSearchParams,
   team: string,
   project = '',
+  { projectOnly = false, keepDate = false } = {},
 ) {
   const params = new URLSearchParams()
   let reset = current.has(projectParam) && current.get(projectParam) !== project
   for (const [key, value] of current) {
-    if (compatible.has(key)) params.append(key, value)
+    if (compatible.has(key) || (keepDate && key === 'date'))
+      params.append(key, value)
     else if (key !== teamParam && key !== projectParam) reset = true
   }
   if (team) params.set(teamParam, team)
-  if (team && project) params.set(projectParam, project)
+  if ((team || projectOnly) && project) params.set(projectParam, project)
   return { params, reset }
 }
 

@@ -20,6 +20,10 @@ import {
   rememberScope,
   teamParam,
 } from '../model/scope'
+import {
+  taskAnalysisSection,
+  taskAnalysisSections,
+} from '../model/task-analysis-navigation'
 import { useScope } from '../model/use-scope'
 import './home-page.css'
 
@@ -102,7 +106,15 @@ export function HomePage({
     !location.hash &&
     hasAreas &&
     !skipScopeRestore
-  const scope = useScope(api, hasAreas, storageKey, params, restore)
+  const analysisSection = taskAnalysisSection(location.pathname)
+  const scope = useScope(
+    api,
+    hasAreas,
+    storageKey,
+    params,
+    restore,
+    analysisSection && current.areas.projects,
+  )
   const active = settings.find(
     ({ path }) =>
       matchPath(path, location.pathname) ??
@@ -129,14 +141,22 @@ export function HomePage({
   const canReadReport = current.actions.includes(report.action)
   const canManageProcess =
     isProcessSetting && current.actions.includes('process.manage')
+  const canReadAnalysis =
+    analysisSection !== undefined &&
+    current.actions.includes(analysisSection.action)
   const hasProjectParam = Boolean(params.get(projectParam))
+  const hasTeamParam = Boolean(params.get(teamParam))
   const checkingTeam =
-    (isReport ? canReadReport : canManageProcess) &&
+    (isReport
+      ? canReadReport
+      : canManageProcess || (canReadAnalysis && hasTeamParam)) &&
     hasAreas &&
-    (Boolean(params.get(teamParam)) || hasProjectParam) &&
+    (hasTeamParam || hasProjectParam) &&
     !scope.teams.isSuccess
   const checkingProject =
-    (isReport ? canReadReport : currentSetting?.action === 'process.manage') &&
+    (isReport
+      ? canReadReport
+      : canReadAnalysis || currentSetting?.action === 'process.manage') &&
     hasProjectParam &&
     Boolean(scope.team) &&
     !scope.projects.isSuccess
@@ -144,11 +164,17 @@ export function HomePage({
   const availableViews = views.filter(({ action }) =>
     current.actions.includes(action),
   )
+  const analysisNavigation = hasAreas
+    ? taskAnalysisSections.filter(({ action }) =>
+        current.actions.includes(action),
+      )
+    : []
   const missing =
     Boolean(active && !currentSetting) ||
     ((isReport || currentSetting?.action === 'process.manage') &&
       scope.invalid) ||
-    (isReport && !canReadReport)
+    (isReport && !canReadReport) ||
+    Boolean(analysisSection && (!canReadAnalysis || scope.invalid))
   const noArea =
     !hasAreas &&
     !currentSetting &&
@@ -180,10 +206,19 @@ export function HomePage({
   }, [location.pathname, missing, noArea, restoring, checkingScope])
 
   function updateArea(team: string, project?: string) {
-    const { params: next, reset } = changeScope(params, team, project)
-    const nextPath =
-      active?.path ?? (isReport ? routePaths.teamReport : routePaths.home)
-    if (!team) rememberScope(storageKey, '', '')
+    const isTaskDetail = Boolean(
+      matchPath(routePaths.taskDetail, location.pathname),
+    )
+    const nextPath = analysisSection
+      ? isTaskDetail
+        ? routePaths.taskList
+        : location.pathname
+      : (active?.path ?? (isReport ? routePaths.teamReport : routePaths.home))
+    const { params: next, reset } = changeScope(params, team, project, {
+      projectOnly: Boolean(analysisSection),
+      keepDate: nextPath === routePaths.projectTimeline,
+    })
+    if (!team && !project) rememberScope(storageKey, '', '')
     void navigate(
       { pathname: nextPath, search: next.toString() },
       {
@@ -207,10 +242,17 @@ export function HomePage({
   }
 
   function goTo(pathname: string) {
+    if (pathname === location.pathname && analysisSection) {
+      return { pathname, search: location.search, hash: location.hash }
+    }
     const { params: next } = changeScope(
       params,
       params.get(teamParam) ?? '',
       params.get(projectParam) ?? '',
+      {
+        projectOnly: Boolean(taskAnalysisSection(pathname)),
+        keepDate: pathname === routePaths.projectTimeline,
+      },
     )
     return { pathname, search: next.toString() }
   }
@@ -239,7 +281,8 @@ export function HomePage({
   const teamError = scope.teams.isError && hasAreas
   const projectError = scope.projects.isError && !!scope.team
   const overview = hasAreas && canReadReport
-  const hasNavigation = overview || allowed.length > 0
+  const hasNavigation =
+    overview || allowed.length > 0 || analysisNavigation.length > 0
   return (
     <div
       className={hasNavigation ? 'cp-shell' : 'cp-shell cp-shell--without-nav'}
@@ -293,7 +336,7 @@ export function HomePage({
               Проект
               <select
                 value={scope.project?.id ?? ''}
-                disabled={!scope.team || !scope.projects.isSuccess}
+                disabled={!scope.projectChoices}
                 onChange={(event) => {
                   updateArea(scope.team?.id ?? '', event.target.value)
                 }}
@@ -303,9 +346,8 @@ export function HomePage({
                     ? 'Загрузка проектов…'
                     : 'Выберите проект'}
                 </option>
-                {scope.team &&
-                  !projectError &&
-                  scope.projects.data?.map(({ id, name }) => (
+                {!projectError &&
+                  scope.projectChoices?.map(({ id, name }) => (
                     <option key={id} value={id}>
                       {name}
                     </option>
@@ -420,6 +462,30 @@ export function HomePage({
                 {report.label}
               </Link>
             )}
+            {analysisNavigation.map(({ path, label, children }) => (
+              <div key={path}>
+                {[{ path, label }, ...children].map((item) => (
+                  <Link
+                    key={item.path}
+                    aria-current={
+                      location.pathname === item.path
+                        ? 'page'
+                        : item.path === path && analysisSection?.path === path
+                          ? 'location'
+                          : undefined
+                    }
+                    to={goTo(item.path)}
+                    onClick={() => {
+                      setMenuOpen(false)
+                      if (location.pathname === item.path && menuOpen)
+                        navButton.current?.focus()
+                    }}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            ))}
             {allowed.length > 0 && (
               <div role="group" aria-labelledby="settings-heading">
                 <Text id="settings-heading" as="h2" variant="subheader-1">

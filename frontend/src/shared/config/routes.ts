@@ -14,5 +14,9 @@ export const routePaths = Object.freeze({
   metricPassport: '/reports/revisions/:revisionId/metrics/:metricId',
   metricCohort:
     '/reports/revisions/:revisionId/metrics/:metricId/points/:pointStart',
+  taskList: '/tasks',
+  taskDetail: '/tasks/:taskId',
+  projectTimeline: '/timeline',
+  mergeRequestQueue: '/merge-requests',
   savedView: '/reports/saved-views/:savedViewId',
 })

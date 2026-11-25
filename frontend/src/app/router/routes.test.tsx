@@ -1,11 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useQuery, focusManager } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createMemoryRouter } from 'react-router'
+import { createBrowserRouter, createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { listTeams, listServices } from '@/shared/api'
 import type { components } from '@/shared/api'
-import { routePaths } from '@/shared/config'
+import { routePaths, taskAnalysisLinks } from '@/shared/config'
 import {
   currentUser,
   projects,
@@ -105,18 +105,26 @@ function mount(
   const router = createMemoryRouter(createAppRoutes(runtime), {
     initialEntries: previousPath ? [previousPath, path] : [path],
   })
+  return renderRouter(router, runtime)
+}
+
+function renderRouter(
+  router: ReturnType<typeof createMemoryRouter>,
+  runtime: AppRuntime,
+) {
   const view = render(
     <AppProviders runtime={runtime}>
       <RouterProvider router={router} />
     </AppProviders>,
   )
-  cleanups.push(() => {
+  const dispose = () => {
     view.unmount()
     router.dispose()
     runtime.session.dispose()
     runtime.queryClient.clear()
-  })
-  return { runtime, router }
+  }
+  cleanups.push(dispose)
+  return { runtime, router, dispose }
 }
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup()
@@ -522,8 +530,8 @@ describe('UI-01', () => {
       screen.queryByRole('link', { name: 'Пользователи и роли' }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('link', { name: 'Задачи и история' }),
-    ).not.toBeInTheDocument()
+      screen.getByRole('link', { name: 'Задачи и история' }),
+    ).toHaveAttribute('href', '/tasks')
     await act(async () => {
       await router.navigate('/users/123')
     })
@@ -694,5 +702,145 @@ describe('UI-01', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText(admin.organization.name)).not.toBeInTheDocument()
     expect(runtime.queryClient.getQueryCache().getAll()).toHaveLength(0)
+  })
+})
+
+describe('task analysis routes', () => {
+  const taskReader = { ...currentUser, actions: ['session.read', 'tasks.read'] }
+  const mrReader = { ...currentUser, actions: ['session.read', 'mr.read'] }
+  const scope = { project_id: project.id }
+
+  it.each([
+    [
+      taskAnalysisLinks.taskList({
+        team_id: team.id,
+        status_meaning: 'wait',
+        sort: '-age',
+      }),
+      'Задачи',
+      taskReader,
+    ],
+    [
+      taskAnalysisLinks.taskList({ ...scope, over_target: false }),
+      'Задачи',
+      taskReader,
+    ],
+    [
+      taskAnalysisLinks.taskDetail('task-1', scope),
+      'Карточка задачи',
+      taskReader,
+    ],
+    [
+      taskAnalysisLinks.projectTimeline({
+        ...scope,
+        date: '2026-10-02',
+        actor_kind: 'bot',
+        object_kind: 'task',
+      }),
+      'Таймлайн проекта',
+      taskReader,
+    ],
+    [
+      taskAnalysisLinks.projectTimeline({
+        ...scope,
+        from: '2026-10-02T00:00:00Z',
+        to: '2026-10-03T00:00:00Z',
+      }),
+      'Таймлайн проекта',
+      taskReader,
+    ],
+    [
+      taskAnalysisLinks.mergeRequestQueue({
+        ...scope,
+        review_wait: 'no_reviewer',
+      }),
+      'Очередь MR',
+      mrReader,
+    ],
+  ] as const)(
+    'opens %s directly and with a fresh router at the same browser URL',
+    async (path, heading, user) => {
+      const original = window.location.href
+      window.history.replaceState(null, '', path)
+      cleanups.push(() => {
+        window.history.replaceState(null, '', original)
+      })
+      for (let load = 0; load < 2; load += 1) {
+        const runtime = createAppRuntime(mockApi(user))
+        const router = createBrowserRouter(createAppRoutes(runtime))
+        const { dispose } = renderRouter(router, runtime)
+        expect(
+          await screen.findByRole('heading', { name: heading, level: 1 }),
+        ).toBeVisible()
+        expect(screen.getByRole('main')).toContainElement(
+          screen.getByRole('heading', { name: heading, level: 1 }),
+        )
+        expect(window.location.pathname + window.location.search).toBe(path)
+        cleanups.splice(cleanups.lastIndexOf(dispose), 1)
+        dispose()
+      }
+    },
+  )
+
+  it('allows the task section and hides MR and CI for a tasks-only reader', async () => {
+    mount(`/tasks?project_id=${project.id}`, mockApi(taskReader))
+    expect(
+      await screen.findByRole('link', { name: 'Задачи и история' }),
+    ).toHaveAttribute('href', `/tasks?project_id=${project.id}`)
+    expect(
+      screen.getByRole('link', { name: 'Таймлайн проекта' }),
+    ).toHaveAttribute('href', `/timeline?project_id=${project.id}`)
+    expect(
+      screen.queryByRole('link', { name: 'MR и CI' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('allows MR and CI and hides the task section for an MR-only reader', async () => {
+    mount(`/merge-requests?project_id=${project.id}`, mockApi(mrReader))
+    expect(await screen.findByRole('link', { name: 'MR и CI' })).toBeVisible()
+    expect(
+      screen.queryByRole('link', { name: 'Задачи и история' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'Таймлайн проекта' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('rejects a direct queue link for a tasks-only reader', async () => {
+    mount(`/merge-requests?project_id=${project.id}`, mockApi(taskReader))
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Объект или область недоступны',
+      }),
+    ).toBeVisible()
+  })
+
+  it('preserves the timeline date and drops filters and cursor when switching projects', async () => {
+    const second = { ...project, id: 'second-project', name: 'Второй проект' }
+    const path = taskAnalysisLinks.projectTimeline({
+      ...scope,
+      date: '2026-10-02',
+      actor_kind: 'bot',
+      cursor: 'page-2',
+    })
+    const { router } = mount(
+      path,
+      mockApi({
+        ...taskReader,
+        areas: { ...taskReader.areas, projects: [project, second] },
+      }),
+    )
+    await screen.findByRole('heading', { name: 'Таймлайн проекта' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Проект' }), {
+      target: { value: second.id },
+    })
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Несовместимые параметры сброшены при смене области',
+    )
+    expect(router.state.location.pathname).toBe('/timeline')
+    expect([...new URLSearchParams(router.state.location.search)]).toEqual([
+      ['date', '2026-10-02'],
+      ['project_id', second.id],
+    ])
   })
 })
