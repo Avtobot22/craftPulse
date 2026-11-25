@@ -12,10 +12,10 @@ import (
 // RunAt reads a run at the slice seq with its child runs and the attempts of all of them: a job of a child
 // pipeline is an attempt of its own run and is counted once.
 func (u *UseCase) RunAt(ctx context.Context, scope entity.Scope, orgID, runID entity.ID, seq int64) (entity.CIRun, error) {
-	return u.runAt(ctx, orgID, runID, scope.Areas(), scope.Objects(), seq)
+	return u.readRunAt(ctx, orgID, runID, scope.Areas(), scope.Objects(), seq)
 }
 
-func (u *UseCase) runAt(ctx context.Context, orgID, runID entity.ID, areas, allowed []entity.ID, seq int64) (entity.CIRun, error) {
+func (u *UseCase) readRunAt(ctx context.Context, orgID, runID entity.ID, areas, allowed []entity.ID, seq int64) (entity.CIRun, error) {
 	var out entity.CIRun
 	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
 		runs, err := u.d.Repo.ReadCIRunVersions(ctx, orgID, areas, allowed, []entity.ID{runID}, seq)
@@ -121,7 +121,7 @@ func (u *UseCase) SummaryPipeline(ctx context.Context, org entity.ID, mr entity.
 			}
 			return cmp.Or(start(&a).Compare(start(&b)), cmp.Compare(a.RunID.String(), b.RunID.String()))
 		})
-		out, err = u.runAt(ctx, org, i.RunID, areas, nil, mr.KnowledgeSeq)
+		out, err = u.readRunAt(ctx, org, i.RunID, areas, nil, mr.KnowledgeSeq)
 		return err
 	})
 	return out, err

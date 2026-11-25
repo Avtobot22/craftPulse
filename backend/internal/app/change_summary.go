@@ -102,8 +102,8 @@ func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID
 			r.ExitClass != "success" && r.ExitClass != "findings"
 	})
 	reportIDs := make(map[entity.ID]bool)
-	for _, r := range facts.Reports {
-		reportIDs[r.ID] = true
+	for i := range facts.Reports {
+		reportIDs[facts.Reports[i].ID] = true
 	}
 	facts.Executions = slices.DeleteFunc(facts.Executions, func(r entity.ReportExecution) bool { return !reportIDs[r.ReportID] })
 	facts.Coverage = slices.DeleteFunc(facts.Coverage, func(r entity.ReportCoverage) bool { return !reportIDs[r.ReportID] })
@@ -162,9 +162,10 @@ func (s summaryCalculations) summaryCoverage(ctx context.Context, head string, f
 		files[fact.ReportID] = append(files[fact.ReportID], file)
 	}
 	var out []calc.MRCoverageReport
-	for _, r := range facts.Reports {
+	for i := range facts.Reports {
+		r := &facts.Reports[i]
 		if r.Kind == entity.AnalysisCoverage {
-			out = append(out, calc.MRCoverageReport{SHA: head, Evidence: r, Files: files[r.ID]})
+			out = append(out, calc.MRCoverageReport{SHA: head, Evidence: *r, Files: files[r.ID]})
 		}
 	}
 	return out, nil

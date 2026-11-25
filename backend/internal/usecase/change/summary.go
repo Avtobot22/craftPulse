@@ -169,7 +169,8 @@ func (u *UseCase) fetchSummaryHead(ctx context.Context, org entity.ID, mr entity
 	if err != nil {
 		return "", err
 	}
-	for _, s := range sources {
+	for i := range sources {
+		s := &sources[i]
 		if s.Active && s.ConnectionStatus == entity.ConnectionActive && s.InstanceID == mr.InstanceID && s.Kind == entity.ScopeRepository {
 			body, err := u.d.Summary.Source.Fetch(ctx, org, s.ConnectionID, entity.FetchInput{
 				SchemaID: "merge_requests", Limit: 1, ObjectKeys: []entity.ObjectKey{mr.Source},
@@ -178,14 +179,14 @@ func (u *UseCase) fetchSummaryHead(ctx context.Context, org entity.ID, mr entity
 			if err != nil {
 				return "", err
 			}
-			defer body.Close()
 			return summaryHead(body, mr.Source)
 		}
 	}
 	return "", entity.ErrNotFound
 }
 
-func summaryHead(body io.Reader, key entity.ObjectKey) (string, error) {
+func summaryHead(body io.ReadCloser, key entity.ObjectKey) (string, error) {
+	defer body.Close()
 	var archive bytes.Buffer
 	result, err := envelope.CleanPageWithRedactor(body, envelope.DefaultLimits, &archive, nil)
 	if err != nil {
@@ -248,8 +249,10 @@ func (u *UseCase) buildSummary(ctx context.Context, org entity.ID, mr entity.Sum
 	if v.PipelineState != "complete" {
 		v.PipelineState = "running"
 		switch run.Run.Outcome {
-		case "success", "failed", "canceled", "skipped":
+		case entity.CISuccess, entity.CIFailed, entity.CICanceled, entity.CISkipped:
 			v.PipelineState = "reports_missing"
+		case entity.CIRunning, entity.CIUnknown:
+			// Keep the pipeline running while awaiting reports or a terminal outcome.
 		}
 	}
 	if err := u.d.Summary.Calculations.SummarizeMetrics(ctx, org, mr, run, v); err != nil {
