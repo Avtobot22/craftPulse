@@ -770,9 +770,21 @@ func TestGitAdapter_RepositoryContentDoesNotRun(t *testing.T) {
 	assert.Contains(t, string(body), `"code":"invalid_request"`, "a file:// remote is refused")
 }
 
-// TestGitAdapter_LargeRepositoryAnswersPreparingAndRespectsLimits is not parallel: the peak memory of a git command
-// counts the peak of the test process it was started from, which the parallel tests raise.
+// TestGitAdapter_LargeRepositoryAnswersPreparingAndRespectsLimits uses a fresh process because
+// the reported Git command RSS can include the parent test process's high-water mark.
 func TestGitAdapter_LargeRepositoryAnswersPreparingAndRespectsLimits(t *testing.T) {
+	const isolated = "CRAFTPULSE_GIT_ADAPTER_ISOLATED_TEST"
+	if os.Getenv(isolated) != "1" {
+		executable, err := os.Executable()
+		require.NoError(t, err)
+		cmd := oexec.CommandContext(t.Context(), executable, "-test.run=^"+t.Name()+"$", "-test.v")
+		cmd.Env = append(os.Environ(), isolated+"=1")
+		output, err := cmd.CombinedOutput()
+		t.Logf("%s", output)
+		require.NoError(t, err, "isolated Git adapter test")
+		return
+	}
+
 	fx := newGitFixture(t)
 	files := map[string]string{"README.md": "# big\n"}
 	for i := range 1500 {
