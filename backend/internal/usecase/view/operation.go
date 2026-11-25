@@ -46,6 +46,7 @@ type Authorizer interface {
 }
 
 type Deps struct {
+	Summaries        Summaries
 	ReviewCalculator ReviewCalculator
 	ProjectAreas     ProjectAreas
 	Code             CodeFacts

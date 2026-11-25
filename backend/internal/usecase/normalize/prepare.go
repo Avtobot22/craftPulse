@@ -27,6 +27,8 @@ var _dictionaries = map[envelope.RecordRecordKind]entity.DictionaryKind{
 // against the current versions are left for the time the knowledge counter is locked.
 type input struct {
 	receipt       entity.ID
+	ciResult      *ciReceiptTarget
+	ciReceipt     bool
 	instance      entity.ID
 	provider      string
 	area          entity.SourceKey
@@ -82,6 +84,11 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 		truncated: truncatedRuns(m.Selection),
 		accounts:  map[string]entity.SourceAccount{},
 	}
+	if rc.Channel == entity.ChannelCI {
+		in.ciReceipt = true
+		in.ciResult = in.receiptTarget(pkg)
+	}
+
 	if rc.Channel == entity.ChannelImport && rc.ProjectID != nil &&
 		m.Area.Kind == envelope.AreaRefKindAnalysisProject && m.Area.NativeId == rc.ProjectID.String() {
 		in.importProject = rc.ProjectID

@@ -249,6 +249,7 @@ type SourceLinks interface {
 
 // CodeDetails serves MR, pipelines and their attempts after source access checks.
 type CodeDetails interface {
+	MergeRequestSummary(context.Context, entity.Subject, entity.Scope, entity.ID, *int) (entity.SummaryRead, error)
 	ListMergeRequests(context.Context, entity.Subject, entity.Scope, entity.MRQueueQuery) (entity.MRQueuePage, error)
 	TestExecutions(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID, q entity.TestExecutionQuery) (entity.TestExecutionList, error)
 	MergeRequest(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.MRDetail, error)

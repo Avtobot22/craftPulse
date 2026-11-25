@@ -111,7 +111,8 @@ type viewModules struct {
 func newView(pool *pgxpool.Pool, m viewModules, c clock.Clock) *view.UseCase {
 	tx := persistent.NewTransactor(pool)
 	return view.New(view.Deps{
-		Code: m.code, ReviewCalculator: m.reviewCalculator, ProjectAreas: m.projectAreas, RunCalculator: m.runCalculator, SourceRights: m.rights,
+		Summaries: changerepo.NewRepo(pool),
+		Code:      m.code, ReviewCalculator: m.reviewCalculator, ProjectAreas: m.projectAreas, RunCalculator: m.runCalculator, SourceRights: m.rights,
 		PipelineChecks: change.New(change.Deps{Repo: changerepo.NewRepo(pool), Tx: tx}),
 		CodeLinks:      linkuc.New(linkuc.Deps{Repo: linkrepo.NewRepo(pool), Tx: tx}),
 		Repo:           viewrepo.NewRepo(pool), Tx: tx, Sync: m.collection, Series: m.series, Reports: m.reports,

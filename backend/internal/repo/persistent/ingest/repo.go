@@ -433,3 +433,29 @@ func (r *Repo) FirstCIReceiptOfHash(ctx context.Context, orgID, projectID, exclu
 	}
 	return entity.ID(id), true, nil
 }
+
+// SaveCIResult retains coordinates found in an earlier part when the last part closes the receipt.
+func (r *Repo) SaveCIResult(ctx context.Context, org, receipt entity.ID, pipeline, mr *entity.ID, pending bool) error {
+	_, err := postgres.Conn(ctx, r.pool).Exec(ctx, `
+		INSERT INTO ingest.ci_result AS r (organization_id, receipt_id, pending, pipeline_id, mr_id)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (organization_id, receipt_id) DO UPDATE SET pending = EXCLUDED.pending,
+			pipeline_id = COALESCE(r.pipeline_id, EXCLUDED.pipeline_id),
+			mr_id = CASE WHEN r.pipeline_id IS NULL OR r.pipeline_id = EXCLUDED.pipeline_id
+				THEN COALESCE(r.mr_id, EXCLUDED.mr_id) ELSE r.mr_id END`,
+		uuid.UUID(org), uuid.UUID(receipt), pending, nullID(pipeline), nullID(mr))
+	return err
+}
+
+// ReadCIResult reads the normalization state and link target of a CI receipt.
+func (r *Repo) ReadCIResult(ctx context.Context, org, receipt entity.ID) (bool, *entity.ID, *entity.ID, error) {
+	var pending bool
+	var pipeline, mr uuid.NullUUID
+	err := postgres.Conn(ctx, r.pool).QueryRow(ctx, `
+		SELECT pending, pipeline_id, mr_id FROM ingest.ci_result
+		WHERE organization_id = $1 AND receipt_id = $2`, uuid.UUID(org), uuid.UUID(receipt)).Scan(&pending, &pipeline, &mr)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = nil
+	}
+	return pending, idPtr(pipeline), idPtr(mr), err
+}

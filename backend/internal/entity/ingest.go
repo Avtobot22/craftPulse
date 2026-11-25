@@ -52,6 +52,8 @@ const (
 
 // Receipt is one received package (DR-003); the records of the source live only in its stored object.
 type Receipt struct {
+	CIResultPending  bool
+	ResultURL        string
 	ID               ID
 	OrganizationID   ID
 	Channel          ReceiptChannel

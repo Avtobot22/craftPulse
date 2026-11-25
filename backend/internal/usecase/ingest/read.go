@@ -53,6 +53,13 @@ func (u *UseCase) RejectRecords(ctx context.Context, orgID, receiptID entity.ID,
 	})
 }
 
+// RecordCIResult records the normalized target in the transaction of the batch.
+func (u *UseCase) RecordCIResult(ctx context.Context, org, receipt entity.ID, pipeline, mr *entity.ID, pending bool) error {
+	return u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		return u.d.Repo.SaveCIResult(ctx, org, receipt, pipeline, mr, pending)
+	})
+}
+
 // AffectedMetrics are the metrics whose data the schema of a receipt carries.
 func AffectedMetrics(schemaID string) []string {
 	return slices.Clone(_affected[schemaID])
@@ -66,6 +73,20 @@ func (u *UseCase) Receipt(ctx context.Context, s entity.Subject, id entity.ID) (
 		var err error
 		if rc, err = u.d.Repo.Receipt(ctx, s.OrganizationID, id); err != nil {
 			return err
+		}
+		if rc.Channel == entity.ChannelCI {
+			pending, pipeline, mr, err := u.d.Repo.ReadCIResult(ctx, s.OrganizationID, id)
+			if err != nil {
+				return err
+			}
+			rc.CIResultPending = pending
+			// These routes apply session access checks when opened.
+			switch {
+			case !pending && mr != nil:
+				rc.ResultURL = "/merge-requests/" + mr.String() + "/summary"
+			case !pending && pipeline != nil:
+				rc.ResultURL = "/pipelines/" + pipeline.String()
+			}
 		}
 		receipts := []entity.Receipt{rc}
 		err = u.d.Repo.CountRepeats(ctx, s.OrganizationID, receipts)

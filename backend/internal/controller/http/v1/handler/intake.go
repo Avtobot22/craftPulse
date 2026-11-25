@@ -227,7 +227,7 @@ func (h *intake) ListReceipts(ctx context.Context, req openapi.ListReceiptsReque
 			Id: uuid.UUID(rc.ID), Channel: openapi.ReceiptSummaryChannel(rc.Channel), Status: openapi.ReceiptSummaryStatus(rc.Status),
 			ReceivedAt: rc.ReceivedAt, SchemaId: optional(rc.SchemaID), SchemaVersion: optional(rc.SchemaVersion),
 			RecordCount: rc.RecordCount, AcceptedCount: rc.AcceptedCount, RejectedCount: rc.RejectedCount,
-			ReasonCode: optional(rc.ReasonCode), DuplicateOf: uuidPtr(rc.DuplicateOf), AffectedMetrics: ingest.AffectedMetrics(rc.SchemaID),
+			ReasonCode: optional(rc.ReasonCode), DuplicateOf: uuidPtr(rc.DuplicateOf), AffectedMetrics: ingest.AffectedMetrics(rc.SchemaID), ResultUrl: optional(rc.ResultURL),
 		})
 	}
 	if page.Next != nil {
@@ -253,7 +253,7 @@ func (h *intake) GetReceipt(ctx context.Context, req openapi.GetReceiptRequestOb
 		ReplayCount: rc.ReplayCount, ConflictCount: rc.ConflictCount, ReasonCode: optional(rc.ReasonCode),
 		DuplicateOf: uuidPtr(rc.DuplicateOf), AffectedMetrics: ingest.AffectedMetrics(rc.SchemaID),
 	}
-	if rc.Status == entity.ReceiptQuarantined {
+	if rc.Status == entity.ReceiptQuarantined || rc.CIResultPending {
 		n := _receiptPoll
 		out.RetryAfterSeconds = &n
 	}

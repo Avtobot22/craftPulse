@@ -1,7 +1,10 @@
 package entity
 
 import (
+	"bytes"
+	"cmp"
 	"encoding/json"
+	"slices"
 	"time"
 )
 
@@ -39,16 +42,19 @@ type SummaryInput struct {
 
 // SummaryItem is one visible row whose required right also governs its value.
 type SummaryItem struct {
-	Kind          string
-	FindingID     *ID
-	OccurrenceID  *ID
-	RequiredRight string
-	Rank          *int
-	ComponentID   *ID
-	AnalysisKind  string
-	ReasonCode    string
-	Severity      string
-	Value         json.RawMessage
+	Kind               string
+	FindingID          *ID
+	OccurrenceID       *ID
+	RequiredRight      string
+	Rank               *int
+	ComponentID        *ID
+	AnalysisKind       string
+	Mode               string
+	RuleID, Path       string
+	LineStart, LineEnd *int
+	ReasonCode         string
+	Severity           string
+	Value              json.RawMessage
 }
 
 // SummaryCodePair identifies the exact streams used by the MR structure definitions.
@@ -60,6 +66,7 @@ type SummaryCodePair struct {
 
 // SummaryRevision is the persisted lifecycle and content of one MR summary.
 type SummaryRevision struct {
+	ComparableBase        bool
 	ExpectedReports       []ExpectedReport
 	CompleteReports       []SummaryReportEvidence
 	ID                    ID
@@ -108,4 +115,111 @@ type SummaryFindingValues struct {
 type SummaryReportEvidence struct {
 	ExpectedReport
 	ReportID ID
+}
+
+// SummaryRead is the revision and its persisted publication outcome. View filters Items before mapping them.
+type SummaryRead struct {
+	ID, MRID, ProjectID                                  ID
+	No                                                   int
+	HeadSHA, BaseSHA, Status, PipelineState, StaleReason string
+	BuiltAt                                              *time.Time
+	LastGood                                             *SummaryCheckpoint
+	Publication                                          SummaryPublication
+	Items                                                []SummaryItem
+	Redactions                                           []string
+	SecurityAllowed                                      bool
+}
+
+// SummaryCheckpoint identifies the last complete revision at the requested cut.
+type SummaryCheckpoint struct {
+	HeadSHA string
+	No      int
+	BuiltAt time.Time
+}
+
+// SummaryPublication is the publication status and outcome stored for a revision.
+type SummaryPublication struct {
+	Status                string
+	ExternalID, ErrorCode *string
+	PublishedAt           *time.Time
+}
+
+// SummaryCI carries immutable display fields from the selected run.
+type SummaryCI struct {
+	PipelineID            ID
+	ParentPipelineID      *ID
+	Outcome               CIOutcome
+	Attempts, RetriedJobs int
+}
+
+// SensitiveSummaryAnalysis reports whether an analysis requires the security-data right.
+func SensitiveSummaryAnalysis(kind string) bool {
+	switch kind {
+	case AnalysisSAST, AnalysisSCA, AnalysisSecrets, AnalysisIaC, AnalysisImage:
+		return true
+	default:
+		return false
+	}
+}
+
+func severityOrder(s string) int {
+	switch s {
+	case "critical":
+		return 0
+	case "high":
+		return 1
+	case "medium":
+		return 2
+	case "low":
+		return 3
+	case "info":
+		return 4
+	default:
+		return 5
+	}
+}
+
+// CompareSummarySignals orders findings by priority and stable identity.
+func CompareSummarySignals(a, b *SummaryItem) int {
+	return cmp.Or(cmp.Compare(severityOrder(a.Severity), severityOrder(b.Severity)),
+		cmp.Compare(b.RequiredRight, a.RequiredRight), cmp.Compare(a.AnalysisKind, b.AnalysisKind),
+		bytes.Compare(a.FindingID[:], b.FindingID[:]), bytes.Compare(a.OccurrenceID[:], b.OccurrenceID[:]))
+}
+
+// RankSummary ranks up to five new findings in the supplied audience.
+func RankSummary(items []SummaryItem) {
+	var candidates []int
+	for i := range items {
+		items[i].Rank = nil
+		if items[i].Kind == FindingNew && items[i].FindingID != nil && items[i].OccurrenceID != nil {
+			candidates = append(candidates, i)
+		}
+	}
+	slices.SortStableFunc(candidates, func(a, b int) int { return CompareSummarySignals(&items[a], &items[b]) })
+	for rank, index := range candidates[:min(5, len(candidates))] {
+		items[index].Rank = new(rank + 1)
+	}
+}
+
+// FilterSecurity removes restricted rows without preserving their positions or their number.
+func (s *SummaryRead) FilterSecurity(allowed bool) {
+	s.SecurityAllowed = allowed
+	s.Redactions = []string{}
+	if !allowed {
+		items, notEvaluated := false, false
+		s.Items = slices.DeleteFunc(s.Items, func(i SummaryItem) bool {
+			hidden := i.RequiredRight == "security" ||
+				i.Kind == "not_evaluated" && SensitiveSummaryAnalysis(i.AnalysisKind)
+			items = items || hidden
+			notEvaluated = notEvaluated || hidden && i.Kind == "not_evaluated"
+			return hidden
+		})
+		if items {
+			s.Redactions = append(s.Redactions, "items")
+		}
+		if notEvaluated {
+			s.Redactions = append(s.Redactions, "not_evaluated")
+		}
+	}
+	RankSummary(s.Items)
 }

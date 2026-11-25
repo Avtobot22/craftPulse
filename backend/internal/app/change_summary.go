@@ -62,12 +62,23 @@ func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID
 	v *entity.SummaryRevision,
 ) error {
 	points, definitions := s.calculator.CalculateSummaryCI(run)
+	checks := s.calculator.CalculateCheckCompleteness(calc.CheckCompletenessInput{AreaID: mr.AreaID, AsOf: mr.ObservedAt})
+	points = append(points, checks[0])
+	definitions = append(definitions, entity.RevisionInput{Kind: calc.InputDefinition, ID: "I08", Version: "1"})
 	assessment, definition := s.calculator.CalculateSummaryCompleteness(mr, v.ExpectedReports, v.CompleteReports)
 	points = append(points, assessment)
 	definitions = append(definitions, definition)
 	v.Definitions = append(v.Definitions, definitions...)
+	publicExpected := slices.DeleteFunc(slices.Clone(v.ExpectedReports), func(r entity.ExpectedReport) bool {
+		return entity.SensitiveSummaryAnalysis(r.Kind)
+	})
+	publicReports, _ := s.calculator.CalculateSummaryCompleteness(mr, publicExpected, v.CompleteReports)
+	var display *entity.SummaryCI
 	var runs, attempts []entity.ID
 	if !run.Run.RunID.IsZero() {
+		summary := s.calculator.SummarizeRun(run)
+		display = &entity.SummaryCI{PipelineID: run.Run.RunID, ParentPipelineID: run.Run.ParentRunID,
+			Outcome: run.Run.Outcome, Attempts: summary.AttemptsTotal, RetriedJobs: summary.RetriedJobs}
 		runs = make([]entity.ID, 1, len(run.Children)+1)
 		runs[0] = run.Run.ID
 		for i := range run.Children {
@@ -83,7 +94,9 @@ func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID
 		RunVersions     []entity.ID          `json:"run_versions,omitempty"`
 		AttemptVersions []entity.ID          `json:"attempt_versions,omitempty"`
 		Metrics         []entity.SeriesPoint `json:"metrics"`
-	}{run.Run.RunID, runs, attempts, points}); err != nil {
+		Display         *entity.SummaryCI    `json:"display,omitempty"`
+		PublicReports   entity.SeriesPoint   `json:"public_reports"`
+	}{run.Run.RunID, runs, attempts, points, display, publicReports}); err != nil {
 		return err
 	}
 	facts, err := s.TestCoverageFacts(ctx, org, entity.ReportScope{AreaID: mr.AreaID, SHA: mr.HeadSHA, KnownSeq: mr.KnowledgeSeq})
@@ -129,6 +142,10 @@ func (s summaryCalculations) SummarizeMetrics(ctx context.Context, org entity.ID
 		return err
 	}
 	structure := s.calculator.CalculateMRStructure(&in)
+	v.ComparableBase = v.ComparableBase || (diff.Completeness == entity.MRDiffComplete || diff.Completeness == entity.MRDiffPartial)
+	if !v.ComparableBase {
+		v.ComparableBase = slices.ContainsFunc(v.CodePairs, func(pair entity.SummaryCodePair) bool { return pair.Comparable })
+	}
 	if len(streams) == 0 {
 		streams = []summaryCodeMetrics{{Complexity: structure.Complexity, Clones: structure.Clones}}
 	}

@@ -12,14 +12,19 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	httpctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/http"
+	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/openapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/internal/repo/oidc"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/change"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
+	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
 
 type summaryTestAdapter struct {
@@ -242,6 +247,53 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish'
 		AND args->>'summary_revision_id' = $1`, ready.String()))
 
+	// Use the HTTP entry point and the same revisions built from imported facts.
+	security := e.exceptionActor(t, "summary-security", []roleInput{
+		{Role: "tech_lead", ProjectID: &project}, {Role: "security_access", ProjectID: &project},
+	})
+	outside := e.exceptionActor(t, "summary-outside", []roleInput{{Role: "tech_lead", ProjectID: &e.other}})
+	// These fixtures have no live source; the test still exercises project visibility.
+	_, err = e.owner.Exec(t.Context(), "DELETE FROM connect.connection_scope WHERE organization_id=$1 AND area_id=$2", uuid.UUID(e.orgID), e.areas["42"])
+	require.NoError(t, err)
+	reg := prometheus.NewRegistry()
+	views := newView(e.app, viewModules{code: e.norm, rights: e.rights}, e.clock)
+	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg,
+		apiModules{orgs: e.orgs, access: e.rights, code: views})
+	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
+	summaryPath := "/api/v1/merge-requests/" + mr.String() + "/summary"
+	read := func(b *browser, suffix string) openapi.MergeRequestSummary {
+		t.Helper()
+		return decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, b, summaryPath+suffix, "MergeRequestSummary"))
+	}
+	full := read(security, "")
+	plain := read(e.lead, "")
+	assert.Equal(t, ready, full.Id)
+	assert.Equal(t, h2, plain.HeadSha)
+	assert.Empty(t, full.Redactions)
+	assert.Equal(t, []string{"items"}, plain.Redactions)
+	assert.True(t, plain.AccessLimited)
+	assert.Len(t, full.Items, len(plain.Items)+6)
+	require.NotNil(t, full.Ci)
+	assert.Equal(t, uuid.UUID(runID(t, e.normalized, "58101")), full.Ci.PipelineId)
+	for i, item := range plain.Items {
+		assert.Equal(t, i+1, item.ItemNo)
+		assert.Nil(t, item.Rank)
+		assert.NotEqual(t, new(openapi.AnalysisKind("sast")), item.AnalysisKind)
+	}
+	assert.Equal(t, "pending", string(full.Publication.Status))
+	_, err = e.owner.Exec(t.Context(), `UPDATE change.summary_revision SET publication_status = 'succeeded',
+		publication_external_id = 'comment-1', published_at = built_at WHERE id = $1`, ready)
+	require.NoError(t, err)
+	published := read(security, "").Publication
+	assert.Equal(t, "succeeded", string(published.Status))
+	assert.Equal(t, new("comment-1"), published.ExternalId)
+	assert.NotNil(t, published.PublishedAt)
+	old := read(security, "?revision_no=1")
+	assert.Equal(t, h1, old.HeadSha)
+	assert.Equal(t, "stale", string(old.Status))
+	assert.Equal(t, "not_requested", string(old.Publication.Status))
+	assert.Equal(t, http.StatusNotFound, e.do(t, outside, http.MethodGet, summaryPath, nil).Code)
+
 	enqueue()
 	run()
 	assert.Equal(t, ready, checkReady(h2, "complete"))
@@ -257,6 +309,10 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	e.submit(t, e.codeReport(t, h3, "feature", "8106", sarifOf(hit{rule: "observed", path: "src/main.go", line: 3})))
 	run()
 	assertItem(checkReady(h3, "running"), "newly_observed", "", 1)
+	current := read(security, "")
+	assert.Nil(t, current.BaseSha)
+	require.NotNil(t, current.LastGood)
+	assert.Equal(t, h2, current.LastGood.HeadSha)
 	tx := persistent.NewTransactor(e.app)
 	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
 		last, err := deps.Store.LastGoodSummary(ctx, e.orgID, mr)
@@ -267,4 +323,14 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 		assert.False(t, last.BuiltAt.IsZero())
 		return nil
 	}))
+	// Another MR in the same visible repository has facts but has not been summarized.
+	manifestMR := mrManifest("42")
+	manifestMR.Source.InstanceKey = _checksInstance
+	e.submit(t, pack(t, manifestMR, mrRecord(t, "merge_request", "9002", "", "v1", envelope.MergeRequestV1{
+		ProjectNativeId: "42", Iid: new(8), State: "open", HeadSha: h3,
+		SourceBranch: "other", TargetBranch: "main", OpenedAt: e.clock.Now(),
+	})))
+	noRevision := "/api/v1/merge-requests/" + mrID(t, e.normalized, "9002").String() + "/summary"
+	assert.Equal(t, http.StatusNotFound, e.do(t, e.lead, http.MethodGet, noRevision, nil).Code)
+
 }

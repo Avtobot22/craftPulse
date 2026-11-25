@@ -67,6 +67,7 @@ func (u *UseCase) summarizeRow(ctx context.Context, org entity.ID, mr entity.Sum
 		return u.summarizeMeasurementReports(ctx, org, mr.HeadSHA, rs, v)
 	}
 	if base != nil {
+		v.ComparableBase = true
 		v.Inputs = append(v.Inputs, entity.SummaryInput{Kind: "report", ID: base.ID})
 		baselines, err := u.d.Repo.CurrentBaselines(ctx, org, []entity.ID{e.ComponentID})
 		if err != nil {
@@ -125,8 +126,12 @@ func (u *UseCase) summaryMissing(ctx context.Context, org entity.ID, mr entity.S
 		}
 	}
 	v.PipelineState = "reports_missing"
+	right := "none"
+	if entity.SensitiveSummaryAnalysis(e.AnalysisKind) {
+		right = "security"
+	}
 	v.Items = append(v.Items, entity.SummaryItem{
-		Kind: "not_evaluated", ComponentID: &e.ComponentID, AnalysisKind: e.AnalysisKind, ReasonCode: reason, RequiredRight: "none",
+		Mode: e.Mode, Kind: "not_evaluated", ComponentID: &e.ComponentID, AnalysisKind: e.AnalysisKind, ReasonCode: reason, RequiredRight: right,
 	})
 	return nil
 }
@@ -195,6 +200,7 @@ func (u *UseCase) summaryFindings(ctx context.Context, org entity.ID, mr entity.
 	if err != nil {
 		return err
 	}
+	start := len(v.Items)
 	for _, f := range result.Findings {
 		os, report := headOccurrences[f.ID], head.ID
 		switch f.Lifecycle {
@@ -209,6 +215,9 @@ func (u *UseCase) summaryFindings(ctx context.Context, org entity.ID, mr entity.
 			continue
 		}
 		summaryFinding(&calculation, report, f, os, versions, severities, v)
+	}
+	for i := start; i < len(v.Items); i++ {
+		v.Items[i].Mode = e.Mode
 	}
 	values, definitions := u.d.Summary.Calculations.SummarizeFindings(calculation, versions)
 	v.FindingValues = append(v.FindingValues, values...)
@@ -266,7 +275,7 @@ func summaryFinding(calculation *entity.SummaryFindingComparison, report entity.
 		if item.Kind == "accepted" {
 			best = &accepted
 		}
-		if *best == nil || compareSummarySignals(&item, *best) < 0 {
+		if *best == nil || entity.CompareSummarySignals(&item, *best) < 0 {
 			*best = &item
 		}
 	}
@@ -276,42 +285,6 @@ func summaryFinding(calculation *entity.SummaryFindingComparison, report entity.
 	// An exception scoped to one path must not suppress other occurrences of the same finding.
 	if applicable != nil {
 		v.Items = append(v.Items, *applicable)
-	}
-}
-
-func severityOrder(s string) int {
-	switch s {
-	case "critical":
-		return 0
-	case "high":
-		return 1
-	case "medium":
-		return 2
-	case "low":
-		return 3
-	case "info":
-		return 4
-	default:
-		return 5
-	}
-}
-
-func compareSummarySignals(a, b *entity.SummaryItem) int {
-	return cmp.Or(cmp.Compare(severityOrder(a.Severity), severityOrder(b.Severity)),
-		cmp.Compare(b.RequiredRight, a.RequiredRight), cmp.Compare(a.AnalysisKind, b.AnalysisKind),
-		compareIDs(*a.FindingID, *b.FindingID), compareIDs(*a.OccurrenceID, *b.OccurrenceID))
-}
-
-func rankSummary(items []entity.SummaryItem) {
-	var candidates []int
-	for i := range items {
-		if items[i].Kind == entity.FindingNew {
-			candidates = append(candidates, i)
-		}
-	}
-	slices.SortStableFunc(candidates, func(a, b int) int { return compareSummarySignals(&items[a], &items[b]) })
-	for rank, index := range candidates[:min(5, len(candidates))] {
-		items[index].Rank = new(rank + 1)
 	}
 }
 
