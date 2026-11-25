@@ -234,8 +234,8 @@ func (m *summaryMetrics) apply(out *openapi.MergeRequestSummary) {
 		out.Ci = &struct {
 			Attempts         int                                  `json:"attempts"`
 			Outcome          openapi.MergeRequestSummaryCiOutcome `json:"outcome"`
-			ParentPipelineId *uuid.UUID                           `json:"parent_pipeline_id,omitempty"` //nolint:revive // Match the generated OpenAPI type.
-			PipelineId       uuid.UUID                            `json:"pipeline_id"`                  //nolint:revive // Match the generated OpenAPI type.
+			ParentPipelineId *uuid.UUID                           `json:"parent_pipeline_id,omitempty"` //nolint:revive,staticcheck // Match the generated OpenAPI type.
+			PipelineId       uuid.UUID                            `json:"pipeline_id"`                  //nolint:revive,staticcheck // Match the generated OpenAPI type.
 			RetriedJobs      int                                  `json:"retried_jobs"`
 		}{c.Attempts, openapi.MergeRequestSummaryCiOutcome(c.Outcome), uuidPtr(c.ParentPipelineID), uuid.UUID(c.PipelineID), c.RetriedJobs}
 	}
