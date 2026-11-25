@@ -54,15 +54,30 @@ type Importer struct {
 // Add records one run per report. A missing or empty file is recorded as a failed run without a report:
 // the absence of a report is not a clean result.
 func (im *Importer) Add(in *Import) ([]envelope.ScanToolRun, error) {
-	if in.ProducerJob != "" && !_nativeID.MatchString(in.ProducerJob) {
-		return nil, errors.New("producer job must be a GitLab job ID")
+	if in.ProducerJob != "" {
+		switch im.Job.Provider {
+		case envelope.SourceProviderJenkins:
+			if in.ProducerJob != im.Job.JobID {
+				return nil, errors.New("producer job must be the current Jenkins job")
+			}
+		case envelope.SourceProviderGithub:
+			return nil, errors.New("producer job is inferred for GitHub Actions")
+		default:
+			if !_nativeID.MatchString(in.ProducerJob) {
+				return nil, errors.New("producer job must be a GitLab job ID")
+			}
+		}
+	}
+	job := in.ProducerJob
+	if job == "" && im.Job.Provider != "" && im.Job.Provider != envelope.SourceProviderGitlab {
+		job = im.Job.JobID
 	}
 	runs := make([]envelope.ScanToolRun, 0, len(in.Reports))
 	for i, spec := range in.Reports {
 		run := envelope.ScanToolRun{
 			Id: "import-" + spec.Kind + "-" + strconv.Itoa(i+1), Producer: in.Producer, ProducerVersion: in.ProducerVersion,
 			Mode: envelope.ScanToolRunModeImport, ReportKind: envelope.ScanToolRunReportKind(spec.Kind), Sha: &im.Job.SHA,
-			Ci: im.Job.ci(in.ProducerJob), SkippedTargets: []envelope.ScanSkippedTarget{}, Reports: []envelope.ScanReport{},
+			Ci: im.Job.ci(job), SkippedTargets: []envelope.ScanSkippedTarget{}, Reports: []envelope.ScanReport{},
 			ExitClass: envelope.ScanToolRunExitClassFailed, Completeness: envelope.ScanToolRunCompletenessUnknown,
 			StartedAt: im.Now().UTC(), FinishedAt: im.Now().UTC(), SourceRoot: optional(in.SourceRoot), SourceDir: optional(in.SourceDir),
 		}

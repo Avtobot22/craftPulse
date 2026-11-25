@@ -30,7 +30,7 @@ type Authorizer interface {
 }
 
 type Projects interface {
-	ProjectRepositories(context.Context, entity.ID, entity.ID) ([]entity.AreaSource, error)
+	ProjectSources(context.Context, entity.ID, entity.ID, entity.ScopeKind) ([]entity.AreaSource, error)
 }
 
 type Auditor interface {

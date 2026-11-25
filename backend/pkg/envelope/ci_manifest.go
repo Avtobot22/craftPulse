@@ -145,8 +145,7 @@ func executionSemantics(m *JenkinsExecutionManifestV1) string {
 		if s.FinishedAt.Before(s.StartedAt) {
 			return "steps.finished_at: precedes started_at"
 		}
-		hash, err := configurationHash(s.Axes)
-		if err != nil || hash != s.ConfigurationHash {
+		if JenkinsConfigurationHash(s.Axes) != s.ConfigurationHash {
 			return "steps.configuration_hash: differs from matrix axes"
 		}
 		identity := JenkinsAttemptKey(m.Job, m.BuildNumber, s.Stage, s.Name, s.ConfigurationHash, s.Attempt)
@@ -327,13 +326,11 @@ func (w *Writer) addCIManifest(name string, m any) error {
 	return w.entry(name, data)
 }
 
-func configurationHash(axes map[string]string) (string, error) {
-	data, err := json.Marshal(axes)
-	if err != nil {
-		return "", err
-	}
+// JenkinsConfigurationHash is the v1 identity of a matrix configuration.
+func JenkinsConfigurationHash(axes map[string]string) string {
+	data, _ := json.Marshal(axes)
 	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
+	return hex.EncodeToString(sum[:])
 }
 
 func valueOf(value *string) string {

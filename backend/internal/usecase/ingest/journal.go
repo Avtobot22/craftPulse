@@ -60,7 +60,11 @@ func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, r io.Reader) (
 	if err != nil {
 		return nil, err
 	}
-	if !allowed && projectReportImport(rc, res.Manifest) {
+	jenkinsCI := rc.Channel == entity.ChannelCI && res.Manifest.Source.Provider == envelope.SourceProviderJenkins
+	if jenkinsCI && allowed {
+		allowed = jenkinsAreaMatches(res)
+	}
+	if !allowed && (jenkinsCI || projectReportImport(rc, res.Manifest)) {
 		p.Receipt.Status, p.Receipt.ReasonCode = entity.ReceiptRejected, entity.PackageOutsideScope
 		return p, nil
 	}

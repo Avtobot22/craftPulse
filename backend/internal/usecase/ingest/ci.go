@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strconv"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
@@ -14,14 +15,51 @@ func (u *UseCase) ciScope(ctx context.Context, rc entity.Receipt, m *envelope.Ma
 	if err != nil {
 		return entity.ID{}, false, err
 	}
-	repositories, err := u.d.Projects.ProjectRepositories(ctx, rc.OrganizationID, *rc.ProjectID)
+	kind := entity.ScopeRepository
+	if m.Source.Provider == envelope.SourceProviderJenkins {
+		kind = entity.ScopeCIProject
+	}
+	if string(m.Area.Kind) != string(kind) {
+		return inst.ID, false, nil
+	}
+	sources, err := u.d.Projects.ProjectSources(ctx, rc.OrganizationID, *rc.ProjectID, kind)
 	if err != nil {
 		return entity.ID{}, false, err
 	}
-	allowed := m.Area.Kind == envelope.AreaRefKindRepository && slices.ContainsFunc(repositories, func(r entity.AreaSource) bool {
+	allowed := slices.ContainsFunc(sources, func(r entity.AreaSource) bool {
 		return r.InstanceID == inst.ID && r.NativeScopeID == m.Area.NativeId
 	})
 	return inst.ID, allowed, nil
+}
+
+// jenkinsAreaMatches binds both manifests to the Jenkins job authorized by the token.
+func jenkinsAreaMatches(res *envelope.Result) bool {
+	job := res.Manifest.Area.NativeId
+	execution := res.ExecutionManifest
+	attempts := map[string]int{}
+	if execution != nil {
+		if execution.Job != job {
+			return false
+		}
+		for i := range execution.Steps {
+			step := &execution.Steps[i]
+			key := envelope.JenkinsAttemptKey(job, execution.BuildNumber, step.Stage, step.Name, step.ConfigurationHash, step.Attempt)
+			attempts[key] = step.Attempt
+		}
+	}
+	if res.ScanManifest != nil {
+		for i := range res.ScanManifest.Tools {
+			c := res.ScanManifest.Tools[i].Ci
+			if c == nil || c.Provider != envelope.ScanCiCoordinatesProviderJenkins || c.ProjectNativeId != job ||
+				c.JobNativeId == nil || *c.JobNativeId != job || (execution != nil && c.RunNativeId != strconv.Itoa(execution.BuildNumber)) {
+				return false
+			}
+			if c.AttemptNativeId != nil && (c.AttemptNo == nil || attempts[*c.AttemptNativeId] != *c.AttemptNo) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func restrictCI(recs []entity.IngestRecord, pkg *envelope.Package) error {
@@ -30,7 +68,8 @@ func restrictCI(recs []entity.IngestRecord, pkg *envelope.Package) error {
 		if r.Outcome == entity.RecordRejected {
 			continue
 		}
-		if !slices.Contains([]string{"ci_run", "ci_attempt", "report_file", "finding"}, r.Kind) {
+		if (pkg.Manifest.Source.Provider == envelope.SourceProviderJenkins && r.Kind != "report_file") ||
+			!slices.Contains([]string{"ci_run", "ci_attempt", "report_file", "finding"}, r.Kind) {
 			r.Outcome, r.ReasonCode = entity.RecordRejected, entity.RecordOutsideChannel
 			continue
 		}

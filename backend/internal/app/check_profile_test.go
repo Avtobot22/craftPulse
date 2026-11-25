@@ -383,8 +383,44 @@ func TestCheckProfiles_ProfileOfTheStepAndSnippet(t *testing.T) {
 	assert.True(t, body.Variables[0].Masked)
 	assert.Equal(t, "CRAFTPULSE_URL", body.Variables[1].Name)
 	assert.False(t, body.Variables[1].Masked)
-	jenkins := e.call(t, e.lead, "", http.MethodGet, "/api/v1/projects/"+project.String()+"/ci-configuration?ci_system=jenkins", nil, nil)
-	assert.Equal(t, http.StatusUnprocessableEntity, jenkins.Code)
+	for _, system := range []string{"github_actions", "jenkins"} {
+		cfg := e.call(t, e.lead, "", http.MethodGet, "/api/v1/projects/"+project.String()+"/ci-configuration?ci_system="+system, nil, nil)
+		require.Equal(t, http.StatusOK, cfg.Code, cfg.Body.String())
+		require.NoError(t, json.Unmarshal(cfg.Body.Bytes(), &body))
+		assert.NotContains(t, cfg.Body.String(), e.token.Value)
+		require.Len(t, body.Variables, 4)
+		assert.Equal(t, "CRAFTPULSE_UPLOAD_TOKEN", body.Variables[0].Name)
+		assert.True(t, body.Variables[0].Masked)
+		for _, job := range jobs {
+			assert.Contains(t, body.Snippet, job.Image)
+		}
+		assert.Contains(t, body.Snippet, "craftpulse-ci upload")
+		assert.Contains(t, body.Snippet, "advisory")
+		switch system {
+		case "github_actions":
+			var workflow struct {
+				Jobs map[string]struct {
+					Container struct {
+						Image string `yaml:"image"`
+					} `yaml:"container"`
+				} `yaml:"jobs"`
+			}
+			require.NoError(t, yaml.Unmarshal([]byte(body.Snippet), &workflow))
+			require.Len(t, workflow.Jobs, len(jobs))
+			for name, job := range workflow.Jobs {
+				assert.Equal(t, jobs[name].Image, job.Container.Image)
+			}
+			assert.Contains(t, body.Snippet, "${{ secrets.CRAFTPULSE_UPLOAD_TOKEN }}")
+			assert.Contains(t, body.Snippet, "${{ vars.CRAFTPULSE_URL }}")
+			assert.Contains(t, body.Snippet, "${{ vars.CRAFTPULSE_REPORT_SAST }}")
+		case "jenkins":
+			assert.Contains(t, body.Snippet, "credentialsId: 'CRAFTPULSE_UPLOAD_TOKEN'")
+			assert.Contains(t, body.Snippet, "retry(2)")
+			assert.Contains(t, body.Snippet, "craftpulse-ci jenkins record")
+			assert.Contains(t, body.Snippet, "craftpulse-ci jenkins finish")
+			assert.Contains(t, body.Snippet, "archiveArtifacts")
+		}
+	}
 }
 
 func TestCheckProfiles_ComponentsOfTheStructure(t *testing.T) {

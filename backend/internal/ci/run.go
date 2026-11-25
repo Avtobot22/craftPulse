@@ -205,7 +205,9 @@ func scopeHash(run *envelope.ScanToolRun) string {
 
 // toolEnv is the environment of a tool without the upload token: no tool needs it.
 func toolEnv(extra ...string) []string {
-	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, TokenEnv+"=") })
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		return strings.HasPrefix(kv, TokenEnv+"=") || strings.HasPrefix(kv, ActionsTokenEnv+"=")
+	})
 	return append(env, extra...)
 }
 

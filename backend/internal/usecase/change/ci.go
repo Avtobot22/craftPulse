@@ -117,13 +117,15 @@ type gitlabJob struct {
 	Script       []string `yaml:"script"`
 }
 
-// CIConfiguration is the snippet of .gitlab-ci.yml that adds the step in the mode of warnings: a job per builtin
+// CIConfiguration generates a CI snippet in advisory mode: a job per builtin
 // profile of the matrix and a job that imports the ready reports, each uploading its package. Images go by digest;
 // the token is a masked variable of the CI of the client and its value is never in the snippet.
 func (u *UseCase) CIConfiguration(ctx context.Context, s entity.Subject, projectID entity.ID, system string) (entity.CIConfiguration, error) {
-	if system != entity.CIGitLab {
+	switch system {
+	case entity.CIGitLab, entity.CIGitHubActions, entity.CIJenkins:
+	default:
 		return entity.CIConfiguration{}, &entity.ValidationError{Fields: []entity.FieldError{{
-			Field: "ci_system", Code: entity.FieldNotAllowedValue, Detail: "only gitlab_ci is supported",
+			Field: "ci_system", Code: entity.FieldNotAllowedValue, Detail: "expected gitlab_ci, github_actions or jenkins",
 		}}}
 	}
 	m, err := u.matrix(ctx, s.OrganizationID, projectID, false)
@@ -159,6 +161,9 @@ func (u *UseCase) CIConfiguration(ctx context.Context, s entity.Subject, project
 		args := make([]string, 0, 2*len(imports)+2)
 		args = append(args, "craftpulse-ci", "import")
 		for _, r := range imports {
+			if system != entity.CIGitLab {
+				r = "\"" + r + "\""
+			}
 			args = append(args, "--report", r)
 		}
 		jobs["craftpulse-import"] = gitlabJob{
@@ -166,7 +171,15 @@ func (u *UseCase) CIConfiguration(ctx context.Context, s entity.Subject, project
 			Script: []string{strings.Join(args, " "), "craftpulse-ci upload"},
 		}
 	}
-	raw, err := yaml.Marshal(jobs)
+	var raw []byte
+	switch system {
+	case entity.CIGitHubActions:
+		raw, err = actionsSnippet(jobs, vars)
+	case entity.CIJenkins:
+		raw = []byte(jenkinsSnippet(jobs))
+	default:
+		raw, err = yaml.Marshal(jobs)
+	}
 	if err != nil {
 		return entity.CIConfiguration{}, errorf("encode the snippet: %w", err)
 	}

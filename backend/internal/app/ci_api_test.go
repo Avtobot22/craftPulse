@@ -81,22 +81,27 @@ func newCIEnvWithStore(t *testing.T, store repo.ObjectStore) *ciEnv {
 
 func (e *ciEnv) bindRepository(t *testing.T, project entity.ID, native string) {
 	t.Helper()
-	inst, err := e.connect.EnsureInstance(t.Context(), e.orgID, entity.ProviderGitLab, "gitlab.example")
+	e.bindCISource(t, project, entity.ProviderGitLab, "gitlab.example", entity.ScopeRepository, native)
+}
+
+func (e *ciEnv) bindCISource(t *testing.T, project entity.ID, provider entity.Provider, key string, kind entity.ScopeKind, native string) {
+	t.Helper()
+	inst, err := e.connect.EnsureInstance(t.Context(), e.orgID, provider, key)
 	require.NoError(t, err)
 	org, area, conn := uuid.UUID(e.orgID), uuid.New(), uuid.New()
 	_, err = e.owner.Exec(t.Context(), `INSERT INTO connect.connection
   (organization_id,id,instance_id,name,adapter_kind,contract_version,access_mode,status,row_version,created_by,created_at,sync_paused)
-  VALUES ($1,$2,$3,'GitLab','builtin','1','service_account','active',1,$4,$5,false)`, org, conn, uuid.UUID(inst.ID), uuid.UUID(e.admin.UserID), e.clock.Now())
+  VALUES ($1,$2,$3,$4,'builtin','1','service_account','active',1,$5,$6,false)`, org, conn, uuid.UUID(inst.ID), string(provider), uuid.UUID(e.admin.UserID), e.clock.Now())
 	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `INSERT INTO normalize.source_object
   (organization_id,id,instance_id,object_kind,native_ns,native_id,identity_quality,first_known_seq,restricted)
-  VALUES ($1,$2,$3,'repository','',$4,'stable',1,false)`, org, area, uuid.UUID(inst.ID), native)
+  VALUES ($1,$2,$3,$4,'',$5,'stable',1,false)`, org, area, uuid.UUID(inst.ID), string(kind), native)
 	require.NoError(t, err)
-	_, err = e.owner.Exec(t.Context(), `INSERT INTO normalize.area (organization_id,area_id,area_kind,last_change_seq) VALUES ($1,$2,'repository',1)`, org, area)
+	_, err = e.owner.Exec(t.Context(), `INSERT INTO normalize.area (organization_id,area_id,area_kind,last_change_seq) VALUES ($1,$2,$3,1)`, org, area, string(kind))
 	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `INSERT INTO connect.connection_scope
   (organization_id,connection_id,instance_id,scope_kind,native_scope_id,display_name,area_id,status,added_at)
-  VALUES ($1,$2,$3,'repository',$4,'Repository',$5,'active',$6)`, org, conn, uuid.UUID(inst.ID), native, area, e.clock.Now())
+  VALUES ($1,$2,$3,$4,$5,'CI source',$6,'active',$7)`, org, conn, uuid.UUID(inst.ID), string(kind), native, area, e.clock.Now())
 	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `INSERT INTO org.project_area (organization_id,project_id,area_id,valid,known_seq)
   VALUES ($1,$2,$3,tstzrange($4,NULL,'[)'),1)`, org, uuid.UUID(project), area, e.clock.Now())
@@ -307,6 +312,36 @@ func TestCIUpload_PartialChannelAndRepository(t *testing.T) {
 			require.Len(t, rows, 2)
 			assert.Equal(t, entity.RecordOutsideScope, rows[1].ReasonCode)
 		})
+	}
+}
+
+func TestCIUpload_JenkinsJobScope(t *testing.T) {
+	t.Parallel()
+	e := newCIEnv(t)
+	e.bindCISource(t, e.project, entity.ProviderJenkins, _jenkinsInstance, entity.ScopeCIProject, "demo")
+	e.bindCISource(t, e.project, entity.ProviderJenkins, _jenkinsInstance, entity.ScopeCIProject, "other-bound-job")
+	for _, job := range []string{"demo", "other-job", "other-bound-job"} {
+		data := jenkinsStepPackage(t, func(m *envelope.Manifest, scan *envelope.ScanManifestV1) {
+			m.SchemaId = envelope.ManifestSchemaIdCiRuns
+			m.Area.Kind, m.Area.NativeId = envelope.AreaRefKindCiProject, job
+			for i := range scan.Tools {
+				scan.Tools[i].Ci.ProjectNativeId = job
+			}
+		})
+		resp := e.uploadCI(t, e.token.Value, data)
+		require.Equal(t, http.StatusAccepted, resp.Code, resp.Body.String())
+		id := decode[acceptedBody](t, resp).ReceiptID
+		require.NoError(t, e.uc.ProcessPackage(t.Context(), e.orgID, entity.ID(id)))
+		rc := e.readCI(t, id, e.token.Value)
+		if job == "demo" {
+			assert.Equal(t, "accepted", rc.Status)
+			assert.Equal(t, 3, rc.AcceptedCount)
+		} else {
+			assert.Equal(t, "rejected", rc.Status)
+			assert.Zero(t, rc.AcceptedCount)
+			require.NotNil(t, rc.ReasonCode)
+			assert.Equal(t, entity.PackageOutsideScope, *rc.ReasonCode)
+		}
 	}
 }
 
