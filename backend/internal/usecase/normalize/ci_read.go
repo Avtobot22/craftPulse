@@ -1,6 +1,7 @@
 package normalize
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"time"
@@ -11,9 +12,13 @@ import (
 // RunAt reads a run at the slice seq with its child runs and the attempts of all of them: a job of a child
 // pipeline is an attempt of its own run and is counted once.
 func (u *UseCase) RunAt(ctx context.Context, scope entity.Scope, orgID, runID entity.ID, seq int64) (entity.CIRun, error) {
+	return u.readRunAt(ctx, orgID, runID, scope.Areas(), scope.Objects(), seq)
+}
+
+func (u *UseCase) readRunAt(ctx context.Context, orgID, runID entity.ID, areas, allowed []entity.ID, seq int64) (entity.CIRun, error) {
 	var out entity.CIRun
-	err := u.d.Tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
-		runs, err := u.d.Repo.ReadCIRunVersions(ctx, orgID, scope.Areas(), scope.Objects(), []entity.ID{runID}, seq)
+	err := u.d.Tx.JoinOrgTx(ctx, orgID, func(ctx context.Context) error {
+		runs, err := u.d.Repo.ReadCIRunVersions(ctx, orgID, areas, allowed, []entity.ID{runID}, seq)
 		if err != nil {
 			return err
 		}
@@ -23,7 +28,7 @@ func (u *UseCase) RunAt(ctx context.Context, scope entity.Scope, orgID, runID en
 		out.Run = runs[0]
 		ids := []entity.ID{runID}
 		for parents := ids; len(parents) > 0; {
-			children, err := u.d.Repo.FindCIRunIDs(ctx, orgID, scope.Areas(), scope.Objects(), entity.RunsQuery{Parents: parents}, seq)
+			children, err := u.d.Repo.FindCIRunIDs(ctx, orgID, areas, allowed, entity.RunsQuery{Parents: parents}, seq)
 			if err != nil {
 				return err
 			}
@@ -31,7 +36,7 @@ func (u *UseCase) RunAt(ctx context.Context, scope entity.Scope, orgID, runID en
 			ids = append(ids, parents...)
 		}
 		if len(ids) > 1 {
-			if out.Children, err = u.d.Repo.ReadCIRunVersions(ctx, orgID, scope.Areas(), scope.Objects(), ids[1:], seq); err != nil {
+			if out.Children, err = u.d.Repo.ReadCIRunVersions(ctx, orgID, areas, allowed, ids[1:], seq); err != nil {
 				return err
 			}
 		}
@@ -46,7 +51,7 @@ func (u *UseCase) RunAt(ctx context.Context, scope entity.Scope, orgID, runID en
 		if truncated(out.Run) || slices.ContainsFunc(out.Children, truncated) {
 			out.History = entity.AttemptHistoryTruncated
 		}
-		out.Attempts, err = u.d.Repo.ReadCIAttemptVersions(ctx, orgID, scope.Areas(), scope.Objects(), ids, seq)
+		out.Attempts, err = u.d.Repo.ReadCIAttemptVersions(ctx, orgID, areas, allowed, ids, seq)
 		return err
 	})
 	if err != nil {
@@ -85,6 +90,38 @@ func (u *UseCase) findRuns(ctx context.Context, scope entity.Scope, orgID entity
 			return err
 		}
 		out, err = u.d.Repo.ReadCIRunVersions(ctx, orgID, areas, scope.Objects(), ids, seq)
+		return err
+	})
+	return out, err
+}
+
+// SummaryPipeline reads the latest root pipeline linked to this MR on its exact head.
+func (u *UseCase) SummaryPipeline(ctx context.Context, org entity.ID, mr entity.SummaryMR) (entity.CIRun, error) {
+	areas := []entity.ID{mr.AreaID}
+	var out entity.CIRun
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		ids, err := u.d.Repo.FindCIRunIDs(ctx, org, areas, nil, entity.RunsQuery{MRID: &mr.MRID}, mr.KnowledgeSeq)
+		if err != nil || len(ids) == 0 {
+			return err
+		}
+		runs, err := u.d.Repo.ReadCIRunVersions(ctx, org, areas, nil, ids, mr.KnowledgeSeq)
+		if err != nil {
+			return err
+		}
+		runs = slices.DeleteFunc(runs, func(r entity.CIRunVersion) bool { return r.SHA != mr.HeadSHA || r.ParentRunID != nil })
+		if len(runs) == 0 {
+			return nil
+		}
+		i := slices.MaxFunc(runs, func(a, b entity.CIRunVersion) int {
+			start := func(r *entity.CIRunVersion) time.Time {
+				if r.StartedAt != nil {
+					return *r.StartedAt
+				}
+				return r.ObservedAt
+			}
+			return cmp.Or(start(&a).Compare(start(&b)), cmp.Compare(a.RunID.String(), b.RunID.String()))
+		})
+		out, err = u.readRunAt(ctx, org, i.RunID, areas, nil, mr.KnowledgeSeq)
 		return err
 	})
 	return out, err

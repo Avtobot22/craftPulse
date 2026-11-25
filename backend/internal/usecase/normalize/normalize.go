@@ -43,6 +43,9 @@ type ReportAreas interface {
 type Complete = func(ctx context.Context) error
 
 type Deps struct {
+	SummaryTargets interface {
+		SummaryTargets(context.Context, entity.ID, int64) ([]entity.ID, error)
+	}
 	Repo        repo.NormalizeRepo
 	Tenants     repo.TenantRepo
 	Ingest      Ingest

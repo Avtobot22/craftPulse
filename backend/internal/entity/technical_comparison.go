@@ -35,6 +35,7 @@ type TechnicalReportScope struct {
 }
 
 type TechnicalReport struct {
+	Format            string
 	ID                ID
 	SHA               string
 	Language          string

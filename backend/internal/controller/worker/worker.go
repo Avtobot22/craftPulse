@@ -18,6 +18,9 @@ import (
 const _minSnooze = time.Second
 
 type Deps struct {
+	Summaries interface {
+		RunSummary(context.Context, entity.ChangeSummaryJob, func(context.Context) error) error
+	}
 	Probes             usecase.ProbeRunner
 	Packages           usecase.PackageProcessor
 	Collection         usecase.Collector
@@ -58,6 +61,10 @@ func Register(w *river.Workers, d Deps) int {
 	}
 	if d.ExceptionProjector != nil {
 		river.AddWorker(w, &exceptionProjectorWorker{change: d.ExceptionProjector})
+		count++
+	}
+	if d.Summaries != nil {
+		river.AddWorker(w, &summaryWorker{summaries: d.Summaries})
 		count++
 	}
 	return count
@@ -315,4 +322,15 @@ type exceptionProjectorWorker struct {
 
 func (w *exceptionProjectorWorker) Work(ctx context.Context, job *river.Job[entity.ChangeRecountJob]) error {
 	return w.change.RunExceptionRecount(ctx, job.Args, completeIn(job))
+}
+
+type summaryWorker struct {
+	river.WorkerDefaults[entity.ChangeSummaryJob]
+	summaries interface {
+		RunSummary(context.Context, entity.ChangeSummaryJob, func(context.Context) error) error
+	}
+}
+
+func (w *summaryWorker) Work(ctx context.Context, job *river.Job[entity.ChangeSummaryJob]) error {
+	return snooze(w.summaries.RunSummary(ctx, job.Args, completeIn(job)))
 }
