@@ -42,7 +42,7 @@
     "@feature-sliced/steiger-plugin": "0.8.2",
     "@gravity-ui/uikit-themer": "^2.1.0",
     "@testing-library/dom": "^10.4.1",
-    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/jest-dom": "^8.0.0",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
