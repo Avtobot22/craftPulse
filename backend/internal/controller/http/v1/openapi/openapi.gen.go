@@ -7908,7 +7908,7 @@ type TaskDetail struct {
 	OverTarget *bool               `json:"over_target"`
 	ProjectId  *openapi_types.UUID `json:"project_id"`
 
-	// Redactions Имена отсутствующих необязательных полей, закрытых правами. Индексы и пути к скрытым элементам коллекции запрещены: элементы отфильтровываются, а ограничение отмечается access_limited/access_notes. Обязательные поля схемы не маскируются отдельно; отсутствие права на такой объект закрывает весь объект.
+	// Redactions Имена коллекций links и observations, если из них исключены связи или основания закрытых объектов.
 	Redactions Redactions `json:"redactions"`
 	SizeLabel  *string    `json:"size_label"`
 	SourceUrl  *string    `json:"source_url"`

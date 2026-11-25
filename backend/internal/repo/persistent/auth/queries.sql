@@ -59,6 +59,27 @@ WHERE organization_id = sqlc.arg(organization_id) AND id = ANY(sqlc.arg(ids)::uu
 UPDATE auth.session SET ended_at = sqlc.arg(at)::timestamptz, end_reason = sqlc.arg(reason)::text
 WHERE organization_id = sqlc.arg(organization_id) AND user_id = sqlc.arg(user_id) AND ended_at IS NULL;
 
+-- name: ActiveAPIKeyByHash :one
+SELECT organization_id, id, owner_user_id
+FROM auth.api_key
+WHERE token_hash = sqlc.arg(token_hash) AND revoked_at IS NULL
+    AND created_at <= sqlc.arg(at)::timestamptz AND expires_at > sqlc.arg(at)::timestamptz;
+
+-- name: APIKeyProjects :many
+SELECT g.project_id::uuid AS project_id
+FROM auth.api_key_grant g
+WHERE g.organization_id = sqlc.arg(organization_id) AND g.api_key_id = sqlc.arg(key_id) AND g.project_id IS NOT NULL
+UNION
+SELECT t.project_id
+FROM auth.api_key_grant g
+JOIN org.team_project t ON t.organization_id = g.organization_id AND t.team_id = g.team_id
+WHERE g.organization_id = sqlc.arg(organization_id) AND g.api_key_id = sqlc.arg(key_id)
+    AND t.valid @> sqlc.arg(at)::timestamptz AND t.superseded_seq IS NULL;
+
+-- name: RevokeExposedAPIKey :exec
+UPDATE auth.api_key SET revoked_at = sqlc.arg(at)::timestamptz
+WHERE token_hash = sqlc.arg(token_hash) AND revoked_at IS NULL;
+
 -- name: RevokeUserAPIKeys :execrows
 UPDATE auth.api_key SET revoked_at = sqlc.arg(at)::timestamptz
 WHERE organization_id = sqlc.arg(organization_id) AND owner_user_id = sqlc.arg(user_id) AND revoked_at IS NULL;

@@ -70,7 +70,7 @@ func Authenticate(logins usecase.Logins, siteOrigin string) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if s, ok := SubjectFrom(c.Request.Context()); ok && !s.UploadTokenID.IsZero() {
+		if s, ok := SubjectFrom(c.Request.Context()); ok && (!s.UploadTokenID.IsZero() || !s.APIKeyID.IsZero()) {
 			c.Next()
 			return
 		}

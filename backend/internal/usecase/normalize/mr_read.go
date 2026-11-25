@@ -174,6 +174,13 @@ func (u *UseCase) readReviewFacts(ctx context.Context, orgID, areaID entity.ID, 
 	if err != nil {
 		return entity.ReviewFacts{}, err
 	}
+	if err := u.reviewActors(ctx, orgID, seq, &out, tasks); err != nil {
+		return entity.ReviewFacts{}, err
+	}
+	return out, nil
+}
+
+func (u *UseCase) reviewActors(ctx context.Context, orgID entity.ID, seq int64, out *entity.ReviewFacts, tasks bool) error {
 	actors := make([]*entity.ID, 0, len(out.MRs)+len(out.MREvents)+len(out.TaskEvents))
 	if !tasks {
 		for i := range out.MRs {
@@ -197,12 +204,12 @@ func (u *UseCase) readReviewFacts(ctx context.Context, orgID, areaID entity.ID, 
 		}
 		assignment, found, err := u.d.Accounts.AssignmentAt(ctx, orgID, *id, seq)
 		if err != nil {
-			return entity.ReviewFacts{}, err
+			return err
 		}
 		out.ActorKinds[*id] = entity.PersonUnknown
 		if found {
 			out.ActorKinds[*id] = assignment.ActorKind
 		}
 	}
-	return out, nil
+	return nil
 }
