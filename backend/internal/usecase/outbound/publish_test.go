@@ -210,8 +210,10 @@ func TestPublicationRendersPublicSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := f.last.Markdown
-	for _, want := range []string{"Есть закрытые результаты", "Устранено сигналов: 1", "head_sha", "current-head", "revision_no=1",
-		"rule-2", "main.go:12", "rule-6", "report_missing", "прошло 5", "fail → pass", "C15", "C16", "C17", "coverage_line_map_missing", "50.00%"} {
+	for _, want := range []string{
+		"Есть закрытые результаты", "Устранено сигналов: 1", "head_sha", "current-head", "revision_no=1",
+		"rule-2", "main.go:12", "rule-6", "report_missing", "прошло 5", "fail → pass", "C15", "C16", "C17", "coverage_line_map_missing", "50.00%",
+	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in %s", want, text)
 		}
