@@ -56,17 +56,25 @@ func TaskObservations(facts *entity.TaskObservationFacts, rules ...TaskObservati
 			SourceEventIDs: episodeEvents(ep),
 		})
 	}
-	slices.SortStableFunc(out, compareObservation)
+	sortTaskObservations(out)
 	return out
 }
 
+func sortTaskObservations(out []entity.TaskObservation) {
+	slices.SortStableFunc(out, compareObservation)
+}
+
 func observationEpisode(f *entity.TaskObservationFacts) (*episode, *entity.TargetGroup) {
+	return taskEpisode(observationTimeline(f), f.AsOf)
+}
+
+func observationTimeline(f *entity.TaskObservationFacts) *timeline {
 	if f.Mapping == nil || f.Mapping.KnownSeq > f.KnowledgeSeq || !knownOnCut(f.Task.Knowledge, f.KnowledgeSeq) {
-		return nil, nil
+		return nil
 	}
 	rs := rulesOf(f.Mapping)[f.InstanceID]
 	if rs == nil {
-		return nil, nil
+		return nil
 	}
 	var events []entity.TaskEvent
 	for i := range f.TaskEvents {
@@ -75,14 +83,7 @@ func observationEpisode(f *entity.TaskObservationFacts) (*episode, *entity.Targe
 			events = append(events, *e)
 		}
 	}
-	tl := buildTimeline(&taskInput{version: f.Task, events: events, historyFrom: f.HistoryFrom}, rs, f.AsOf)
-	if !tl.knownAt(f.AsOf) {
-		return nil, nil
-	}
-	if tl.slice.TaskType == nil || tl.slice.SizeLabel == nil {
-		return tl.episodeAt(f.AsOf), nil
-	}
-	return tl.episodeAt(f.AsOf), &entity.TargetGroup{TaskType: *tl.slice.TaskType, SizeLabel: *tl.slice.SizeLabel}
+	return buildTimeline(&taskInput{version: f.Task, events: events, historyFrom: f.HistoryFrom}, rs, f.AsOf)
 }
 
 func taskWorkflowObservations(f *entity.TaskObservationFacts, ep *episode, group *entity.TargetGroup, task []entity.ObjectRef) []entity.TaskObservation {
