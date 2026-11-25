@@ -3,6 +3,10 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { ApiClient } from '@/shared/api'
 import { ApiError } from '@/shared/api'
 import { readCurrentUser } from './current-user'
+import {
+  readLoginOrganization,
+  rememberLoginOrganization,
+} from './login-organization'
 
 export type SessionState =
   'checking' | 'authenticated' | 'expired' | 'signed-out'
@@ -11,6 +15,7 @@ export class SessionController {
   private state: SessionState = 'checking'
   private listeners = new Set<() => void>()
   private unsubscribe: () => void
+  private loginOrganization = readLoginOrganization()
 
   private readonly api: ApiClient
   private readonly queries: QueryClient
@@ -24,6 +29,7 @@ export class SessionController {
   }
 
   getSnapshot = (): SessionState => this.state
+  getLoginOrganization = (): string | null => this.loginOrganization
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => {
@@ -41,6 +47,9 @@ export class SessionController {
         const response = await this.api.read('/me', readCurrentUser, { signal })
         if (this.state === 'expired' || this.state === 'signed-out')
           throw new ApiError('session-ended')
+        this.loginOrganization = rememberLoginOrganization(
+          response.data.organization.slug,
+        )
         this.setState('authenticated')
         return response.data
       },

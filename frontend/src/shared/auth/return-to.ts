@@ -30,8 +30,22 @@ export function safeReturnTo(value: unknown): string {
   return url.pathname + url.search + url.hash
 }
 
+export function isOrganizationSlug(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z0-9-]{2,40}$/u.test(value)
+}
+
 export function createLoginUrl(orgSlug: string, returnTo = '/'): string {
-  if (!/^[a-z0-9-]{2,40}$/u.test(orgSlug))
+  if (!isOrganizationSlug(orgSlug))
     throw new Error('Некорректный адрес организации')
   return `/o/${encodeURIComponent(orgSlug)}/login?${new URLSearchParams({ return_to: safeReturnTo(returnTo) }).toString()}`
+}
+
+export function createLoginPageUrl(
+  orgSlug: string | null,
+  returnTo = '/',
+): string {
+  const path = isOrganizationSlug(orgSlug)
+    ? `/o/${encodeURIComponent(orgSlug)}`
+    : '/login'
+  return `${path}?${new URLSearchParams({ return_to: safeReturnTo(returnTo) }).toString()}`
 }
