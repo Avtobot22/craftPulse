@@ -127,3 +127,52 @@ export function listPipelineAttempts(
       ).data,
   })
 }
+
+export type TestExecutionListParams = NonNullable<
+  operations['listTestExecutions']['parameters']['query']
+>
+
+function readTestExecutionPage(
+  value: unknown,
+): OpenCodes<Schema['TestExecutionPage']> {
+  const raw = readRecord(value)
+  return {
+    data: readArray(raw.data, (value) => {
+      const row = readRecord(value)
+      const testCase = readRecord(row.test_case)
+      return {
+        test_case: {
+          id: readString(testCase.id),
+          key: readString(testCase.key),
+        },
+        attempt_id: readNullableString(row.attempt_id),
+        config_fingerprint: readString(row.config_fingerprint),
+        outcome: readString(row.outcome),
+        duration_ms: readNullableNumber(row.duration_ms),
+      }
+    }),
+    next_cursor: readNullableString(raw.next_cursor),
+  }
+}
+
+export function listTestExecutions(
+  api: ApiClient,
+  pipelineId: operations['listTestExecutions']['parameters']['path']['pipeline_id'],
+  params: TestExecutionListParams = {},
+) {
+  return queryOptions({
+    queryKey: ['pipelines', 'test-executions', pipelineId, params],
+    queryFn: async ({ signal }) =>
+      (
+        await api.read(
+          '/pipelines/{pipeline_id}/test-executions',
+          readTestExecutionPage,
+          {
+            pathParams: { pipeline_id: pipelineId },
+            query: params,
+            signal,
+          },
+        )
+      ).data,
+  })
+}
