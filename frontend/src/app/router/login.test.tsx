@@ -10,6 +10,7 @@ import {
   currentUser,
   jsonResponse,
   problemResponse,
+  teams,
 } from '../../../test/fixtures'
 import { AppProviders } from '../initialization/app-providers'
 import { createAppRuntime } from '../initialization/runtime'
@@ -220,13 +221,12 @@ describe('UI-03 after a 401 on an edited form', () => {
     const submit = vi.fn()
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockImplementation((url) =>
-        Promise.resolve(
-          url === '/api/v1/me'
-            ? jsonResponse(currentUser)
-            : problemResponse('auth_required', 401),
-        ),
-      )
+      .mockImplementation((url) => {
+        if (url === '/api/v1/me')
+          return Promise.resolve(jsonResponse(currentUser))
+        if (url === '/api/v1/teams') return Promise.resolve(jsonResponse(teams))
+        return Promise.resolve(problemResponse('auth_required', 401))
+      })
     function EditedForm({ app }: { app: AppRuntime }) {
       const [value, setValue] = useState('')
       const notifications = useNotifications()

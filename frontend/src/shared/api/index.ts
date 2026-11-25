@@ -16,7 +16,14 @@ export {
   readRecord,
   readString,
 } from './response'
-export { listTeams, listProjects, listServices, readTeam } from './organization'
+export {
+  allTeams,
+  allTeamProjects,
+  listTeams,
+  listProjects,
+  listServices,
+  readTeam,
+} from './organization'
 export type {
   Team,
   TeamPage,

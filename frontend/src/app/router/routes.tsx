@@ -38,7 +38,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
           children: [
             {
               path: routePaths.home,
-              element: <HomePage />,
+              element: <HomePage api={runtime.api} session={runtime.session} />,
               children: [
                 { path: routePaths.unavailable, element: <UnavailablePage /> },
                 {

@@ -7,6 +7,7 @@ import { listTeams, listServices } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import {
   currentUser,
+  projects,
   teams,
   jsonResponse,
   problemResponse,
@@ -17,15 +18,60 @@ import type { AppRuntime } from '../initialization/runtime'
 import { createAppRoutes } from './routes'
 
 const cleanups: (() => void)[] = []
+const admin = {
+  ...currentUser,
+  actions: [
+    ...currentUser.actions,
+    'org.manage',
+    'users.manage',
+    'installation.read',
+  ],
+}
+const [team] = teams.data
+const [project] = projects.data
+if (!team || !project) throw new Error('Expected one team and project fixture')
+const adminWithoutAreas = {
+  ...admin,
+  areas: { teams: [], projects: [], services: [] },
+}
+const secondTeam = {
+  ...team,
+  id: '0193a5b0-3333-7000-8000-000000000002',
+  name: 'Другая команда',
+}
+
+function mockApi(user = currentUser, availableTeams = teams.data) {
+  return vi.fn<typeof fetch>().mockImplementation((input) => {
+    if (typeof input !== 'string') throw new Error('Expected a request URL')
+    const url = new URL(input, 'https://craftpulse.test')
+    switch (url.pathname) {
+      case '/api/v1/me':
+        return Promise.resolve(jsonResponse(user))
+      case '/api/v1/teams':
+        return Promise.resolve(jsonResponse({ ...teams, data: availableTeams }))
+      case '/api/v1/projects':
+        return Promise.resolve(
+          jsonResponse(
+            url.searchParams.get('team_id') === team.id
+              ? projects
+              : { ...projects, data: [] },
+          ),
+        )
+      case '/api/v1/session/logout':
+        return Promise.resolve(new Response(null, { status: 204 }))
+      default:
+        throw new Error(`Unexpected request: ${url.pathname}`)
+    }
+  })
+}
 function mount(
   path: string,
-  fetcher: typeof fetch = vi
-    .fn<typeof fetch>()
-    .mockImplementation(() => Promise.resolve(jsonResponse(currentUser))),
+  fetcher: typeof fetch = mockApi(admin),
+  previousPath?: string,
 ) {
   const runtime = createAppRuntime(fetcher)
   const router = createMemoryRouter(createAppRoutes(runtime), {
-    initialEntries: [path],
+    initialEntries: previousPath ? [previousPath, path] : [path],
   })
   const view = render(
     <AppProviders runtime={runtime}>
@@ -42,13 +88,14 @@ function mount(
 }
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup()
+  localStorage.clear()
   focusManager.setFocused(undefined)
   vi.restoreAllMocks()
 })
 
 describe('application routes', () => {
   it.each([
-    ['/', 'craftPulse'],
+    ['/', 'Обзор'],
     ['/login', 'Вход'],
     ['/login/example', 'Вход'],
     ['/session-expired', 'Сессия завершилась'],
@@ -115,7 +162,7 @@ describe('application routes', () => {
   it('rechecks /me on window focus and handles a session closed in another tab', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse(currentUser))
+      .mockResolvedValueOnce(jsonResponse(adminWithoutAreas))
       .mockResolvedValueOnce(problemResponse('auth_required', 401))
     const { runtime } = mount('/users', fetcher)
     await screen.findByRole('heading', { name: 'Пользователи и роли' })
@@ -134,7 +181,7 @@ describe('application routes', () => {
   it('navigates to UI-02 after confirmed logout and clears the cache', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse(currentUser))
+      .mockResolvedValueOnce(jsonResponse(adminWithoutAreas))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
     const { runtime, router } = mount('/users', fetcher)
     await screen.findByRole('heading', { name: 'Пользователи и роли' })
@@ -149,7 +196,7 @@ describe('application routes', () => {
   it('clears visible private data for 401 on another endpoint and does not restore it on Back', async () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation((url) => {
       if (url === '/api/v1/me')
-        return Promise.resolve(jsonResponse(currentUser))
+        return Promise.resolve(jsonResponse(admin))
       if (url === '/api/v1/teams') return Promise.resolve(jsonResponse(teams))
       return Promise.resolve(problemResponse('auth_required', 401))
     })
@@ -210,6 +257,210 @@ describe('application routes', () => {
       new URLSearchParams(router.state.location.search).get('return_to'),
     ).toBe('/users')
     expect(screen.queryByText('private:Платформа')).not.toBeInTheDocument()
+    expect(runtime.queryClient.getQueryCache().getAll()).toHaveLength(0)
+  })
+})
+
+describe('UI-01', () => {
+  it('shows only implemented pages allowed by actions and blocks forbidden deep links', async () => {
+    const { router } = mount(
+      '/',
+      mockApi({
+        ...currentUser,
+        actions: [...currentUser.actions, 'installation.read', 'org.manage'],
+      }),
+    )
+    const heading = await screen.findByRole('heading', {
+      name: 'Обзор',
+      level: 1,
+    })
+    const skip = screen.getByRole('link', { name: 'К содержимому' })
+    skip.focus()
+    fireEvent.click(skip)
+    expect(heading).toHaveFocus()
+    expect(screen.getByRole('link', { name: 'Обзор' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(
+      screen.getByRole('link', { name: 'Диагностика установки' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Структура организации' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'Пользователи и роли' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'Задачи и история' }),
+    ).not.toBeInTheDocument()
+    await act(async () => {
+      await router.navigate('/users/123')
+    })
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Объект или область недоступны',
+      }),
+    ).toHaveFocus()
+  })
+
+  it('restores a team and project from the address and requests projects for that team', async () => {
+    const fetcher = mockApi()
+    mount(`/?team_id=${team.id}&project_id=${project.id}`, fetcher)
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: 'Команда' })).toHaveValue(
+        team.id,
+      )
+      expect(screen.getByRole('combobox', { name: 'Проект' })).toHaveValue(
+        project.id,
+      )
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      `/api/v1/projects?team_id=${team.id}`,
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(screen.getAllByRole('option', { name: team.name })).toHaveLength(1)
+    expect(
+      screen.getAllByRole('option', { name: project.name }),
+    ).toHaveLength(1)
+  })
+
+  it('preserves view and period but drops the previous project, revision and object on scope change', async () => {
+    const { router } = mount(
+      `/users/123?team_id=${team.id}&project_id=${project.id}&view=overview&from=2026-10-01&revision_id=r1#form`,
+      mockApi(admin, [...teams.data, secondTeam]),
+    )
+    const teamSelect = await screen.findByRole('combobox', { name: 'Команда' })
+    await waitFor(() => expect(teamSelect).toHaveValue(team.id))
+    fireEvent.change(teamSelect, { target: { value: secondTeam.id } })
+    expect(router.state.location.pathname).toBe('/users')
+    expect(router.state.location.hash).toBe('')
+    expect(
+      Object.fromEntries(new URLSearchParams(router.state.location.search)),
+    ).toEqual({
+      team_id: secondTeam.id,
+      view: 'overview',
+      from: '2026-10-01',
+    })
+    expect(
+      await screen.findByText(
+        'Несовместимые параметры сброшены при смене области.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('option', { name: project.name }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('uses the last accessible area on an unqualified start and changes only view', async () => {
+    localStorage.setItem(
+      `craftpulse.scope.${currentUser.organization.id}.${currentUser.user.id}`,
+      `team_id=${team.id}&project_id=${project.id}`,
+    )
+    const { router } = mount('/', mockApi())
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: 'Проект' })).toHaveValue(
+        project.id,
+      )
+    })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Вид панели' }), {
+      target: { value: 'tasks' },
+    })
+    expect(
+      Object.fromEntries(new URLSearchParams(router.state.location.search)),
+    ).toEqual({
+      team_id: team.id,
+      project_id: project.id,
+      view: 'tasks',
+    })
+  })
+
+  it('does not request projects for a team absent from the API response', async () => {
+    const fetcher = mockApi()
+    mount('/?team_id=unknown&project_id=unknown', fetcher)
+    await screen.findByText(
+      'Объект или область недоступны. Выберите доступную область.',
+    )
+    expect(screen.getByRole('combobox', { name: 'Команда' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Проект' })).toBeDisabled()
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('reloads the area lists when another organization replaces the session', async () => {
+    const nextUser = {
+      ...currentUser,
+      organization: {
+        ...currentUser.organization,
+        id: '0193a5b0-3333-7000-8000-000000000003',
+        name: 'Другая организация',
+        slug: 'another-org',
+      },
+    }
+    const initialApi = mockApi()
+    const nextApi = mockApi(nextUser, [secondTeam])
+    let fetcher = initialApi
+    const { runtime } = mount(
+      `/?team_id=${team.id}`,
+      (input, init) => fetcher(input, init),
+    )
+    await screen.findByRole('option', { name: team.name })
+    fetcher = nextApi
+    await act(async () => {
+      await runtime.queryClient.refetchQueries({ queryKey: ['session'] })
+    })
+    await screen.findByText(nextUser.organization.name)
+    expect(screen.queryByRole('option', { name: team.name })).toBeNull()
+    await screen.findByRole('option', { name: secondTeam.name })
+    expect(screen.getByRole('combobox', { name: 'Проект' })).toBeDisabled()
+    expect(
+      nextApi.mock.calls.some(([input]) =>
+        String(input).startsWith('/api/v1/projects'),
+      ),
+    ).toBe(false)
+  })
+
+  it('opens the organization structure for an administrator without areas', async () => {
+    const fetcher = mockApi(adminWithoutAreas)
+    mount('/', fetcher)
+    expect(
+      await screen.findByRole('heading', { name: 'Структура организации' }),
+    ).toBeInTheDocument()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('requests only the session for a user without areas', async () => {
+    const fetcher = mockApi({
+      ...currentUser,
+      areas: { teams: [], projects: [], services: [] },
+    })
+    mount('/', fetcher)
+    expect(
+      await screen.findByRole('heading', { name: 'Нет доступной области' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('combobox', { name: 'Команда' }),
+    ).not.toBeInTheDocument()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears server data on logout and keeps it hidden on Back', async () => {
+    const fetcher = mockApi(admin)
+    const { runtime, router } = mount('/', fetcher, '/users')
+    await screen.findByRole('heading', { name: 'Обзор', level: 1 })
+    fireEvent.click(screen.getByRole('button', { name: 'Выход' }))
+    await screen.findByRole('heading', { name: 'Вход', level: 1 })
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1/session/logout',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(runtime.queryClient.getQueryCache().getAll()).toHaveLength(0)
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    expect(
+      await screen.findByRole('heading', { name: 'Вход', level: 1 }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(admin.organization.name)).not.toBeInTheDocument()
     expect(runtime.queryClient.getQueryCache().getAll()).toHaveLength(0)
   })
 })
