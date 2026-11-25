@@ -1,9 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useSearchParams } from 'react-router'
-import { ApiError, InvalidResponse } from '@/shared/api'
+import { CommitSha, LastGoodResult } from '@/entities/check-report'
+import { MetricValue } from '@/entities/metric'
+import { RestrictedResults } from '@/entities/result-access'
+import { ApiError, getMergeRequestSummary } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
-import { ErrorState, LoadingState } from '@/shared/ui'
-import { publicationLabels, readSummary } from '../model/summary'
+import { contractLabel, contractLabels, technicalLabels } from '@/shared/config'
+import { DataStateBadge, ErrorState, LoadingState } from '@/shared/ui'
+import { SummaryMetrics } from './summary-metrics'
+import { SummarySignals } from './summary-signals'
 
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu
 
@@ -30,27 +35,13 @@ function SummaryContent({
   mr: string
   revision: number | undefined
 }) {
-  const query = useQuery({
-    queryKey: ['merge-request-summary', mr, revision],
-    queryFn: async ({ signal }) => {
-      const { data } = await api.read(
-        '/merge-requests/{merge_request_id}/summary',
-        readSummary,
-        {
-          signal,
-          pathParams: { merge_request_id: mr },
-          query: { revision_no: revision },
-        },
-      )
-      if (
-        data.mr !== mr ||
-        (revision !== undefined && data.revision !== revision)
-      )
-        throw new InvalidResponse()
-      return data
-    },
-    retry: false,
-  })
+  const query = useQuery(
+    getMergeRequestSummary(
+      api,
+      mr,
+      revision === undefined ? {} : { revision_no: revision },
+    ),
+  )
   if (query.isPending) return <LoadingState />
   if (query.isError) {
     const unavailable =
@@ -71,135 +62,94 @@ function SummaryContent({
     )
   }
   const s = query.data
-  const publication =
-    Object.entries(publicationLabels).find(
-      ([status]) => status === s.publication.status,
-    )?.[1] ?? s.publication.status
+  const publication = s.publication
   return (
     <article>
-      <h1>Сводка MR, ревизия {s.revision}</h1>
+      <h1>Сводка MR, ревизия {s.revision_no}</h1>
       <p>
-        Head <code>{s.head}</code>
+        Head <CommitSha sha={s.head_sha} />
       </p>
-      {s.base && (
+      {s.base_sha && (
         <p>
-          База <code>{s.base}</code>
+          База <CommitSha sha={s.base_sha} />
         </p>
       )}
+      {s.last_good && <LastGoodResult result={s.last_good} />}
       <p>
-        Состояние сводки {s.status}
-        {s.staleReason && ` (${s.staleReason})`}
+        Состояние сводки{' '}
+        {contractLabel(technicalLabels.summaryStatus, s.status)}
+        {s.stale_reason && ` (${s.stale_reason})`}
       </p>
-      {s.builtAt && (
+      {s.built_at && (
         <p>
-          Собрана <time dateTime={s.builtAt}>{s.builtAt}</time>
+          Собрана <time dateTime={s.built_at}>{s.built_at}</time>
         </p>
       )}
       <h2>Комментарий в MR</h2>
-      <p>{publication}</p>
-      {s.publication.error === 'write_permission_missing' ? (
-        <p>У бота нет права записи в MR.</p>
-      ) : (
-        s.publication.error && <p>{s.publication.error}</p>
+      <p>
+        {contractLabel(technicalLabels.publicationStatus, publication.status)}
+      </p>
+      {publication.error_code && (
+        <p>
+          {contractLabel(
+            technicalLabels.publicationError,
+            publication.error_code,
+          )}
+        </p>
       )}
-      {s.publication.publishedAt && (
+      {publication.published_at && (
         <p>
           Опубликован{' '}
-          <time dateTime={s.publication.publishedAt}>
-            {s.publication.publishedAt}
+          <time dateTime={publication.published_at}>
+            {publication.published_at}
           </time>
         </p>
       )}
-      {s.publication.externalId && (
+      {publication.external_id && (
         <p>
-          ID комментария <code>{s.publication.externalId}</code>
+          ID комментария <code>{publication.external_id}</code>
         </p>
       )}
       <h2>Проверки</h2>
-      <p>Состояние CI {s.ci?.outcome ?? s.pipelineState}</p>
+      <p>
+        Состояние pipeline{' '}
+        {contractLabel(technicalLabels.pipelineState, s.pipeline_state)}
+      </p>
       {s.ci && (
         <p>
-          Попыток {s.ci.attempts}, заданий с повтором {s.ci.retried}
+          Исход CI {contractLabel(contractLabels.ciOutcome, s.ci.outcome)}.
+          Попыток {s.ci.attempts}, заданий с повтором {s.ci.retried_jobs}
         </p>
       )}
-      <p>Покрытие изменённых строк {metric(s.coverage, true)}</p>
-      {s.tests && (
-        <p>
-          Тесты: прошло {metric(s.tests.passed)}, упало {metric(s.tests.failed)}
-          , ошибок {metric(s.tests.errored)}, пропущено{' '}
-          {metric(s.tests.skipped)}
-        </p>
-      )}
-      {s.change && (
-        <p>
-          Файлов {metric(s.change.files)}, строк добавлено{' '}
-          {metric(s.change.added)}, удалено {metric(s.change.removed)}, функций
-          с ростом сложности {metric(s.change.complexity)}, новых групп клонов{' '}
-          {metric(s.change.clones)}
-        </p>
-      )}
-      {s.missing.length > 0 && (
+      <h3>Покрытие изменённых строк</h3>
+      <MetricValue value={s.coverage_changed_lines} />
+      <SummaryMetrics tests={s.tests} change={s.change} expected={s.expected} />
+      {s.not_evaluated.length > 0 && (
         <section>
           <h2>Непроверенные области</h2>
           <ul>
-            {s.missing.map(({ kind, reason }, i) => (
+            {s.not_evaluated.map(({ analysis_kind, reason_code }, i) => (
               <li key={i}>
-                {kind} ({reason})
+                {contractLabel(technicalLabels.analysisKind, analysis_kind)}{' '}
+                <DataStateBadge
+                  state="NOT_EVALUATED"
+                  reason={contractLabel(
+                    technicalLabels.reportReason,
+                    reason_code,
+                  )}
+                />
               </li>
             ))}
           </ul>
         </section>
       )}
       <h2>Находки</h2>
-      {s.restricted && <p>Есть закрытые результаты.</p>}
-      {s.signals.length > 0 && (
-        <ul>
-          {s.signals.map((item) => (
-            <li
-              key={item.no}
-              id={
-                item.kind === 'new' && item.findingId
-                  ? `finding-${item.findingId}`
-                  : undefined
-              }
-            >
-              {item.rank !== null && `№${String(item.rank)} · `}
-              {item.kind}
-              {item.rule && (
-                <>
-                  {' · '}
-                  <code>{item.rule}</code>
-                </>
-              )}
-              {item.severity && ` · ${item.severity}`}
-              {item.path && (
-                <>
-                  {' · '}
-                  <code>
-                    {item.path}
-                    {item.line !== null && `:${String(item.line)}`}
-                  </code>
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {s.signals.length === 0 && <p>Нет доступных находок.</p>}
+      <RestrictedResults
+        access_limited={s.access_limited}
+        access_notes={s.access_notes}
+        redactions={s.redactions}
+      />
+      <SummarySignals items={s.items} />
     </article>
   )
-}
-
-function metric(
-  point: ReturnType<typeof readSummary>['coverage'],
-  ratio = false,
-) {
-  if (point.value !== null)
-    return ratio
-      ? new Intl.NumberFormat('ru', {
-          style: 'percent',
-          maximumFractionDigits: 2,
-        }).format(point.value)
-      : String(point.value)
-  return point.reason ? `${point.state} (${point.reason})` : point.state
 }

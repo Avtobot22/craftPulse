@@ -166,50 +166,6 @@ describe('application routes', () => {
     ).toBeInTheDocument()
   })
 
-  it('opens the exact revision from an MR comment and shows the publication refusal', async () => {
-    const mr = '0193a5b0-b0b0-7000-8000-000000000001'
-    const summaryURL = `/merge-requests/${mr}/summary?revision_no=3`
-    const fallback = mockApi()
-    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
-      if (input !== '/api/v1' + summaryURL) return fallback(input, init)
-      return Promise.resolve(
-        jsonResponse({
-          merge_request_id: mr,
-          revision_no: 3,
-          head_sha: 'a'.repeat(40),
-          base_sha: null,
-          built_at: null,
-          status: 'superseded',
-          pipeline_state: 'complete',
-          stale_reason: null,
-          access_limited: true,
-          publication: {
-            status: 'failed',
-            error_code: 'write_permission_missing',
-            published_at: null,
-            external_id: null,
-          },
-          coverage_changed_lines: {
-            state: 'NOT_EVALUATED',
-            reason_code: 'report_missing',
-            value: null,
-          },
-          ci: null,
-          items: [],
-          not_evaluated: [],
-        }),
-      )
-    })
-    mount(summaryURL + '&org_slug=example', fetcher)
-    expect(
-      await screen.findByRole('heading', { name: 'Сводка MR, ревизия 3' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText('У бота нет права записи в MR.'),
-    ).toBeInTheDocument()
-    expect(screen.getByText('Есть закрытые результаты.')).toBeInTheDocument()
-  })
-
   it('never requests private data on a public route', async () => {
     const fetcher = vi.fn<typeof fetch>()
     mount('/login/example', fetcher)
@@ -848,4 +804,221 @@ describe('task analysis routes', () => {
       ['project_id', second.id],
     ])
   })
+})
+
+const summaryMr = '0193a5b0-b0b0-7000-8000-000000000001'
+const summaryURL = `/merge-requests/${summaryMr}/summary?revision_no=3`
+const summaryFixture = {
+  id: 'summary-3',
+  merge_request_id: summaryMr,
+  revision_no: 3,
+  head_sha: 'a'.repeat(40),
+  base_sha: null,
+  built_at: null,
+  status: 'superseded',
+  pipeline_state: 'complete',
+  stale_reason: null,
+  access_limited: true,
+  access_notes: [],
+  redactions: [],
+  publication: {
+    status: 'failed',
+    error_code: 'write_permission_missing',
+    published_at: null,
+    external_id: null,
+  },
+  coverage_changed_lines: {
+    state: 'NOT_EVALUATED',
+    reason_code: 'report_missing',
+    value: null,
+    unit: 'ratio',
+    numerator: null,
+    denominator: null,
+    n: null,
+    bound: null,
+    low_sample: false,
+    excluded_count: 0,
+    missing_count: 0,
+  },
+  ci: null,
+  items: [
+    {
+      item_no: 1,
+      item_kind: 'accepted',
+      finding_id: 'finding-1',
+      rule_id: 'rule-1',
+      severity: 'high',
+      location: null,
+      rank: null,
+    },
+  ],
+  not_evaluated: [],
+} satisfies components['schemas']['MergeRequestSummary']
+
+function mockTechnicalApi(action: string) {
+  const fallback = mockApi({
+    ...currentUser,
+    actions: ['session.read', action],
+  })
+  return vi
+    .fn<typeof fetch>()
+    .mockImplementation((input, init) =>
+      input === '/api/v1' + summaryURL
+        ? Promise.resolve(jsonResponse(summaryFixture))
+        : fallback(input, init),
+    )
+}
+
+describe('technical screen routes', () => {
+  it.each([
+    [summaryURL + '&org_slug=example', 'Сводка MR, ревизия 3', 'mr.read'],
+    [
+      '/components/component-1/comparison?base_sha=aaaa&head_sha=bbbb&analysis_kind=code',
+      'Сравнение результатов проверок',
+      'findings.read',
+    ],
+    ['/pipelines/pipeline-1', 'Pipeline', 'ci.read'],
+    [
+      '/pipelines/pipeline-1/jobs/test%3A%20matrix%2Flinux',
+      'Попытки задания CI',
+      'ci.read',
+    ],
+    [
+      `/findings?project_id=${project.id}&finding_kind=security&state=open&severity=high&cursor=next%2B1`,
+      'Находки кода и безопасности',
+      'findings.read',
+    ],
+    ['/findings/finding-1', 'Карточка находки', 'findings.read'],
+    ['/findings/finding-1/exception', 'Исключение', 'exceptions.manage'],
+    ['/exceptions/exception-1/extend', 'Исключение', 'exceptions.manage'],
+    [
+      '/exceptions?state=pending&component_id=component-1',
+      'История исключений',
+      'findings.read',
+    ],
+    [
+      '/exceptions/exception-1?state=pending&component_id=component-1',
+      'История исключений',
+      'findings.read',
+    ],
+    [
+      '/components/overview/component-1',
+      'Технический обзор компонента',
+      'findings.read',
+    ],
+    ['/checks/profile/project-1', 'Матрица проверок', 'check_profiles.manage'],
+    ['/checks/baselines/project-1', 'Базовые линии', 'ci.read'],
+    [
+      '/checks/setup/project-1?ci_system=gitlab_ci',
+      'Подключение шага CI',
+      'check_profiles.manage',
+    ],
+    ['/documentation/roots/service-1', 'Корни документации', 'docs.read'],
+    ['/documentation/services/service-1', 'Документация сервиса', 'docs.read'],
+    [
+      '/documentation/findings/finding-1',
+      'Нарушение документации',
+      'findings.read',
+    ],
+  ])(
+    'opens %s directly and after loading the URL again',
+    async (path, heading, action) => {
+      const original = window.location.href
+      window.history.replaceState(null, '', path)
+      cleanups.push(() => {
+        window.history.replaceState(null, '', original)
+      })
+
+      for (let load = 0; load < 2; load += 1) {
+        const runtime = createAppRuntime(mockTechnicalApi(action))
+        const router = createBrowserRouter(createAppRoutes(runtime))
+        const { dispose } = renderRouter(router, runtime)
+        expect(
+          await screen.findByRole('heading', { name: heading, level: 1 }),
+        ).toBeVisible()
+        expect(window.location.pathname + window.location.search).toBe(path)
+        cleanups.splice(cleanups.lastIndexOf(dispose), 1)
+        dispose()
+      }
+    },
+  )
+
+  it('opens the exact revision from an MR comment and shows the publication refusal', async () => {
+    mount(summaryURL + '&org_slug=example', mockTechnicalApi('mr.read'))
+    expect(
+      await screen.findByRole('heading', { name: 'Сводка MR, ревизия 3' }),
+    ).toBeVisible()
+    expect(screen.getByText('У бота нет права записи в MR.')).toBeVisible()
+    expect(screen.getByText('Есть закрытые результаты.')).toBeVisible()
+    expect(screen.getByText('Принята', { exact: false })).toBeVisible()
+    expect(screen.getByText('не проверено')).toBeVisible()
+  })
+
+  const links = [
+    ['Находки', '/findings', 'Находки кода и безопасности', 'findings.read'],
+    [
+      'Технический обзор компонента',
+      '/components/overview',
+      'Технический обзор компонента',
+      'findings.read',
+    ],
+    [
+      'Документация сервиса',
+      '/documentation/services',
+      'Документация сервиса',
+      'docs.read',
+    ],
+    [
+      'Матрица проверок',
+      '/checks/profile',
+      'Матрица проверок',
+      'check_profiles.manage',
+    ],
+    [
+      'Подключение шага CI',
+      '/checks/setup',
+      'Подключение шага CI',
+      'check_profiles.manage',
+    ],
+  ] as const
+
+  it.each(links)(
+    'permits navigation to %s with the required action',
+    async (label, path, heading, action) => {
+      mount('/', mockTechnicalApi(action))
+      const link = await screen.findByRole('link', { name: label })
+      expect(link).toHaveAttribute('href', path)
+      link.focus()
+      expect(link).toHaveFocus()
+      fireEvent.click(link)
+      expect(
+        await screen.findByRole('heading', { name: heading }),
+      ).toHaveFocus()
+      expect(screen.getByRole('link', { name: label })).toHaveAttribute(
+        'aria-current',
+        'page',
+      )
+      for (const [otherLabel, , , otherAction] of links) {
+        if (otherAction !== action)
+          expect(
+            screen.queryByRole('link', { name: otherLabel }),
+          ).not.toBeInTheDocument()
+      }
+    },
+  )
+
+  it.each(links)(
+    'blocks the direct link for %s without the required action',
+    async (label, path) => {
+      mount(path, mockApi(currentUser))
+      expect(
+        await screen.findByRole('heading', {
+          name: 'Объект или область недоступны',
+        }),
+      ).toBeVisible()
+      expect(
+        screen.queryByRole('link', { name: label }),
+      ).not.toBeInTheDocument()
+    },
+  )
 })

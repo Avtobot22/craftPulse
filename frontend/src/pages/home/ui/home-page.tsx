@@ -25,6 +25,10 @@ import {
   taskAnalysisSection,
   taskAnalysisSections,
 } from '../model/task-analysis-navigation'
+import {
+  technicalNavigation,
+  technicalRouteAction,
+} from '../model/technical-navigation'
 import { useScope } from '../model/use-scope'
 import './home-page.css'
 
@@ -108,13 +112,20 @@ export function HomePage({
     hasAreas &&
     !skipScopeRestore
   const analysisSection = taskAnalysisSection(location.pathname)
+  const technicalAction = technicalRouteAction(location.pathname)
+  const isFindingsList = location.pathname === routePaths.findings
+  const technicalLinks = hasAreas
+    ? technicalNavigation.filter(({ action }) =>
+        current.actions.includes(action),
+      )
+    : []
   const scope = useScope(
     api,
     hasAreas,
     storageKey,
     params,
     restore,
-    analysisSection && current.areas.projects,
+    analysisSection || isFindingsList ? current.areas.projects : undefined,
   )
   const active = settings.find(
     ({ path }) =>
@@ -183,6 +194,8 @@ export function HomePage({
     ((isReport || currentSetting?.action === 'process.manage') &&
       scope.invalid) ||
     (isReport && !canReadReport) ||
+    (technicalAction !== undefined &&
+      !current.actions.includes(technicalAction)) ||
     Boolean(analysisSection && (!canReadAnalysis || scope.invalid))
   const noArea =
     !hasAreas &&
@@ -222,9 +235,11 @@ export function HomePage({
       ? isTaskDetail
         ? routePaths.taskList
         : location.pathname
-      : (active?.path ?? (isReport ? routePaths.teamReport : routePaths.home))
+      : isFindingsList
+        ? routePaths.findings
+        : (active?.path ?? (isReport ? routePaths.teamReport : routePaths.home))
     const { params: next, reset } = changeScope(params, team, project, {
-      projectOnly: Boolean(analysisSection),
+      projectOnly: analysisSection !== undefined || isFindingsList,
       keepDate: nextPath === routePaths.projectTimeline,
     })
     if (!team && !project) rememberScope(storageKey, '', '')
@@ -259,7 +274,9 @@ export function HomePage({
       params.get(teamParam) ?? '',
       params.get(projectParam) ?? '',
       {
-        projectOnly: Boolean(taskAnalysisSection(pathname)),
+        projectOnly:
+          pathname === routePaths.findings ||
+          Boolean(taskAnalysisSection(pathname)),
         keepDate: pathname === routePaths.projectTimeline,
       },
     )
@@ -291,7 +308,10 @@ export function HomePage({
   const projectError = scope.projects.isError && !!scope.team
   const overview = hasAreas && canReadReport
   const hasNavigation =
-    overview || allowed.length > 0 || analysisNavigation.length > 0
+    overview ||
+    allowed.length > 0 ||
+    analysisNavigation.length > 0 ||
+    technicalLinks.length > 0
   return (
     <div
       className={hasNavigation ? 'cp-shell' : 'cp-shell cp-shell--without-nav'}
@@ -305,6 +325,7 @@ export function HomePage({
         onClick={(event) => {
           event.preventDefault()
           const heading = content.current?.querySelector('h1')
+          if (heading) heading.tabIndex = -1
           const target = heading ?? content.current
           target?.focus()
         }}
@@ -495,6 +516,22 @@ export function HomePage({
                 ))}
               </div>
             ))}
+            {technicalLinks.map(({ path, pattern, label }) => {
+              const isCurrent = matchPath(pattern, location.pathname) !== null
+              return (
+                <Link
+                  key={path}
+                  aria-current={isCurrent ? 'page' : undefined}
+                  to={isCurrent ? location : goTo(path)}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    if (isCurrent && menuOpen) navButton.current?.focus()
+                  }}
+                >
+                  {label}
+                </Link>
+              )
+            })}
             {allowed.length > 0 && (
               <div role="group" aria-labelledby="settings-heading">
                 <Text id="settings-heading" as="h2" variant="subheader-1">
