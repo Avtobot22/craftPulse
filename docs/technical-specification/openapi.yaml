@@ -2666,7 +2666,7 @@ paths:
       summary: Задачи в доступной области
       description: Общий список задач проекта или команды UI-22 со смыслом статуса по действующему сопоставлению.
       tags: [tasks]
-      security: [{"cookieSession":[]}]
+      security: [{cookieSession: []}, {apiKey: []}]
       x-craftpulse-action: tasks.read
       x-craftpulse-delivery: M0
       x-craftpulse-trace: [FR-024, FR-029, UC-14, UC-19, UI-22]
@@ -7162,7 +7162,9 @@ components:
                 enum: [reviewer_assigned, merge_request_exists, delay_reason]
                 description: 'Недостающий вопрос при действии `clarify_reason`: назначен ли ревьюер в MR (поле ревьюера недоступно), есть ли MR по задаче, что задерживает задачу. У остальных наблюдений отсутствует.'
         links: {type: array, items: {$ref: '#/components/schemas/Link'}}
-        redactions: {$ref: '#/components/schemas/Redactions'}
+        redactions:
+          $ref: '#/components/schemas/Redactions'
+          description: Имена коллекций links и observations, если из них исключены связи или основания закрытых объектов.
     ReviewWait:
       type: [object, 'null']
       required: [kind, since, wait_seconds, fallback_open]

@@ -31,6 +31,7 @@ type SourceRights interface {
 }
 
 type CodeLinks interface {
+	MREdgesAt(context.Context, entity.ID, []entity.ID, int64) ([]entity.LinkEdge, error)
 	TaskMREdgesAt(context.Context, entity.ID, []entity.ID, int64) ([]entity.LinkEdge, error)
 }
 

@@ -32,6 +32,7 @@ type Handler struct {
 	comparisons
 	reports
 	codeDetails
+	tasks
 	fallback
 	session
 	organization
@@ -62,6 +63,7 @@ type Deps struct {
 	Operations      usecase.Operations
 	Reports         usecase.TeamReports
 	Code            usecase.CodeDetails
+	Tasks           usecase.TaskViews
 	Process         usecase.Process
 	Previews        usecase.MappingPreviews
 	Targets         usecase.Targets
@@ -87,6 +89,7 @@ func New(d Deps) *Handler {
 		exceptions:     exceptions{uc: d.Exceptions, drafts: d.ExceptionDrafts},
 		comparisons:    comparisons{uc: d.Comparisons},
 		codeDetails:    codeDetails{uc: d.Code},
+		tasks:          tasks{uc: d.Tasks},
 		reports:        reports{operations: d.Operations, views: d.Reports},
 		session:        newSession(d.Logins, d.Access, d.Operations, d.Registerer),
 		organization:   organization{structure: d.Structure, access: d.Access, connections: d.Connections},

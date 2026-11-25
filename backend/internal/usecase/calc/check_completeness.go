@@ -203,8 +203,9 @@ func (*UseCase) CalculateSummaryChecks(mr entity.SummaryMR, run entity.CIRun, ke
 		expected[key] = true
 	}
 	facts := entity.CIFacts{Runs: append([]entity.CIRunVersion{run.Run}, run.Children...), Attempts: run.Attempts}
-	for _, candidate := range ciRunsOf(facts) {
-		for _, job := range candidate.jobs {
+	runs := ciRunsOf(facts)
+	for i := range runs {
+		for _, job := range runs[i].jobs {
 			last := job.attempts[len(job.attempts)-1]
 			key := strings.TrimPrefix(last.JobKey, "craftPulse (advisory)/")
 			if expected[key] {

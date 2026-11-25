@@ -39,6 +39,7 @@ type apiModules struct {
 	operations         usecase.Operations
 	reports            usecase.TeamReports
 	code               usecase.CodeDetails
+	tasks              usecase.TaskViews
 	process            usecase.Process
 	previews           usecase.MappingPreviews
 	targets            usecase.Targets
@@ -83,9 +84,10 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 			Links: m.links, Exceptions: m.decisions, ExceptionDrafts: checks, Comparisons: checks,
 			UploadTokens: logins, Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
 			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg, Connections: m.connections, Intake: m.intake,
-			Sync: m.sync, Operations: m.operations, Reports: m.reports, Code: m.code, Accounts: orgs, Process: m.process, Previews: m.previews, Targets: m.targets,
+			Sync: m.sync, Operations: m.operations, Reports: m.reports, Code: m.code, Tasks: m.tasks, Accounts: orgs, Process: m.process, Previews: m.previews, Targets: m.targets,
 		}),
 		UploadTokens: logins,
+		APIKeys:      logins,
 		Logins:       logins,
 		Access:       decisions,
 		SiteOrigin:   siteURL,

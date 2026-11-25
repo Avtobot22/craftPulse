@@ -20,7 +20,9 @@ for (const operation of operations) {
   assert(operation['x-craftpulse-trace']?.length, `${operation.operationId}: missing trace`);
   const security = operation.security ?? contract.security;
   if (security.some(item => 'apiKey' in item)) {
-    assert(apiKeyActions.has(operation['x-craftpulse-action']), `${operation.operationId}: key exceeds BI permissions`);
+    const action = operation['x-craftpulse-action'];
+    const taskList = operation.operationId === 'listTasks' && operation.method === 'get' && action === 'tasks.read';
+    assert(apiKeyActions.has(action) || taskList, `${operation.operationId}: key exceeds allowed permissions`);
   }
   if (!['get', 'head', 'options'].includes(operation.method) && security.some(item => 'cookieSession' in item)) {
     assert(operation.responses['403'], `${operation.operationId}: missing Origin rejection`);
@@ -46,6 +48,8 @@ for (const id of ['requestSyncRun', 'refreshSeries', 'requestDocumentationCheck'
   assert.match(accepted.headers.Location.example, /^\/api\/v1\/operations\//);
 }
 assert(byId.getBackgroundOperation.responses['404']);
+assert.deepEqual(byId.listTasks.security, [{cookieSession: []}, {apiKey: []}]);
+assert.deepEqual(byId.getTask.security ?? contract.security, [{cookieSession: []}]);
 const targetParameters = byId.listTargetVersions.parameters.map(dereference);
 assert(targetParameters.some(parameter => parameter.name === 'size_label'));
 assert(byId.listTargetVersions.responses['200'].headers.ETag);

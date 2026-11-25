@@ -38,6 +38,10 @@ func UploadAuthentication(tokens usecase.UploadTokens) gin.HandlerFunc {
 			response.Write(c, response.AuthRequired)
 			return
 		}
+		if s, ok := SubjectFrom(c.Request.Context()); ok && !s.APIKeyID.IsZero() {
+			c.Next()
+			return
+		}
 		auth := c.Request.Header.Values("Authorization")
 		if len(auth) == 0 {
 			c.Next()

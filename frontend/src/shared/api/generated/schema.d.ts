@@ -4582,6 +4582,7 @@ export interface components {
                 question?: "reviewer_assigned" | "merge_request_exists" | "delay_reason";
             }[];
             links: components["schemas"]["Link"][];
+            /** @description Имена коллекций links и observations, если из них исключены связи или основания закрытых объектов. */
             redactions: components["schemas"]["Redactions"];
         };
         ReviewWait: {
