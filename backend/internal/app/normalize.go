@@ -30,8 +30,9 @@ func newNormalize(pool *pgxpool.Pool, store repo.ObjectStore, intake normalize.I
 	links := linkuc.New(linkuc.Deps{
 		Repo: linkrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Auditor: audit.New(auditrepo.NewRepo(pool), tx, c), Clock: c, NewID: newID,
 	})
+	facts := normalizerepo.NewRepo(pool)
 	return normalize.New(normalize.Deps{
-		Repo: normalizerepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Ingest: intake, Accounts: projects, ReportAreas: projects, Links: links, Rights: rights,
+		Repo: facts, SummaryTargets: facts, Tenants: platform.NewRepo(pool), Ingest: intake, Accounts: projects, ReportAreas: projects, Links: links, Rights: rights,
 		Objects: store, Queue: queue.New(jobs), Tx: tx, Clock: c,
 	}), nil
 }

@@ -72,6 +72,17 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 	if err := u.d.Repo.RecordAreaChanges(ctx, org, seq, list, now); err != nil {
 		return nil, err
 	}
+	if u.d.SummaryTargets != nil && (len(in.mrs)+len(in.reports)+len(in.analysis)+len(in.ciRuns)+len(in.ciAttempts)+len(in.mrDiffs) > 0) {
+		targets, err := u.d.SummaryTargets.SummaryTargets(ctx, org, seq)
+		if err != nil {
+			return nil, err
+		}
+		for _, mr := range targets {
+			if err := u.d.Queue.Enqueue(ctx, entity.ChangeSummaryJob{OrganizationID: org, MRID: mr}, entity.QueueInteractive); err != nil {
+				return nil, err
+			}
+		}
+	}
 	areas := make([]entity.ID, len(list))
 	for i := range list {
 		areas[i] = list[i].AreaID
