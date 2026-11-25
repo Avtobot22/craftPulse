@@ -471,7 +471,9 @@ describe('UI-17', () => {
     expect(onClose).not.toHaveBeenCalled()
 
     fireEvent.click(button(dialog, 'Подтвердить'))
-    await waitFor(() => expect(onSaved).toHaveBeenCalledWith('"2"'))
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith('"2"')
+    })
     expect(onClose).toHaveBeenCalledOnce()
     expect(submit.mock.calls.map(([attempt]) => attempt.etag)).toEqual([
       '"1"',
