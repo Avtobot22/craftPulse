@@ -38,7 +38,10 @@ function readAdapters(value: unknown): OpenCodes<Schema['AdapterList']> {
       return {
         provider: readString(adapter.provider),
         display_name: readString(adapter.display_name),
-        editions: readArray(adapter.editions, readString),
+        editions:
+          adapter.editions === null
+            ? []
+            : readArray(adapter.editions, readString),
         contract_versions: readArray(adapter.contract_versions, readString),
         data_kinds: readArray(adapter.data_kinds, readString),
         scope_kinds: readArray(adapter.scope_kinds, readString),

@@ -39,7 +39,10 @@ function readReceiptSummary(
     rejected_count: readNumber(raw.rejected_count),
     reason_code: readNullableString(raw.reason_code),
     duplicate_of: readNullableString(raw.duplicate_of),
-    affected_metrics: readArray(raw.affected_metrics, readString),
+    affected_metrics:
+      raw.affected_metrics === null
+        ? []
+        : readArray(raw.affected_metrics, readString),
   }
 }
 

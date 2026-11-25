@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query'
 import { expect, it, vi } from 'vitest'
 import {
   connectionExample,
+  receiptExample,
   syncStatusExample,
 } from '../../../test/admin-fixtures'
 import { jsonResponse } from '../../../test/fixtures'
@@ -19,6 +20,94 @@ import {
   listReceipts,
   listSourceAccounts,
 } from './index'
+
+const findingsReceipt = {
+  ...receiptExample,
+  id: '0193a5b0-5858-7000-8000-000000000003',
+  schema_id: 'findings',
+  affected_metrics: null,
+}
+
+it('keeps Git without editions and other adapters in the catalog', async () => {
+  const git = {
+    provider: 'git',
+    display_name: 'Git по SSH или HTTPS',
+    editions: null,
+    contract_versions: ['1'],
+    data_kinds: ['documents'],
+    scope_kinds: ['repository'],
+    credential_fields: [
+      { name: 'token', label: 'Токен HTTPS', required: false, secret: true },
+    ],
+  }
+  const gitlab = {
+    provider: 'gitlab',
+    display_name: 'GitLab self-managed',
+    editions: ['ce', 'ee'],
+    contract_versions: ['1'],
+    data_kinds: ['merge_requests'],
+    scope_kinds: ['repository'],
+    credential_fields: [
+      {
+        name: 'read_token',
+        label: 'Токен чтения',
+        required: true,
+        secret: true,
+      },
+    ],
+  }
+  const api = new ApiClient(() =>
+    Promise.resolve(jsonResponse({ data: [git, gitlab] })),
+  )
+  const client = new QueryClient()
+  try {
+    await expect(client.query(listAdapters(api))).resolves.toEqual({
+      data: [{ ...git, editions: [] }, gitlab],
+    })
+  } finally {
+    client.clear()
+  }
+})
+
+it('reads a findings receipt without affected metrics', async () => {
+  const api = new ApiClient(() =>
+    Promise.resolve(jsonResponse(findingsReceipt)),
+  )
+  const client = new QueryClient()
+  try {
+    await expect(
+      client.query(getReceipt(api, findingsReceipt.id)),
+    ).resolves.toEqual({ ...findingsReceipt, affected_metrics: [] })
+  } finally {
+    client.clear()
+  }
+})
+
+it('keeps receipts with and without affected metrics on the same journal page', async () => {
+  const api = new ApiClient(() =>
+    Promise.resolve(
+      jsonResponse({
+        data: [findingsReceipt, receiptExample],
+        next_cursor: 'next',
+      }),
+    ),
+  )
+  const client = new QueryClient()
+  try {
+    await expect(client.query(listReceipts(api))).resolves.toMatchObject({
+      data: [
+        { id: findingsReceipt.id, affected_metrics: [] },
+        {
+          id: receiptExample.id,
+          affected_metrics: receiptExample.affected_metrics,
+        },
+      ],
+      next_cursor: 'next',
+    })
+  } finally {
+    client.clear()
+  }
+})
 
 it('reads the connection by ID with its ETag and keeps connections in separate cache entries', async () => {
   const client = new QueryClient()
