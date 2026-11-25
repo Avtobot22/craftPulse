@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { listTeams, listServices } from '@/shared/api'
+import type { components } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import {
   currentUser,
@@ -18,6 +19,16 @@ import type { AppRuntime } from '../initialization/runtime'
 import { createAppRoutes } from './routes'
 
 const cleanups: (() => void)[] = []
+const [team] = teams.data
+const [project] = projects.data
+if (!team || !project) throw new Error('Expected one team and project fixture')
+const processOwnerRole = {
+  role: 'process_owner',
+  team_id: team.id,
+  project_id: null,
+  service_id: null,
+  assigned_at: '2026-10-01T09:00:00Z',
+} as const
 const admin = {
   ...currentUser,
   actions: [
@@ -25,11 +36,10 @@ const admin = {
     'org.manage',
     'users.manage',
     'installation.read',
+    'process.manage',
   ],
+  roles: [...currentUser.roles, processOwnerRole],
 }
-const [team] = teams.data
-const [project] = projects.data
-if (!team || !project) throw new Error('Expected one team and project fixture')
 const adminWithoutAreas = {
   ...admin,
   areas: { teams: [], projects: [], services: [] },
@@ -39,8 +49,29 @@ const secondTeam = {
   id: '0193a5b0-3333-7000-8000-000000000002',
   name: 'Другая команда',
 }
+type CurrentUserResponse = components['schemas']['CurrentUser']
+const scopedProcessOwner: CurrentUserResponse = {
+  ...currentUser,
+  actions: [...currentUser.actions, 'process.manage'],
+  areas: { ...currentUser.areas, teams: [team, secondTeam] },
+  roles: [
+    ...currentUser.roles,
+    processOwnerRole,
+    {
+      role: 'dev_lead',
+      team_id: secondTeam.id,
+      project_id: null,
+      service_id: null,
+      assigned_at: '2026-10-01T09:00:00Z',
+    },
+  ],
+}
 
-function mockApi(user = currentUser, availableTeams = teams.data) {
+function mockApi(
+  user: CurrentUserResponse = currentUser,
+  availableTeams = teams.data,
+  requestProjects?: () => Promise<Response>,
+) {
   return vi.fn<typeof fetch>().mockImplementation((input) => {
     if (typeof input !== 'string') throw new Error('Expected a request URL')
     const url = new URL(input, 'https://craftpulse.test')
@@ -50,6 +81,7 @@ function mockApi(user = currentUser, availableTeams = teams.data) {
       case '/api/v1/teams':
         return Promise.resolve(jsonResponse({ ...teams, data: availableTeams }))
       case '/api/v1/projects':
+        if (requestProjects) return requestProjects()
         return Promise.resolve(
           jsonResponse(
             url.searchParams.get('team_id') === team?.id
@@ -105,6 +137,15 @@ describe('application routes', () => {
     ['/organization/structure', 'Структура организации'],
     ['/users', 'Пользователи и роли'],
     ['/users/123', 'Пользователи и роли'],
+    [`/settings/process?team_id=${team.id}`, 'Настройки процесса'],
+    [`/settings/targets?team_id=${team.id}`, 'Целевые сроки'],
+    [`/reports/team?team_id=${team.id}`, 'Отчёт команды'],
+    ['/reports/revisions/r1/metrics/T08', 'Паспорт показателя'],
+    [
+      '/reports/revisions/r1/metrics/T08/points/2026-10-01T00:00:00Z',
+      'Когорта точки',
+    ],
+    ['/reports/saved-views/view-1', 'Сохранённый срез'],
   ])('opens %s directly', async (path, heading) => {
     mount(path)
     expect(
@@ -261,6 +302,152 @@ describe('application routes', () => {
 })
 
 describe('UI-01', () => {
+  const scopedRoutes: [path: string, heading: string][] = [
+    [routePaths.teamReport, 'Отчёт команды'],
+    [routePaths.workflowSettings, 'Настройки процесса'],
+  ]
+
+  it.each(scopedRoutes)(
+    'waits for projects before rejecting an unavailable project on %s',
+    async (path, heading) => {
+      let respond!: (response: Response) => void
+      const pendingProjects = new Promise<Response>((resolve) => {
+        respond = resolve
+      })
+      const requestProjects = vi.fn(() => pendingProjects)
+      const foreignProject = '0193a5b0-4444-7000-8000-000000000002'
+      mount(
+        `${path}?team_id=${team.id}&project_id=${foreignProject}`,
+        mockApi(admin, teams.data, requestProjects),
+      )
+
+      await waitFor(() => {
+        expect(requestProjects).toHaveBeenCalled()
+      })
+      expect(
+        await screen.findByRole('region', { name: 'Загрузка' }),
+      ).toBeVisible()
+      expect(
+        screen.queryByRole('heading', { name: heading, level: 1 }),
+      ).toBeNull()
+      respond(jsonResponse(projects))
+
+      expect(
+        await screen.findByRole('heading', {
+          name: 'Объект или область недоступны',
+          level: 1,
+        }),
+      ).toBeVisible()
+      expect(
+        screen.queryByRole('heading', { name: heading, level: 1 }),
+      ).toBeNull()
+    },
+  )
+
+  it.each(scopedRoutes)(
+    'opens %s only after retrying a failed project request',
+    async (path, heading) => {
+      const requestProjects = vi
+        .fn(() => Promise.resolve(jsonResponse(projects)))
+        .mockResolvedValueOnce(problemResponse('internal_error', 500))
+      mount(
+        `${path}?team_id=${team.id}&project_id=${project.id}`,
+        mockApi(admin, teams.data, requestProjects),
+      )
+
+      await screen.findByText('Не удалось загрузить проекты')
+      expect(
+        screen.queryByRole('heading', { name: heading, level: 1 }),
+      ).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+
+      expect(
+        await screen.findByRole('heading', { name: heading, level: 1 }),
+      ).toBeVisible()
+      expect(requestProjects).toHaveBeenCalledTimes(2)
+      expect(screen.getByRole('combobox', { name: 'Проект' })).toHaveValue(
+        project.id,
+      )
+    },
+  )
+
+  it('shows the team report and hides process settings for report.read alone', async () => {
+    mount(`/?team_id=${team.id}`, mockApi())
+    expect(
+      await screen.findByRole('link', { name: 'Отчёт команды' }),
+    ).toHaveAttribute('href', `/reports/team?team_id=${team.id}`)
+    expect(
+      screen.queryByRole('link', { name: 'Настройки процесса' }),
+    ).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Целевые сроки' })).toBeNull()
+  })
+
+  it('hides process settings after switching to a read-only team', async () => {
+    mount(
+      `/?team_id=${team.id}`,
+      mockApi(scopedProcessOwner, [team, secondTeam]),
+    )
+    expect(
+      await screen.findByRole('link', { name: 'Настройки процесса' }),
+    ).toHaveAttribute('href', `/settings/process?team_id=${team.id}`)
+    expect(screen.getByRole('link', { name: 'Целевые сроки' })).toHaveAttribute(
+      'href',
+      `/settings/targets?team_id=${team.id}`,
+    )
+    fireEvent.change(screen.getByRole('combobox', { name: 'Команда' }), {
+      target: { value: secondTeam.id },
+    })
+    await waitFor(() => {
+      expect(
+        screen.getByRole('link', { name: 'Отчёт команды' }),
+      ).toHaveAttribute('href', `/reports/team?team_id=${secondTeam.id}`)
+    })
+    expect(
+      screen.queryByRole('link', { name: 'Настройки процесса' }),
+    ).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Целевые сроки' })).toBeNull()
+  })
+
+  it.each([
+    [routePaths.workflowSettings, 'Настройки процесса'],
+    [routePaths.targetSettings, 'Целевые сроки'],
+  ])(
+    'blocks %s for a team where the user only reads reports',
+    async (path, heading) => {
+      mount(
+        `${path}?team_id=${secondTeam.id}`,
+        mockApi(scopedProcessOwner, [team, secondTeam]),
+      )
+      await screen.findByRole('link', { name: 'Отчёт команды' })
+      expect(
+        screen.getByRole('heading', { name: 'Объект или область недоступны' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: heading })).toBeNull()
+    },
+  )
+
+  it.each([
+    ['/settings/process', 'process.manage'],
+    ['/settings/targets', 'process.manage'],
+    ['/reports/team', 'report.read'],
+    ['/reports/revisions/r1/metrics/T08', 'report.read'],
+    ['/reports/revisions/r1/metrics/T08/points/2026-10-01', 'report.read'],
+    ['/reports/saved-views/view-1', 'report.read'],
+  ])('blocks a deep link to %s without %s', async (path, action) => {
+    mount(
+      `${path}?team_id=${team.id}`,
+      mockApi({
+        ...admin,
+        actions: admin.actions.filter((entry) => entry !== action),
+      }),
+    )
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Объект или область недоступны',
+      }),
+    ).toBeInTheDocument()
+  })
+
   it('shows only implemented pages allowed by actions and blocks forbidden deep links', async () => {
     const { router } = mount(
       '/',
