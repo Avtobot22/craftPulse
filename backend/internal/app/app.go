@@ -210,11 +210,15 @@ func RunWorker(cfg config.Config, adapters config.Adapters, log zerolog.Logger) 
 	}
 	views := newView(pool, viewModules{code: normalizer, reviewCalculator: calculator, projectAreas: orgs, runCalculator: calculator, collection: collection, series: calculator, reports: calculator, instances: connections, rights: rights}, clock.System{})
 	purges := newRetention(pool, connections, views, clock.System{})
-	changes := newIdentifier(pool, normalizer, orgs, clock.System{}, exceptions)
+	summary, err := newSummaryDeps(pool, connections, normalizer, calculator, store, reg)
+	if err != nil {
+		return err
+	}
+	changes := newSummarizer(pool, normalizer, orgs, clock.System{}, exceptions, summary)
 	workers := river.NewWorkers()
 	kinds := workerctrl.Register(workers, workerctrl.Deps{
 		Probes: connections, Packages: packages, Collection: collection, Normalizer: normalizer, Calculator: calculator,
-		Retention: purges, Identifier: changes, DecisionExpiry: exceptions, ExceptionProjector: changes,
+		Retention: purges, Identifier: changes, DecisionExpiry: exceptions, ExceptionProjector: changes, Summaries: changes,
 	})
 
 	log.Info().Str("commit_sha", health.CommitSHA()).Int("job_kinds", kinds).Msg("worker started")

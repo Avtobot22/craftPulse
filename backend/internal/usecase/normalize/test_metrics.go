@@ -30,7 +30,7 @@ func (u *UseCase) ReportKnowledge(ctx context.Context, org entity.ID, known *int
 // TestCoverageFacts reads the immutable report facts of a repository/SHA or of the scoped pipeline.
 func (u *UseCase) TestCoverageFacts(ctx context.Context, org entity.ID, scope entity.ReportScope) (entity.ReportFacts, error) {
 	out := entity.ReportFacts{Scope: scope}
-	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
 		var err error
 		out.Reports, err = u.d.Repo.ReadReportEvidence(ctx, org, scope)
 		if err != nil {

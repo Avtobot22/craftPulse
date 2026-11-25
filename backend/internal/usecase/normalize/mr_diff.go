@@ -90,3 +90,14 @@ func (u *UseCase) MRChangedLinesAt(ctx context.Context, scope entity.Scope, org,
 		File: diff.Files[i], Completeness: diff.Completeness, RevisionID: diff.RevisionID, BaseSHA: diff.BaseSHA, HeadSHA: diff.HeadSHA,
 	}, nil
 }
+
+// SummaryDiff reads the diff of the exact head used by the summary worker.
+func (u *UseCase) SummaryDiff(ctx context.Context, org entity.ID, mr entity.SummaryMR) (entity.MRDiff, error) {
+	var out entity.MRDiff
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.ReadMRDiff(ctx, org, mr.MRID, []entity.ID{mr.AreaID}, nil, mr.HeadSHA, mr.KnowledgeSeq)
+		return err
+	})
+	return out, err
+}

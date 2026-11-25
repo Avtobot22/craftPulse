@@ -1,6 +1,10 @@
 // Package change owns the technical results of a change (TZ 10.3): on M0 the matrix of checks of a project, the
 // profile the step of CI reads by its upload token, the configuration snippet that adds the step to CI, the
-// canonical findings across reports and the baselines of the main branch.
+// canonical findings across reports, the baselines of the main branch and MR summary revisions.
+//
+// A summary ranks up to five new findings by mapped severity (critical, high, medium, low, info,
+// unknown). At equal severity it puts security first, then orders by analysis kind, finding ID and
+// occurrence ID. Newly observed or accepted findings retain their separate lifecycle without a rank.
 package change
 
 import (
@@ -31,6 +35,7 @@ type Auditor interface {
 }
 
 type Deps struct {
+	Summary       SummaryDeps
 	Repo          repo.ChangeRepo
 	Reports       Reports
 	Decisions     Decisions

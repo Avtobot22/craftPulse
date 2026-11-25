@@ -2,6 +2,7 @@ package calc
 
 import (
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -172,4 +173,22 @@ func finishCompleteness(p *entity.Point, n, total int) {
 	p.State, p.ReasonCode = entity.StateAssessed, ""
 	p.Value, p.Numerator, p.Denominator = num(float64(n)/float64(total)), num(float64(n)), num(float64(total))
 	p.N = &total
+}
+
+// CalculateSummaryCompleteness applies I09 to the reports accepted by the summary's matrix.
+func (*UseCase) CalculateSummaryCompleteness(mr entity.SummaryMR, expected []entity.ExpectedReport,
+	complete []entity.SummaryReportEvidence,
+) (entity.SeriesPoint, entity.RevisionInput) {
+	in := CheckCompletenessInput{AreaID: mr.AreaID, HeadSHA: mr.HeadSHA, KnownSeq: mr.KnowledgeSeq, Expected: expected}
+	for _, r := range complete {
+		in.Received = append(in.Received, FindingScan{
+			AreaID: mr.AreaID, SHA: mr.HeadSHA,
+			ReportEvidence: entity.ReportEvidence{
+				ID: r.ReportID, ComponentID: &r.ComponentID, Kind: r.Kind, Language: r.Language,
+				Completeness: "complete", ExitClass: "success",
+			},
+		})
+	}
+	d := definition("I09")
+	return missingReports(&in), entity.RevisionInput{Kind: InputDefinition, ID: d.ID, Version: strconv.Itoa(d.Version)}
 }
