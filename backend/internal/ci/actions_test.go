@@ -22,7 +22,7 @@ func TestActionsAttemptID(t *testing.T) {
 	defer server.Close()
 	job := Job{ProjectPath: "demo/app", PipelineID: "5001", AttemptNo: 2, JobID: "scan"}
 	env := map[string]string{ActionsTokenEnv: token, "GITHUB_API_URL": server.URL}
-	id, err := job.actionsAttemptID(t.Context(), func(k string) string { return env[k] }, server.Client().Transport)
+	id, err := job.resolveActionsAttemptID(t.Context(), func(k string) string { return env[k] }, server.Client().Transport)
 	require.NoError(t, err)
 	assert.Equal(t, "2/7002", id)
 }

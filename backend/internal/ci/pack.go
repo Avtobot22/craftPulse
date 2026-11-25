@@ -161,7 +161,7 @@ func (p *Packer) linkAttempts(runs []envelope.ScanToolRun) error {
 		return nil
 	}
 	if p.Job.Provider != envelope.SourceProviderGithub && number == nil {
-		return errors.New("Jenkins attempt ID is absent from the execution manifest")
+		return errors.New("execution manifest does not contain the Jenkins attempt ID")
 	}
 	for i := range runs {
 		c := runs[i].Ci

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 
@@ -44,9 +45,16 @@ func (s *JenkinsStep) Record(getenv func(string) string, dir string) (string, er
 		return "", err
 	}
 	hash := envelope.JenkinsConfigurationHash(s.Axes)
-	key := envelope.JenkinsAttemptKey(m.Job, m.BuildNumber, s.Stage, s.Name, hash, s.Attempt)
-	// Use the generated schema type to keep required empty arrays in the artifact.
-	m.Steps = append(m.Steps, structStep(s, hash, key))
+	datasetAttemptID := envelope.JenkinsAttemptKey(m.Job, m.BuildNumber, s.Stage, s.Name, hash, s.Attempt)
+	// The generated schema declares the step as an anonymous struct.
+	m.Steps = slices.Grow(m.Steps, 1)[:1]
+	step := &m.Steps[0]
+	step.Stage, step.Name, step.AgentLabel = s.Stage, s.Name, s.Agent
+	step.Axes, step.Attempt = s.Axes, s.Attempt
+	step.Outcome = envelope.JenkinsExecutionManifestV1StepsOutcome(s.Outcome)
+	step.StartedAt, step.FinishedAt = s.Started.UTC(), s.Finished.UTC()
+	step.ConfigurationHash, step.DatasetAttemptId = hash, datasetAttemptID
+	step.Reports = []executionReport{}
 	data, err := marshalExecution(&m)
 	if err != nil {
 		return "", err
@@ -63,30 +71,7 @@ func (s *JenkinsStep) Record(getenv func(string) string, dir string) (string, er
 	if err := errors.Join(writeErr, f.Close()); err != nil {
 		return "", err
 	}
-	return key, os.Link(f.Name(), filepath.Join(dir, key+".json"))
-}
-
-// structStep initializes required fields on the inline schema type.
-func structStep(s *JenkinsStep, hash, key string) executionStep {
-	return executionStep{
-		Stage: s.Stage, Name: s.Name, AgentLabel: s.Agent, Axes: s.Axes, Attempt: s.Attempt,
-		Outcome: envelope.JenkinsExecutionManifestV1StepsOutcome(s.Outcome), StartedAt: s.Started.UTC(), FinishedAt: s.Finished.UTC(),
-		ConfigurationHash: hash, DatasetAttemptId: key, Reports: []executionReport{},
-	}
-}
-
-type executionStep = struct {
-	AgentLabel        string                                          `json:"agent_label"`
-	Attempt           int                                             `json:"attempt"`
-	Axes              map[string]string                               `json:"axes"`
-	ConfigurationHash string                                          `json:"configuration_hash"`
-	DatasetAttemptId  string                                          `json:"dataset_attempt_id"`
-	FinishedAt        time.Time                                       `json:"finished_at"`
-	Name              string                                          `json:"name"`
-	Outcome           envelope.JenkinsExecutionManifestV1StepsOutcome `json:"outcome"`
-	Reports           []executionReport                               `json:"reports"`
-	Stage             string                                          `json:"stage"`
-	StartedAt         time.Time                                       `json:"started_at"`
+	return datasetAttemptID, os.Link(f.Name(), filepath.Join(dir, datasetAttemptID+".json"))
 }
 
 type executionReport = struct {
@@ -153,7 +138,7 @@ func ReadJenkinsExecution(path string) (*envelope.JenkinsExecutionManifestV1, er
 
 func validateExecution(data []byte) (*envelope.JenkinsExecutionManifestV1, error) {
 	if len(data) > executionLimit {
-		return nil, errors.New("Jenkins execution manifest exceeds 1 MiB")
+		return nil, errors.New("execution manifest exceeds the Jenkins size limit of 1 MiB")
 	}
 	m, rejection := envelope.ValidateExecutionManifest(data)
 	if rejection != nil {

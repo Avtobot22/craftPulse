@@ -21,7 +21,7 @@ type actionsStep struct {
 type actionsJob struct {
 	Name      string `yaml:"name"`
 	If        string `yaml:"if,omitempty"`
-	RunsOn    string `yaml:"runs-on"`
+	RunsOn    string `yaml:"runs-on"` //nolint:tagliatelle // GitHub Actions requires this key.
 	Container struct {
 		Image   string `yaml:"image"`
 		Options string `yaml:"options"`
@@ -66,7 +66,7 @@ func actionsSnippet(jobs map[string]gitlabJob, variables []entity.CIVariable) ([
 			{Run: `chown "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"`},
 			{Uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", With: map[string]any{"persist-credentials": false, "fetch-depth": 0}},
 			{Env: scanEnv, Run: strings.Join(job.Script[:len(job.Script)-1], "\n")},
-			{Env: map[string]string{
+			{Env: map[string]string{ //nolint:gosec // G101: GitHub Actions resolves this token reference at runtime.
 				_varToken: uploadSecretRef, _varURL: "${{ vars.CRAFTPULSE_URL }}",
 				"CRAFTPULSE_ACTIONS_TOKEN": "${{ github.token }}",
 			}, Run: "craftpulse-ci upload"},

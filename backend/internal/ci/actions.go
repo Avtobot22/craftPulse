@@ -46,10 +46,10 @@ func readActionsEvent(path string) (actionsEvent, error) {
 // ActionsAttemptID returns the source key <run attempt>/<numeric job ID>.
 // GITHUB_JOB is the workflow job key. Generated snippets use it as the job display name.
 func (j *Job) ActionsAttemptID(ctx context.Context, getenv func(string) string) (string, error) {
-	return j.actionsAttemptID(ctx, getenv, nil)
+	return j.resolveActionsAttemptID(ctx, getenv, nil)
 }
 
-func (j *Job) actionsAttemptID(ctx context.Context, getenv func(string) string, transport http.RoundTripper) (string, error) {
+func (j *Job) resolveActionsAttemptID(ctx context.Context, getenv func(string) string, transport http.RoundTripper) (string, error) {
 	token := getenv(ActionsTokenEnv)
 	if token == "" {
 		return "", nil
@@ -83,7 +83,7 @@ func (j *Job) actionsAttemptID(ctx context.Context, getenv func(string) string, 
 		for _, job := range jobs {
 			if job.Name == name {
 				if found != 0 {
-					return "", errors.New("Actions job display name is ambiguous")
+					return "", errors.New("ambiguous Actions job display name")
 				}
 				found = job.ID
 			}
@@ -110,7 +110,7 @@ func actionsJobs(client *http.Client, req *http.Request) ([]actionsJob, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Actions jobs request returned HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected HTTP status %d from Actions jobs request", resp.StatusCode)
 	}
 	var result struct {
 		Jobs []actionsJob `json:"jobs"`

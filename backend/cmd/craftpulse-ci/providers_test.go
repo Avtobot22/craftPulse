@@ -110,8 +110,14 @@ func runCIProvider(t *testing.T, c *cli, args ...string) string {
 func runProviderCLI(t *testing.T, c *cli, args ...string) (code int, out string) {
 	t.Helper()
 	if image := os.Getenv("CRAFTPULSE_TEST_IMAGE"); image != "" {
-		dockerArgs := []string{"run", "--rm", "--network", "host", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--volume", c.dir + ":" + c.dir}
-		var env []string
+		baseArgs := []string{
+			"run", "--rm", "--network", "host",
+			"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
+			"--volume", c.dir + ":" + c.dir,
+		}
+		dockerArgs := make([]string, 0, len(baseArgs)+2*len(c.env)+2+len(args))
+		dockerArgs = append(dockerArgs, baseArgs...)
+		env := make([]string, 0, len(c.env))
 		for key, value := range c.env {
 			dockerArgs = append(dockerArgs, "--env", key)
 			env = append(env, key+"="+value)
