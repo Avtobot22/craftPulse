@@ -146,11 +146,13 @@ describe('application routes', () => {
         }),
       )
     })
-    mount(summaryURL, fetcher)
+    mount(summaryURL + '&org_slug=example', fetcher)
     expect(
       await screen.findByRole('heading', { name: 'Сводка MR, ревизия 3' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('У бота нет права записи в MR.')).toBeInTheDocument()
+    expect(
+      screen.getByText('У бота нет права записи в MR.'),
+    ).toBeInTheDocument()
     expect(screen.getByText('Есть закрытые результаты.')).toBeInTheDocument()
   })
 

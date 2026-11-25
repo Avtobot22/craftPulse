@@ -189,7 +189,10 @@ function SummaryContent({
   )
 }
 
-function metric(point: ReturnType<typeof readSummary>['coverage'], ratio = false) {
+function metric(
+  point: ReturnType<typeof readSummary>['coverage'],
+  ratio = false,
+) {
   if (point.value !== null)
     return ratio
       ? new Intl.NumberFormat('ru', {

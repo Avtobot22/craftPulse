@@ -328,6 +328,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, "101", published.ExternalID)
 	assert.NotNil(t, published.PublishedAt)
 	assert.Contains(t, adapter.body, h2)
+	assert.Contains(t, adapter.body, fmt.Sprintf("%s/merge-requests/%s/summary?revision_no=%d&org_slug=demo", _site, mr, no))
 	assert.Contains(t, adapter.body, "Есть закрытые результаты")
 	assert.NotContains(t, adapter.body, "new-0")
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.target WHERE external_id = '101'`))
@@ -375,5 +376,4 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, entity.WritePermissionMissing, *old.Publication.ErrorCode)
 	assert.Equal(t, http.StatusBadRequest, e.do(t, e.adminBrowser, http.MethodGet, summaryPath+"?revision_no=0", nil).Code)
 	assert.Equal(t, http.StatusNotFound, e.do(t, e.adminBrowser, http.MethodGet, summaryPath+"?revision_no=2147483647", nil).Code)
-
 }

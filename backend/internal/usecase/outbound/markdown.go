@@ -4,7 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
-	"math"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -13,8 +13,8 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
 
-func render(site string, v *entity.SummaryRevision) string {
-	link := fmt.Sprintf("%s/merge-requests/%s/summary?revision_no=%d", site, v.MRID, v.No)
+func render(site, orgSlug string, v *entity.SummaryRevision) string {
+	link := fmt.Sprintf("%s/merge-requests/%s/summary?revision_no=%d&org_slug=%s", site, v.MRID, v.No, url.QueryEscape(orgSlug))
 	var b strings.Builder
 	fmt.Fprintf(&b, "**craftPulse · Только предупреждения**\n\nhead_sha: %s\n\n", inline(v.HeadSHA))
 	if v.BaseSHA != "" {
@@ -32,8 +32,10 @@ func render(site string, v *entity.SummaryRevision) string {
 			continue
 		}
 		switch item.Kind {
-		case "new":
-			signals = append(signals, item)
+		case entity.FindingNew:
+			if item.FindingID != nil && item.OccurrenceID != nil {
+				signals = append(signals, item)
+			}
 		case "resolved":
 			resolved++
 		case "not_evaluated":
@@ -46,38 +48,24 @@ func render(site string, v *entity.SummaryRevision) string {
 		fmt.Fprintf(&b, "\n[Есть закрытые результаты](%s).\n", link)
 	}
 	fmt.Fprintf(&b, "\nУстранено сигналов: %d.\n", resolved)
-	slices.SortStableFunc(signals, func(a, b *entity.SummaryItem) int { return cmp.Compare(rank(a), rank(b)) })
+	slices.SortStableFunc(signals, entity.CompareSummarySignals)
 	if len(signals) > 0 {
 		b.WriteString("\n**Новые сигналы**\n")
 	}
 	for _, item := range signals[:min(5, len(signals))] {
 		var location entity.SummarySignalLocation
 		if json.Unmarshal(item.Value, &location) != nil {
-			fmt.Fprintf(&b, "- [Сигнал](%s#finding-%s)\n", link, findingID(item.FindingID))
+			fmt.Fprintf(&b, "- [Сигнал](%s#finding-%s)\n", link, item.FindingID)
 			continue
 		}
 		place := cmp.Or(location.Path, location.Package)
 		if location.Line != nil {
 			place = fmt.Sprintf("%s:%d", place, *location.Line)
 		}
-		fmt.Fprintf(&b, "- %s · %s · [сигнал](%s#finding-%s)\n", inline(location.Rule), inline(place), link, findingID(item.FindingID))
+		fmt.Fprintf(&b, "- %s · %s · [сигнал](%s#finding-%s)\n", inline(location.Rule), inline(place), link, item.FindingID)
 	}
 	fmt.Fprintf(&b, "\n[Полная сводка](%s)\n", link)
 	return b.String()
-}
-
-func findingID(id *entity.ID) string {
-	if id == nil {
-		return ""
-	}
-	return id.String()
-}
-
-func rank(item *entity.SummaryItem) int {
-	if item.Rank == nil {
-		return math.MaxInt
-	}
-	return *item.Rank
 }
 
 func inline(value string) string {

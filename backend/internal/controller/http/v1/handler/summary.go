@@ -196,16 +196,12 @@ func summaryCI(out *openapi.MergeRequestSummary, raw json.RawMessage) error {
 		if data.Outcome == "" {
 			data.Outcome = "unknown"
 		}
-		out.Ci = &struct {
-			Attempts         int                                  `json:"attempts"`
-			Outcome          openapi.MergeRequestSummaryCiOutcome `json:"outcome"`
-			ParentPipelineId *uuid.UUID                           `json:"parent_pipeline_id,omitempty"`
-			PipelineId       uuid.UUID                            `json:"pipeline_id"`
-			RetriedJobs      int                                  `json:"retried_jobs"`
-		}{
-			Attempts: len(data.AttemptVersions), Outcome: data.Outcome, ParentPipelineId: data.ParentPipelineID,
-			PipelineId: data.PipelineID, RetriedJobs: data.RetriedJobs,
-		}
+		out.Ci = alloc(out.Ci)
+		out.Ci.Attempts = len(data.AttemptVersions)
+		out.Ci.Outcome = data.Outcome
+		out.Ci.ParentPipelineId = data.ParentPipelineID
+		out.Ci.PipelineId = data.PipelineID
+		out.Ci.RetriedJobs = data.RetriedJobs
 	}
 	return nil
 }

@@ -48,7 +48,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 { path: routePaths.welcome, element: <WelcomePage /> },
                 {
-                  path: '/merge-requests/:mr/summary',
+                  path: routePaths.mergeRequestSummary,
                   element: <MergeRequestSummaryPage api={runtime.api} />,
                 },
                 {

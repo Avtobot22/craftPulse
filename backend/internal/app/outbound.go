@@ -8,8 +8,10 @@ import (
 
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	auditrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit"
+	authrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/auth"
 	outboundrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/outbound"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/auth"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/outbound"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 )
@@ -36,7 +38,8 @@ func newPublisher(pool *pgxpool.Pool, changes outbound.Changes, adapters outboun
 	c := clock.System{}
 	return outbound.New(outbound.Deps{
 		Changes: changes, Adapter: adapters, Store: outboundrepo.NewRepo(pool),
-		Audit: audit.New(auditrepo.NewRepo(pool), tx, c), Tx: tx, Clock: c, SiteURL: site,
+		Logins: auth.New(auth.Deps{Repo: authrepo.NewRepo(pool)}),
+		Audit:  audit.New(auditrepo.NewRepo(pool), tx, c), Tx: tx, Clock: c, SiteURL: site,
 		Observe: func(kind, status string, d *time.Duration) {
 			outcomes.WithLabelValues(kind, status).Inc()
 			if d != nil {

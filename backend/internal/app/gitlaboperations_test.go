@@ -35,6 +35,7 @@ type gitLabOperationFixture struct {
 	countAccess    atomic.Bool
 	noWriteScope   atomic.Bool
 	botRoleMissing atomic.Bool
+	botCannotSeeMR atomic.Bool
 	writesDenied   atomic.Bool
 	dropReply      atomic.Bool
 	movedHead      atomic.Bool
@@ -123,6 +124,10 @@ func (f *gitLabOperationFixture) serveBot(w http.ResponseWriter, r *http.Request
 	case "/api/v4/merge_requests":
 		if r.URL.Query().Get("scope") != "all" {
 			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if f.botCannotSeeMR.Load() {
+			_, _ = io.WriteString(w, "[]")
 			return
 		}
 		_, _ = w.Write(f.recorded["merge_requests"])
@@ -372,6 +377,11 @@ func TestContract_GitLabPublishAndFindPublished(t *testing.T) {
 	assert.Equal(t, "write_permission_missing", *missing.ReasonCode)
 
 	gitLabCredential(t, e, adaptersdk.CredentialsInputPurposeWriteBot, `{"token":"`+_gitLabWriteToken+`"}`)
+	f.botCannotSeeMR.Store(true)
+	status, body := e.call(t, http.MethodPost, "find-published", find)
+	assert.Equal(t, http.StatusForbidden, status, string(body))
+	assert.Contains(t, string(body), `"code":"auth"`)
+	f.botCannotSeeMR.Store(false)
 	assert.False(t, readGitLabOperation[adaptersdk.FindPublishedResult](t, e, "find-published", find).Found)
 
 	// Lose the create response after GitLab accepts it. The next Publish must update it.
@@ -393,6 +403,11 @@ func TestContract_GitLabPublishAndFindPublished(t *testing.T) {
 	assert.Equal(t, found.ExternalId, out.ExternalId)
 	assert.Equal(t, found.ExternalUrl, out.ExternalUrl)
 
+	in.BodyMarkdown = "Latest summary"
+	out = readGitLabOperation[adaptersdk.PublishResult](t, e, "publish", in)
+	assert.Equal(t, adaptersdk.PublishResultOutcomeSucceeded, out.Outcome)
+	assert.Equal(t, found.ExternalId, out.ExternalId)
+
 	f.writesDenied.Store(true)
 	out = readGitLabOperation[adaptersdk.PublishResult](t, e, "publish", in)
 	assert.Equal(t, adaptersdk.PublishResultOutcomeFailed, out.Outcome)
@@ -401,12 +416,12 @@ func TestContract_GitLabPublishAndFindPublished(t *testing.T) {
 
 	f.writesDenied.Store(false)
 	f.movedHead.Store(true)
-	status, body := e.call(t, http.MethodPost, "publish", in)
+	status, body = e.call(t, http.MethodPost, "publish", in)
 	assert.Equal(t, http.StatusConflict, status, string(body))
 	assert.Contains(t, string(body), "head_conflict")
 	f.mu.Lock()
 	assert.Equal(t, 1, f.creates)
-	assert.Equal(t, 1, f.updates)
+	assert.Equal(t, 2, f.updates)
 	assert.Contains(t, f.noteBody, "<!-- craftpulse:mr-summary:"+e.target.Organization+":10 ")
 	assert.Contains(t, f.noteBody, in.BodyMarkdown)
 	f.mu.Unlock()

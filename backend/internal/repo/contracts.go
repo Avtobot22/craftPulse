@@ -110,6 +110,7 @@ type AuthRepo interface {
 	PurgeLoginAttempts(ctx context.Context, before time.Time, limit int) (int64, error)
 	PurgeSessions(ctx context.Context, before time.Time, limit int) (int64, error)
 	OrganizationBySlug(ctx context.Context, slug string) (entity.ID, bool, error)
+	LoginSlug(ctx context.Context, orgID entity.ID) (string, error)
 	CreateLoginRoute(ctx context.Context, slug string, orgID entity.ID) error
 	CreateProviderRegistration(ctx context.Context, reg entity.ProviderRegistration, at time.Time) error
 	ActiveProviderRegistration(ctx context.Context, orgID entity.ID) (entity.ProviderRegistration, bool, error)

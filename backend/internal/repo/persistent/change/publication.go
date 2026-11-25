@@ -17,14 +17,14 @@ func (r *Repo) PublicationRevision(ctx context.Context, org, mr entity.ID) (enti
 }
 
 func (r *Repo) PublicationItems(ctx context.Context, org, revision entity.ID) ([]entity.SummaryItem, error) {
-	return r.summaryItems(ctx, org, revision, true)
+	return r.loadSummaryItems(ctx, org, revision, true)
 }
 
 func (r *Repo) SummaryItems(ctx context.Context, org, revision entity.ID) ([]entity.SummaryItem, error) {
-	return r.summaryItems(ctx, org, revision, false)
+	return r.loadSummaryItems(ctx, org, revision, false)
 }
 
-func (r *Repo) summaryItems(ctx context.Context, org, revision entity.ID, forPublication bool) ([]entity.SummaryItem, error) {
+func (r *Repo) loadSummaryItems(ctx context.Context, org, revision entity.ID, forPublication bool) ([]entity.SummaryItem, error) {
 	rows, err := postgres.Conn(ctx, r.pool).Query(ctx, `SELECT i.item_kind, i.finding_identity_id, i.occurrence_id,
 		i.required_right, i.rank, COALESCE(i.analysis_kind,''), COALESCE(i.reason_code,''), COALESCE(i.severity,''),
 		CASE WHEN $3 AND i.required_right = 'security' THEN NULL

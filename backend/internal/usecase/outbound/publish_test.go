@@ -36,6 +36,10 @@ func (f *publicationFixture) PublicationSummary(context.Context, entity.ID, enti
 	return f.summary, nil
 }
 
+func (*publicationFixture) LoginSlug(context.Context, entity.ID) (string, error) {
+	return "demo-org", nil
+}
+
 func (f *publicationFixture) CheckPublicationHead(context.Context, entity.ID, *entity.SummaryPublication) (bool, error) {
 	f.calls = append(f.calls, "head")
 	return !f.stale, nil
@@ -116,7 +120,7 @@ func newPublicationFixture() *publicationFixture {
 }
 
 func (f *publicationFixture) run(t *testing.T, finalAttempt bool) error {
-	u := New(Deps{Changes: f, Adapter: f, Store: f, Audit: f, Tx: f, Clock: clock.System{}, SiteURL: "https://craftpulse.example"})
+	u := New(Deps{Changes: f, Adapter: f, Logins: f, Store: f, Audit: f, Tx: f, Clock: clock.System{}, SiteURL: "https://craftpulse.example"})
 	job := entity.OutboundPublishJob{OrganizationID: entity.ID{5}, MRID: f.summary.Revision.MRID, SummaryRevisionID: entity.ID{3}}
 	return u.RunPublish(t.Context(), job, func(context.Context) error { f.completed++; return nil }, finalAttempt)
 }
@@ -202,7 +206,8 @@ func TestPublicationSuppressesStaleHeadAndRecordsDenial(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !slices.Equal(f.calls, []string{"find"}) || f.result.Status != entity.PublicationFailed ||
-			f.result.ErrorCode != entity.WritePermissionMissing || f.summary.Revision.Status != "ready" {
+			f.result.ErrorCode != entity.WritePermissionMissing || f.summary.Revision.Status != "ready" ||
+			f.completed != 1 || f.audit[1].Outcome != entity.AuditDenied {
 			t.Fatalf("lookup denied: calls=%v, result=%+v", f.calls, f.result)
 		}
 	})
@@ -224,7 +229,6 @@ func TestPublicationRendersPublicSummary(t *testing.T) {
 	f := newPublicationFixture()
 	v := &f.summary.Revision
 	v.Items = []entity.SummaryItem{
-		{Kind: "new", Rank: new(1), RequiredRight: "security", Value: json.RawMessage(`{"Rule":"secret-rule","Path":"secret-path","Reason":"secret-evidence"}`)},
 		{Kind: "resolved", RequiredRight: "security"},
 		{Kind: "resolved", RequiredRight: "none"},
 		{Kind: "not_evaluated", RequiredRight: "none", AnalysisKind: "docs", ReasonCode: "report_missing"},
@@ -232,9 +236,25 @@ func TestPublicationRendersPublicSummary(t *testing.T) {
 		{Kind: "ci_attempts", RequiredRight: "none", Value: json.RawMessage(`{"metrics":[{"MetricID":"I03","State":"ok","Numerator":1,"Denominator":2}]}`)},
 		{Kind: "coverage", RequiredRight: "none", Value: json.RawMessage(`{"Patch":{"State":"not_evaluated","ReasonCode":"coverage_line_map_missing","Value":0.5},"Size":{"State":"ok","Total":{"Files":2,"Added":3,"Deleted":4}},"Code":[{"Language":"go","Complexity":{"State":"ok","Deltas":[{"Delta":2}]},"Clones":{"State":"ok","Value":1}}]}`)},
 	}
-	for i := 7; i > 1; i-- {
+	for i := 1; i <= 4; i++ {
+		id := entity.ID{byte(i)}
 		v.Items = append(v.Items, entity.SummaryItem{
-			Kind: "new", Rank: new(i), FindingID: &entity.ID{byte(i)}, RequiredRight: "none",
+			Kind: "new", Rank: new(i), FindingID: &id, OccurrenceID: &id, RequiredRight: "security", Severity: "critical",
+			Value: json.RawMessage(`{"Rule":"secret-rule","Path":"secret-path","Reason":"secret-evidence"}`),
+		})
+	}
+	for _, i := range []int{5, 8, 9, 10, 7, 6} {
+		id := entity.ID{byte(i)}
+		severity := "low"
+		var rank *int
+		if i <= 7 {
+			severity = "high"
+		}
+		if i == 5 {
+			rank = new(5)
+		}
+		v.Items = append(v.Items, entity.SummaryItem{
+			Kind: "new", Rank: rank, FindingID: &id, OccurrenceID: &id, RequiredRight: "none", Severity: severity,
 			Value: json.RawMessage(fmt.Sprintf(`{"rule":"rule-%d","path":"main.go","line":12}`, i)),
 		})
 	}
@@ -243,15 +263,17 @@ func TestPublicationRendersPublicSummary(t *testing.T) {
 	}
 	text := f.last.Markdown
 	for _, want := range []string{
-		"Есть закрытые результаты", "Устранено сигналов: 1", "head_sha", "current-head", "revision_no=1",
-		"rule-2", "main.go:12", "rule-6", "report_missing", "прошло 5", "fail → pass", "C15", "C16", "C17", "coverage_line_map_missing", "50.00%",
+		"Есть закрытые результаты", "Устранено сигналов: 1", "head_sha", "current-head", "revision_no=1&org_slug=demo-org",
+		"rule-5", "rule-6", "rule-7", "rule-8", "rule-9", "main.go:12", "report_missing", "прошло 5",
+		"fail → pass", "C15", "C16", "C17", "coverage_line_map_missing", "50.00%",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in %s", want, text)
 		}
 	}
-	if strings.Contains(text, "secret-") || strings.Contains(text, "rule-7") || strings.Contains(text, "flaky") ||
-		strings.Count(text, "#finding-") != 5 || strings.Index(text, "rule-2") > strings.Index(text, "rule-6") {
+	if strings.Contains(text, "secret-") || strings.Contains(text, "rule-10") || strings.Contains(text, "flaky") ||
+		strings.Count(text, "#finding-") != 5 || strings.Index(text, "rule-6") > strings.Index(text, "rule-7") ||
+		strings.Index(text, "rule-7") > strings.Index(text, "rule-8") {
 		t.Fatalf("unexpected Markdown: %s", text)
 	}
 }

@@ -23,6 +23,11 @@ type Adapter interface {
 	Publish(context.Context, entity.ID, entity.ID, entity.PublishInput) (entity.Publication, error)
 }
 
+// LoginRoutes supplies the organization address for links to the site.
+type LoginRoutes interface {
+	LoginSlug(context.Context, entity.ID) (string, error)
+}
+
 // Store records publication targets and write attempts.
 type Store interface {
 	SaveTarget(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, string, time.Time) error
@@ -44,6 +49,7 @@ type Transactor interface {
 type Deps struct {
 	Changes Changes
 	Adapter Adapter
+	Logins  LoginRoutes
 	Store   Store
 	Audit   Auditor
 	Tx      Transactor
@@ -178,7 +184,11 @@ func (u *UseCase) publish(ctx context.Context, org entity.ID, s *entity.SummaryP
 		return failed, "", nil
 	}
 
-	markdown := render(u.d.SiteURL, &s.Revision)
+	slug, err := u.d.Logins.LoginSlug(ctx, org)
+	if err != nil {
+		return failed, "", err
+	}
+	markdown := render(u.d.SiteURL, slug, &s.Revision)
 	externalID, err := u.d.Adapter.FindPublished(ctx, org, s.ConnectionID, target)
 	if err != nil {
 		if isSourceError(err, entity.SourceAuth) {
