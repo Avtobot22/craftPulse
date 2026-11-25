@@ -64,6 +64,8 @@ type Deps struct {
 	Access           Authorizer
 	Clock            clock.Clock
 	NewID            func() (entity.ID, error)
+
+	SummaryFindingRights SummaryFindingRights
 }
 
 type UseCase struct {

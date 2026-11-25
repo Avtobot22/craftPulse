@@ -25,12 +25,26 @@ type MutationBody<P extends ApiPath, M extends MutationMethod> =
 export type Decoder<T> = (value: unknown) => T
 export interface RequestOptions {
   signal?: AbortSignal
-  query?: Readonly<Record<string, string | number | undefined>>
+  query?: Readonly<Record<string, string | number | boolean | undefined>>
   pathParams?: Readonly<Record<string, string>>
+}
+export interface VersionedRequestOptions extends RequestOptions {
+  /** The ETag shown in the confirmation, even if a newer read updated the cache. */
+  ifMatch?: string
+  idempotencyKey?: string
 }
 export interface ApiResponse<T> {
   data: T
   etag: string | null
+}
+
+export function isStrongETag(
+  value: string | null | undefined,
+): value is string {
+  return (
+    typeof value === 'string' &&
+    /^"[\x21\x23-\x7e\u0080-\u00ff]*"$/u.test(value)
+  )
 }
 
 export class ApiClient {
@@ -71,7 +85,7 @@ export class ApiClient {
     path: P,
     body: MutationBody<P, M>,
     decode: Decoder<T>,
-    options: RequestOptions = {},
+    options: VersionedRequestOptions = {},
   ): Promise<ApiResponse<T>> {
     return this.request(method, path, body, decode, options, true)
   }
@@ -112,7 +126,7 @@ export class ApiClient {
     path: ApiPath,
     body: unknown,
     decode: Decoder<T>,
-    options: RequestOptions,
+    options: VersionedRequestOptions,
     versioned: boolean,
   ): Promise<ApiResponse<T>> {
     if (this.ended) throw new ApiError('session-ended')
@@ -122,9 +136,11 @@ export class ApiClient {
     const headers = new Headers({ Accept: 'application/json' })
     if (body !== undefined) headers.set('Content-Type', 'application/json')
     if (versioned) {
-      const etag = this.versions.get(url)
-      if (!etag) throw new ApiError('missing-version')
+      const etag = options.ifMatch ?? this.versions.get(url)
+      if (!isStrongETag(etag)) throw new ApiError('missing-version')
       headers.set('If-Match', etag)
+      if (options.idempotencyKey !== undefined)
+        headers.set('Idempotency-Key', options.idempotencyKey)
       this.versions.delete(url)
     }
     let response: Response
@@ -183,8 +199,7 @@ export class ApiClient {
       options.signal?.throwIfAborted()
       const data = decode(raw)
       const etag = response.headers.get('ETag')
-      if (etag && !etag.startsWith('W/') && /^"[^"\r\n]*"$/u.test(etag))
-        this.versions.set(url, etag)
+      if (isStrongETag(etag)) this.versions.set(url, etag)
       else this.versions.delete(url)
       return { data, etag }
     } catch (error) {

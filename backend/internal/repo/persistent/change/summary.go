@@ -17,7 +17,9 @@ import (
 // StaleSummaries invalidates the ready revision when the source advances to another head.
 func (r *Repo) StaleSummaries(ctx context.Context, org, mr entity.ID, head string) error {
 	_, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE change.summary_revision
-		SET status = 'stale', stale_reason = 'new_head'
+		SET status = 'stale', stale_reason = 'new_head',
+			publication_error_code = CASE WHEN publication_status = 'pending' THEN 'head_changed' ELSE publication_error_code END,
+			publication_status = CASE WHEN publication_status = 'pending' THEN 'stale' ELSE publication_status END
 		WHERE organization_id = $1 AND mr_id = $2 AND status = 'ready' AND head_sha <> $3`, uuid.UUID(org), uuid.UUID(mr), head)
 	return err
 }
@@ -34,7 +36,8 @@ func (r *Repo) SaveSummary(ctx context.Context, org entity.ID, v *entity.Summary
 	if bytes.Equal(prior, v.InputHash) {
 		return false, nil
 	}
-	_, err = conn.Exec(ctx, `UPDATE change.summary_revision SET status = 'superseded'
+	_, err = conn.Exec(ctx, `UPDATE change.summary_revision SET status = 'superseded',
+		publication_status = CASE WHEN publication_status = 'pending' THEN 'stale' ELSE publication_status END
 		WHERE organization_id = $1 AND mr_id = $2 AND status = 'ready'`, uuid.UUID(org), uuid.UUID(v.MRID))
 	if err != nil {
 		return false, err
@@ -42,12 +45,12 @@ func (r *Repo) SaveSummary(ctx context.Context, org entity.ID, v *entity.Summary
 	var revisionID uuid.UUID
 	err = conn.QueryRow(ctx, `INSERT INTO change.summary_revision
 		(organization_id, mr_id, revision_no, head_sha, base_sha, profile_version_id, status,
-		 pipeline_state, input_hash, knowledge_seq, built_at, publication_status)
+		 pipeline_state, input_hash, knowledge_seq, built_at, reports_ready_at, publication_status)
 		SELECT $1, $2, COALESCE(max(revision_no), 0) + 1, $3, NULLIF($4, ''), $5, 'ready',
-			$6, $7, $8, $9, CASE WHEN $6::text = 'running' THEN 'not_requested' ELSE 'pending' END
+			$6, $7, $8, $9, $10, CASE WHEN $6::text = 'running' THEN 'not_requested' ELSE 'pending' END
 		FROM change.summary_revision WHERE organization_id = $1 AND mr_id = $2
 		RETURNING id`, uuid.UUID(org), uuid.UUID(v.MRID), v.HeadSHA, v.BaseSHA, uuid.UUID(v.ProfileVersionID), v.PipelineState, v.InputHash,
-		v.KnowledgeSeq, v.BuiltAt).Scan(&revisionID)
+		v.KnowledgeSeq, v.BuiltAt, reportReadyAt(v)).Scan(&revisionID)
 	if err != nil {
 		return false, err
 	}
@@ -82,16 +85,6 @@ func (r *Repo) SaveSummary(ctx context.Context, org entity.ID, v *entity.Summary
 			i.AnalysisKind, i.ReasonCode, i.Severity, i.Value, i.Mode)
 	}
 	return true, conn.SendBatch(ctx, batch).Close()
-}
-
-// SaveSummaryPublication applies an outcome only to the revision for which publication was queued.
-func (r *Repo) SaveSummaryPublication(ctx context.Context, job entity.OutboundPublishJob, result entity.SummaryPublication) (bool, error) {
-	tag, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE change.summary_revision
-		SET publication_status = $4, publication_external_id = $5, publication_error_code = $6, published_at = $7
-		WHERE (organization_id, mr_id, id) = ($1, $2, $3) AND publication_status IN ('pending', 'unknown')`,
-		uuid.UUID(job.OrganizationID), uuid.UUID(job.MRID), uuid.UUID(job.SummaryRevisionID),
-		result.Status, result.ExternalID, result.ErrorCode, result.PublishedAt)
-	return tag.RowsAffected() == 1, err
 }
 
 // LastGoodSummary identifies the last complete revision and its build time, including history.
@@ -140,7 +133,7 @@ func (r *Repo) ReadSummary(ctx context.Context, org, mr entity.ID, no *int, head
 		       CASE WHEN live.new_head THEN 'stale' ELSE s.status END,
 		       s.pipeline_state, s.built_at,
 		       CASE WHEN live.new_head THEN 'new_head' ELSE COALESCE(s.stale_reason, '') END,
-		       s.publication_status, s.publication_external_id, s.publication_error_code, s.published_at,
+		       s.publication_status, COALESCE(s.publication_external_id,''), COALESCE(s.publication_error_code,''), s.published_at,
 		       g.revision_no, g.head_sha, g.built_at
 		FROM change.summary_revision s
 		JOIN change.profile_version p ON (p.organization_id,p.id) = (s.organization_id,s.profile_version_id)
@@ -153,7 +146,8 @@ func (r *Repo) ReadSummary(ctx context.Context, org, mr entity.ID, no *int, head
 			  AND pipeline_state = 'complete' AND built_at IS NOT NULL
 			ORDER BY revision_no DESC LIMIT 1
 		) g ON true
-		WHERE s.organization_id = $1 AND s.mr_id = $2 AND ($3::bigint IS NULL OR s.revision_no = $3)
+		WHERE s.organization_id = $1 AND s.mr_id = $2
+		  AND (($3::integer IS NULL AND ($4::text IS NOT NULL OR s.status IN ('ready','stale'))) OR s.revision_no = $3)
 		  AND ($4::text IS NULL OR s.head_sha = $4)
 		ORDER BY s.revision_no DESC LIMIT 1`, uuid.UUID(org), uuid.UUID(mr), no, head).
 		Scan(&id, &project, &v.No, &v.HeadSHA, &v.BaseSHA, &v.Status, &v.PipelineState, &v.BuiltAt, &v.StaleReason,
@@ -177,8 +171,8 @@ func (r *Repo) ReadSummaryItems(ctx context.Context, org, id entity.ID) ([]entit
 	rows, err := postgres.Conn(ctx, r.pool).Query(ctx, `
 		SELECT i.item_kind, i.finding_identity_id, i.occurrence_id, i.required_right, i.component_id,
 		       COALESCE(i.analysis_kind,''), COALESCE(i.reason_code,''), COALESCE(i.severity,''), i.value,
-		       COALESCE(i.mode, orep.mode, p.mode, ''), COALESCE(o.rule_id, f.rule_id, ''),
-		       COALESCE(o.path,''), o.line_start, o.line_end
+		       COALESCE(i.mode, orep.mode, p.mode, ''), COALESCE(o.rule_id, f.rule_id, i.value->>'rule', ''),
+		       COALESCE(o.path, i.value->>'path', ''), COALESCE(o.line_start, (i.value->>'line')::integer), o.line_end
 		FROM change.summary_item i
 		JOIN change.summary_revision s ON (s.organization_id,s.id) = (i.organization_id,i.summary_revision_id)
 		LEFT JOIN normalize.finding_occurrence o ON (o.organization_id,o.id) = (i.organization_id,i.occurrence_id)
@@ -213,4 +207,11 @@ func (r *Repo) HasBuiltSummary(ctx context.Context, org, mr entity.ID, head stri
 		WHERE (organization_id, mr_id, head_sha) = ($1, $2, $3) AND built_at IS NOT NULL
 	)`, uuid.UUID(org), uuid.UUID(mr), head).Scan(&exists)
 	return exists, err
+}
+
+func reportReadyAt(v *entity.SummaryRevision) *time.Time {
+	if v.PipelineState != "complete" || v.ReportsReadyAt.IsZero() {
+		return nil
+	}
+	return &v.ReportsReadyAt
 }

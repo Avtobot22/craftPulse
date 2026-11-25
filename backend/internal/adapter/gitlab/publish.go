@@ -172,15 +172,22 @@ func (a *Adapter) FindPublished(ctx context.Context, call adaptersdk.Call, in ad
 	}
 	mr, err := s.publicationMR(ctx, mrID)
 	if err != nil {
-		return adaptersdk.FindPublishedResult{}, err
+		return adaptersdk.FindPublishedResult{}, writeBotLookupError(err)
 	}
 	noteID, err := s.findNote(ctx, mr, bot.ID, noteMarker(call, mrID, in.Marker))
 	if err != nil || noteID == 0 {
-		return adaptersdk.FindPublishedResult{}, err
+		return adaptersdk.FindPublishedResult{}, writeBotLookupError(err)
 	}
 	return adaptersdk.FindPublishedResult{
 		Found: true, ExternalId: optional(id(noteID)), ExternalUrl: s.noteURL(mr, noteID),
 	}, nil
+}
+
+func writeBotLookupError(err error) error {
+	if hasCode(err, adaptersdk.AdapterErrorCodeNotFound) {
+		return adaptersdk.NewError(adaptersdk.AdapterErrorCodeAuth, "merge request or its notes are not visible to the GitLab write bot")
+	}
+	return err
 }
 
 func (a *Adapter) Publish(ctx context.Context, call adaptersdk.Call, in adaptersdk.PublishInput) (adaptersdk.PublishResult, error) {
@@ -219,6 +226,10 @@ func (a *Adapter) Publish(ctx context.Context, call adaptersdk.Call, in adapters
 	noteID, err := s.findNote(ctx, mr, bot.ID, marker)
 	if err != nil {
 		return publicationLookupError(err)
+	}
+	// A rotated token can belong to a different bot and miss the existing note.
+	if noteID == 0 && in.ExternalId != nil {
+		return failedPublication(_writePermissionMissing), nil
 	}
 	if in.ExpectedHeadSha != nil {
 		if err := s.checkPublicationHead(ctx, mr, *in.ExpectedHeadSha); err != nil {

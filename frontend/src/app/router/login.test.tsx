@@ -109,6 +109,22 @@ describe('UI-02 and login errors', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
+  it('starts organization login from an MR comment with empty browser storage', async () => {
+    const mr = '0193a5b0-b0b0-7000-8000-000000000001'
+    const path = `/merge-requests/${mr}/summary?revision_no=3&org_slug=demo-org#finding-${mr}`
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(problemResponse('auth_required', 401))
+    const { router } = mount(path, createAppRuntime(fetcher))
+    const button = await screen.findByRole('button', {
+      name: 'Войти через GitLab',
+    })
+    expect(router.state.location.pathname).toBe('/o/demo-org')
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(navigateToLogin).toHaveBeenCalledWith('demo-org', path)
+  })
+
   it('keeps only the organization slug from the last /me response across a page reload', async () => {
     const first = createAppRuntime(
       vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(currentUser)),

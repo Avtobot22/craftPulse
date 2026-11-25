@@ -38,7 +38,7 @@ func TestSummaryStructureCountsAcrossStreams(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			body, err := summaryBody(&entity.SummaryRead{
 				No: 1, HeadSHA: strings.Repeat("a", 40), Status: "ready", PipelineState: "complete",
-				Publication: entity.SummaryPublication{Status: "not_requested"}, Redactions: []string{},
+				Publication: entity.Publication{Status: "not_requested"}, Redactions: []string{},
 				Items: []entity.SummaryItem{{Kind: "coverage", Value: json.RawMessage(`{"Code":[` + tc.streams + `]}`)}},
 			})
 			require.NoError(t, err)

@@ -3,10 +3,12 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +27,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/change"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/connect"
 	"github.com/Avtobot22/craftPulse/backend/migrations"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
@@ -41,6 +44,73 @@ func (a *summaryTestAdapter) AreaSources(context.Context, entity.ID, []entity.ID
 
 func (a *summaryTestAdapter) Fetch(_ context.Context, _, _ entity.ID, in entity.FetchInput) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(a.fetch(in))), nil
+}
+
+type summaryAccessSource struct{ *connect.UseCase }
+
+func (summaryAccessSource) CheckAccess(context.Context, entity.ID, entity.ID, entity.SourceAccessInput) (entity.SourceAccessResult, error) {
+	return entity.SourceAccessResult{Decisions: []entity.SourceAccessDecision{{Decision: entity.SourceAllowed}}}, nil
+}
+
+func summaryReadAPI(t *testing.T, e *identityEnv, instance entity.ID, readers ...entity.ID) {
+	t.Helper()
+	const nativeAccount = "summary-reader"
+	var accountID entity.ID
+	tx := persistent.NewTransactor(e.app)
+	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
+		ids, err := e.orgs.EnsureSourceAccounts(ctx, e.orgID, instance, []entity.SourceAccount{{NativeID: nativeAccount, Kind: entity.PersonHuman}})
+		accountID = ids[nativeAccount]
+		return err
+	}))
+	person := entity.ID(e.person(t, e.orgID, nativeAccount))
+	assignments, err := e.orgs.AssignAccounts(t.Context(), e.admin, entity.ID(uuid.New()), []entity.AssignmentRequest{{
+		SourceAccountID: accountID, ActorKind: entity.PersonHuman, PersonID: &person,
+	}})
+	require.NoError(t, err)
+	require.Len(t, assignments, 1)
+	require.Equal(t, entity.AssignmentSaved, assignments[0].Outcome)
+	for _, reader := range append(readers, e.admin.UserID) {
+		_, err = e.owner.Exec(t.Context(), "UPDATE org.app_user SET person_id = $1 WHERE organization_id = $2 AND id = $3",
+			uuid.UUID(person), uuid.UUID(e.orgID), uuid.UUID(reader))
+		require.NoError(t, err)
+	}
+
+	orgs, rights, err := newOrgAccess(e.app, e.clock, summaryAccessSource{e.connect}, nil)
+	require.NoError(t, err)
+	views := newView(e.app, viewModules{code: e.norm, rights: rights}, e.clock)
+	reg := prometheus.NewRegistry()
+	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg,
+		apiModules{orgs: orgs, access: rights, connections: e.connect, code: views})
+	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
+}
+
+type summaryNoteAdapter struct {
+	found, body string
+	externalID  string
+	publishErr  error
+	unknown     bool
+	denied      bool
+	writes      int
+}
+
+func (a *summaryNoteAdapter) FindPublished(context.Context, entity.ID, entity.ID, entity.PublicationTarget) (string, error) {
+	return a.found, nil
+}
+
+func (a *summaryNoteAdapter) Publish(_ context.Context, _, _ entity.ID, in entity.PublishInput) (entity.Publication, error) {
+	if a.publishErr != nil {
+		return entity.Publication{}, a.publishErr
+	}
+	a.writes++
+	a.externalID = in.ExternalID
+	if a.denied {
+		return entity.Publication{Status: entity.PublicationFailed, ErrorCode: entity.WritePermissionMissing}, nil
+	}
+	if a.unknown {
+		return entity.Publication{Status: entity.PublicationUnknown}, nil
+	}
+	a.found, a.body = "101", in.Markdown
+	return entity.Publication{Status: entity.PublicationSucceeded, ExternalID: a.found}, nil
 }
 
 type summaryDecisions struct {
@@ -280,27 +350,68 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Equal(t, ready, checkReady(h2, "reports_missing"))
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'change.summary' AND state = 'available'`))
 	onFetch = func() {}
+	previous, err := u.PublicationSummary(t.Context(), e.orgID, mr)
+	require.NoError(t, err)
+	require.Equal(t, "pending", previous.Revision.Publication.Status)
 	run()
 	ready = checkReady(h2, "complete")
+	historical, err := u.ReadSummary(t.Context(), e.orgID, mr, &previous.Revision.No)
+	require.NoError(t, err)
+	assert.Equal(t, "superseded", historical.Status)
+	assert.Equal(t, entity.PublicationStale, historical.Publication.Status)
 	assert.Equal(t, 6, count(t, `SELECT count(*) FROM change.summary_item WHERE summary_revision_id = $1
 		AND item_kind = 'new' AND required_right = 'security'`, ready))
 	assert.Equal(t, 5, count(t, `SELECT count(*) FROM change.summary_item WHERE summary_revision_id = $1 AND rank BETWEEN 1 AND 5`, ready))
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish'
-		AND args->>'summary_revision_id' = $1`, ready.String()))
+		AND state = 'available'`))
+
+	// Reproduce an upgrade from jobs with no uniqueness key and revisions with no saved intent.
+	db := stdlib.OpenDBFromPool(e.owner)
+	defer db.Close()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.Core())
+	require.NoError(t, err)
+	_, err = provider.DownTo(t.Context(), 55)
+	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), `UPDATE change.summary_revision SET publication_status = 'pending' WHERE id = $1`,
+		uuid.UUID(previous.Revision.ID))
+	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), `UPDATE change.summary_revision SET publication_status = 'not_requested' WHERE id = $1`, ready)
+	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), `UPDATE river_job SET unique_key = NULL WHERE kind = 'outbound.publish'`)
+	require.NoError(t, err)
+	_, err = e.owner.Exec(t.Context(), `INSERT INTO river_job (kind, args, queue, max_attempts)
+		SELECT kind, args || jsonb_build_object('summary_revision_id', $1::text), queue, max_attempts
+		FROM river_job WHERE kind = 'outbound.publish' AND state = 'available'`, uuid.NewString())
+	require.NoError(t, err)
+	_, err = migrate(t.Context(), e.owner)
+	require.NoError(t, err)
+	historical, err = u.ReadSummary(t.Context(), e.orgID, mr, &previous.Revision.No)
+	require.NoError(t, err)
+	assert.Equal(t, entity.PublicationStale, historical.Publication.Status)
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish' AND state = 'cancelled'`))
+	// Legacy jobs still occupy the slot while active, even for simultaneous producers.
+	var enqueueWG sync.WaitGroup
+	for range 2 {
+		enqueueWG.Go(func() {
+			assert.NoError(t, persistent.NewTransactor(e.app).InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
+				if _, err := deps.Facts.SummaryMR(ctx, e.orgID, mr, true); err != nil {
+					return err
+				}
+				return deps.Queue.Enqueue(ctx, entity.OutboundPublishJob{
+					OrganizationID: e.orgID, MRID: mr, SummaryRevisionID: entity.ID(ready),
+				}, entity.QueueInteractive)
+			}))
+		})
+	}
+	enqueueWG.Wait()
 
 	// Use the HTTP entry point and the same revisions built from imported facts.
 	security := e.exceptionActor(t, "summary-security", []roleInput{
 		{Role: "tech_lead", ProjectID: &project}, {Role: "security_access", ProjectID: &project},
 	})
 	outside := e.exceptionActor(t, "summary-outside", []roleInput{{Role: "tech_lead", ProjectID: &e.other}})
-	// These fixtures have no live source; the test still exercises project visibility.
-	_, err = e.owner.Exec(t.Context(), "DELETE FROM connect.connection_scope WHERE organization_id=$1 AND area_id=$2", uuid.UUID(e.orgID), e.areas["42"])
-	require.NoError(t, err)
-	reg := prometheus.NewRegistry()
-	views := newView(e.app, viewModules{code: e.norm, rights: e.rights}, e.clock)
-	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg,
-		apiModules{orgs: e.orgs, access: e.rights, code: views})
-	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
+	summaryReadAPI(t, e, *first.SourceInstanceID,
+		entity.ID(e.userID(t, e.orgID, "summary-security")), entity.ID(e.userID(t, e.orgID, _otherSub)))
 	summaryPath := "/api/v1/merge-requests/" + mr.String() + "/summary"
 	read := func(b *browser, suffix string) openapi.MergeRequestSummary {
 		t.Helper()
@@ -340,31 +451,6 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 		assert.NotEqual(t, new(openapi.AnalysisKind("sast")), item.AnalysisKind)
 	}
 	assert.Equal(t, "pending", string(full.Publication.Status))
-	record := func(id uuid.UUID, outcome entity.SummaryPublication) bool {
-		t.Helper()
-		applied, err := u.RecordSummaryPublication(t.Context(), entity.OutboundPublishJob{
-			OrganizationID: e.orgID, MRID: mr, SummaryRevisionID: entity.ID(id),
-		}, outcome)
-		require.NoError(t, err)
-		return applied
-	}
-	assert.True(t, record(withChild, entity.SummaryPublication{Status: "failed", ErrorCode: new("write_permission_missing")}))
-	assert.True(t, record(ready, entity.SummaryPublication{Status: "unknown", ErrorCode: new("provider_error")}))
-	assert.Equal(t, "unknown", string(read(security, "").Publication.Status))
-	assert.True(t, record(ready, entity.SummaryPublication{Status: "succeeded", ExternalID: new("comment-1")}))
-	assert.False(t, record(ready, entity.SummaryPublication{Status: "failed", ErrorCode: new("provider_error")}))
-	published := read(security, "").Publication
-	assert.Equal(t, "succeeded", string(published.Status))
-	assert.Equal(t, new("comment-1"), published.ExternalId)
-	assert.NotNil(t, published.PublishedAt)
-	assert.Nil(t, published.ErrorCode)
-	var childRevision int
-	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT revision_no FROM change.summary_revision WHERE id = $1`, withChild).Scan(&childRevision))
-	failed := read(e.lead, fmt.Sprintf("?revision_no=%d", childRevision)).Publication
-	assert.Equal(t, "failed", string(failed.Status))
-	assert.Equal(t, new("write_permission_missing"), failed.ErrorCode)
-	assert.Nil(t, failed.ExternalId)
-	assert.Nil(t, failed.PublishedAt)
 	old := read(security, "?revision_no=1")
 	assert.Equal(t, &base, old.BaseSha)
 	assert.Equal(t, h1, old.HeadSha)
@@ -376,37 +462,114 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	run()
 	assert.Equal(t, ready, checkReady(h2, "complete"))
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM river_job WHERE kind = 'outbound.publish'
-		AND args->>'summary_revision_id' = $1`, ready.String()))
+		AND state = 'available'`))
 
-	// An unrelated base SHA leaves complete head findings newly observed and keeps the last good revision.
+	// River still holds the older payload. Delivery must read the revision that is ready now.
+	var connectionID uuid.UUID
+	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT connection_id FROM connect.connection_scope
+		WHERE organization_id = $1 AND area_id = $2`, uuid.UUID(e.orgID), e.areas["42"]).Scan(&connectionID))
+	source.source.ConnectionID = entity.ID(connectionID)
+	require.Equal(t, h2, previous.Revision.HeadSHA)
+	previous.ConnectionID = source.source.ConnectionID
+	canPublish, err := u.CheckPublicationHead(t.Context(), e.orgID, &previous)
+	require.NoError(t, err)
+	assert.False(t, canPublish, "a superseded revision cannot publish even when the head is unchanged")
+	adapter := &summaryNoteAdapter{unknown: true}
+	publisher, err := newPublisher(e.app, u, adapter, _site, prometheus.NewRegistry())
+	require.NoError(t, err)
+	var publishJobID int64
+	var args []byte
+	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT id, args FROM river_job
+		WHERE kind = 'outbound.publish' AND state = 'available'`).Scan(&publishJobID, &args))
+	var publishJob entity.OutboundPublishJob
+	require.NoError(t, json.Unmarshal(args, &publishJob))
+	require.NotEqual(t, entity.ID(ready), publishJob.SummaryRevisionID)
+	adapter.publishErr = &entity.AdapterError{Class: entity.CallContractUnsupported}
+	require.ErrorIs(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false), entity.ErrContractUnsupported)
+	assert.Zero(t, count(t, `SELECT count(*) FROM outbound.target WHERE pending_create_action_id IS NOT NULL`))
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.action WHERE status = 'failed'`))
+	adapter.publishErr = nil
+	for range 2 {
+		require.Error(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false))
+		require.Equal(t, 1, adapter.writes)
+		assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.target WHERE pending_create_action_id IS NOT NULL`))
+	}
+	adapter.unknown, adapter.found = false, "101"
+	require.NoError(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false))
+	var no int
+	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT revision_no FROM change.summary_revision WHERE id = $1`, ready).Scan(&no))
+	publishedRevision, err := u.ReadSummary(t.Context(), e.orgID, mr, &no)
+	published := publishedRevision.Publication
+	require.NoError(t, err)
+	assert.Equal(t, entity.PublicationSucceeded, published.Status)
+	assert.Equal(t, "101", published.ExternalID)
+	assert.NotNil(t, published.PublishedAt)
+	apiPublished := read(security, fmt.Sprintf("?revision_no=%d", no)).Publication
+	assert.Equal(t, openapi.MergeRequestSummaryPublicationStatus(entity.PublicationSucceeded), apiPublished.Status)
+	assert.Equal(t, new("101"), apiPublished.ExternalId)
+	assert.NotNil(t, apiPublished.PublishedAt)
+	assert.Nil(t, apiPublished.ErrorCode)
+	assert.Contains(t, adapter.body, h2)
+	assert.Contains(t, adapter.body, fmt.Sprintf("%s/merge-requests/%s/summary?revision_no=%d&org_slug=demo", _site, mr, no))
+	assert.Contains(t, adapter.body, "Есть закрытые результаты")
+	assert.NotContains(t, adapter.body, "new-0")
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.target WHERE external_id = '101' AND pending_create_action_id IS NULL`))
+	assert.Equal(t, 2, adapter.writes)
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.action WHERE status = 'succeeded'`))
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM audit.event WHERE operation = 'outbound.publish' AND outcome = 'succeeded'`))
+
+	e.clock.Advance(time.Second)
+	e.submit(t, sast(h2, "h2-retry", sarifOf(hits[:5]...)))
+	run()
+	latestReady := checkReady(h2, "complete")
+	require.NotEqual(t, ready, latestReady)
+	adapter.found, adapter.denied = "", true
+	require.NoError(t, publisher.RunPublish(t.Context(), publishJob, nil, false))
+	assert.Equal(t, "101", adapter.externalID)
+	failed, err := u.ReadSummary(t.Context(), e.orgID, mr, nil)
+	require.NoError(t, err)
+	assert.Equal(t, entity.PublicationFailed, failed.Publication.Status)
+	assert.Equal(t, entity.WritePermissionMissing, failed.Publication.ErrorCode)
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.target WHERE external_id = '101' AND pending_create_action_id IS NULL`))
 	base = strings.Repeat("e", 40)
 	h3 := strings.Repeat("d", 40)
 	e.clock.Advance(time.Second)
 	page = mrPage(h3, "v3", e.clock.Now())
+	// The publication rechecks the source before the new head is normalized.
+	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT id FROM river_job
+		WHERE kind = 'outbound.publish' AND state = 'available'`).Scan(&publishJobID))
+	publishedBody := adapter.body
+	require.NoError(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false))
+	stale := decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, e.adminBrowser, summaryPath, "MergeRequestSummary"))
+	assert.Equal(t, latestReady, stale.Id)
+	assert.Equal(t, h2, stale.HeadSha)
+	assert.Equal(t, openapi.MergeRequestSummaryStatus("stale"), stale.Status)
+	assert.Equal(t, new("new_head"), stale.StaleReason)
+	assert.Equal(t, openapi.MergeRequestSummaryPublicationStatus(entity.PublicationStale), stale.Publication.Status)
+	assert.Equal(t, publishedBody, adapter.body)
+	assert.Equal(t, 3, adapter.writes)
+
+	// An unrelated base SHA leaves complete head findings newly observed and keeps the last good revision.
 	e.submit(t, page)
-	require.Equal(t, ready, checkReady(h2, "complete"))
-	selectors := []string{"", "?head_sha=" + h2, fmt.Sprintf("?revision_no=%d", full.RevisionNo)}
+	require.Zero(t, count(t, "SELECT count(*) FROM change.summary_revision WHERE mr_id = $1 AND status = 'ready'", uuid.UUID(mr)))
+	selectors := []string{"", "?head_sha=" + h2, fmt.Sprintf("?revision_no=%d", stale.RevisionNo)}
 	for _, actor := range []*browser{security, e.lead} {
 		for _, selector := range selectors {
 			prior := read(actor, selector)
-			assert.Equal(t, ready, prior.Id)
+			assert.Equal(t, latestReady, prior.Id)
 			assert.Equal(t, h2, prior.HeadSha)
 			assert.Equal(t, "stale", string(prior.Status))
 			assert.Equal(t, new("new_head"), prior.StaleReason)
 		}
 	}
-	require.Equal(t, ready, checkReady(h2, "complete"))
+	require.Zero(t, count(t, "SELECT count(*) FROM change.summary_revision WHERE mr_id = $1 AND status = 'ready'", uuid.UUID(mr)))
 	e.submit(t, e.codeReport(t, h3, "feature", "8106", sarifOf(hit{rule: "observed", path: "src/main.go", line: 3})))
 	run()
 	assertItem(checkReady(h3, "running"), "newly_observed", "", 1)
 	current := read(security, "")
 	assert.Nil(t, current.BaseSha)
 	// A pre-upgrade revision stored the source base SHA even without comparison evidence.
-	db := stdlib.OpenDBFromPool(e.owner)
-	t.Cleanup(func() { _ = db.Close() })
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.Core())
-	require.NoError(t, err)
-	_, err = provider.DownTo(t.Context(), 57)
+	_, err = provider.DownTo(t.Context(), 61)
 	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `UPDATE change.summary_revision SET base_sha = $1, status = 'superseded'
 		WHERE organization_id = $2 AND id = $3`, base, uuid.UUID(e.orgID), current.Id)
@@ -424,7 +587,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
 		last, err := deps.Store.LastGoodSummary(ctx, e.orgID, mr)
 		require.NoError(t, err)
-		assert.Equal(t, ready, uuid.UUID(last.ID))
+		assert.Equal(t, latestReady, uuid.UUID(last.ID))
 		assert.Equal(t, h2, last.HeadSHA)
 		assert.Equal(t, "stale", last.Status)
 		assert.False(t, last.BuiltAt.IsZero())
@@ -439,4 +602,22 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	})))
 	noRevision := "/api/v1/merge-requests/" + mrID(t, e.normalized, "9002").String() + "/summary"
 	assert.Equal(t, http.StatusNotFound, e.do(t, e.lead, http.MethodGet, noRevision, nil).Code)
+
+	// A deep link reads the specified historical revision and its own saved denial.
+	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
+		return deps.Publication.SavePublication(ctx, e.orgID, previous.Revision.ID, entity.Publication{
+			Status: entity.PublicationFailed, ErrorCode: entity.WritePermissionMissing,
+		})
+	}))
+	denied := decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, e.adminBrowser,
+		fmt.Sprintf("%s?revision_no=%d", summaryPath, previous.Revision.No), "MergeRequestSummary"))
+	assert.Equal(t, uuid.UUID(previous.Revision.ID), denied.Id)
+	assert.Equal(t, h2, denied.HeadSha)
+	assert.Equal(t, openapi.MergeRequestSummaryPublicationStatus(entity.PublicationFailed), denied.Publication.Status)
+	require.NotNil(t, denied.Publication.ErrorCode)
+	assert.Equal(t, entity.WritePermissionMissing, *denied.Publication.ErrorCode)
+	assert.Nil(t, denied.Publication.ExternalId)
+	assert.Nil(t, denied.Publication.PublishedAt)
+	assert.Equal(t, http.StatusBadRequest, e.do(t, e.adminBrowser, http.MethodGet, summaryPath+"?revision_no=0", nil).Code)
+	assert.Equal(t, http.StatusNotFound, e.do(t, e.adminBrowser, http.MethodGet, summaryPath+"?revision_no=2147483647", nil).Code)
 }

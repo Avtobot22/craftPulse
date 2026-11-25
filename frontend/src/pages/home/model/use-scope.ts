@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { allTeamProjects, allTeams } from '@/shared/api'
-import type { ApiClient } from '@/shared/api'
+import type { ApiClient, Team } from '@/shared/api'
 import { projectParam, readLastScope, rememberScope, teamParam } from './scope'
 
 export function useScope(
@@ -10,6 +10,7 @@ export function useScope(
   storageKey: string,
   params: URLSearchParams,
   restore: boolean,
+  standaloneProjects?: Team[],
 ) {
   const remembered = restore ? readLastScope(storageKey) : null
   const requested = remembered ?? params
@@ -25,10 +26,17 @@ export function useScope(
     ...allTeamProjects(api, storageKey, team?.id ?? ''),
     enabled: Boolean(team),
   })
-  const project = projects.isSuccess
-    ? projects.data.find(({ id }) => id === requestedProject)
-    : undefined
-  const ready = !hasAreas || (teams.isSuccess && (!team || projects.isSuccess))
+  const projectChoices = requestedTeam
+    ? projects.isSuccess
+      ? projects.data
+      : undefined
+    : standaloneProjects
+  const project = projectChoices?.find(({ id }) => id === requestedProject)
+  const standalone = standaloneProjects !== undefined && requestedTeam === ''
+  const ready =
+    standalone ||
+    !hasAreas ||
+    (teams.isSuccess && (!team || projects.isSuccess))
   const invalid =
     ready &&
     ((requestedTeam !== '' && !team) || (requestedProject !== '' && !project))
@@ -39,5 +47,14 @@ export function useScope(
     }
   }, [restore, ready, invalid, storageKey, team, project])
 
-  return { teams, team, projects, project, remembered, ready, invalid }
+  return {
+    teams,
+    team,
+    projects,
+    project,
+    projectChoices,
+    remembered,
+    ready,
+    invalid,
+  }
 }

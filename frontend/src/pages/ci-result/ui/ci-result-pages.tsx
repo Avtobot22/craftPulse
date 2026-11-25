@@ -1,12 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { Text } from '@gravity-ui/uikit'
 import type { ReactNode } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { useParams } from 'react-router'
 import { ApiError, readArray, readRecord, readString } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import { ErrorState, LoadingState } from '@/shared/ui'
-import { readSummary, type Summary } from '../api/read-summary'
-import { SummaryMetrics } from './summary-metrics'
 
 function ResultPage({
   title,
@@ -57,89 +55,6 @@ function readPipeline(value: unknown) {
       }
     }),
   }
-}
-
-const publicationLabels: Record<Summary['publication']['status'], string> = {
-  not_requested: 'Публикация комментария не запрошена',
-  pending: 'Комментарий ожидает публикации',
-  succeeded: 'Комментарий опубликован',
-  failed: 'Не удалось опубликовать комментарий',
-  unknown: 'Исход публикации комментария неизвестен',
-  stale: 'Публикация комментария отменена',
-}
-
-const publicationReasons = new Map([
-  ['write_permission_missing', 'нет права записи в MR'],
-  ['head_changed', 'появился новый коммит'],
-  ['provider_error', 'ошибка Git-хостинга'],
-])
-
-export function MergeRequestSummaryPage({ api }: { api: ApiClient }) {
-  const { mergeRequestId = '' } = useParams()
-  const [params] = useSearchParams()
-  const head = params.get('head_sha') ?? undefined
-  const revision = params.get('revision_no') ?? undefined
-  const query = useQuery({
-    queryKey: ['merge-request-summary', mergeRequestId, head, revision],
-    queryFn: async ({ signal }) => {
-      const response = await api.read(
-        '/merge-requests/{merge_request_id}/summary',
-        readSummary,
-        {
-          signal,
-          pathParams: { merge_request_id: mergeRequestId },
-          query: { head_sha: head, revision_no: revision },
-        },
-      )
-      return response.data
-    },
-    retry: false,
-  })
-  const summary = query.data
-  const errorCode = summary?.publication.errorCode
-  const publicationReason =
-    errorCode && (publicationReasons.get(errorCode) ?? errorCode)
-  return (
-    <ResultPage
-      title="Сводка MR"
-      error={query.error}
-      pending={query.isPending}
-      retry={() => void query.refetch()}
-    >
-      {summary && (
-        <>
-          <p>
-            Коммит <code>{summary.head}</code>
-          </p>
-          {(summary.status === 'stale' || summary.status === 'superseded') && (
-            <p>Историческая сводка</p>
-          )}
-          {summary.pipelineId && (
-            <Link to={'/pipelines/' + encodeURIComponent(summary.pipelineId)}>
-              Открыть pipeline
-            </Link>
-          )}
-          <p>
-            {publicationLabels[summary.publication.status]}
-            {publicationReason && ` (${publicationReason})`}
-          </p>
-          <SummaryMetrics summary={summary} />
-          {summary.limited && <p>Часть данных скрыта правами доступа.</p>}
-          {summary.items.length > 0 && (
-            <ul>
-              {summary.items.map((item, index) => (
-                <li key={index}>
-                  {[item.analysis, item.kind, item.rule]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
-    </ResultPage>
-  )
 }
 
 export function PipelinePage({ api }: { api: ApiClient }) {

@@ -1,13 +1,24 @@
 -- +goose Up
-ALTER TABLE change.summary_revision
-    ADD COLUMN publication_status text NOT NULL DEFAULT 'not_requested'
-        CHECK (publication_status IN ('not_requested', 'pending', 'succeeded', 'failed', 'unknown', 'stale')),
-    ADD COLUMN publication_external_id text,
-    ADD COLUMN publication_error_code text,
-    ADD COLUMN published_at timestamptz;
-
--- Before this migration, every saved non-running revision queued publication in the same transaction.
-UPDATE change.summary_revision SET publication_status = 'pending' WHERE pipeline_state <> 'running';
+-- Before publication outcomes were stored, ready revisions could already have a queued job.
+-- A coalesced job targets the latest ready revision of its MR.
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF to_regclass('public.river_job') IS NOT NULL THEN
+        UPDATE change.summary_revision AS s
+        SET publication_status = 'pending'
+        WHERE s.status = 'ready' AND s.pipeline_state <> 'running' AND s.publication_status = 'not_requested'
+          AND EXISTS (
+              SELECT 1 FROM public.river_job AS job
+              WHERE job.kind = 'outbound.publish'
+                AND job.state IN ('available', 'pending', 'running', 'retryable', 'scheduled')
+                AND job.args->>'organization_id' = s.organization_id::text
+                AND job.args->>'mr_id' = s.mr_id::text
+          );
+    END IF;
+END;
+$$;
+-- +goose StatementEnd
 
 -- Restore the display snapshot from the exact run and attempt versions of existing revisions.
 WITH snapshots AS (
@@ -54,7 +65,5 @@ GRANT SELECT ON ingest.ci_result TO craftpulse_backup;
 
 -- +goose Down
 DROP TABLE ingest.ci_result;
-UPDATE change.summary_item SET value = value - 'display' - 'public_reports' WHERE item_kind = 'ci_attempts';
+UPDATE change.summary_item SET value = value - 'display' WHERE item_kind = 'ci_attempts';
 ALTER TABLE change.summary_item DROP COLUMN mode;
-ALTER TABLE change.summary_revision DROP COLUMN published_at, DROP COLUMN publication_error_code,
-    DROP COLUMN publication_external_id, DROP COLUMN publication_status;

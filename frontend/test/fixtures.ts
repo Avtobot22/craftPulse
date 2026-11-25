@@ -229,3 +229,29 @@ export function problemResponse(code: string, status: number): Response {
     'Content-Type': 'application/problem+json',
   })
 }
+
+// Example from listProjectTimeline in OpenAPI.
+export const lateTimelineEvent = {
+  id: '0193a5b0-e1e1-7000-8000-000000000001',
+  object: {
+    kind: 'task',
+    id: '0193a5b0-f000-7000-8000-000000000002',
+    display_key: 'CORE-15',
+    title: 'Перенести отчёт',
+    source_url: 'https://example.atlassian.net/browse/CORE-15',
+  },
+  event_kind: 'field_change',
+  field: 'status',
+  before_value: 'Open',
+  after_value: 'In Progress',
+  actor: {
+    account_id: '0193a5b0-9999-7000-8000-000000000001',
+    kind: 'human',
+    display_name: 'Анна Смирнова',
+  },
+  event_time: '2026-10-02T09:00:00Z',
+  event_offset_seconds: 10800,
+  observed_at: '2026-10-06T00:00:00Z',
+  observed_via: 'backfill',
+  late: true,
+} satisfies components['schemas']['TimelineEvent']

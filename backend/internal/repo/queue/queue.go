@@ -42,6 +42,22 @@ func (q *Queue) insert(ctx context.Context, job entity.Job, opts *river.InsertOp
 	if !ok {
 		return errNoTx
 	}
+	// Both publication producers hold the summary lock. Adopt any active
+	// legacy job without a River key until it finishes and releases the slot.
+	if publish, ok := job.(entity.OutboundPublishJob); ok {
+		var legacy bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM public.river_job WHERE kind = 'outbound.publish' AND unique_key IS NULL
+			AND state IN ('available','pending','running','retryable','scheduled')
+			AND args @> jsonb_build_object('organization_id', $1::text, 'mr_id', $2::text)
+		)`, publish.OrganizationID.String(), publish.MRID.String()).Scan(&legacy)
+		if err != nil {
+			return fmt.Errorf("queue: check legacy publication job: %w", err)
+		}
+		if legacy {
+			return nil
+		}
+	}
 	if _, unique := job.(entity.ActiveUnique); unique {
 		opts.UniqueOpts = river.UniqueOpts{ByArgs: true, ByState: _activeStates}
 	}

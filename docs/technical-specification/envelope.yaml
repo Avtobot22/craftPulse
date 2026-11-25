@@ -500,7 +500,7 @@ components:
         actor_account_native_id: {type: [string, 'null'], maxLength: 255}
         target_account_native_id: {type: [string, 'null'], maxLength: 255}
         head_sha: {type: [string, 'null'], pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'}
-        review_state: {type: [string, 'null'], enum: [approved, changes_requested, commented, null]}
+        review_state: {type: [string, 'null'], enum: [approved, changes_requested, commented, dismissed, null]}
         event_time_unknown: {type: boolean, description: 'Источник подтвердил событие MR без времени. Объект помечается усечённым, событие не участвует в расчётах.'}
         system_note: {type: boolean, description: Системная заметка. Переход сохраняется как событие; comment и review пропускаются.}
       example: {mr_native_id: '9001', event_kind: review, actor_account_native_id: demo-person-03, target_account_native_id: null, head_sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, review_state: commented}

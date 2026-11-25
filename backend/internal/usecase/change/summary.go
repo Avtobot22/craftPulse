@@ -22,7 +22,6 @@ type SummaryStore interface {
 	SummaryProfileAt(context.Context, entity.ID, entity.ID, time.Time) (entity.CheckProfileVersion, error)
 	StaleSummaries(context.Context, entity.ID, entity.ID, string) error
 	SaveSummary(context.Context, entity.ID, *entity.SummaryRevision) (bool, error)
-	SaveSummaryPublication(context.Context, entity.OutboundPublishJob, entity.SummaryPublication) (bool, error)
 }
 
 // SummaryFacts reads normalize facts and locks their knowledge counter at finalization.
@@ -50,34 +49,12 @@ type SummaryCalculations interface {
 // SummaryDeps supplies the worker-only dependencies of change.summary.
 type SummaryDeps struct {
 	Store          SummaryStore
+	Publication    PublicationStore
 	Facts          SummaryFacts
 	Source         SummarySource
 	Calculations   SummaryCalculations
 	Queue          repo.JobQueue
 	ObserveLatency func(float64)
-}
-
-// RecordSummaryPublication records a publisher's outcome against the revision it attempted.
-// A resolved outcome is stable across redelivery. An unknown outcome can be reconciled later.
-func (u *UseCase) RecordSummaryPublication(ctx context.Context, job entity.OutboundPublishJob, result entity.SummaryPublication) (bool, error) {
-	switch result.Status {
-	case "succeeded":
-		if result.ExternalID == nil || *result.ExternalID == "" {
-			return false, errorf("successful summary publication has no external ID")
-		}
-		result.PublishedAt, result.ErrorCode = new(u.d.Clock.Now()), nil
-	case "failed", "unknown", "stale":
-		result.PublishedAt, result.ExternalID = nil, nil
-	default:
-		return false, errorf("invalid summary publication outcome %q", result.Status)
-	}
-	var applied bool
-	err := u.d.Tx.InOrgTx(ctx, job.OrganizationID, func(ctx context.Context) error {
-		var err error
-		applied, err = u.d.Summary.Store.SaveSummaryPublication(ctx, job, result)
-		return err
-	})
-	return err == nil && applied, err
 }
 
 // RunSummary checks the live head before building and again before queuing publication. The final check of
@@ -169,7 +146,7 @@ func (u *UseCase) finishSummary(ctx context.Context, job entity.ChangeSummaryJob
 		if v == nil || head != v.HeadSHA {
 			return nil
 		}
-		v.BuiltAt = u.d.Clock.Now()
+		v.BuiltAt, v.ReportsReadyAt = u.d.Clock.Now(), last
 		saved, err := d.Store.SaveSummary(ctx, org, v)
 		if err != nil || !saved {
 			return err
@@ -189,24 +166,36 @@ func (u *UseCase) finishSummary(ctx context.Context, job entity.ChangeSummaryJob
 }
 
 func (u *UseCase) fetchSummaryHead(ctx context.Context, org entity.ID, mr entity.SummaryMR) (string, error) {
-	sources, err := u.d.Summary.Source.AreaSources(ctx, org, []entity.ID{mr.AreaID})
+	source, err := u.summaryAreaSource(ctx, org, mr)
 	if err != nil {
 		return "", err
+	}
+	return u.readPublicationHead(ctx, org, source, mr.Source)
+}
+
+func (u *UseCase) summaryAreaSource(ctx context.Context, org entity.ID, mr entity.SummaryMR) (entity.AreaSource, error) {
+	sources, err := u.d.Summary.Source.AreaSources(ctx, org, []entity.ID{mr.AreaID})
+	if err != nil {
+		return entity.AreaSource{}, err
 	}
 	for i := range sources {
 		s := &sources[i]
 		if s.Active && s.ConnectionStatus == entity.ConnectionActive && s.InstanceID == mr.InstanceID && s.Kind == entity.ScopeRepository {
-			body, err := u.d.Summary.Source.Fetch(ctx, org, s.ConnectionID, entity.FetchInput{
-				SchemaID: "merge_requests", Limit: 1, ObjectKeys: []entity.ObjectKey{mr.Source},
-				Scope: entity.ScopeRef{Kind: s.Kind, NativeScopeID: s.NativeScopeID},
-			})
-			if err != nil {
-				return "", err
-			}
-			return summaryHead(body, mr.Source)
+			return *s, nil
 		}
 	}
-	return "", entity.ErrNotFound
+	return entity.AreaSource{}, entity.ErrNotFound
+}
+
+func (u *UseCase) readPublicationHead(ctx context.Context, org entity.ID, source entity.AreaSource, object entity.ObjectKey) (string, error) {
+	body, err := u.d.Summary.Source.Fetch(ctx, org, source.ConnectionID, entity.FetchInput{
+		SchemaID: "merge_requests", Limit: 1, ObjectKeys: []entity.ObjectKey{object},
+		Scope: entity.ScopeRef{Kind: source.Kind, NativeScopeID: source.NativeScopeID},
+	})
+	if err != nil {
+		return "", err
+	}
+	return summaryHead(body, object)
 }
 
 func summaryHead(body io.ReadCloser, key entity.ObjectKey) (string, error) {

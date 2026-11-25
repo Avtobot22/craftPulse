@@ -1,1 +1,1 @@
-export { MergeRequestSummaryPage, PipelinePage } from './ui/ci-result-pages'
+export { PipelinePage } from './ui/ci-result-pages'

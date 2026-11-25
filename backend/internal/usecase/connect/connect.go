@@ -250,6 +250,12 @@ func (u *UseCase) invoke(ctx context.Context, c entity.Connection, op entity.Ada
 		return nil
 	}
 	logFailure(ctx, c, op, err)
+	// Publication operations use a separate credential. Its refusal says
+	// nothing about the collector's access to the source.
+	if ae, ok := errors.AsType[*entity.AdapterError](err); ok && ae.Class == entity.CallSource &&
+		ae.Code == entity.SourceAuth && (op == entity.OpFindPublished || op == entity.OpPublish) {
+		return err
+	}
 	return u.settle(ctx, c, err)
 }
 

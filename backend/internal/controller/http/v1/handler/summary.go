@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,10 +14,18 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
 
+var errMalformedSummarySelector = errors.New("invalid summary selector")
+
 func (h *codeDetails) GetMergeRequestSummary(ctx context.Context, req openapi.GetMergeRequestSummaryRequestObject) (openapi.GetMergeRequestSummaryResponseObject, error) {
 	s, scope, err := subjectScope(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if no := req.Params.RevisionNo; no != nil && (*no < 1 || *no > math.MaxInt32) {
+		return nil, errMalformedSummarySelector
+	}
+	if head := req.Params.HeadSha; head != nil && !entity.ValidGitSHA(*head) {
+		return nil, errMalformedSummarySelector
 	}
 	summary, err := h.uc.MergeRequestSummary(ctx, s, scope, entity.ID(req.MergeRequestId), req.Params.RevisionNo, req.Params.HeadSha)
 	if err != nil {
@@ -51,8 +61,8 @@ func summaryBody(s *entity.SummaryRead) (openapi.MergeRequestSummary, error) {
 		out.AccessNotes = accessNotes([]entity.AccessNote{{Code: entity.NoteRestricted}})
 	}
 	out.Publication.Status = openapi.MergeRequestSummaryPublicationStatus(s.Publication.Status)
-	out.Publication.ExternalId = s.Publication.ExternalID
-	out.Publication.ErrorCode = s.Publication.ErrorCode
+	out.Publication.ExternalId = optional(s.Publication.ExternalID)
+	out.Publication.ErrorCode = optional(s.Publication.ErrorCode)
 	out.Publication.PublishedAt = s.Publication.PublishedAt
 	if g := s.LastGood; g != nil {
 		out.LastGood = &struct {

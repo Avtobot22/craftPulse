@@ -1,11 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useQuery, focusManager } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createMemoryRouter } from 'react-router'
+import { createBrowserRouter, createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { listTeams, listServices } from '@/shared/api'
 import type { components } from '@/shared/api'
-import { routePaths } from '@/shared/config'
+import { routePaths, taskAnalysisLinks } from '@/shared/config'
 import {
   currentUser,
   projects,
@@ -105,18 +105,26 @@ function mount(
   const router = createMemoryRouter(createAppRoutes(runtime), {
     initialEntries: previousPath ? [previousPath, path] : [path],
   })
+  return renderRouter(router, runtime)
+}
+
+function renderRouter(
+  router: ReturnType<typeof createMemoryRouter>,
+  runtime: AppRuntime,
+) {
   const view = render(
     <AppProviders runtime={runtime}>
       <RouterProvider router={router} />
     </AppProviders>,
   )
-  cleanups.push(() => {
+  const dispose = () => {
     view.unmount()
     router.dispose()
     runtime.session.dispose()
     runtime.queryClient.clear()
-  })
-  return { runtime, router }
+  }
+  cleanups.push(dispose)
+  return { runtime, router, dispose }
 }
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup()
@@ -155,7 +163,9 @@ describe('application routes', () => {
 
   it('opens a CI receipt at its historical MR head and links to the pipeline', async () => {
     const head = 'a'.repeat(40)
-    const summaryPath = '/merge-requests/mr/summary?head_sha=' + head
+    const mr = '0193a5b0-b0b0-7000-8000-000000000001'
+    const pipeline = '0193a5b0-c0c0-7000-8000-000000000001'
+    const summaryPath = '/merge-requests/' + mr + '/summary?head_sha=' + head
     const count = (value: number): components['schemas']['MetricValue'] => ({
       state: 'ASSESSED',
       value,
@@ -169,17 +179,34 @@ describe('application routes', () => {
       missing_count: 0,
       reason_code: null,
     })
-    const baseApi = mockApi()
+    const baseApi = mockApi({
+      ...currentUser,
+      actions: ['session.read', 'mr.read', 'ci.read'],
+    })
     const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
       if (input === '/api/v1' + summaryPath) {
         return Promise.resolve(
           jsonResponse({
+            id: '0193a5b0-d0d0-7000-8000-000000000001',
+            merge_request_id: mr,
+            revision_no: 1,
             head_sha: head,
+            base_sha: null,
+            built_at: null,
             status: 'stale',
-            ci: { pipeline_id: 'run' },
+            pipeline_state: 'complete',
+            stale_reason: 'new_head',
+            ci: {
+              pipeline_id: pipeline,
+              outcome: 'success',
+              attempts: 1,
+              retried_jobs: 0,
+            },
             publication: {
               status: 'failed',
               error_code: 'write_permission_missing',
+              published_at: null,
+              external_id: null,
             },
             tests: {
               passed: count(12),
@@ -207,15 +234,32 @@ describe('application routes', () => {
               denominator: 24,
             },
             expected: { missing_checks: count(0), missing_reports: count(1) },
+            last_good: {
+              head_sha: 'b'.repeat(40),
+              revision_no: 2,
+              built_at: '2026-11-08T12:35:00Z',
+            },
             not_evaluated: [
               { analysis_kind: 'code', reason_code: 'scan_failed' },
             ],
             access_limited: true,
-            items: [{ item_kind: 'ci_attempts', rule_id: null }],
-          }),
+            access_notes: [{ code: 'restricted_by_access' }],
+            redactions: ['items'],
+            items: [
+              {
+                item_no: 1,
+                item_kind: 'ci_attempts',
+                rule_id: null,
+                location: null,
+                rank: null,
+                finding_id: null,
+                severity: null,
+              },
+            ],
+          } satisfies components['schemas']['MergeRequestSummary']),
         )
       }
-      if (input === '/api/v1/pipelines/run') {
+      if (input === '/api/v1/pipelines/' + pipeline) {
         return Promise.resolve(
           jsonResponse({
             ref_name: 'feature',
@@ -230,41 +274,38 @@ describe('application routes', () => {
 
     mount(summaryPath, fetcher)
     expect(
-      await screen.findByRole('heading', { name: 'Сводка MR', level: 1 }),
+      await screen.findByRole('heading', {
+        name: 'Сводка MR, ревизия 1',
+        level: 1,
+      }),
     ).toBeInTheDocument()
-    expect(await screen.findByText(head)).toBeInTheDocument()
+    expect(screen.getByTitle(head)).toBeInTheDocument()
+    expect(screen.getByTitle('b'.repeat(40))).toBeInTheDocument()
     expect(screen.getByText('Историческая сводка')).toBeInTheDocument()
     expect(
-      screen.getByText(
-        'Не удалось опубликовать комментарий (нет права записи в MR)',
-      ),
+      screen.getByText('У бота нет права записи в MR.'),
     ).toBeInTheDocument()
-    expect(
-      screen.getByText('Часть данных скрыта правами доступа.'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Есть закрытые результаты.')).toBeInTheDocument()
 
     expect(screen.getByRole('heading', { name: 'Тесты' })).toBeInTheDocument()
-    expect(screen.getByText('Пройдено').nextElementSibling).toHaveTextContent(
+    expect(screen.getByText('Прошли').nextElementSibling).toHaveTextContent(
       '12',
     )
+    expect(screen.getByText('Упали').nextElementSibling).toHaveTextContent('0')
     expect(
-      screen.getByText('Не пройдено').nextElementSibling,
-    ).toHaveTextContent('0')
-    expect(
-      screen.getByText('Добавлено строк').nextElementSibling,
+      screen.getByText('Добавленные строки').nextElementSibling,
     ).toHaveTextContent('24')
     expect(
-      screen.getByText('Новые группы дублирования').nextElementSibling,
+      screen.getByText('Новые группы клонов').nextElementSibling,
     ).toHaveTextContent('Нет сопоставимой базы')
     expect(
-      screen.getByText('Покрытие изменённых строк').nextElementSibling,
-    ).toHaveTextContent(/75\s*% \(18 из 24\).*частично/)
+      screen.getByRole('heading', { name: 'Покрытие изменённых строк' })
+        .nextElementSibling,
+    ).toHaveTextContent(/75\s*%.*частично.*18 из 24/)
     expect(
-      screen.getByText('Пропущено отчётов').nextElementSibling,
+      screen.getByText('Отсутствующие отчёты').nextElementSibling,
     ).toHaveTextContent('1')
-    expect(
-      screen.getByText('code · Анализ завершился с ошибкой'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Анализ завершился с ошибкой')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('link', { name: 'Открыть pipeline' }))
     expect(
@@ -598,8 +639,8 @@ describe('UI-01', () => {
       screen.queryByRole('link', { name: 'Пользователи и роли' }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('link', { name: 'Задачи и история' }),
-    ).not.toBeInTheDocument()
+      screen.getByRole('link', { name: 'Задачи и история' }),
+    ).toHaveAttribute('href', '/tasks')
     await act(async () => {
       await router.navigate('/users/123')
     })
@@ -771,4 +812,386 @@ describe('UI-01', () => {
     expect(screen.queryByText(admin.organization.name)).not.toBeInTheDocument()
     expect(runtime.queryClient.getQueryCache().getAll()).toHaveLength(0)
   })
+})
+
+describe('task analysis routes', () => {
+  const taskReader = { ...currentUser, actions: ['session.read', 'tasks.read'] }
+  const mrReader = { ...currentUser, actions: ['session.read', 'mr.read'] }
+  const scope = { project_id: project.id }
+
+  it.each([
+    [
+      taskAnalysisLinks.taskList({
+        team_id: team.id,
+        status_meaning: 'wait',
+        sort: '-age',
+      }),
+      'Задачи',
+      taskReader,
+    ],
+    [
+      taskAnalysisLinks.taskList({ ...scope, over_target: false }),
+      'Задачи',
+      taskReader,
+    ],
+    [
+      taskAnalysisLinks.taskDetail('task-1', scope),
+      'Карточка задачи',
+      taskReader,
+    ],
+    [
+      taskAnalysisLinks.projectTimeline({
+        ...scope,
+        date: '2026-10-02',
+        actor_kind: 'bot',
+        object_kind: 'task',
+      }),
+      'Таймлайн проекта',
+      taskReader,
+    ],
+    [
+      taskAnalysisLinks.projectTimeline({
+        ...scope,
+        from: '2026-10-02T00:00:00Z',
+        to: '2026-10-03T00:00:00Z',
+      }),
+      'Таймлайн проекта',
+      taskReader,
+    ],
+    [
+      taskAnalysisLinks.mergeRequestQueue({
+        ...scope,
+        review_wait: 'no_reviewer',
+      }),
+      'Очередь MR',
+      mrReader,
+    ],
+  ] as const)(
+    'opens %s directly and with a fresh router at the same browser URL',
+    async (path, heading, user) => {
+      const original = window.location.href
+      window.history.replaceState(null, '', path)
+      cleanups.push(() => {
+        window.history.replaceState(null, '', original)
+      })
+      for (let load = 0; load < 2; load += 1) {
+        const runtime = createAppRuntime(mockApi(user))
+        const router = createBrowserRouter(createAppRoutes(runtime))
+        const { dispose } = renderRouter(router, runtime)
+        expect(
+          await screen.findByRole('heading', { name: heading, level: 1 }),
+        ).toBeVisible()
+        expect(screen.getByRole('main')).toContainElement(
+          screen.getByRole('heading', { name: heading, level: 1 }),
+        )
+        expect(window.location.pathname + window.location.search).toBe(path)
+        cleanups.splice(cleanups.lastIndexOf(dispose), 1)
+        dispose()
+      }
+    },
+  )
+
+  it('allows the task section and hides MR and CI for a tasks-only reader', async () => {
+    mount(`/tasks?project_id=${project.id}`, mockApi(taskReader))
+    expect(
+      await screen.findByRole('link', { name: 'Задачи и история' }),
+    ).toHaveAttribute('href', `/tasks?project_id=${project.id}`)
+    expect(
+      screen.getByRole('link', { name: 'Таймлайн проекта' }),
+    ).toHaveAttribute('href', `/timeline?project_id=${project.id}`)
+    expect(
+      screen.queryByRole('link', { name: 'MR и CI' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('allows MR and CI and hides the task section for an MR-only reader', async () => {
+    mount(`/merge-requests?project_id=${project.id}`, mockApi(mrReader))
+    expect(await screen.findByRole('link', { name: 'MR и CI' })).toBeVisible()
+    expect(
+      screen.queryByRole('link', { name: 'Задачи и история' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'Таймлайн проекта' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('rejects a direct queue link for a tasks-only reader', async () => {
+    mount(`/merge-requests?project_id=${project.id}`, mockApi(taskReader))
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Объект или область недоступны',
+      }),
+    ).toBeVisible()
+  })
+
+  it('preserves the timeline date and drops filters and cursor when switching projects', async () => {
+    const second = { ...project, id: 'second-project', name: 'Второй проект' }
+    const path = taskAnalysisLinks.projectTimeline({
+      ...scope,
+      date: '2026-10-02',
+      actor_kind: 'bot',
+      cursor: 'page-2',
+    })
+    const { router } = mount(
+      path,
+      mockApi({
+        ...taskReader,
+        areas: { ...taskReader.areas, projects: [project, second] },
+      }),
+    )
+    await screen.findByRole('heading', { name: 'Таймлайн проекта' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Проект' }), {
+      target: { value: second.id },
+    })
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Несовместимые параметры сброшены при смене области',
+    )
+    expect(router.state.location.pathname).toBe('/timeline')
+    expect([...new URLSearchParams(router.state.location.search)]).toEqual([
+      ['date', '2026-10-02'],
+      ['project_id', second.id],
+    ])
+  })
+})
+
+const summaryMr = '0193a5b0-b0b0-7000-8000-000000000001'
+const summaryURL = `/merge-requests/${summaryMr}/summary?revision_no=3`
+const summaryFixture = {
+  id: 'summary-3',
+  merge_request_id: summaryMr,
+  revision_no: 3,
+  head_sha: 'a'.repeat(40),
+  base_sha: null,
+  built_at: null,
+  status: 'superseded',
+  pipeline_state: 'complete',
+  stale_reason: null,
+  access_limited: true,
+  access_notes: [],
+  redactions: [],
+  publication: {
+    status: 'failed',
+    error_code: 'write_permission_missing',
+    published_at: null,
+    external_id: null,
+  },
+  coverage_changed_lines: {
+    state: 'NOT_EVALUATED',
+    reason_code: 'report_missing',
+    value: null,
+    unit: 'ratio',
+    numerator: null,
+    denominator: null,
+    n: null,
+    bound: null,
+    low_sample: false,
+    excluded_count: 0,
+    missing_count: 0,
+  },
+  ci: null,
+  items: [
+    {
+      item_no: 1,
+      item_kind: 'accepted',
+      finding_id: 'finding-1',
+      rule_id: 'rule-1',
+      severity: 'high',
+      location: null,
+      rank: null,
+    },
+  ],
+  not_evaluated: [],
+} satisfies components['schemas']['MergeRequestSummary']
+
+function mockTechnicalApi(action: string) {
+  const fallback = mockApi({
+    ...currentUser,
+    actions: ['session.read', action],
+  })
+  return vi
+    .fn<typeof fetch>()
+    .mockImplementation((input, init) =>
+      input === '/api/v1' + summaryURL
+        ? Promise.resolve(jsonResponse(summaryFixture))
+        : fallback(input, init),
+    )
+}
+
+describe('technical screen routes', () => {
+  it.each([
+    [summaryURL + '&org_slug=example', 'Сводка MR, ревизия 3', 'mr.read'],
+    [
+      '/components/component-1/comparison?base_sha=aaaa&head_sha=bbbb&analysis_kind=code',
+      'Сравнение результатов проверок',
+      'findings.read',
+    ],
+    ['/pipelines/pipeline-1', 'Pipeline', 'ci.read'],
+    [
+      '/pipelines/pipeline-1/jobs/test%3A%20matrix%2Flinux',
+      'Попытки задания CI',
+      'ci.read',
+    ],
+    [
+      `/findings?project_id=${project.id}&finding_kind=security&state=open&severity=high&cursor=next%2B1`,
+      'Находки кода и безопасности',
+      'findings.read',
+    ],
+    ['/findings/finding-1', 'Карточка находки', 'findings.read'],
+    ['/findings/finding-1/exception', 'Исключение', 'exceptions.manage'],
+    ['/exceptions/exception-1/extend', 'Исключение', 'exceptions.manage'],
+    [
+      '/exceptions?state=pending&component_id=component-1',
+      'История исключений',
+      'findings.read',
+    ],
+    [
+      '/exceptions/exception-1?state=pending&component_id=component-1',
+      'История исключений',
+      'findings.read',
+    ],
+    [
+      '/components/overview/component-1',
+      'Технический обзор компонента',
+      'findings.read',
+    ],
+    ['/checks/profile/project-1', 'Матрица проверок', 'check_profiles.manage'],
+    ['/checks/baselines/project-1', 'Базовые линии', 'ci.read'],
+    [
+      '/checks/setup/project-1?ci_system=gitlab_ci',
+      'Подключение шага CI',
+      'check_profiles.manage',
+    ],
+    ['/documentation/roots/service-1', 'Корни документации', 'docs.read'],
+    ['/documentation/services/service-1', 'Документация сервиса', 'docs.read'],
+    [
+      '/documentation/findings/finding-1',
+      'Нарушение документации',
+      'findings.read',
+    ],
+  ])(
+    'opens %s directly and after loading the URL again',
+    async (path, heading, action) => {
+      const original = window.location.href
+      window.history.replaceState(null, '', path)
+      cleanups.push(() => {
+        window.history.replaceState(null, '', original)
+      })
+
+      for (let load = 0; load < 2; load += 1) {
+        const runtime = createAppRuntime(mockTechnicalApi(action))
+        const router = createBrowserRouter(createAppRoutes(runtime))
+        const { dispose } = renderRouter(router, runtime)
+        expect(
+          await screen.findByRole('heading', { name: heading, level: 1 }),
+        ).toBeVisible()
+        expect(window.location.pathname + window.location.search).toBe(path)
+        cleanups.splice(cleanups.lastIndexOf(dispose), 1)
+        dispose()
+      }
+    },
+  )
+
+  it('opens the exact revision from an MR comment and shows the publication refusal', async () => {
+    mount(summaryURL + '&org_slug=example', mockTechnicalApi('mr.read'))
+    expect(
+      await screen.findByRole('heading', { name: 'Сводка MR, ревизия 3' }),
+    ).toBeVisible()
+    expect(screen.getByText('У бота нет права записи в MR.')).toBeVisible()
+    expect(screen.getByText('Есть закрытые результаты.')).toBeVisible()
+    expect(screen.getByText('Принята', { exact: false })).toBeVisible()
+    expect(screen.getByText('не проверено')).toBeVisible()
+  })
+
+  it('rejects a different head when the requested revision is already cached', async () => {
+    const mismatchedURL = summaryURL + '&head_sha=' + 'b'.repeat(40)
+    const fallback = mockTechnicalApi('mr.read')
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation((input, init) =>
+        input === '/api/v1' + mismatchedURL
+          ? Promise.resolve(jsonResponse(summaryFixture))
+          : fallback(input, init),
+      )
+    const { router } = mount(summaryURL, fetcher)
+    const heading = { name: 'Сводка MR, ревизия 3' }
+    expect(await screen.findByRole('heading', heading)).toBeVisible()
+
+    await act(() => router.navigate(mismatchedURL))
+    expect(
+      await screen.findByText('Не удалось загрузить сводку MR'),
+    ).toBeInTheDocument()
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1' + mismatchedURL,
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(screen.queryByRole('heading', heading)).not.toBeInTheDocument()
+  })
+
+  const links = [
+    ['Находки', '/findings', 'Находки кода и безопасности', 'findings.read'],
+    [
+      'Технический обзор компонента',
+      '/components/overview',
+      'Технический обзор компонента',
+      'findings.read',
+    ],
+    [
+      'Документация сервиса',
+      '/documentation/services',
+      'Документация сервиса',
+      'docs.read',
+    ],
+    [
+      'Матрица проверок',
+      '/checks/profile',
+      'Матрица проверок',
+      'check_profiles.manage',
+    ],
+    [
+      'Подключение шага CI',
+      '/checks/setup',
+      'Подключение шага CI',
+      'check_profiles.manage',
+    ],
+  ] as const
+
+  it.each(links)(
+    'permits navigation to %s with the required action',
+    async (label, path, heading, action) => {
+      mount('/', mockTechnicalApi(action))
+      const link = await screen.findByRole('link', { name: label })
+      expect(link).toHaveAttribute('href', path)
+      link.focus()
+      expect(link).toHaveFocus()
+      fireEvent.click(link)
+      expect(
+        await screen.findByRole('heading', { name: heading }),
+      ).toHaveFocus()
+      expect(screen.getByRole('link', { name: label })).toHaveAttribute(
+        'aria-current',
+        'page',
+      )
+      for (const [otherLabel, , , otherAction] of links) {
+        if (otherAction !== action)
+          expect(
+            screen.queryByRole('link', { name: otherLabel }),
+          ).not.toBeInTheDocument()
+      }
+    },
+  )
+
+  it.each(links)(
+    'blocks the direct link for %s without the required action',
+    async (label, path) => {
+      mount(path, mockApi(currentUser))
+      expect(
+        await screen.findByRole('heading', {
+          name: 'Объект или область недоступны',
+        }),
+      ).toBeVisible()
+      expect(
+        screen.queryByRole('link', { name: label }),
+      ).not.toBeInTheDocument()
+    },
+  )
 })

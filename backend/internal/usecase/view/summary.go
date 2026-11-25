@@ -13,6 +13,11 @@ type Summaries interface {
 	ReadSummaryItems(context.Context, entity.ID, entity.ID) ([]entity.SummaryItem, error)
 }
 
+// SummaryFindingRights authorizes reading security findings in the MR area.
+type SummaryFindingRights interface {
+	VisibleFindings(context.Context, entity.Subject, entity.Scope, string, []entity.FindingAccess) (map[entity.FindingAccess]bool, error)
+}
+
 // MergeRequestSummary checks current MR access before reading the requested revision.
 func (u *UseCase) MergeRequestSummary(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID, no *int, head *string) (entity.SummaryRead, error) {
 	scope, ends, err := u.codeScope(ctx, s, scope, "getMergeRequestSummary", []entity.ID{id})
@@ -22,12 +27,6 @@ func (u *UseCase) MergeRequestSummary(ctx context.Context, s entity.Subject, sco
 	end, ok := ends[id]
 	if !ok || end.Kind != entity.ObjectMergeRequest {
 		return entity.SummaryRead{}, entity.ErrNotFound
-	}
-	if no != nil && *no < 1 {
-		return entity.SummaryRead{}, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/revision_no", Code: entity.FieldOutOfRange}}}
-	}
-	if head != nil && !entity.ValidGitSHA(*head) {
-		return entity.SummaryRead{}, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/head_sha", Code: entity.FieldNotAllowedValue}}}
 	}
 	var out entity.SummaryRead
 	err = u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
@@ -42,6 +41,15 @@ func (u *UseCase) MergeRequestSummary(ctx context.Context, s entity.Subject, sco
 	if err != nil {
 		return entity.SummaryRead{}, err
 	}
-	out.FilterSecurity(slices.Contains(scope.SecurityProjects(), out.ProjectID))
+	allowed := slices.Contains(scope.SecurityProjects(), out.ProjectID)
+	if allowed {
+		target := entity.FindingAccess{AreaID: end.AreaID, Kind: "security"}
+		rights, err := u.d.SummaryFindingRights.VisibleFindings(ctx, s, scope, "getMergeRequestSummary", []entity.FindingAccess{target})
+		if err != nil {
+			return entity.SummaryRead{}, err
+		}
+		allowed = rights[target]
+	}
+	out.FilterSecurity(allowed)
 	return out, nil
 }

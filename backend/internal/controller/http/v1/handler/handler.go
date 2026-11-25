@@ -148,7 +148,8 @@ func Error(c *gin.Context, err error) {
 	case errors.Is(err, entity.ErrIdempotencyKeyReused):
 		response.Write(c, response.IdempotencyKeyReused)
 		return
-	case errors.Is(err, errMalformedPage), errors.Is(err, errMalformedForm), errors.Is(err, errMalformedTechnicalComparison), errors.Is(err, entity.ErrInvalidCursor):
+	case errors.Is(err, errMalformedPage), errors.Is(err, errMalformedForm), errors.Is(err, errMalformedTechnicalComparison),
+		errors.Is(err, errMalformedSummarySelector), errors.Is(err, entity.ErrInvalidCursor):
 		response.Write(c, response.MalformedRequest)
 		return
 	case errors.Is(err, errPayloadTooLarge):

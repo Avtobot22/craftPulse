@@ -5,8 +5,15 @@ export default defineConfig([
   ...fsd.configs.recommended,
   { ignores: ['src/shared/api/generated/**'] },
   {
-    // The report screen tasks consume this public API after the shared slice lands.
-    files: ['./src/entities/metric/**'],
+    // Report, task analysis and technical screens consume these public APIs as they land.
+    files: [
+      './src/entities/metric/**',
+      './src/entities/activity/**',
+      './src/entities/merge-request/**',
+      './src/entities/check-report/**',
+      './src/entities/finding/**',
+      './src/entities/result-access/**',
+    ],
     rules: { 'fsd/insignificant-slice': 'off' },
   },
   {

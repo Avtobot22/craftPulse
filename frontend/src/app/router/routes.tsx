@@ -1,6 +1,7 @@
 import type { RouteObject } from 'react-router'
-import { MergeRequestSummaryPage, PipelinePage } from '@/pages/ci-result'
+import { PipelinePage } from '@/pages/ci-result'
 import { HomePage } from '@/pages/home'
+import { MergeRequestSummaryPage } from '@/pages/merge-request-summary'
 import { LoginPage } from '@/pages/login'
 import { SessionExpiredPage } from '@/pages/session-expired'
 import { UnavailablePage } from '@/pages/unavailable'
@@ -14,10 +15,15 @@ import { TeamReportPage } from '@/pages/team-report'
 import { MetricPassportPage } from '@/pages/metric-passport'
 import { MetricCohortPage } from '@/pages/metric-cohort'
 import { SavedViewPage } from '@/pages/saved-view'
+import { TaskListPage } from '@/pages/task-list'
+import { TaskDetailPage } from '@/pages/task-detail'
+import { ProjectTimelinePage } from '@/pages/project-timeline'
+import { MergeRequestQueuePage } from '@/pages/merge-request-queue'
 import { routePaths } from '@/shared/config'
 import type { AppRuntime } from '../initialization/runtime'
 import { ProtectedRoute } from './protected-route'
 import { SessionNavigation } from './session-navigation'
+import { technicalRoutes } from './technical-routes'
 
 export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
   return [
@@ -54,15 +60,15 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 { path: routePaths.welcome, element: <WelcomePage /> },
                 {
+                  path: routePaths.mergeRequestSummary,
+                  element: <MergeRequestSummaryPage api={runtime.api} />,
+                },
+                {
                   path: routePaths.organization,
                   element: <OrganizationPage />,
                 },
                 { path: routePaths.users, element: <UsersPage /> },
                 { path: routePaths.users + '/:userId', element: <UsersPage /> },
-                {
-                  path: '/merge-requests/:mergeRequestId/summary',
-                  element: <MergeRequestSummaryPage api={runtime.api} />,
-                },
                 {
                   path: '/pipelines/:pipelineId',
                   element: <PipelinePage api={runtime.api} />,
@@ -91,6 +97,17 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                   path: routePaths.savedView,
                   element: <SavedViewPage />,
                 },
+                { path: routePaths.taskList, element: <TaskListPage /> },
+                { path: routePaths.taskDetail, element: <TaskDetailPage /> },
+                {
+                  path: routePaths.projectTimeline,
+                  element: <ProjectTimelinePage />,
+                },
+                {
+                  path: routePaths.mergeRequestQueue,
+                  element: <MergeRequestQueuePage />,
+                },
+                ...technicalRoutes,
                 { path: '*', element: <UnavailablePage /> },
               ],
             },
