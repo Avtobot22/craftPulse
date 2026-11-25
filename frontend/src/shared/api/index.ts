@@ -56,3 +56,36 @@ export type {
 } from './merge-request-queries'
 export { getPipeline, listPipelineAttempts } from './pipeline-queries'
 export type { PipelineAttemptsParams } from './pipeline-queries'
+
+export type { OpenCodes } from './read-fields'
+export { getMergeRequestSummary } from './merge-request-summary-queries'
+export {
+  getFinding,
+  listFindings,
+  compareTechnicalResults,
+} from './finding-queries'
+export type {
+  FindingListParams,
+  TechnicalComparisonParams,
+} from './finding-queries'
+export { getException, listExceptions } from './exception-queries'
+export type { ExceptionListParams } from './exception-queries'
+export { getComponentOverview } from './component-queries'
+export {
+  getCheckProfile,
+  getCiConfiguration,
+  listBaselines,
+  listUploadTokens,
+} from './check-profile-queries'
+export type {
+  CiConfigurationParams,
+  UploadTokenListParams,
+} from './check-profile-queries'
+export {
+  listDocumentationRoots,
+  listServiceDocuments,
+} from './documentation-queries'
+export type { ServiceDocumentListParams } from './documentation-queries'
+export { listTestExecutions } from './pipeline-queries'
+export type { TestExecutionListParams } from './pipeline-queries'
+export type { MergeRequestSummaryParams } from './merge-request-summary-queries'

@@ -108,3 +108,23 @@ export function readMetricValue(
     reason_code: readNullableString(raw.reason_code),
   }
 }
+
+export function readLocation(value: unknown): Schema['CodeLocation'] {
+  const raw = value === null ? null : readRecord(value)
+  return (
+    raw && {
+      path: readString(raw.path),
+      line_start: readNullableNumber(raw.line_start),
+      line_end: readNullableNumber(raw.line_end),
+    }
+  )
+}
+
+export function readStringMap(value: unknown): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(readRecord(value)).map(([key, item]) => [
+      key,
+      readString(item),
+    ]),
+  )
+}

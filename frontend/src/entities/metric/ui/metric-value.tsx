@@ -1,9 +1,9 @@
 import { Flex, Text } from '@gravity-ui/uikit'
-import type { components } from '@/shared/api'
+import type { components, OpenCodes } from '@/shared/api'
 import { DataStateBadge } from '@/shared/ui'
 import type { DataState } from '@/shared/ui'
 
-type Value = components['schemas']['MetricValue']
+type Value = OpenCodes<components['schemas']['MetricValue']>
 
 export interface MetricValueProps {
   value: Value
@@ -108,7 +108,10 @@ export function MetricValue({ value }: MetricValueProps) {
     (unit === 'ratio' || unit === 'percent' || unit === '%') && !hasDenominator
   let display: string | undefined
   if (!missingDenominator) {
-    if (state === 'BOUNDED' && bound) {
+    if (
+      state === 'BOUNDED' &&
+      (bound?.kind === 'lower' || bound?.kind === 'upper')
+    ) {
       const direction = bound.kind === 'lower' ? 'Не менее' : 'Не более'
       display = `${direction} ${formatValue(bound.value, unit, bound.kind)}`
     }
