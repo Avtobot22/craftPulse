@@ -23,6 +23,7 @@ type repositoryActivity struct {
 
 func (s source) readActivityPage(ctx context.Context, repo repository, h *history, after string, seen map[string]struct{}) (string, error) {
 	head := h.pull.Head
+	basePath := repo.path()
 	if head.Repo.ID <= 0 || head.Ref == "" {
 		return "", nil
 	}
@@ -38,18 +39,23 @@ func (s source) readActivityPage(ctx context.Context, repo repository, h *histor
 		}
 	}
 	ref := "refs/heads/" + head.Ref
-	query := url.Values{"ref": {ref}, "activity_type": {"push"}, "direction": {"desc"}, "per_page": {"30"}}
+	// GitHub's activity_type filter accepts one type. The branch filter keeps
+	// ordinary and force pushes in the same ordered stream and cursor.
+	query := url.Values{"ref": {ref}, "direction": {"desc"}, "per_page": {"30"}}
 	if after != "" {
 		query.Set("after", after)
 	}
 	collection := "activity/" + id(repo.ID)
 	links, err := arrayPage(ctx, s, "repository_activity", repo.path()+"/activity", query, after != "", func(item repositoryActivity) error {
-		if item.Type != "push" || item.Ref != ref {
+		if item.Ref != ref {
 			return nil
 		}
 		if item.Timestamp.Before(h.pull.OpenedAt) && !item.Timestamp.IsZero() {
 			h.activityCovered = true
 			return errBeforeWindow
+		}
+		if item.Type != "push" && item.Type != "force_push" {
+			return nil
 		}
 		if h.pull.ClosedAt != nil && item.Timestamp.After(*h.pull.ClosedAt) ||
 			h.pull.MergedAt != nil && item.Timestamp.After(*h.pull.MergedAt) {
@@ -66,6 +72,14 @@ func (s source) readActivityPage(ctx context.Context, repo repository, h *histor
 		}
 		if h.duplicate(seen, collection, native) {
 			return nil
+		}
+		if item.Type == "force_push" && !item.Timestamp.IsZero() && validSHA(item.After) {
+			if err := s.loadTimelinePushes(ctx, basePath, h); err != nil {
+				return err
+			}
+			if _, exists := h.timelinePushes[pushTransition{at: item.Timestamp.UTC(), head: item.After}]; exists {
+				return nil // The timeline record already describes this transition.
+			}
 		}
 		return h.addPush(collection+"/"+native, item)
 	})
@@ -84,6 +98,27 @@ func (s source) readActivityPage(ctx context.Context, repo repository, h *histor
 		return "", adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "invalid GitHub activity continuation")
 	}
 	return token, nil
+}
+
+func (s source) loadTimelinePushes(ctx context.Context, basePath string, h *history) error {
+	if h.timelinePushes != nil {
+		return nil
+	}
+	h.timelinePushes = make(map[pushTransition]struct{})
+	path := basePath + "/issues/" + id(int64(h.pull.Number)) + "/timeline"
+	err := walk(ctx, s, "timeline", path, url.Values{"per_page": {"30"}}, false, func(item historyItem) error {
+		sha := item.headSHA()
+		if timelineKinds[item.Event] == envelope.MrEventV2EventKindHeadPushed &&
+			historyID(item.ID, item.NodeID) != "" && item.CreatedAt != nil && !item.CreatedAt.IsZero() && validSHA(sha) {
+			h.timelinePushes[pushTransition{at: item.CreatedAt.UTC(), head: sha}] = struct{}{}
+		}
+		return nil
+	})
+	if unavailableScope(err) {
+		h.truncated = true
+		return nil
+	}
+	return err
 }
 
 func (h *history) addPush(key string, item repositoryActivity) error {

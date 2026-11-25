@@ -19,6 +19,9 @@ const (
 	_historyPageBudget   = 12
 	_activityCollection  = 4
 	_accountHistoryLimit = 4000
+	_profilePageLimit    = 32
+	_profileBudget       = 8 * time.Second
+	_profilePageReserve  = time.Second
 )
 
 var errAccountHistoryLimit = errors.New("GitHub account history reached the per-collection item limit")
@@ -44,11 +47,21 @@ type history struct {
 	accounts        map[int64]account
 	accountsOnly    bool
 	truncated       bool
-	readyAt         *time.Time
-	seenDraft       bool
-	seenReady       bool
-	currentRevision bool
+	timeline        timelineProgress
+	timelineDone    bool
+	timelinePushes  map[pushTransition]struct{}
 	activityCovered bool
+}
+
+type timelineProgress struct {
+	readyAt                          *time.Time
+	seenDraft, seenReady, incomplete bool
+	hasPushes                        bool
+}
+
+type pushTransition struct {
+	at   time.Time
+	head string
 }
 
 type historyPosition struct {
@@ -78,6 +91,9 @@ func (s source) readHistory(ctx context.Context, repo repository, h *history, po
 		return nil, s.readAccountHistory(ctx, repo, h)
 	}
 	endpoints := historyEndpoints(repo, h.pull)
+	if !h.timeline.hasPushes {
+		h.timelinePushes = make(map[pushTransition]struct{})
+	}
 	seen := make(map[string]struct{})
 	for range _historyPageBudget {
 		var next string
@@ -93,17 +109,22 @@ func (s source) readHistory(ctx context.Context, repo repository, h *history, po
 		case err != nil:
 			return nil, err
 		}
+		if pos.collection == 0 && h.truncated {
+			h.timeline.incomplete = true
+		}
 		if next != "" {
 			pos.page = next
 			continue
 		}
-		if pos.collection == 0 && !h.seenDraft && !h.seenReady && !h.pull.Draft && !h.truncated {
-			h.readyAt = &h.pull.OpenedAt
+		if pos.collection == 0 {
+			h.timelineDone = true
+			if !h.timeline.seenDraft && !h.timeline.seenReady && !h.timeline.incomplete && !h.pull.Draft {
+				h.timeline.readyAt = &h.pull.OpenedAt
+			}
 		}
 		pos = historyPosition{collection: pos.collection + 1}
 		if pos.collection > _activityCollection {
-			// A timeline transition at the current head does not rule out earlier ordinary pushes.
-			h.truncated = h.truncated || !h.currentRevision || !h.activityCovered
+			h.truncated = h.truncated || !h.activityCovered
 			return nil, nil
 		}
 	}
@@ -249,23 +270,25 @@ func (h *history) add(collection, native string, item historyItem) error {
 	key := collection + "/" + native
 	switch kind {
 	case envelope.MrEventV2EventKindDraft:
-		h.seenDraft = true
+		h.timeline.seenDraft = true
 	case envelope.MrEventV2EventKindReady:
-		h.seenReady = true
-		if at != nil && (h.readyAt == nil || at.Before(*h.readyAt)) {
-			h.readyAt = at
+		h.timeline.seenReady = true
+		if at != nil && (h.timeline.readyAt == nil || at.Before(*h.timeline.readyAt)) {
+			h.timeline.readyAt = at
 		}
 	case envelope.MrEventV2EventKindHeadPushed:
-		sha := item.HeadSHA
+		sha := item.headSHA()
 		if !validSHA(sha) {
-			sha = item.CommitID
-		}
-		if !validSHA(sha) {
+			// Repository activity supplies before/after for GitHub's SHA-less force-push marker.
 			h.truncated = true
-			return nil // The canonical head transition requires a SHA.
+			return nil
 		}
 		head = &sha
 		if at != nil {
+			h.timeline.hasPushes = true
+			if h.timelinePushes != nil {
+				h.timelinePushes[pushTransition{at: at.UTC(), head: sha}] = struct{}{}
+			}
 			var base *string
 			if validSHA(item.BaseSHA) {
 				base = &item.BaseSHA
@@ -275,7 +298,6 @@ func (h *history) add(collection, native string, item historyItem) error {
 			if err := h.revision(key, sha, base, *at); err != nil {
 				return err
 			}
-			h.currentRevision = h.currentRevision || sha == h.pull.Head.SHA && base != nil && *base == h.pull.Base.SHA
 		}
 	case envelope.MrEventV2EventKindApproval,
 		envelope.MrEventV2EventKindClosed,
@@ -293,13 +315,26 @@ func (h *history) add(collection, native string, item historyItem) error {
 	})
 }
 
+func (item historyItem) headSHA() string {
+	if validSHA(item.HeadSHA) {
+		return item.HeadSHA
+	}
+	return item.CommitID
+}
+
 func (h *history) event(key string, at *time.Time, payload envelope.MrEventV2) error {
+	if h.page == nil {
+		return nil // A profile continuation replays the source slice to recover its account IDs.
+	}
 	rec := object("mr_event", id(h.pull.ID), key, h.observed)
 	rec.PayloadSchema, rec.RecordClass, rec.EventTime = "mr_event/2", envelope.RecordRecordClassEvent, at
 	return writeRecord(h.page, rec, payload)
 }
 
 func (h *history) revision(key, head string, base *string, at time.Time) error {
+	if h.page == nil {
+		return nil
+	}
 	rec := object("mr_revision", id(h.pull.ID), key, h.observed)
 	return writeRecord(h.page, rec, envelope.MrRevisionV1{MrNativeId: id(h.pull.ID), HeadSha: head, BaseSha: base, CreatedAt: at})
 }
@@ -350,11 +385,8 @@ func (h *history) remember(u account) {
 	h.accounts[u.ID] = old
 }
 
-func (s source) writeAccounts(ctx context.Context, h *history, written map[int64]bool) error {
-	for _, n := range slices.Sorted(maps.Keys(h.accounts)) {
-		if written[n] {
-			continue
-		}
+func (s source) writeAccounts(ctx context.Context, page *adaptersdk.Page, h *history, written map[int64]bool, after int64, resumed bool) (next int64, pending bool, err error) {
+	return enrichProfiles(ctx, slices.Sorted(maps.Keys(h.accounts)), written, after, resumed, func(ctx context.Context, n int64) error {
 		var profile account
 		err := s.get(ctx, "account", "/user/"+id(n), &profile)
 		if err == nil {
@@ -373,13 +405,42 @@ func (s source) writeAccounts(ctx context.Context, h *history, written map[int64
 		case u.Type == "User":
 			kind = envelope.AccountV1AccountKindHuman
 		}
-		err = writeRecord(h.page, object("account", "", id(n), h.observed), envelope.AccountV1{
+		return writeRecord(page, object("account", "", id(n), h.observed), envelope.AccountV1{
 			Login: optional(u.Login), DisplayName: optional(u.Name), Email: optional(u.Email), AccountKind: kind, Active: u.Login != "",
 		})
+	})
+}
+
+func enrichProfiles(ctx context.Context, ids []int64, written map[int64]bool, after int64, resumed bool,
+	visit func(context.Context, int64) error,
+) (next int64, pending bool, err error) {
+	deadline := time.Now().Add(_profileBudget)
+	if end, ok := ctx.Deadline(); ok {
+		reserved := end.Add(-_profilePageReserve)
+		if resumed || reserved.Before(deadline) {
+			deadline = reserved
+		}
+	}
+	profiles, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	last, count := after, 0
+	for _, n := range ids {
+		if n <= after || written[n] {
+			continue
+		}
+		if count == _profilePageLimit || profiles.Err() != nil {
+			return last, true, nil
+		}
+		err := visit(profiles, n)
+		if errors.Is(profiles.Err(), context.DeadlineExceeded) && ctx.Err() == nil && hasCode(err, adaptersdk.AdapterErrorCodeTimeout) {
+			return last, true, nil
+		}
 		if err != nil {
-			return err
+			return 0, false, err
 		}
 		written[n] = true
+		last = n
+		count++
 	}
-	return nil
+	return 0, false, nil
 }

@@ -206,10 +206,11 @@ func (a *Adapter) Fetch(ctx context.Context, call adaptersdk.Call, in adaptersdk
 		if err := s.fetchPull(ctx, repo, resume.pull, in, m, page, writtenAccounts, resume); err != nil {
 			return nil, err
 		}
-		if m.Selection.End && slices.ContainsFunc(in.ObjectKeys, func(key adaptersdk.ObjectKey) bool {
+		if m.Selection.End && (len(in.ObjectKeys) == 0 || slices.ContainsFunc(in.ObjectKeys, func(key adaptersdk.ObjectKey) bool {
 			n, ok := numeric(key.NativeId)
 			return ok && n > resume.pull.ID
-		}) {
+		})) {
+			// Persist the ordinary listing coordinate before leaving the profile continuation.
 			m.Selection.End = false
 			m.Selection.NextCursor = &envelope.Cursor{ModifiedAt: resume.pull.UpdatedAt, NativeId: id(resume.pull.ID)}
 		}
@@ -255,33 +256,71 @@ func (s source) fetchPull(ctx context.Context, repo repository, item coordinate,
 	accountsOnly := in.SchemaId == adaptersdk.FetchInputSchemaIdAccounts
 	h := history{pull: p, page: page, observed: m.CreatedAt, accounts: make(map[int64]account), accountsOnly: accountsOnly}
 	var pos historyPosition
-	var reviewers *[]string
-	if resume == nil {
-		h.remember(p.User)
-		reviewers = h.reviewers()
-	} else {
+	var after int64
+	if resume != nil {
 		pos = resume.position
-		h.truncated = !item.UpdatedAt.Equal(p.UpdatedAt)
+		h.timeline = resume.timeline
+		changed := !item.UpdatedAt.Equal(p.UpdatedAt)
+		h.truncated = changed
+		if changed && pos.collection == 0 && !resume.profiles {
+			pos, h.timeline = historyPosition{}, timelineProgress{}
+		}
 		if resume.activityRef != "" && resume.activityRef != activityRefKey(p.Head) {
 			pos.page = ""
 			h.truncated = true
 		}
-		h.currentRevision = resume.currentRevision && !h.truncated
+		if resume.profiles {
+			// Rebuild the account list without publishing the same PR history twice.
+			h.page, after = nil, resume.account
+		}
 	}
+	var reviewers *[]string
+	if pos == (historyPosition{}) {
+		h.remember(p.User)
+		reviewers = h.reviewers()
+	}
+	timeline := h.timeline
 	next, err := s.readHistory(ctx, repo, &h, pos)
 	if err != nil {
 		return err
 	}
-	if err := s.writeAccounts(ctx, &h, writtenAccounts); err != nil {
+	ready := h.timeline.readyAt
+	newReady := ready != nil && (timeline.readyAt == nil || ready.Before(*timeline.readyAt))
+	if !accountsOnly && (resume == nil || h.timelineDone || newReady) {
+		if pos != (historyPosition{}) {
+			reviewers = h.reviewers()
+			h.remember(p.User)
+		}
+		if h.page != nil {
+			if err := h.writePull(repo.ID, reviewers); err != nil {
+				return err
+			}
+		}
+	}
+	profilesResumed := resume != nil && resume.profiles
+	last, pending, err := s.writeAccounts(ctx, page, &h, writtenAccounts, after, profilesResumed)
+	if err != nil {
 		return err
 	}
-	if next != nil {
-		if len(in.ObjectKeys) == 0 {
-			h.truncated = true
-		} else {
-			m.Selection.End = false
-			m.Selection.NextCursor = historyNextCursor(p, *next, h.currentRevision)
+	targeted := len(in.ObjectKeys) > 0
+	if next != nil && !targeted {
+		h.truncated = true
+	}
+	if pending {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return adaptersdk.NewError(adaptersdk.AdapterErrorCodeTimeout, "GitHub Fetch deadline exceeded")
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if profilesResumed && last == after {
+			return adaptersdk.NewError(adaptersdk.AdapterErrorCodeTimeout, "GitHub account enrichment made no progress")
+		}
+		m.Selection.End = false
+		m.Selection.NextCursor = historyNextCursor(item, pos, p.Head, timeline, &last)
+	} else if next != nil && targeted {
+		m.Selection.End = false
+		m.Selection.NextCursor = historyNextCursor(p.coordinate, *next, p.Head, h.timeline, nil)
 	}
 	if h.truncated {
 		m.Completeness = envelope.ManifestCompletenessPartial
@@ -291,10 +330,7 @@ func (s source) fetchPull(ctx context.Context, repo repository, item coordinate,
 			})
 		}
 	}
-	if accountsOnly || resume != nil {
-		return nil
-	}
-	return h.writePull(repo.ID, reviewers)
+	return nil
 }
 
 func (h *history) reviewers() *[]string {
@@ -345,7 +381,7 @@ func (h *history) writePull(repoID int64, reviewers *[]string) error {
 	record := envelope.MergeRequestV1{
 		ProjectNativeId: id(repoID), Iid: &p.Number, Title: optional(p.Title), State: state, Draft: p.Draft,
 		AuthorAccountNativeId: p.User.nativeID(), SourceBranch: p.Head.Ref, TargetBranch: p.Base.Ref,
-		HeadSha: p.Head.SHA, BaseSha: optional(p.Base.SHA), OpenedAt: p.OpenedAt, ReadyAt: h.readyAt,
+		HeadSha: p.Head.SHA, BaseSha: optional(p.Base.SHA), OpenedAt: p.OpenedAt, ReadyAt: h.timeline.readyAt,
 		ClosedAt: p.ClosedAt, MergedAt: p.MergedAt, UpdatedAt: &p.UpdatedAt,
 		ReviewerField: &reviewerField, ReviewerAccountNativeIds: reviewers,
 	}

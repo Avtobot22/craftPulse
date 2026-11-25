@@ -13,7 +13,7 @@ import {
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser, SessionController } from '@/shared/auth'
 import { contentGridProps, layoutSizes, routePaths } from '@/shared/config'
-import { ErrorState } from '@/shared/ui'
+import { ErrorState, LoadingState } from '@/shared/ui'
 import {
   changeScope,
   projectParam,
@@ -22,6 +22,19 @@ import {
 } from '../model/scope'
 import { useScope } from '../model/use-scope'
 import './home-page.css'
+
+const report = {
+  path: routePaths.teamReport,
+  action: 'report.read',
+  label: 'Отчёт команды',
+}
+
+const reportPaths = [
+  report.path,
+  routePaths.metricPassport,
+  routePaths.metricCohort,
+  routePaths.savedView,
+]
 
 const settings = [
   {
@@ -38,6 +51,16 @@ const settings = [
     path: routePaths.users,
     action: 'users.manage',
     label: 'Пользователи и роли',
+  },
+  {
+    path: routePaths.workflowSettings,
+    action: 'process.manage',
+    label: 'Настройки процесса',
+  },
+  {
+    path: routePaths.targetSettings,
+    action: 'process.manage',
+    label: 'Целевые сроки',
   },
 ]
 
@@ -86,14 +109,46 @@ export function HomePage({
       (path === routePaths.users &&
         matchPath(path + '/:userId', location.pathname)),
   )
-  const allowed = settings.filter(({ action }) =>
-    current.actions.includes(action),
+  const selectedTeamId = scope.team?.id
+  const ownsProcess =
+    selectedTeamId !== undefined &&
+    current.roles.some(
+      ({ role, team_id }) =>
+        role === 'process_owner' && team_id === selectedTeamId,
+    )
+  const allowed = settings.filter(
+    ({ action }) =>
+      current.actions.includes(action) &&
+      (action !== 'process.manage' || ownsProcess),
   )
   const currentSetting = active && allowed.includes(active) ? active : undefined
+  const isProcessSetting = active?.action === 'process.manage'
+  const isReport = reportPaths.some((path) =>
+    matchPath(path, location.pathname),
+  )
+  const canReadReport = current.actions.includes(report.action)
+  const canManageProcess =
+    isProcessSetting && current.actions.includes('process.manage')
+  const hasProjectParam = Boolean(params.get(projectParam))
+  const checkingTeam =
+    (isReport ? canReadReport : canManageProcess) &&
+    hasAreas &&
+    (Boolean(params.get(teamParam)) || hasProjectParam) &&
+    !scope.teams.isSuccess
+  const checkingProject =
+    (isReport ? canReadReport : currentSetting?.action === 'process.manage') &&
+    hasProjectParam &&
+    Boolean(scope.team) &&
+    !scope.projects.isSuccess
+  const checkingScope = checkingTeam || checkingProject
   const availableViews = views.filter(({ action }) =>
     current.actions.includes(action),
   )
-  const missing = Boolean(active && !currentSetting)
+  const missing =
+    Boolean(active && !currentSetting) ||
+    ((isReport || currentSetting?.action === 'process.manage') &&
+      scope.invalid) ||
+    (isReport && !canReadReport)
   const noArea =
     !hasAreas &&
     !currentSetting &&
@@ -122,11 +177,12 @@ export function HomePage({
     if (heading) heading.tabIndex = -1
     const target = heading ?? main
     target?.focus()
-  }, [location.pathname, missing, noArea, restoring])
+  }, [location.pathname, missing, noArea, restoring, checkingScope])
 
   function updateArea(team: string, project?: string) {
     const { params: next, reset } = changeScope(params, team, project)
-    const nextPath = active?.path ?? routePaths.home
+    const nextPath =
+      active?.path ?? (isReport ? routePaths.teamReport : routePaths.home)
     if (!team) rememberScope(storageKey, '', '')
     void navigate(
       { pathname: nextPath, search: next.toString() },
@@ -182,7 +238,7 @@ export function HomePage({
 
   const teamError = scope.teams.isError && hasAreas
   const projectError = scope.projects.isError && !!scope.team
-  const overview = hasAreas && current.actions.includes('report.read')
+  const overview = hasAreas && canReadReport
   const hasNavigation = overview || allowed.length > 0
   return (
     <div
@@ -345,6 +401,25 @@ export function HomePage({
                 Обзор
               </Link>
             )}
+            {overview && scope.team && (
+              <Link
+                aria-current={
+                  location.pathname === report.path
+                    ? 'page'
+                    : isReport
+                      ? 'location'
+                      : undefined
+                }
+                to={goTo(report.path)}
+                onClick={() => {
+                  setMenuOpen(false)
+                  if (location.pathname === report.path && menuOpen)
+                    navButton.current?.focus()
+                }}
+              >
+                {report.label}
+              </Link>
+            )}
             {allowed.length > 0 && (
               <div role="group" aria-labelledby="settings-heading">
                 <Text id="settings-heading" as="h2" variant="subheader-1">
@@ -418,7 +493,11 @@ export function HomePage({
                   </ol>
                 </nav>
               )}
-              {missing ? (
+              {checkingScope ? (
+                teamError || projectError ? null : (
+                  <LoadingState />
+                )
+              ) : missing ? (
                 <Text as="h1" variant="header-1">
                   Объект или область недоступны
                 </Text>

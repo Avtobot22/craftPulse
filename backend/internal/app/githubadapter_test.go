@@ -46,6 +46,9 @@ type githubFixture struct {
 	activityRefChanged  atomic.Bool
 	firstActivity       atomic.Int32
 	forkUnavailable     atomic.Bool
+	historyScenario     atomic.Int32
+	manyAuthors         atomic.Bool
+	manyReviewers       atomic.Bool
 }
 
 func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -70,9 +73,20 @@ func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.serveLongComments(w, page, int(count))
 			return
 		}
+	case "/repos/demo/project-8/issues/1/timeline":
+		if scenario := f.historyScenario.Load(); scenario != 0 {
+			serveGitHubTimeline(w, page, scenario)
+			return
+		}
 	case "/repos/demo/fork/activity":
 		f.serveActivity(w, r)
 		return
+	}
+	if (f.manyAuthors.Load() || f.manyReviewers.Load()) && strings.HasPrefix(path, "/user/") {
+		if n, err := strconv.Atoi(strings.TrimPrefix(path, "/user/")); err == nil && n >= 1001 && n <= 1100 {
+			_, _ = fmt.Fprintf(w, `{"id":%d,"login":"author-%d","name":"Fixture author","type":"User"}`, n, n)
+			return
+		}
 	}
 	if path == "/repos/demo/project-7/pulls" && r.URL.Query().Get("per_page") != "1" {
 		if f.reorder.Load() {
@@ -123,13 +137,47 @@ func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if path == "/repos/demo/project-8/pulls/1" && f.activityRefChanged.Load() {
 		body = json.RawMessage(strings.ReplaceAll(string(body), `"ref": "topic"`, `"ref": "new-topic"`))
 	}
+	if path == "/repos/demo/project-8/pulls/1" && f.manyReviewers.Load() {
+		var reviewers strings.Builder
+		reviewers.WriteString(`"requested_reviewers": [`)
+		for n := 1001; n <= 1040; n++ {
+			_, _ = fmt.Fprintf(&reviewers, `{"id":%d},`, n)
+		}
+		body = json.RawMessage(strings.Replace(string(body), `"requested_reviewers": [`, reviewers.String(), 1))
+	}
 	_, _ = w.Write(body)
 }
 
 const (
 	_longCommentCount        = 4001
 	_commentContinuationPage = 10
+	_githubReadyTimeline     = 1
+	_githubUnchangedHead     = 2
+	_githubForcePushes       = 3
 )
+
+func serveGitHubTimeline(w http.ResponseWriter, page int, scenario int32) {
+	body := `[]`
+	switch scenario {
+	case _githubReadyTimeline:
+		switch page {
+		case 1:
+			body = `[{"id":301,"event":"converted_to_draft","created_at":"2026-11-21T10:01:00+03:00"}]`
+		case 13:
+			body = `[{"id":302,"event":"ready_for_review","created_at":"2026-11-21T10:02:00+03:00"}]`
+		}
+		if page < 25 {
+			w.Header().Set("Link", fmt.Sprintf(`<https://api.github.com/repositories/8/issues/1/timeline?page=%d>; rel="next"`, page+1))
+		}
+	case _githubForcePushes:
+		body = `[
+			{"id":305,"event":"head_ref_force_pushed","created_at":"2026-11-21T10:01:00+03:00",
+			 "commit_id":"3333333333333333333333333333333333333333","base_sha":"2222222222222222222222222222222222222222"},
+			{"id":306,"event":"head_ref_force_pushed","created_at":"2026-11-21T10:03:00+03:00"}
+		]`
+	}
+	_, _ = io.WriteString(w, body)
+}
 
 func (f *githubFixture) serveLongComments(w http.ResponseWriter, page, count int) {
 	if page == 1 {
@@ -156,6 +204,9 @@ func (f *githubFixture) serveLongComments(w http.ResponseWriter, page, count int
 		if n == _longCommentCount-1 {
 			author = 207
 		}
+		if f.manyAuthors.Load() {
+			author = 1000 + n
+		}
 		rows = append(rows, json.RawMessage(fmt.Sprintf(`{"id":%d,"user":{"id":%d},"created_at":"2026-11-21T10:04:00+03:00"}`, n, author)))
 	}
 	_ = json.NewEncoder(w).Encode(rows)
@@ -171,8 +222,14 @@ func (f *githubFixture) serveActivity(w http.ResponseWriter, r *http.Request) {
 	if f.activityRefChanged.Load() {
 		ref, token = "refs/heads/new-topic", "moved/page/2="
 	}
-	if query.Get("ref") != ref || query.Get("activity_type") != "push" || query.Get("direction") != "desc" {
+	if query.Get("ref") != ref || query.Has("activity_type") || query.Get("direction") != "desc" {
 		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	scenario := f.historyScenario.Load()
+	if scenario == _githubUnchangedHead || scenario == _githubReadyTimeline {
+		_, _ = io.WriteString(w, `[{"id":88,"activity_type":"push","ref":"refs/heads/topic","timestamp":"2026-11-21T09:59:00+03:00",
+			"before":"5555555555555555555555555555555555555555","after":"1111111111111111111111111111111111111111"}]`)
 		return
 	}
 	key := r.URL.Path
@@ -193,6 +250,9 @@ func (f *githubFixture) serveActivity(w http.ResponseWriter, r *http.Request) {
 	}
 	if ref != "refs/heads/topic" {
 		body = json.RawMessage(strings.ReplaceAll(string(body), "refs/heads/topic", ref))
+	}
+	if scenario == _githubForcePushes {
+		body = json.RawMessage(strings.ReplaceAll(string(body), `"activity_type": "push"`, `"activity_type": "force_push"`))
 	}
 	_, _ = w.Write(body)
 }
@@ -572,6 +632,148 @@ func TestGitHubAdapterContinuesLongHistory(t *testing.T) {
 	in.Cursor, in.ObjectKeys = nil, []adaptersdk.ObjectKey{}
 	_, accounts := githubRecords(t, e, in)
 	assert.Contains(t, accounts, "account/207", "account collection still reaches the 4,000th comment")
+}
+
+func TestGitHubAdapterUpdatesReadyAtAfterTimelineContinuation(t *testing.T) {
+	t.Parallel()
+	e, f := newGitHubFixture(t)
+	e.probe(t)
+	f.historyScenario.Store(_githubReadyTimeline)
+	in := e.target.Fetch
+	in.Scope.NativeScopeId = "8"
+	partial, first := githubRecords(t, e, in)
+	assert.Len(t, partial.Manifest.Selection.Truncated, 1)
+	assert.NotContains(t, string(first["merge_request/601"].Payload), "ready_at")
+
+	in.ObjectKeys = []adaptersdk.ObjectKey{{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "601"}}
+	p, _ := githubRecords(t, e, in)
+	next := p.Manifest.Selection.NextCursor
+	require.NotNil(t, next)
+	in.Cursor = &adaptersdk.Cursor{ModifiedAt: next.ModifiedAt, NativeId: next.NativeId}
+	p, records := githubRecords(t, e, in)
+	assert.False(t, p.Manifest.Selection.End)
+	assert.Empty(t, p.Manifest.Selection.Truncated)
+	ready := records["mr_event/timeline/302"]
+	require.NotNil(t, ready.EventTime)
+	assert.Equal(t, "2026-11-21T10:02:00+03:00", ready.EventTime.Format(time.RFC3339))
+	assert.Contains(t, string(records["merge_request/601"].Payload), `"ready_at":"2026-11-21T10:02:00+03:00"`)
+	next = p.Manifest.Selection.NextCursor
+	require.NotNil(t, next)
+	in.Cursor = &adaptersdk.Cursor{ModifiedAt: next.ModifiedAt, NativeId: next.NativeId}
+	p, records = githubRecords(t, e, in)
+	assert.True(t, p.Manifest.Selection.End)
+	assert.Empty(t, p.Manifest.Selection.Truncated)
+	assert.Contains(t, string(records["merge_request/601"].Payload), `"ready_at":"2026-11-21T10:02:00+03:00"`)
+}
+
+func TestGitHubAdapterCompletesHistoryWithoutHeadChanges(t *testing.T) {
+	t.Parallel()
+	e, f := newGitHubFixture(t)
+	e.probe(t)
+	f.historyScenario.Store(_githubUnchangedHead)
+	in := e.target.Fetch
+	in.Scope.NativeScopeId = "8"
+	for _, keys := range [][]adaptersdk.ObjectKey{nil, {{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "601"}}} {
+		in.ObjectKeys = keys
+		p, records := githubRecords(t, e, in)
+		assert.True(t, p.Manifest.Selection.End)
+		assert.Empty(t, p.Manifest.Selection.Truncated)
+		assert.Equal(t, envelope.ManifestCompletenessComplete, p.Manifest.Completeness)
+		for _, rec := range records {
+			assert.NotEqual(t, "mr_revision", string(rec.RecordKind))
+		}
+	}
+}
+
+func TestGitHubAdapterUsesForcePushActivityWithoutDuplicatingTimeline(t *testing.T) {
+	t.Parallel()
+	e, f := newGitHubFixture(t)
+	e.probe(t)
+	f.historyScenario.Store(_githubForcePushes)
+	f.commentCount.Store(240)
+	in := e.target.Fetch
+	in.Scope.NativeScopeId = "8"
+	in.ObjectKeys = []adaptersdk.ObjectKey{{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "601"}}
+	p, first := githubRecords(t, e, in)
+	assert.Contains(t, first, "mr_event/activity/9/91")
+	assert.Contains(t, first, "mr_revision/activity/9/91")
+	assert.Contains(t, string(first["mr_revision/activity/9/91"].Payload), strings.Repeat("1", 40))
+	assert.Contains(t, first, "mr_revision/timeline/305")
+	assert.NotContains(t, first, "mr_event/timeline/306")
+	next := p.Manifest.Selection.NextCursor
+	require.NotNil(t, next)
+	in.Cursor = &adaptersdk.Cursor{ModifiedAt: next.ModifiedAt, NativeId: next.NativeId}
+	p, rest := githubRecords(t, e, in)
+	assert.True(t, p.Manifest.Selection.End)
+	assert.NotContains(t, rest, "mr_event/activity/9/89")
+	assert.NotContains(t, rest, "mr_revision/activity/9/89")
+}
+
+func TestGitHubAdapterResumesAccountEnrichment(t *testing.T) {
+	t.Parallel()
+	e, f := newGitHubFixture(t)
+	e.probe(t)
+	f.commentCount.Store(100)
+	f.manyAuthors.Store(true)
+	for _, schema := range []adaptersdk.FetchInputSchemaId{
+		adaptersdk.FetchInputSchemaIdMergeRequests, adaptersdk.FetchInputSchemaIdAccounts,
+	} {
+		in := e.target.Fetch
+		in.Scope.NativeScopeId = "8"
+		in.SchemaId = schema
+		seen := make(map[string]struct{})
+		for step := 0; ; step++ {
+			require.Less(t, step, 8, "profile cursor did not reach the end")
+			p, records := githubRecords(t, e, in)
+			if step == 0 {
+				assert.NotContains(t, records, "account/1100")
+			}
+			for key, rec := range records {
+				if strings.HasPrefix(key, "account/1") {
+					assert.Contains(t, string(rec.Payload), "Fixture author")
+					assert.NotContains(t, seen, key)
+					seen[key] = struct{}{}
+				}
+				if step > 0 {
+					assert.NotContains(t, key, "mr_event/")
+				}
+			}
+			if p.Manifest.Selection.End {
+				break
+			}
+			next := p.Manifest.Selection.NextCursor
+			require.NotNil(t, next)
+			in.Cursor = &adaptersdk.Cursor{ModifiedAt: next.ModifiedAt, NativeId: next.NativeId}
+		}
+		assert.Len(t, seen, 100)
+	}
+}
+
+func TestGitHubAdapterResumesReviewerEnrichmentFromUpdatedSnapshot(t *testing.T) {
+	t.Parallel()
+	e, f := newGitHubFixture(t)
+	e.probe(t)
+	f.historyScenario.Store(_githubReadyTimeline)
+	in := e.target.Fetch
+	in.Scope.NativeScopeId = "8"
+	in.ObjectKeys = []adaptersdk.ObjectKey{{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "601"}}
+	p, _ := githubRecords(t, e, in)
+	next := p.Manifest.Selection.NextCursor
+	require.NotNil(t, next)
+
+	f.manyReviewers.Store(true)
+	in.Cursor = &adaptersdk.Cursor{ModifiedAt: next.ModifiedAt, NativeId: next.NativeId}
+	p, first := githubRecords(t, e, in)
+	assert.Contains(t, string(first["merge_request/601"].Payload), `"ready_at":"2026-11-21T10:02:00+03:00"`)
+	assert.Contains(t, first, "account/1001")
+	assert.NotContains(t, first, "account/1040")
+	next = p.Manifest.Selection.NextCursor
+	require.NotNil(t, next)
+	in.Cursor = &adaptersdk.Cursor{ModifiedAt: next.ModifiedAt, NativeId: next.NativeId}
+	_, rest := githubRecords(t, e, in)
+	assert.Contains(t, rest, "account/1040")
+	assert.NotContains(t, rest, "account/1001")
+	assert.NotContains(t, rest, "mr_event/timeline/302")
 }
 
 func TestGitHubAdapterContinuesActivityForSameHeadRef(t *testing.T) {
