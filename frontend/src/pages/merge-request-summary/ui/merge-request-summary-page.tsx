@@ -125,15 +125,16 @@ function SummaryContent({
       <p>Покрытие изменённых строк {metric(s.coverage, true)}</p>
       {s.tests && (
         <p>
-          Тесты: прошло {metric(s.tests.passed)}, упало {metric(s.tests.failed)},
-          ошибок {metric(s.tests.errored)}, пропущено {metric(s.tests.skipped)}
+          Тесты: прошло {metric(s.tests.passed)}, упало {metric(s.tests.failed)}
+          , ошибок {metric(s.tests.errored)}, пропущено{' '}
+          {metric(s.tests.skipped)}
         </p>
       )}
       {s.change && (
         <p>
           Файлов {metric(s.change.files)}, строк добавлено{' '}
-          {metric(s.change.added)}, удалено {metric(s.change.removed)}, функций с
-          ростом сложности {metric(s.change.complexity)}, новых групп клонов{' '}
+          {metric(s.change.added)}, удалено {metric(s.change.removed)}, функций
+          с ростом сложности {metric(s.change.complexity)}, новых групп клонов{' '}
           {metric(s.change.clones)}
         </p>
       )}
@@ -162,7 +163,7 @@ function SummaryContent({
                   : undefined
               }
             >
-              {item.rank !== null && `№${item.rank} · `}
+              {item.rank !== null && `№${String(item.rank)} · `}
               {item.kind}
               {item.rule && (
                 <>
@@ -176,7 +177,7 @@ function SummaryContent({
                   {' · '}
                   <code>
                     {item.path}
-                    {item.line !== null && `:${item.line}`}
+                    {item.line !== null && `:${String(item.line)}`}
                   </code>
                 </>
               )}

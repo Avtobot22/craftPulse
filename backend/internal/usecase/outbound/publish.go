@@ -32,6 +32,7 @@ type LoginRoutes interface {
 type Store interface {
 	SaveTarget(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, string, time.Time) error
 	Start(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, time.Time) (entity.ID, error)
+	ReserveCreate(context.Context, entity.ID, entity.ID, entity.PublicationTarget) (bool, error)
 	Finish(context.Context, entity.ID, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, entity.Publication, time.Time) error
 }
 
@@ -100,16 +101,15 @@ func (u *UseCase) RunPublish(ctx context.Context, job entity.OutboundPublishJob,
 		}
 	}
 
-	outcome, previousID, retry := u.publish(ctx, org, &s, target)
+	outcome, createAttempted, retry := u.publish(ctx, org, action, &s, target)
 	actionOutcome := outcome
-	if finalAttempt && outcome.Status == entity.PublicationUnknown {
+	if finalAttempt && outcome.Status == entity.PublicationUnknown && createAttempted {
 		// A timed-out write can leave the worker context canceled. Give the
 		// read-only lookup its own deadline; never issue another write here.
 		probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		id, findErr := u.d.Adapter.FindPublished(probeCtx, org, s.ConnectionID, target)
 		cancel()
-		// A marker that existed before an update cannot confirm the new body.
-		if findErr == nil && id != "" && previousID == "" {
+		if findErr == nil && id != "" {
 			outcome = entity.Publication{Status: entity.PublicationSucceeded, ExternalID: id}
 		}
 	}
@@ -171,54 +171,74 @@ func (u *UseCase) RunPublish(ctx context.Context, job entity.OutboundPublishJob,
 	return retry
 }
 
-func (u *UseCase) publish(ctx context.Context, org entity.ID, s *entity.SummaryPublication, target entity.PublicationTarget) (entity.Publication, string, error) {
+func (u *UseCase) publish(ctx context.Context, org, action entity.ID, s *entity.SummaryPublication,
+	target entity.PublicationTarget,
+) (entity.Publication, bool, error) {
 	stale := entity.Publication{Status: entity.PublicationStale, ErrorCode: entity.PublicationHeadChanged}
 	failed := entity.Publication{Status: entity.PublicationFailed, ErrorCode: entity.PublicationProviderError}
 	denied := entity.Publication{Status: entity.PublicationFailed, ErrorCode: entity.WritePermissionMissing}
 	unknown := entity.Publication{Status: entity.PublicationUnknown, ErrorCode: entity.PublicationProviderError}
 
 	if s.Revision.Status == "stale" || s.MR.HeadSHA != s.Revision.HeadSHA {
-		return stale, "", nil
+		return stale, false, nil
 	}
 	if s.ConnectionID.IsZero() {
-		return failed, "", nil
+		return failed, false, nil
 	}
 
 	slug, err := u.d.Logins.LoginSlug(ctx, org)
 	if err != nil {
-		return failed, "", err
+		return failed, false, err
 	}
 	markdown := render(u.d.SiteURL, slug, &s.Revision)
 	externalID, err := u.d.Adapter.FindPublished(ctx, org, s.ConnectionID, target)
 	if err != nil {
 		if isSourceError(err, entity.SourceAuth) {
-			return denied, "", nil
+			return denied, false, nil
 		}
-		return failed, "", err
+		return failed, false, err
+	}
+	canWrite := externalID != ""
+	if !canWrite {
+		err = u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+			var err error
+			canWrite, err = u.d.Store.ReserveCreate(ctx, org, action, target)
+			return err
+		})
+		if err != nil {
+			return failed, false, err
+		}
 	}
 	current, err := u.d.Changes.CheckPublicationHead(ctx, org, s)
+	if errors.Is(err, entity.ErrPublicationHeadChanged) {
+		return stale, false, nil
+	}
 	if err != nil {
-		return failed, "", err
+		return failed, false, err
 	}
 	if !current {
-		return stale, "", nil
+		return entity.Publication{Status: entity.PublicationStale}, false, nil
+	}
+	// A missed marker does not prove that the earlier POST cannot still commit.
+	if !canWrite {
+		return unknown, false, errUnknown
 	}
 	result, err := u.d.Adapter.Publish(ctx, org, s.ConnectionID, entity.PublishInput{
 		PublicationTarget: target, ExternalID: externalID, HeadSHA: s.Revision.HeadSHA, Markdown: markdown,
 	})
 	switch {
 	case isSourceError(err, "head_conflict"):
-		return stale, "", nil
+		return stale, false, nil
 	case isSourceError(err, entity.SourceAuth):
-		return denied, "", nil
+		return denied, false, nil
 	case isSourceError(err, entity.SourceRateLimited), errors.Is(err, entity.ErrConnectionPaused):
-		return failed, "", err
+		return failed, false, err
 	case err != nil:
-		return unknown, externalID, errors.Join(errUnknown, err)
+		return unknown, externalID == "", errors.Join(errUnknown, err)
 	case result.Status == entity.PublicationUnknown:
-		return unknown, externalID, errUnknown
+		return unknown, externalID == "", errUnknown
 	default:
-		return result, "", nil
+		return result, false, nil
 	}
 }
 

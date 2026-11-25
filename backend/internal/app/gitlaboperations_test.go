@@ -384,9 +384,15 @@ func TestContract_GitLabPublishAndFindPublished(t *testing.T) {
 	f.botCannotSeeMR.Store(false)
 	assert.False(t, readGitLabOperation[adaptersdk.FindPublishedResult](t, e, "find-published", find).Found)
 
+	// A request to update a missing note must never turn into a POST.
+	in.ExternalId = new("1234")
+	out := readGitLabOperation[adaptersdk.PublishResult](t, e, "publish", in)
+	assert.Equal(t, adaptersdk.PublishResultOutcomeFailed, out.Outcome)
+	in.ExternalId = nil
+
 	// Lose the create response after GitLab accepts it. The next Publish must update it.
 	f.dropReply.Store(true)
-	out := readGitLabOperation[adaptersdk.PublishResult](t, e, "publish", in)
+	out = readGitLabOperation[adaptersdk.PublishResult](t, e, "publish", in)
 	assert.Equal(t, adaptersdk.PublishResultOutcomeUnknown, out.Outcome)
 	found := readGitLabOperation[adaptersdk.FindPublishedResult](t, e, "find-published", find)
 	require.True(t, found.Found)

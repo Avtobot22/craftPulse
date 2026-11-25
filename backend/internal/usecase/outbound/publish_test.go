@@ -26,6 +26,8 @@ type publicationFixture struct {
 	creates, completed       int
 	loseReply, denied, stale bool
 	denyLookup               bool
+	delayVisibility          bool
+	pendingCreate            entity.ID
 }
 
 func (*publicationFixture) InOrgTx(ctx context.Context, _ entity.ID, fn func(context.Context) error) error {
@@ -42,7 +44,10 @@ func (*publicationFixture) LoginSlug(context.Context, entity.ID) (string, error)
 
 func (f *publicationFixture) CheckPublicationHead(context.Context, entity.ID, *entity.SummaryPublication) (bool, error) {
 	f.calls = append(f.calls, "head")
-	return !f.stale, nil
+	if f.stale {
+		return false, entity.ErrPublicationHeadChanged
+	}
+	return true, nil
 }
 
 func (f *publicationFixture) FinishPublication(ctx context.Context, _, _, _ entity.ID, p entity.Publication, complete func(context.Context) error) error {
@@ -74,7 +79,9 @@ func (f *publicationFixture) Publish(_ context.Context, _, _ entity.ID, in entit
 	}
 	if in.ExternalID == "" {
 		f.creates++
-		f.note = strconv.Itoa(f.creates)
+		if !f.delayVisibility {
+			f.note = strconv.Itoa(f.creates)
+		}
 	}
 	if f.loseReply {
 		f.loseReply = false
@@ -85,15 +92,27 @@ func (f *publicationFixture) Publish(_ context.Context, _, _ entity.ID, in entit
 
 func (f *publicationFixture) Start(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, time.Time) (entity.ID, error) {
 	f.actions = append(f.actions, entity.Publication{Status: "intent"})
-	return entity.ID{1}, nil
+	return entity.ID{byte(len(f.actions))}, nil
 }
 
-func (f *publicationFixture) Finish(_ context.Context, _, _, _, _ entity.ID, _ entity.PublicationTarget, p entity.Publication, _ time.Time) error {
+func (f *publicationFixture) ReserveCreate(_ context.Context, _, action entity.ID, _ entity.PublicationTarget) (bool, error) {
+	if !f.pendingCreate.IsZero() {
+		return false, nil
+	}
+	f.pendingCreate = action
+	return true, nil
+}
+
+func (f *publicationFixture) Finish(_ context.Context, _, action, _, _ entity.ID, _ entity.PublicationTarget, p entity.Publication, _ time.Time) error {
 	f.actions[len(f.actions)-1] = p
+	if p.Status == entity.PublicationSucceeded || p.Status != entity.PublicationUnknown && f.pendingCreate == action {
+		f.pendingCreate = entity.ID{}
+	}
 	return nil
 }
 
-func (*publicationFixture) SaveTarget(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, string, time.Time) error {
+func (f *publicationFixture) SaveTarget(context.Context, entity.ID, entity.ID, entity.ID, entity.PublicationTarget, string, time.Time) error {
+	f.pendingCreate = entity.ID{}
 	return nil
 }
 
@@ -164,6 +183,30 @@ func TestPublicationRecoversLostReply(t *testing.T) {
 	}
 }
 
+func TestPublicationWaitsForAmbiguousCreateAcrossRevisions(t *testing.T) {
+	t.Parallel()
+	f := newPublicationFixture()
+	f.loseReply, f.delayVisibility = true, true
+	if err := f.run(t, false); !errors.Is(err, errUnknown) {
+		t.Fatalf("first create: %v", err)
+	}
+	f.summary.Revision.No++
+	f.summary.Revision.ID = entity.ID{6}
+	f.summary.Revision.Publication = entity.Publication{}
+	if err := f.run(t, false); !errors.Is(err, errUnknown) || f.creates != 1 || f.completed != 0 ||
+		f.result.Status != entity.PublicationUnknown {
+		t.Fatalf("unresolved create: err=%v, creates=%d, completed=%d, outcome=%+v", err, f.creates, f.completed, f.result)
+	}
+	if err := f.run(t, true); err != nil || f.creates != 1 || f.completed != 1 || f.pendingCreate.IsZero() {
+		t.Fatalf("final lookup: err=%v, creates=%d, completed=%d, pending=%v", err, f.creates, f.completed, f.pendingCreate)
+	}
+	f.note = "1"
+	if err := f.run(t, false); err != nil || f.creates != 1 || f.last.ExternalID != "1" ||
+		f.result.Status != entity.PublicationSucceeded || !strings.Contains(f.last.Markdown, "revision_no=2") {
+		t.Fatalf("late create: err=%v, creates=%d, outcome=%+v, input=%+v", err, f.creates, f.result, f.last)
+	}
+}
+
 func TestPublicationReconcilesFinalUnknownAttempt(t *testing.T) {
 	t.Parallel()
 	f := newPublicationFixture()
@@ -175,13 +218,13 @@ func TestPublicationReconcilesFinalUnknownAttempt(t *testing.T) {
 	}
 }
 
-func TestPublicationFinalLookupDoesNotConfirmAnExistingNoteBody(t *testing.T) {
+func TestPublicationFinalUnknownUpdateDoesNotConfirmExistingNoteBody(t *testing.T) {
 	t.Parallel()
 	f := newPublicationFixture()
 	f.note, f.loseReply = "1", true
 	if err := f.run(t, true); err != nil || f.completed != 1 || f.creates != 0 ||
 		f.result.Status != entity.PublicationUnknown ||
-		!slices.Equal(f.calls, []string{"find", "head", "publish", "find"}) {
+		!slices.Equal(f.calls, []string{"find", "head", "publish"}) {
 		t.Fatalf("ambiguous update: err=%v, outcome=%+v, calls=%v", err, f.result, f.calls)
 	}
 }
@@ -218,7 +261,7 @@ func TestPublicationSuppressesStaleHeadAndRecordsDenial(t *testing.T) {
 			t.Fatal(err)
 		}
 		if f.result.Status != entity.PublicationFailed || f.result.ErrorCode != entity.WritePermissionMissing ||
-			f.summary.Revision.Status != "ready" || f.creates != 0 || f.audit[1].Outcome != entity.AuditDenied {
+			f.summary.Revision.Status != "ready" || f.creates != 0 || f.audit[1].Outcome != entity.AuditDenied || !f.pendingCreate.IsZero() {
 			t.Fatalf("denied: result=%+v, revision=%+v", f.result, f.summary.Revision)
 		}
 	})

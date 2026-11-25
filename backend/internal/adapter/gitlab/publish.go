@@ -227,6 +227,9 @@ func (a *Adapter) Publish(ctx context.Context, call adaptersdk.Call, in adapters
 	if err != nil {
 		return publicationLookupError(err)
 	}
+	if noteID == 0 && in.ExternalId != nil {
+		return failedPublication("provider_error"), nil
+	}
 	if in.ExpectedHeadSha != nil {
 		if err := s.checkPublicationHead(ctx, mr, *in.ExpectedHeadSha); err != nil {
 			return publicationLookupError(err)

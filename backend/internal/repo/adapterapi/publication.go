@@ -26,12 +26,15 @@ func (c *Caller) FindPublished(ctx context.Context, t entity.AdapterTarget, in e
 		return "", err
 	}
 	defer discard(resp, cancel)
-	var result FindPublishedResult
+	var result struct {
+		Found      *bool   `json:"found"`
+		ExternalID *string `json:"external_id"`
+	}
 	if err := decodeJSON(resp, &result); err != nil {
 		return "", c.record(t, cl.op, err)
 	}
-	id := deref(result.ExternalId)
-	if result.Found != (id != "") {
+	id := deref(result.ExternalID)
+	if result.Found == nil || *result.Found != (id != "") {
 		return "", c.record(t, cl.op, violation("inconsistent publication lookup result"))
 	}
 	return id, c.record(t, cl.op, nil)

@@ -1,6 +1,9 @@
 package entity
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 const (
 	MRComment                = "mr_comment"
@@ -12,6 +15,9 @@ const (
 	PublicationProviderError = "provider_error"
 	PublicationHeadChanged   = "head_changed"
 )
+
+// ErrPublicationHeadChanged means the stored or source head differs from the selected revision.
+var ErrPublicationHeadChanged = errors.New("publication: head changed")
 
 // Publication is the outcome recorded against a single summary revision.
 type Publication struct {

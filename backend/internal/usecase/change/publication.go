@@ -51,8 +51,14 @@ func (u *UseCase) CheckPublicationHead(ctx context.Context, org entity.ID, s *en
 	if errors.Is(err, entity.ErrNotFound) {
 		return false, nil
 	}
-	if err != nil || mr.HeadSHA != s.Revision.HeadSHA || s.Revision.Status == "stale" {
+	if err != nil {
 		return false, err
+	}
+	if mr.HeadSHA != s.Revision.HeadSHA {
+		return false, entity.ErrPublicationHeadChanged
+	}
+	if s.Revision.Status == "stale" {
+		return false, nil
 	}
 	source, err := u.summaryAreaSource(ctx, org, mr)
 	if err != nil {
@@ -62,8 +68,11 @@ func (u *UseCase) CheckPublicationHead(ctx context.Context, org entity.ID, s *en
 		return false, errPublicationConnectionChanged
 	}
 	head, err := u.readPublicationHead(ctx, org, source, mr.Source)
-	if err != nil || head != s.Revision.HeadSHA {
+	if err != nil {
 		return false, err
+	}
+	if head != s.Revision.HeadSHA {
+		return false, entity.ErrPublicationHeadChanged
 	}
 	var latest entity.SummaryRevision
 	err = u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {

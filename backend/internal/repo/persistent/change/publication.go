@@ -59,8 +59,11 @@ func (r *Repo) loadSummaryItems(ctx context.Context, org, revision entity.ID, fo
 func (r *Repo) SavePublication(ctx context.Context, org, revision entity.ID, p entity.Publication) error {
 	_, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE change.summary_revision
 		SET publication_status = $3, publication_external_id = NULLIF($4,''),
-		    publication_error_code = NULLIF($5,''), published_at = $6
-		WHERE organization_id = $1 AND id = $2`, uuid.UUID(org), uuid.UUID(revision), p.Status, p.ExternalID, p.ErrorCode, p.PublishedAt)
+		    publication_error_code = NULLIF($5,''), published_at = $6,
+		    status = CASE WHEN $7 AND status = 'ready' THEN 'stale' ELSE status END,
+		    stale_reason = CASE WHEN $7 AND status = 'ready' THEN 'new_head' ELSE stale_reason END
+		WHERE organization_id = $1 AND id = $2`, uuid.UUID(org), uuid.UUID(revision), p.Status, p.ExternalID, p.ErrorCode, p.PublishedAt,
+		p.Status == entity.PublicationStale && p.ErrorCode == entity.PublicationHeadChanged)
 	return err
 }
 

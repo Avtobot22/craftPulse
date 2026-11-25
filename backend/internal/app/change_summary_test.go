@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -25,6 +27,8 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/change"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/connect"
+	"github.com/Avtobot22/craftPulse/backend/migrations"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
@@ -42,8 +46,46 @@ func (a *summaryTestAdapter) Fetch(_ context.Context, _, _ entity.ID, in entity.
 	return io.NopCloser(bytes.NewReader(a.fetch(in))), nil
 }
 
+type summaryAccessSource struct{ *connect.UseCase }
+
+func (summaryAccessSource) CheckAccess(context.Context, entity.ID, entity.ID, entity.SourceAccessInput) (entity.SourceAccessResult, error) {
+	return entity.SourceAccessResult{Decisions: []entity.SourceAccessDecision{{Decision: entity.SourceAllowed}}}, nil
+}
+
+func summaryReadAPI(t *testing.T, e *identityEnv, instance entity.ID) {
+	t.Helper()
+	const nativeAccount = "summary-reader"
+	var accountID entity.ID
+	tx := persistent.NewTransactor(e.app)
+	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
+		ids, err := e.orgs.EnsureSourceAccounts(ctx, e.orgID, instance, []entity.SourceAccount{{NativeID: nativeAccount, Kind: entity.PersonHuman}})
+		accountID = ids[nativeAccount]
+		return err
+	}))
+	person := entity.ID(e.person(t, e.orgID, nativeAccount))
+	assignments, err := e.orgs.AssignAccounts(t.Context(), e.admin, entity.ID(uuid.New()), []entity.AssignmentRequest{{
+		SourceAccountID: accountID, ActorKind: entity.PersonHuman, PersonID: &person,
+	}})
+	require.NoError(t, err)
+	require.Len(t, assignments, 1)
+	require.Equal(t, entity.AssignmentSaved, assignments[0].Outcome)
+	_, err = e.owner.Exec(t.Context(), `UPDATE org.app_user SET person_id = $1 WHERE organization_id = $2 AND id = $3`,
+		uuid.UUID(person), uuid.UUID(e.orgID), uuid.UUID(e.admin.UserID))
+	require.NoError(t, err)
+
+	orgs, rights, err := newOrgAccess(e.app, e.clock, summaryAccessSource{e.connect}, nil)
+	require.NoError(t, err)
+	views := newView(e.app, viewModules{code: e.norm, rights: rights}, e.clock)
+	reg := prometheus.NewRegistry()
+	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg,
+		apiModules{orgs: orgs, access: rights, connections: e.connect, code: views})
+	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
+}
+
 type summaryNoteAdapter struct {
 	found, body string
+	unknown     bool
+	writes      int
 }
 
 func (a *summaryNoteAdapter) FindPublished(context.Context, entity.ID, entity.ID, entity.PublicationTarget) (string, error) {
@@ -51,6 +93,10 @@ func (a *summaryNoteAdapter) FindPublished(context.Context, entity.ID, entity.ID
 }
 
 func (a *summaryNoteAdapter) Publish(_ context.Context, _, _ entity.ID, in entity.PublishInput) (entity.Publication, error) {
+	a.writes++
+	if a.unknown {
+		return entity.Publication{Status: entity.PublicationUnknown}, nil
+	}
 	a.found, a.body = "101", in.Markdown
 	return entity.Publication{Status: entity.PublicationSucceeded, ExternalID: a.found}, nil
 }
@@ -265,13 +311,17 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 		AND state = 'available'`))
 
 	// Reproduce an upgrade from jobs whose arguments had no uniqueness key.
+	db := stdlib.OpenDBFromPool(e.owner)
+	defer db.Close()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.Core())
+	require.NoError(t, err)
+	_, err = provider.DownTo(t.Context(), 55)
+	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `UPDATE river_job SET unique_key = NULL WHERE kind = 'outbound.publish'`)
 	require.NoError(t, err)
 	_, err = e.owner.Exec(t.Context(), `INSERT INTO river_job (kind, args, queue, max_attempts)
 		SELECT kind, args || jsonb_build_object('summary_revision_id', $1::text), queue, max_attempts
 		FROM river_job WHERE kind = 'outbound.publish' AND state = 'available'`, uuid.NewString())
-	require.NoError(t, err)
-	_, err = e.owner.Exec(t.Context(), `DELETE FROM goose_db_version WHERE version_id = 56`)
 	require.NoError(t, err)
 	_, err = migrate(t.Context(), e.owner)
 	require.NoError(t, err)
@@ -308,7 +358,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	current, err := u.CheckPublicationHead(t.Context(), e.orgID, &previous)
 	require.NoError(t, err)
 	assert.False(t, current, "a superseded revision cannot publish even when the head is unchanged")
-	adapter := &summaryNoteAdapter{}
+	adapter := &summaryNoteAdapter{unknown: true}
 	publisher, err := newPublisher(e.app, u, adapter, _site, prometheus.NewRegistry())
 	require.NoError(t, err)
 	var publishJobID int64
@@ -318,6 +368,12 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	var publishJob entity.OutboundPublishJob
 	require.NoError(t, json.Unmarshal(args, &publishJob))
 	require.NotEqual(t, entity.ID(ready), publishJob.SummaryRevisionID)
+	for range 2 {
+		require.Error(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false))
+		require.Equal(t, 1, adapter.writes)
+		assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.target WHERE pending_create_action_id IS NOT NULL`))
+	}
+	adapter.unknown, adapter.found = false, "101"
 	require.NoError(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false))
 	var no int
 	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT revision_no FROM change.summary_revision WHERE id = $1`, ready).Scan(&no))
@@ -331,15 +387,38 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	assert.Contains(t, adapter.body, fmt.Sprintf("%s/merge-requests/%s/summary?revision_no=%d&org_slug=demo", _site, mr, no))
 	assert.Contains(t, adapter.body, "Есть закрытые результаты")
 	assert.NotContains(t, adapter.body, "new-0")
-	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.target WHERE external_id = '101'`))
+	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.target WHERE external_id = '101' AND pending_create_action_id IS NULL`))
+	assert.Equal(t, 2, adapter.writes)
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM outbound.action WHERE status = 'succeeded'`))
 	assert.Equal(t, 1, count(t, `SELECT count(*) FROM audit.event WHERE operation = 'outbound.publish' AND outcome = 'succeeded'`))
 
-	// An unrelated base SHA leaves complete head findings newly observed and keeps the last good revision.
+	summaryReadAPI(t, e, *first.SourceInstanceID)
+	summaryPath := fmt.Sprintf("/api/v1/merge-requests/%s/summary", mr)
+
+	e.clock.Advance(time.Second)
+	e.submit(t, sast(h2, "h2-retry", sarifOf(hits[:5]...)))
+	run()
+	latestReady := checkReady(h2, "complete")
+	require.NotEqual(t, ready, latestReady)
 	base = strings.Repeat("e", 40)
 	h3 := strings.Repeat("d", 40)
 	e.clock.Advance(time.Second)
 	page = mrPage(h3, "v3", e.clock.Now())
+	// The publication rechecks the source before the new head is normalized.
+	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT id FROM river_job
+		WHERE kind = 'outbound.publish' AND state = 'available'`).Scan(&publishJobID))
+	publishedBody := adapter.body
+	require.NoError(t, publisher.RunPublish(t.Context(), publishJob, completeJob(publishJobID), false))
+	stale := decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, e.adminBrowser, summaryPath, "MergeRequestSummary"))
+	assert.Equal(t, latestReady, stale.Id)
+	assert.Equal(t, h2, stale.HeadSha)
+	assert.Equal(t, openapi.MergeRequestSummaryStatus("stale"), stale.Status)
+	assert.Equal(t, new("new_head"), stale.StaleReason)
+	assert.Equal(t, openapi.MergeRequestSummaryPublicationStatus(entity.PublicationStale), stale.Publication.Status)
+	assert.Equal(t, publishedBody, adapter.body)
+	assert.Equal(t, 2, adapter.writes)
+
+	// An unrelated base SHA leaves complete head findings newly observed and keeps the last good revision.
 	e.submit(t, page)
 	e.submit(t, e.codeReport(t, h3, "feature", "8106", sarifOf(hit{rule: "observed", path: "src/main.go", line: 3})))
 	run()
@@ -348,7 +427,7 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 	require.NoError(t, tx.InOrgTx(t.Context(), e.orgID, func(ctx context.Context) error {
 		last, err := deps.Store.LastGoodSummary(ctx, e.orgID, mr)
 		require.NoError(t, err)
-		assert.Equal(t, ready, uuid.UUID(last.ID))
+		assert.Equal(t, latestReady, uuid.UUID(last.ID))
 		assert.Equal(t, h2, last.HeadSHA)
 		assert.Equal(t, "stale", last.Status)
 		assert.False(t, last.BuiltAt.IsZero())
@@ -361,12 +440,6 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 			Status: entity.PublicationFailed, ErrorCode: entity.WritePermissionMissing,
 		})
 	}))
-	m := e.modules(t)
-	m.code = newView(e.app, viewModules{code: e.norm, rights: m.access}, e.clock)
-	reg := prometheus.NewRegistry()
-	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg, m)
-	e.router = httpctrl.NewRouter(zerolog.New(e.logs), reg, health.Probes{Ready: &health.Readiness{}}, api)
-	summaryPath := fmt.Sprintf("/api/v1/merge-requests/%s/summary", mr)
 	old := decode[openapi.MergeRequestSummary](t, codeRead(t, e.loginEnv, e.adminBrowser,
 		fmt.Sprintf("%s?revision_no=%d", summaryPath, previous.Revision.No), "MergeRequestSummary"))
 	assert.Equal(t, uuid.UUID(previous.Revision.ID), old.Id)

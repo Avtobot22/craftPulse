@@ -44,23 +44,41 @@ func (r *Repo) Start(ctx context.Context, org, connection, revision entity.ID, t
 	return entity.ID(id), err
 }
 
+func (r *Repo) ReserveCreate(ctx context.Context, org, action entity.ID, target entity.PublicationTarget) (bool, error) {
+	tag, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE outbound.target SET pending_create_action_id = $4
+		WHERE organization_id = $1 AND target_kind = $2 AND target_marker = $3 AND pending_create_action_id IS NULL`,
+		uuid.UUID(org), target.Kind, target.Marker, uuid.UUID(action))
+	return tag.RowsAffected() == 1, err
+}
+
 func (r *Repo) Finish(ctx context.Context, org, action, connection, revision entity.ID, target entity.PublicationTarget,
 	outcome entity.Publication, now time.Time,
 ) error {
 	conn := postgres.Conn(ctx, r.pool)
 	_, err := conn.Exec(ctx, `UPDATE outbound.action SET status = $3, error_code = NULLIF($4,''), completed_at = $5
 		WHERE organization_id = $1 AND id = $2`, uuid.UUID(org), uuid.UUID(action), outcome.Status, outcome.ErrorCode, now)
-	if err != nil || outcome.Status != entity.PublicationSucceeded {
+	if err != nil {
 		return err
 	}
-	return r.SaveTarget(ctx, org, connection, revision, target, outcome.ExternalID, now)
+	switch outcome.Status {
+	case entity.PublicationSucceeded:
+		return r.SaveTarget(ctx, org, connection, revision, target, outcome.ExternalID, now)
+	case entity.PublicationUnknown:
+		return nil
+	default:
+		_, err := conn.Exec(ctx, `UPDATE outbound.target SET pending_create_action_id = NULL
+			WHERE organization_id = $1 AND target_kind = $2 AND target_marker = $3 AND pending_create_action_id = $4`,
+			uuid.UUID(org), target.Kind, target.Marker, uuid.UUID(action))
+		return err
+	}
 }
 
 func (r *Repo) SaveTarget(ctx context.Context, org, connection, revision entity.ID, target entity.PublicationTarget,
 	externalID string, now time.Time,
 ) error {
 	_, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE outbound.target SET connection_id = $4, last_summary_revision_id = $5,
-		external_id = $6, updated_at = $7 WHERE organization_id = $1 AND target_kind = $2 AND target_marker = $3`,
+		external_id = $6, updated_at = $7, pending_create_action_id = NULL
+		WHERE organization_id = $1 AND target_kind = $2 AND target_marker = $3`,
 		uuid.UUID(org), target.Kind, target.Marker, uuid.UUID(connection), uuid.UUID(revision), externalID, now)
 	return err
 }
