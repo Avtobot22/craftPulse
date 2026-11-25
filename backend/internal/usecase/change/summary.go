@@ -178,9 +178,10 @@ func (u *UseCase) summaryAreaSource(ctx context.Context, org entity.ID, mr entit
 	if err != nil {
 		return entity.AreaSource{}, err
 	}
-	for _, s := range sources {
+	for i := range sources {
+		s := &sources[i]
 		if s.Active && s.ConnectionStatus == entity.ConnectionActive && s.InstanceID == mr.InstanceID && s.Kind == entity.ScopeRepository {
-			return s, nil
+			return *s, nil
 		}
 	}
 	return entity.AreaSource{}, entity.ErrNotFound

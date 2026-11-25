@@ -105,7 +105,8 @@ func renderMetric(b *strings.Builder, item *entity.SummaryItem) {
 	case "ci_attempts":
 		var m struct{ Metrics []entity.SeriesPoint }
 		if json.Unmarshal(item.Value, &m) == nil {
-			for _, p := range m.Metrics {
+			for i := range m.Metrics {
+				p := &m.Metrics[i]
 				if p.MetricID != "I03" {
 					continue
 				}
@@ -151,7 +152,8 @@ func renderStructure(b *strings.Builder, raw json.RawMessage) {
 	}
 	fmt.Fprintf(b, "- C15 Размер изменения: %s, файлов %d, +%d/−%d строк\n",
 		state(m.Size.State, m.Size.ReasonCode), m.Size.Total.Files, m.Size.Total.Added, m.Size.Total.Deleted)
-	for _, c := range m.Code {
+	for i := range m.Code {
+		c := &m.Code[i]
 		label := inline(c.Language)
 		increased := 0
 		for _, f := range c.Complexity.Deltas {

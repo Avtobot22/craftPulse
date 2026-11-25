@@ -27,7 +27,7 @@ type publicationFixture struct {
 	loseReply, denied, stale bool
 }
 
-func (f *publicationFixture) InOrgTx(ctx context.Context, _ entity.ID, fn func(context.Context) error) error {
+func (*publicationFixture) InOrgTx(ctx context.Context, _ entity.ID, fn func(context.Context) error) error {
 	return fn(ctx)
 }
 
@@ -91,12 +91,20 @@ func (f *publicationFixture) Record(_ context.Context, e entity.AuditEvent) erro
 }
 
 func newPublicationFixture() *publicationFixture {
-	return &publicationFixture{summary: entity.SummaryPublication{
-		MR: entity.SummaryMR{MRVersion: entity.MRVersion{HeadSHA: "current-head"}},
-		Revision: entity.SummaryRevision{MRID: entity.ID{2}, ID: entity.ID{3}, No: 1,
-			HeadSHA: "current-head", Status: "ready", PipelineState: "complete"},
-		ConnectionID: entity.ID{4},
-	}}
+	return &publicationFixture{
+		summary: entity.SummaryPublication{
+			MR: entity.SummaryMR{MRVersion: entity.MRVersion{HeadSHA: "current-head"}},
+			Revision: entity.SummaryRevision{
+				MRID:          entity.ID{2},
+				ID:            entity.ID{3},
+				No:            1,
+				HeadSHA:       "current-head",
+				Status:        "ready",
+				PipelineState: "complete",
+			},
+			ConnectionID: entity.ID{4},
+		},
+	}
 }
 
 func (f *publicationFixture) run(t *testing.T, finalAttempt bool) error {
