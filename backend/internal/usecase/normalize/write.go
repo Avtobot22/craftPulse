@@ -51,6 +51,9 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 	if err := w.reports(ctx, in); err != nil {
 		return nil, err
 	}
+	if err := w.analysisRuns(ctx, in); err != nil {
+		return nil, err
+	}
 	if err := w.tasks(ctx, in.tasks); err != nil {
 		return nil, err
 	}
@@ -149,7 +152,7 @@ func (u *UseCase) placeAreas(ctx context.Context, org entity.ID, in *input, obje
 		case entity.ObjectTask, entity.ObjectCIAttempt, entity.ObjectCIJob,
 			entity.ObjectCodeFile, entity.ObjectCodeFunction, entity.ObjectCloneGroup, entity.ObjectCodeReport,
 			entity.ObjectSecurityFinding, entity.ObjectAffectedPackage, entity.ObjectSecurityAdvisory,
-			entity.ObjectDocumentationRoot, entity.ObjectDocumentationFinding, entity.ObjectDocumentationReport:
+			entity.ObjectDocumentationRoot, entity.ObjectDocumentationFinding, entity.ObjectDocumentationReport, entity.ObjectAnalysisRun:
 			continue
 		case entity.ObjectMergeRequest, entity.ObjectCIRun, entity.ObjectDocument:
 			if o.CurrentAreaID == nil {

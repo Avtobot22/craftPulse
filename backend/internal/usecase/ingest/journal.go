@@ -65,6 +65,7 @@ func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, r io.Reader) (
 		return p, nil
 	}
 	p.Receipt.SourceInstanceID, p.Receipt.PackageHash, p.Receipt.ObjectKey = &instance, res.ContentHash, packageKey(rc.OrganizationID, rc.ID)
+	p.HasScanManifest = allowed && res.ScanManifest != nil
 	p.Records = records(res, instance, allowed)
 	if rc.Channel == entity.ChannelCI {
 		pkg, err := envelope.ReadCleaned(bytes.NewReader(cleaned.Bytes()), u.d.Limits)
@@ -230,13 +231,14 @@ func (u *UseCase) record(ctx context.Context, p *entity.PreparedPackage) (entity
 	if err := u.d.Repo.SaveReceipt(ctx, rc); err != nil {
 		return entity.Receipt{}, err
 	}
-	if rc.AcceptedCount > 0 {
+	if rc.AcceptedCount > 0 || p.HasScanManifest {
 		queue := entity.QueueBulk
 		if rc.Channel == entity.ChannelCI {
 			queue = entity.QueueInteractive
 		}
 		job := entity.NormalizeBatchJob{
-			OrganizationID: org, ReceiptID: rc.ID, ObservedVia: p.ObservedVia, CorrelationID: entity.ID(logger.CorrelationID(ctx)),
+			OrganizationID: org, ReceiptID: rc.ID, ObservedVia: p.ObservedVia, ScanManifest: p.HasScanManifest,
+			CorrelationID: entity.ID(logger.CorrelationID(ctx)),
 		}
 		if err := u.d.Queue.Enqueue(ctx, job, queue); err != nil {
 			return entity.Receipt{}, err

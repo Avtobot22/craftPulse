@@ -67,6 +67,12 @@ func (r *Repo) InsertReport(ctx context.Context, orgID entity.ID, rep *entity.Sc
 	if h := rep.History; h != nil {
 		p.HistoryFromSha, p.HistoryToSha, p.HistoryTruncated = text(h.FromSHA), text(h.ToSHA), pgtype.Bool{Bool: h.Truncated, Valid: true}
 	}
+	if rows.Dependencies != nil {
+		p.DependencyInventory, err = json.Marshal(rows.Dependencies)
+		if err != nil {
+			return fmt.Errorf("normalize: encode dependency inventory: %w", err)
+		}
+	}
 	id, err := r.q(ctx).InsertReport(ctx, p)
 	if err != nil {
 		return fmt.Errorf("normalize: insert report: %w", err)

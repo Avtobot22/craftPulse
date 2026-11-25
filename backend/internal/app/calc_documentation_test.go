@@ -37,6 +37,7 @@ func TestCalcDocumentation_ProfileReceiptsPublishCommitRevisions(t *testing.T) {
 	require.NoError(t, err)
 
 	var firstSeen time.Time
+	var earliestVersion float64
 	var firstAge int64
 	var firstID entity.ID
 	for i, stage := range []string{"broken", "date changed", "anchor fixed"} {
@@ -65,6 +66,15 @@ func TestCalcDocumentation_ProfileReceiptsPublishCommitRevisions(t *testing.T) {
 				assert.NotEqual(t, firstID, rev.ID)
 			}
 			checkDocsMetrics(t, e, rev, i)
+			analysis, err := e.calc.AnalysisSeries(t.Context(), e.orgID, entity.AnalysisScope{RepositoryID: scope.RepositoryID, SHA: scope.SHA})
+			require.NoError(t, err)
+			analysisRev, err := e.calc.Revision(t.Context(), e.orgID, analysis.ID, nil)
+			require.NoError(t, err)
+			if i == 0 {
+				earliestVersion = float64(e.report(t, rc.ID, "docs").FinishedAt.Unix())
+			}
+			codeValue(t, e, analysisRev, "D27", "", 1, entity.StateAssessed)
+			codeValue(t, e, analysisRev, "D27", "earliest_version", earliestVersion, entity.StateAssessed)
 			finding := docsAnchorAt(t, e, rev)
 			if i == 2 {
 				assert.Nil(t, finding)

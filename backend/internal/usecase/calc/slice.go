@@ -164,6 +164,13 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		}
 		inputs = append(inputs, securityInputs(reports)...)
 	}
+	if scope.Kind == _scopeAnalysis {
+		src, err := u.analysisSource(ctx, org, &rev, &series, scope.analysisScope())
+		if err != nil {
+			return err
+		}
+		inputs = append(inputs, src.inputs()...)
+	}
 	if !team.IsZero() {
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindStructure, ID: team.String(), Version: entity.GroupingCurrentStructure})
 	}
@@ -178,7 +185,7 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 		inputs = append(inputs, entity.RevisionInput{Kind: entity.InputKindTarget, ID: t.ID.String(), Version: strconv.Itoa(t.VersionNo)})
 	}
 	var structure int64
-	if scope.Kind != _scopeConnection && scope.Kind != _scopeCode && scope.Kind != _scopeDocumentation && scope.Kind != _scopeSecurity {
+	if scope.Kind == _scopeTeam || scope.Kind == _scopeRepository {
 		if structure, err = u.d.Structure.StructureVersion(ctx, org); err != nil {
 			return err
 		}
@@ -361,6 +368,9 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 		}
 		if security, ok := src.(*securitySource); ok {
 			return u.againSecurity(ctx, job, &rev, scope, security.revision.Reports)
+		}
+		if analysis, ok := src.(*analysisSource); ok {
+			return u.againAnalysis(ctx, job, &rev, scope.analysisScope(), analysis)
 		}
 		return u.again(ctx, job, &rev, scope, areas, collection, now, series.MetricSet == entity.MetricSetActivity)
 	})

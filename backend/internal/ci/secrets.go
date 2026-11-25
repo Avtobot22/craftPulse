@@ -109,6 +109,11 @@ func ScanSecrets(ctx context.Context, repo, base, head string) (*SecretScan, err
 	if strings.TrimSpace(string(shallow)) == "true" {
 		s.History.Truncated = true
 	}
+	s.History.ToAt = secretCommitTime(ctx, repo, head)
+	s.History.FromAt = s.History.ToAt
+	if s.History.FromSha != head {
+		s.History.FromAt = secretCommitTime(ctx, repo, s.History.FromSha)
+	}
 	for _, commit := range list {
 		paths, err := secretGit(ctx, repo, "diff-tree", "--root", "--no-commit-id", "--diff-merges=first-parent", "-r", "--no-renames", "--name-only", "--diff-filter=ACMT", "-z", commit, "--")
 		if err != nil {
@@ -183,6 +188,18 @@ func secretGit(ctx context.Context, repo string, args ...string) ([]byte, error)
 	return out.Bytes(), nil
 }
 
+func secretCommitTime(ctx context.Context, repo, sha string) *time.Time {
+	out, err := secretGit(ctx, repo, "show", "-s", "--format=%cI", sha, "--")
+	if err != nil {
+		return nil
+	}
+	at, err := time.Parse(time.RFC3339, strings.TrimSpace(string(out)))
+	if err != nil {
+		return nil
+	}
+	return new(at.UTC())
+}
+
 // Record writes only the safe reports. Repeated scans still recreate the in-memory scrubber.
 func (s *SecretScan) Record(r *Runner, component string) error {
 	r.Store.Scrubber = s.Scrubber
@@ -191,7 +208,8 @@ func (s *SecretScan) Record(r *Runner, component string) error {
 		findings []secrets.Finding
 		history  envelope.ScanHistory
 	}{
-		{"head", s.Head, envelope.ScanHistory{FromSha: r.Job.SHA, ToSha: r.Job.SHA}}, {"diff", s.Diff, s.History},
+		{"head", s.Head, envelope.ScanHistory{FromSha: r.Job.SHA, ToSha: r.Job.SHA, FromAt: s.History.ToAt, ToAt: s.History.ToAt}},
+		{"diff", s.Diff, s.History},
 	} {
 		tool := &Tool{ID: SecretsProfileID + "-" + scope.name, ProfileID: SecretsProfileID, ComponentID: component, Kind: "secrets", Format: "gitleaks_json", Producer: "gitleaks", ProducerVersion: GitleaksVersion, RulesHash: s.RulesHash}
 		entry, err := r.entry(tool)

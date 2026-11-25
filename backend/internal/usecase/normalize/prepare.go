@@ -43,6 +43,7 @@ type input struct {
 	ciRuns        []*ciRunCandidate
 	ciAttempts    []*ciAttemptCandidate
 	reports       []*reportCandidate
+	analysis      []analysisCandidate
 	importProject *entity.ID
 	manifests     []*manifestCandidate
 	// buildAttempts are the attempts that stand for a whole Jenkins build of the part without its manifest.

@@ -350,6 +350,7 @@ type CalcRecountJob struct {
 	CodeReceiptID     ID `json:"code_receipt_id,omitzero" river:"unique"`
 	DocsReceiptID     ID `json:"docs_receipt_id,omitzero" river:"unique"`
 	SecurityReceiptID ID `json:"security_receipt_id,omitzero" river:"unique"`
+	AnalysisReceiptID ID `json:"analysis_receipt_id,omitzero" river:"unique"`
 	CorrelationID     ID `json:"correlation_id"`
 }
 

@@ -49,6 +49,9 @@ func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, com
 	if !job.SecurityReceiptID.IsZero() {
 		return u.recountSecurity(ctx, job, complete)
 	}
+	if !job.AnalysisReceiptID.IsZero() {
+		return u.recountAnalysis(ctx, job, complete)
+	}
 	org := job.OrganizationID
 	var connectionAreas []entity.ID
 	if u.d.Activity != nil && (!job.TeamID.IsZero() || !job.ConnectionID.IsZero()) {
@@ -74,7 +77,8 @@ func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, com
 	var plans []due
 	for i := range all {
 		s := &all[i]
-		if s.MetricSet == entity.MetricSetCode || s.MetricSet == entity.MetricSetDocumentation || s.MetricSet == entity.MetricSetSecurity {
+		if s.MetricSet == entity.MetricSetCode || s.MetricSet == entity.MetricSetDocumentation ||
+			s.MetricSet == entity.MetricSetSecurity || s.MetricSet == entity.MetricSetAnalysis {
 			continue
 		}
 		if !job.ConnectionID.IsZero() && s.MetricSet != entity.MetricSetActivity {
@@ -163,6 +167,10 @@ func (u *UseCase) RunExtend(ctx context.Context, job entity.CalcExtendJob, compl
 		}
 		slot, ok := extendSlot(s.ID, now, loc)
 		if !ok || (last != nil && last.Status != entity.RevisionFailed && !last.StartedAt.Before(slot)) {
+			continue
+		}
+		if s.MetricSet == entity.MetricSetAnalysis {
+			plans = append(plans, analysisPlan(org, s.ID, entity.ID(logger.CorrelationID(ctx)), slot))
 			continue
 		}
 		areas, err := u.scopeAreas(ctx, org, scope)

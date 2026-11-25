@@ -1505,6 +1505,40 @@ func (q *Queries) GetObjects(ctx context.Context, arg GetObjectsParams) ([]GetOb
 	return items, nil
 }
 
+const insertAnalysisRun = `-- name: InsertAnalysisRun :exec
+INSERT INTO normalize.analysis_run (organization_id, receipt_id, known_seq, area_id, component_id, sha, tool_id, record_nos, metadata)
+VALUES ($1, $2, $3, $4, $5,
+        $6, $7, $8::integer[], $9)
+ON CONFLICT (organization_id, receipt_id, tool_id) DO NOTHING
+`
+
+type InsertAnalysisRunParams struct {
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+	KnownSeq       int64
+	AreaID         uuid.UUID
+	ComponentID    uuid.NullUUID
+	Sha            string
+	ToolID         string
+	RecordNos      []int32
+	Metadata       []byte
+}
+
+func (q *Queries) InsertAnalysisRun(ctx context.Context, arg InsertAnalysisRunParams) error {
+	_, err := q.db.Exec(ctx, insertAnalysisRun,
+		arg.OrganizationID,
+		arg.ReceiptID,
+		arg.KnownSeq,
+		arg.AreaID,
+		arg.ComponentID,
+		arg.Sha,
+		arg.ToolID,
+		arg.RecordNos,
+		arg.Metadata,
+	)
+	return err
+}
+
 const insertAreas = `-- name: InsertAreas :exec
 INSERT INTO normalize.area (organization_id, area_id, area_kind, last_change_seq)
 SELECT $1::uuid, ($2::uuid[])[i], ($3::text[])[i], 0
@@ -1839,57 +1873,60 @@ const insertReport = `-- name: InsertReport :one
 INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id, report_kind, mode, producer,
     producer_version, report_format, schema_version, parser_version, profile_id, rules_hash, config_hash, db_version, db_published_at,
     scope_hash, sha, artifact_digest, run_id, attempt_id, started_at, finished_at, exit_class, completeness, scanned_count, skipped_count,
-    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash, dependency_delta, dependency_base_sha)
+    skipped_targets, history_from_sha, history_to_sha, history_truncated, ref_name, language, docs_run_id, docs_file_hash,
+    dependency_delta, dependency_base_sha, dependency_inventory)
 VALUES ($1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11, $12,
     $13, $14, $15, $16, $17,
     $18, $19, $20, $21, $22, $23,
     $24, $25, $26, $27, $28,
     $29, $30, $31, $32, $33,
-    $34, $35, $36, $37, $38, $39)
+    $34, $35, $36, $37, $38,
+    $39, $40)
 RETURNING id
 `
 
 type InsertReportParams struct {
-	OrganizationID    uuid.UUID
-	ReceiptID         uuid.UUID
-	RecordNo          int32
-	KnownSeq          int64
-	AreaID            uuid.UUID
-	ComponentID       uuid.NullUUID
-	ReportKind        string
-	Mode              string
-	Producer          pgtype.Text
-	ProducerVersion   pgtype.Text
-	ReportFormat      string
-	SchemaVersion     string
-	ParserVersion     string
-	ProfileID         pgtype.Text
-	RulesHash         []byte
-	ConfigHash        []byte
-	DbVersion         pgtype.Text
-	DbPublishedAt     pgtype.Timestamptz
-	ScopeHash         []byte
-	Sha               pgtype.Text
-	ArtifactDigest    pgtype.Text
-	RunID             uuid.NullUUID
-	AttemptID         uuid.NullUUID
-	StartedAt         pgtype.Timestamptz
-	FinishedAt        pgtype.Timestamptz
-	ExitClass         string
-	Completeness      string
-	ScannedCount      pgtype.Int4
-	SkippedCount      pgtype.Int4
-	SkippedTargets    []byte
-	HistoryFromSha    pgtype.Text
-	HistoryToSha      pgtype.Text
-	HistoryTruncated  pgtype.Bool
-	RefName           pgtype.Text
-	Language          pgtype.Text
-	DocsRunID         pgtype.Text
-	DocsFileHash      []byte
-	DependencyDelta   pgtype.Text
-	DependencyBaseSha pgtype.Text
+	OrganizationID      uuid.UUID
+	ReceiptID           uuid.UUID
+	RecordNo            int32
+	KnownSeq            int64
+	AreaID              uuid.UUID
+	ComponentID         uuid.NullUUID
+	ReportKind          string
+	Mode                string
+	Producer            pgtype.Text
+	ProducerVersion     pgtype.Text
+	ReportFormat        string
+	SchemaVersion       string
+	ParserVersion       string
+	ProfileID           pgtype.Text
+	RulesHash           []byte
+	ConfigHash          []byte
+	DbVersion           pgtype.Text
+	DbPublishedAt       pgtype.Timestamptz
+	ScopeHash           []byte
+	Sha                 pgtype.Text
+	ArtifactDigest      pgtype.Text
+	RunID               uuid.NullUUID
+	AttemptID           uuid.NullUUID
+	StartedAt           pgtype.Timestamptz
+	FinishedAt          pgtype.Timestamptz
+	ExitClass           string
+	Completeness        string
+	ScannedCount        pgtype.Int4
+	SkippedCount        pgtype.Int4
+	SkippedTargets      []byte
+	HistoryFromSha      pgtype.Text
+	HistoryToSha        pgtype.Text
+	HistoryTruncated    pgtype.Bool
+	RefName             pgtype.Text
+	Language            pgtype.Text
+	DocsRunID           pgtype.Text
+	DocsFileHash        []byte
+	DependencyDelta     pgtype.Text
+	DependencyBaseSha   pgtype.Text
+	DependencyInventory []byte
 }
 
 func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uuid.UUID, error) {
@@ -1933,6 +1970,7 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (uui
 		arg.DocsFileHash,
 		arg.DependencyDelta,
 		arg.DependencyBaseSha,
+		arg.DependencyInventory,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
@@ -2542,6 +2580,167 @@ func (q *Queries) PlaceObjects(ctx context.Context, arg PlaceObjectsParams) erro
 		arg.Restricted,
 	)
 	return err
+}
+
+const readAnalysisDocumentVersions = `-- name: ReadAnalysisDocumentVersions :many
+WITH corpus AS (
+    SELECT DISTINCT v.document_id, d.path_prefix, r.profile_id
+    FROM normalize.report r JOIN normalize.docs_report d
+        ON (d.organization_id, d.report_id) = (r.organization_id, r.id)
+    JOIN normalize.docs_report_document link ON (link.organization_id, link.report_id) = (d.organization_id, d.report_id)
+    JOIN normalize.document_version v ON (v.organization_id, v.id) = (link.organization_id, link.document_version_id)
+    WHERE r.organization_id = $1 AND r.area_id = $2
+      AND r.sha = $6 AND r.component_id IS NOT DISTINCT FROM $3::uuid
+      AND r.known_seq <= $4 AND r.finished_at <= $5
+      AND r.completeness = 'complete' AND r.exit_class IN ('success', 'findings')
+)
+SELECT DISTINCT ON (v.document_id) v.id, r.id AS report_id, v.path, v.version_ref, r.finished_at AS observed_at
+FROM corpus c
+JOIN normalize.document_version v ON v.organization_id = $1 AND v.document_id = c.document_id
+JOIN normalize.docs_report_document link ON (link.organization_id, link.document_version_id) = (v.organization_id, v.id)
+JOIN normalize.docs_report d ON (d.organization_id, d.report_id) = (link.organization_id, link.report_id)
+JOIN normalize.report r ON (r.organization_id, r.id) = (d.organization_id, d.report_id)
+WHERE r.area_id = $2 AND r.component_id IS NOT DISTINCT FROM $3::uuid
+  AND d.path_prefix = c.path_prefix AND r.profile_id IS NOT DISTINCT FROM c.profile_id
+  AND r.known_seq <= $4 AND r.finished_at <= $5
+  AND r.completeness = 'complete' AND r.exit_class IN ('success', 'findings')
+ORDER BY v.document_id, r.finished_at, v.id, r.id
+`
+
+type ReadAnalysisDocumentVersionsParams struct {
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	ComponentID    uuid.NullUUID
+	KnownSeq       int64
+	AsOf           pgtype.Timestamptz
+	Sha            pgtype.Text
+}
+
+type ReadAnalysisDocumentVersionsRow struct {
+	ID         uuid.UUID
+	ReportID   uuid.UUID
+	Path       string
+	VersionRef string
+	ObservedAt pgtype.Timestamptz
+}
+
+func (q *Queries) ReadAnalysisDocumentVersions(ctx context.Context, arg ReadAnalysisDocumentVersionsParams) ([]ReadAnalysisDocumentVersionsRow, error) {
+	rows, err := q.db.Query(ctx, readAnalysisDocumentVersions,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.ComponentID,
+		arg.KnownSeq,
+		arg.AsOf,
+		arg.Sha,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReadAnalysisDocumentVersionsRow
+	for rows.Next() {
+		var i ReadAnalysisDocumentVersionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReportID,
+			&i.Path,
+			&i.VersionRef,
+			&i.ObservedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const readAnalysisRuns = `-- name: ReadAnalysisRuns :many
+SELECT a.id, a.receipt_id, a.known_seq, a.tool_id, a.metadata,
+       COALESCE((
+           SELECT jsonb_agg(jsonb_build_object(
+               'id', COALESCE(r.id, rejected.id, '00000000-0000-0000-0000-000000000000'::uuid),
+               'reason', CASE
+                   WHEN j.outcome = 'conflict' THEN 'report_conflict'
+                   WHEN j.outcome = 'rejected' THEN j.reason_code
+                   WHEN j.outcome = 'suppressed' THEN 'report_suppressed'
+                   WHEN rejected.id IS NOT NULL THEN rejected.reason_code
+                   WHEN r.id IS NOT NULL THEN ''
+                   WHEN j.record_no IS NOT NULL THEN 'report_not_normalized'
+                   ELSE 'report_record_missing'
+               END,
+               'dependencies', r.dependency_inventory
+           ) ORDER BY idx)
+           FROM unnest(a.record_nos) WITH ORDINALITY AS refs(no, idx)
+           LEFT JOIN ingest.record j ON j.organization_id = a.organization_id
+               AND j.receipt_id = a.receipt_id AND j.record_no = refs.no
+           LEFT JOIN normalize.report r ON r.organization_id = j.organization_id
+               AND r.receipt_id = COALESCE(j.first_receipt_id, j.receipt_id)
+               AND r.record_no = COALESCE(j.first_record_no, j.record_no) AND r.known_seq <= $1
+               AND r.area_id = a.area_id AND r.sha = a.sha AND r.component_id IS NOT DISTINCT FROM a.component_id
+           LEFT JOIN normalize.rejected_report rejected ON rejected.organization_id = j.organization_id
+               AND rejected.receipt_id = COALESCE(j.first_receipt_id, j.receipt_id)
+               AND rejected.record_no = COALESCE(j.first_record_no, j.record_no) AND rejected.known_seq <= $1
+               AND rejected.area_id = a.area_id AND rejected.sha = a.sha
+               AND rejected.component_id IS NOT DISTINCT FROM a.component_id
+       ), '[]'::jsonb)::jsonb AS reports
+FROM normalize.analysis_run a
+WHERE a.organization_id = $2 AND a.area_id = $3
+  AND a.sha = $4 AND a.component_id IS NOT DISTINCT FROM $5::uuid
+  AND a.known_seq <= $1
+ORDER BY a.known_seq DESC, a.receipt_id, a.tool_id
+`
+
+type ReadAnalysisRunsParams struct {
+	KnownSeq       int64
+	OrganizationID uuid.UUID
+	AreaID         uuid.UUID
+	Sha            string
+	ComponentID    uuid.NullUUID
+}
+
+type ReadAnalysisRunsRow struct {
+	ID        uuid.UUID
+	ReceiptID uuid.UUID
+	KnownSeq  int64
+	ToolID    string
+	Metadata  []byte
+	Reports   []byte
+}
+
+func (q *Queries) ReadAnalysisRuns(ctx context.Context, arg ReadAnalysisRunsParams) ([]ReadAnalysisRunsRow, error) {
+	rows, err := q.db.Query(ctx, readAnalysisRuns,
+		arg.KnownSeq,
+		arg.OrganizationID,
+		arg.AreaID,
+		arg.Sha,
+		arg.ComponentID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReadAnalysisRunsRow
+	for rows.Next() {
+		var i ReadAnalysisRunsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReceiptID,
+			&i.KnownSeq,
+			&i.ToolID,
+			&i.Metadata,
+			&i.Reports,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const readCIAttemptVersions = `-- name: ReadCIAttemptVersions :many
@@ -3295,6 +3494,44 @@ func (q *Queries) ReadTestExecutions(ctx context.Context, arg ReadTestExecutions
 			&i.CaseKey,
 			&i.Superseded,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const receiptAnalysisScopes = `-- name: ReceiptAnalysisScopes :many
+SELECT DISTINCT area_id, component_id, sha
+FROM normalize.analysis_run
+WHERE organization_id = $1 AND receipt_id = $2
+ORDER BY area_id, component_id, sha
+`
+
+type ReceiptAnalysisScopesParams struct {
+	OrganizationID uuid.UUID
+	ReceiptID      uuid.UUID
+}
+
+type ReceiptAnalysisScopesRow struct {
+	AreaID      uuid.UUID
+	ComponentID uuid.NullUUID
+	Sha         string
+}
+
+func (q *Queries) ReceiptAnalysisScopes(ctx context.Context, arg ReceiptAnalysisScopesParams) ([]ReceiptAnalysisScopesRow, error) {
+	rows, err := q.db.Query(ctx, receiptAnalysisScopes, arg.OrganizationID, arg.ReceiptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReceiptAnalysisScopesRow
+	for rows.Next() {
+		var i ReceiptAnalysisScopesRow
+		if err := rows.Scan(&i.AreaID, &i.ComponentID, &i.Sha); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

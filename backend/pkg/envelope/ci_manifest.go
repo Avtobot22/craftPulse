@@ -87,6 +87,8 @@ func scanSemantics(m *ScanManifestV1) string {
 			return at + ".profile_id: builtin requires a profile and image digest"
 		case r.SkippedCount != nil && *r.SkippedCount != len(r.SkippedTargets):
 			return at + ".skipped_count: differs from skipped_targets"
+		case r.EligibleFileCount != nil && r.ScannedCount != nil && *r.ScannedCount > *r.EligibleFileCount:
+			return at + ".scanned_count: exceeds eligible_file_count"
 		case r.Completeness == ScanToolRunCompletenessComplete && (len(r.SkippedTargets) > 0 || (r.History != nil && r.History.Truncated)):
 			return at + ".completeness: skipped or truncated scope cannot be complete"
 		case r.DbPublishedAt != nil && r.DbVersion == nil:

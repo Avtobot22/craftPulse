@@ -1879,9 +1879,11 @@ type ScanFunctionThresholds struct {
 
 // ScanHistory defines model for ScanHistory.
 type ScanHistory struct {
-	FromSha   string `json:"from_sha"`
-	ToSha     string `json:"to_sha"`
-	Truncated bool   `json:"truncated"`
+	FromAt    *time.Time `json:"from_at,omitempty"`
+	FromSha   string     `json:"from_sha"`
+	ToAt      *time.Time `json:"to_at,omitempty"`
+	ToSha     string     `json:"to_sha"`
+	Truncated bool       `json:"truncated"`
 }
 
 // ScanManifestV1 Версия 1 файла scan-manifest.json. Один элемент tools описывает один запуск инструмента; значения секретов и выдержки evidence не передаются.
@@ -1927,6 +1929,9 @@ type ScanToolRun struct {
 	DbPublishedAt  *time.Time              `json:"db_published_at"`
 	DbVersion      *string                 `json:"db_version"`
 
+	// EligibleFileCount Число пригодных файлов выбранного языка в области инструмента, включая пригодные файлы, которые он пропустил.
+	EligibleFileCount *int `json:"eligible_file_count,omitempty"`
+
 	// ExcludedTargets Пути, которые область профиля не анализирует (vendor, сгенерированный код, каталоги сборки). Исключение задаёт границу области и не делает запуск неполным, в отличие от skipped_targets.
 	ExcludedTargets    *[]ScanExcludedTarget   `json:"excluded_targets,omitempty"`
 	ExitClass          ScanToolRunExitClass    `json:"exit_class"`
@@ -1941,14 +1946,17 @@ type ScanToolRun struct {
 	ProducerVersion    string                  `json:"producer_version"`
 	ProfileId          *string                 `json:"profile_id"`
 	ProfileImageDigest *string                 `json:"profile_image_digest"`
-	ReportKind         ScanToolRunReportKind   `json:"report_kind"`
-	Reports            []ScanReport            `json:"reports"`
-	RulesHash          *string                 `json:"rules_hash"`
-	ScannedCount       *int                    `json:"scanned_count"`
-	ScopeHash          string                  `json:"scope_hash"`
-	Sha                *string                 `json:"sha"`
-	SkippedCount       *int                    `json:"skipped_count"`
-	SkippedTargets     []ScanSkippedTarget     `json:"skipped_targets"`
+
+	// QueueSeconds Измеренное время ожидания перед запуском инструмента в секундах.
+	QueueSeconds   *float64              `json:"queue_seconds,omitempty"`
+	ReportKind     ScanToolRunReportKind `json:"report_kind"`
+	Reports        []ScanReport          `json:"reports"`
+	RulesHash      *string               `json:"rules_hash"`
+	ScannedCount   *int                  `json:"scanned_count"`
+	ScopeHash      string                `json:"scope_hash"`
+	Sha            *string               `json:"sha"`
+	SkippedCount   *int                  `json:"skipped_count"`
+	SkippedTargets []ScanSkippedTarget   `json:"skipped_targets"`
 
 	// SourceDir Каталог от корня репозитория, от которого отчёт отсчитывает относительные пути, например src/main/java для JaCoCo XML. Без него относительные пути отсчитываются от корня.
 	SourceDir *string `json:"source_dir,omitempty"`

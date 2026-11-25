@@ -56,16 +56,16 @@ type parseInput struct {
 }
 
 type parsedReport struct {
-	formatVersion   string
-	findings        []entity.FindingOccurrence
-	execution       *envelope.JenkinsExecutionManifestV1
-	tests           []parsedTest
-	coverage        []parsedCoverage
-	code            *entity.CodeFacts
-	cloneExcluded   map[string]bool
-	dependencyDelta string
-
+	formatVersion     string
+	findings          []entity.FindingOccurrence
+	execution         *envelope.JenkinsExecutionManifestV1
+	tests             []parsedTest
+	coverage          []parsedCoverage
+	code              *entity.CodeFacts
+	cloneExcluded     map[string]bool
+	dependencyDelta   string
 	dependencyBaseSHA string
+	dependencies      *entity.DependencyInventory
 	docs              *entity.DocsReportFacts
 	// excluded are the files of a coverage report outside the repository.
 	excluded []entity.SkippedTarget
