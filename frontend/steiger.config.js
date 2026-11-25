@@ -5,7 +5,7 @@ export default defineConfig([
   ...fsd.configs.recommended,
   { ignores: ['src/shared/api/generated/**'] },
   {
-    // Report, task analysis and technical screens consume these public APIs as they land.
+    // Report, task analysis, technical and administration screens consume these public APIs as they land.
     files: [
       './src/entities/metric/**',
       './src/entities/activity/**',
@@ -13,6 +13,9 @@ export default defineConfig([
       './src/entities/check-report/**',
       './src/entities/finding/**',
       './src/entities/result-access/**',
+      './src/entities/connection/**',
+      './src/entities/sync/**',
+      './src/entities/receipt/**',
     ],
     rules: { 'fsd/insignificant-slice': 'off' },
   },

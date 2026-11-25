@@ -1,0 +1,11 @@
+.cp-sync-data-kind {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--g-spacing-2) var(--g-spacing-4);
+  margin: var(--g-spacing-2) 0;
+}
+
+.cp-sync-data-kind dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

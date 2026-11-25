@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { useQuery, focusManager } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBrowserRouter, createMemoryRouter } from 'react-router'
@@ -1194,4 +1201,100 @@ describe('technical screen routes', () => {
       ).not.toBeInTheDocument()
     },
   )
+})
+
+const withoutSettingsActions = {
+  ...currentUser,
+  actions: [],
+  areas: { teams: [], projects: [], services: [] },
+}
+const settingsAdmin = {
+  ...withoutSettingsActions,
+  actions: [
+    'connections.manage',
+    'imports.create',
+    'sync.read',
+    'receipts.read',
+    'accounts.manage',
+  ],
+}
+const importer = {
+  ...withoutSettingsActions,
+  actions: ['imports.create', 'receipts.read'],
+}
+
+describe('administration routes', () => {
+  it.each([
+    ['/settings/connections', 'Подключения'],
+    ['/settings/connections/new', 'Новое подключение'],
+    ['/settings/connections/c1', 'Настройки подключения'],
+    ['/settings/connections/c1/sync', 'Состояние сбора'],
+    ['/settings/ingest-conflicts?status=resolved', 'Конфликты приёма'],
+    ['/settings/import?schema_id=tasks&schema_version=1', 'Импорт'],
+    ['/settings/receipts?connection_id=c1', 'Журнал приёма'],
+    ['/settings/receipts/r1', 'Квитанция приёма'],
+    ['/settings/accounts', 'Учётные записи'],
+  ])('opens %s directly and again in a fresh router', async (path, heading) => {
+    const original = window.location.href
+    window.history.replaceState(null, '', path)
+    cleanups.push(() => {
+      window.history.replaceState(null, '', original)
+    })
+    for (let load = 0; load < 2; load += 1) {
+      const runtime = createAppRuntime(mockApi(settingsAdmin))
+      const router = createBrowserRouter(createAppRoutes(runtime))
+      const { dispose } = renderRouter(router, runtime)
+      expect(
+        await screen.findByRole('heading', { name: heading, level: 1 }),
+      ).toBeVisible()
+      expect(screen.getByRole('main')).toContainElement(
+        screen.getByRole('heading', { name: heading, level: 1 }),
+      )
+      expect(window.location.pathname + window.location.search).toBe(path)
+      cleanups.splice(cleanups.lastIndexOf(dispose), 1)
+      dispose()
+    }
+  })
+
+  it('shows all five settings links to the administrator', async () => {
+    mount('/settings/connections', mockApi(settingsAdmin))
+    const settings = await screen.findByRole('group', { name: 'Настройки' })
+    expect(
+      within(settings)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual([
+      'Подключения',
+      'Конфликты приёма',
+      'Импорт',
+      'Журнал приёма',
+      'Учётные записи',
+    ])
+  })
+
+  it('opens a receipt for an importer and shows only the import link', async () => {
+    mount('/settings/receipts/r1', mockApi(importer))
+    expect(
+      await screen.findByRole('heading', { name: 'Квитанция приёма' }),
+    ).toBeVisible()
+    const settings = screen.getByRole('group', { name: 'Настройки' })
+    expect(
+      within(settings)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['Импорт'])
+  })
+
+  it.each([
+    ['/settings/receipts', importer],
+    ['/settings/receipts/r1', withoutSettingsActions],
+    ['/settings/connections/c1/sync', importer],
+  ] as const)('denies %s without the required action', async (path, user) => {
+    mount(path, mockApi(user))
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Объект или область недоступны',
+      }),
+    ).toBeVisible()
+  })
 })
