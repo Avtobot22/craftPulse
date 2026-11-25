@@ -22,7 +22,6 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/adapter/github"
 	"github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk"
 	"github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk/contracttest"
-	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 	"github.com/Avtobot22/craftPulse/backend/pkg/health"
 )
 
