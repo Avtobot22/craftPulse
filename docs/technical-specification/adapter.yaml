@@ -59,6 +59,9 @@ x-craftpulse-identity:
   - {srs_row: Pipeline и job GitLab CI, provider: gitlab, object_kind: ci_attempt, native_ns: пусто, native_id: 'ID job, новый у каждой повторной попытки', mutable: 'имя job; логический job - `job_key` и отпечаток конфигурации'}
   - {srs_row: Репозиторий и PR GitHub.com, provider: github, object_kind: repository, native_ns: пусто, native_id: числовой ID репозитория, mutable: 'владелец и имя'}
   - {srs_row: Репозиторий и PR GitHub.com, provider: github, object_kind: merge_request, native_ns: пусто, native_id: числовой ID PR, mutable: 'номер PR, название'}
+  - {srs_row: Событие PR GitHub.com, provider: github, object_kind: mr_event, native_ns: глобальный ID PR, native_id: 'коллекция REST и ID события через `/`; если числового ID нет, используется node_id', mutable: состояние ревью}
+  - {srs_row: Ревизия PR GitHub.com, provider: github, object_kind: mr_revision, native_ns: глобальный ID PR, native_id: ключ события смены head, mutable: head и base SHA}
+  - {srs_row: Учётная запись GitHub.com, provider: github, object_kind: account, native_ns: пусто, native_id: числовой ID пользователя, mutable: 'логин, имя, доступная почта, вид учётной записи'}
   - {srs_row: Запуск и job GitHub Actions, provider: github, object_kind: ci_run, native_ns: пусто, native_id: ID запуска workflow, mutable: имя workflow}
   - {srs_row: Запуск и job GitHub Actions, provider: github, object_kind: ci_attempt, native_ns: ID запуска workflow, native_id: 'номер попытки запуска и ID job через `/`', mutable: имя job}
   - {srs_row: Сборка Jenkins, provider: jenkins, object_kind: ci_run, native_ns: полное имя job, native_id: номер сборки, mutable: '-'}

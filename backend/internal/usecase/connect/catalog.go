@@ -29,6 +29,14 @@ var _catalog = []entity.AdapterInfo{
 		},
 	},
 	{
+		Provider: entity.ProviderGitHub, DisplayName: "GitHub.com", Editions: []string{"GitHub.com"},
+		DataKinds:  []string{"merge_requests", "accounts"},
+		ScopeKinds: []entity.ScopeKind{entity.ScopeRepository},
+		CredentialFields: []entity.CredentialField{
+			{Name: "token", Label: "Токен чтения GitHub API", Required: true, Secret: true},
+		},
+	},
+	{
 		// Areas are repositories by their normalized remote; https takes a token, ssh a key with host keys.
 		Provider: entity.ProviderGit, DisplayName: "Git по SSH или HTTPS",
 		DataKinds:  []string{"documents"},

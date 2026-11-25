@@ -63,25 +63,34 @@ func NewSourceClient(cfg ClientConfig) *SourceClient {
 
 // Do returns a 2xx response with a size-bounded body; every other outcome is a classified *Error.
 func (c *SourceClient) Do(req *http.Request) (*http.Response, error) {
-	return c.send(c.http, req, c.maxBody)
+	return c.send(c.http, req, c.maxBody, classifyStatus)
 }
 
 // DoDirect keeps source-specific credential headers on the requested origin.
 func (c *SourceClient) DoDirect(req *http.Request, maxBody int64) (*http.Response, error) {
-	client := *c.http
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return c.send(&client, req, min(c.maxBody, maxBody))
+	return c.doDirect(req, maxBody, classifyStatus)
 }
 
-func (c *SourceClient) send(client *http.Client, req *http.Request, maxBody int64) (*http.Response, error) {
+// DoGitHub classifies GitHub rate limits before discarding the response body.
+func (c *SourceClient) DoGitHub(req *http.Request, maxBody int64) (*http.Response, error) {
+	return c.doDirect(req, maxBody, classifyGitHubStatus)
+}
+
+func (c *SourceClient) doDirect(req *http.Request, maxBody int64, status func(*http.Response, time.Time) *Error) (*http.Response, error) {
+	client := *c.http
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return c.send(&client, req, min(c.maxBody, maxBody), status)
+}
+
+func (c *SourceClient) send(client *http.Client, req *http.Request, maxBody int64, status func(*http.Response, time.Time) *Error) (*http.Response, error) {
 	resp, err := client.Do(req) //nolint:gosec // the address is checked by netguard when the connection is made
 	if err != nil {
 		return nil, classifyError(err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		err := status(resp, c.now())
 		_, _ = io.CopyN(io.Discard, resp.Body, _drainBytes)
 		_ = resp.Body.Close()
-		err := classifyStatus(resp, c.now())
 		err.sourceStatus = resp.StatusCode
 		return nil, err
 	}
