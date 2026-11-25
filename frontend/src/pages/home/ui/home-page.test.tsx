@@ -1,17 +1,13 @@
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
-import { HomePage } from './home-page'
+import { changeScope } from '../model/scope'
 
-describe('HomePage', () => {
-  it('renders the application placeholder', () => {
-    render(
-      <MemoryRouter>
-        <HomePage />
-      </MemoryRouter>,
+describe('UI-01 scope changes', () => {
+  it('does not carry a project to another team', () => {
+    const { params, reset } = changeScope(
+      new URLSearchParams('team_id=old&project_id=project&view=overview'),
+      'new',
     )
-    expect(
-      screen.getByRole('heading', { name: 'craftPulse', level: 1 }),
-    ).toBeInTheDocument()
+    expect(params.toString()).toBe('view=overview&team_id=new')
+    expect(reset).toBe(true)
   })
 })

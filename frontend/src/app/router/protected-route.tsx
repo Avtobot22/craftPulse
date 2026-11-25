@@ -49,5 +49,5 @@ function SessionGate({ runtime }: { runtime: AppRuntime }) {
       />
     )
   }
-  return <Outlet />
+  return <Outlet context={query.data} />
 }
