@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { listTeams, listServices } from '@/shared/api'
+import type { components } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import {
   currentUser,
@@ -48,7 +49,8 @@ const secondTeam = {
   id: '0193a5b0-3333-7000-8000-000000000002',
   name: 'Другая команда',
 }
-const scopedProcessOwner = {
+type CurrentUserResponse = components['schemas']['CurrentUser']
+const scopedProcessOwner: CurrentUserResponse = {
   ...currentUser,
   actions: [...currentUser.actions, 'process.manage'],
   areas: { ...currentUser.areas, teams: [team, secondTeam] },
@@ -65,7 +67,11 @@ const scopedProcessOwner = {
   ],
 }
 
-function mockApi(user = currentUser, availableTeams = teams.data) {
+function mockApi(
+  user: CurrentUserResponse = currentUser,
+  availableTeams = teams.data,
+  requestProjects?: () => Promise<Response>,
+) {
   return vi.fn<typeof fetch>().mockImplementation((input) => {
     if (typeof input !== 'string') throw new Error('Expected a request URL')
     const url = new URL(input, 'https://craftpulse.test')
@@ -75,6 +81,7 @@ function mockApi(user = currentUser, availableTeams = teams.data) {
       case '/api/v1/teams':
         return Promise.resolve(jsonResponse({ ...teams, data: availableTeams }))
       case '/api/v1/projects':
+        if (requestProjects) return requestProjects()
         return Promise.resolve(
           jsonResponse(
             url.searchParams.get('team_id') === team?.id
@@ -295,6 +302,75 @@ describe('application routes', () => {
 })
 
 describe('UI-01', () => {
+  const scopedRoutes: [path: string, heading: string][] = [
+    [routePaths.teamReport, 'Отчёт команды'],
+    [routePaths.workflowSettings, 'Настройки процесса'],
+  ]
+
+  it.each(scopedRoutes)(
+    'waits for projects before rejecting an unavailable project on %s',
+    async (path, heading) => {
+      let respond!: (response: Response) => void
+      const pendingProjects = new Promise<Response>((resolve) => {
+        respond = resolve
+      })
+      const requestProjects = vi.fn(() => pendingProjects)
+      const foreignProject = '0193a5b0-4444-7000-8000-000000000002'
+      mount(
+        `${path}?team_id=${team.id}&project_id=${foreignProject}`,
+        mockApi(admin, teams.data, requestProjects),
+      )
+
+      await waitFor(() => {
+        expect(requestProjects).toHaveBeenCalled()
+      })
+      expect(
+        await screen.findByRole('region', { name: 'Загрузка' }),
+      ).toBeVisible()
+      expect(
+        screen.queryByRole('heading', { name: heading, level: 1 }),
+      ).toBeNull()
+      respond(jsonResponse(projects))
+
+      expect(
+        await screen.findByRole('heading', {
+          name: 'Объект или область недоступны',
+          level: 1,
+        }),
+      ).toBeVisible()
+      expect(
+        screen.queryByRole('heading', { name: heading, level: 1 }),
+      ).toBeNull()
+    },
+  )
+
+  it.each(scopedRoutes)(
+    'opens %s only after retrying a failed project request',
+    async (path, heading) => {
+      const requestProjects = vi
+        .fn(() => Promise.resolve(jsonResponse(projects)))
+        .mockResolvedValueOnce(problemResponse('internal_error', 500))
+      mount(
+        `${path}?team_id=${team.id}&project_id=${project.id}`,
+        mockApi(admin, teams.data, requestProjects),
+      )
+
+      await screen.findByText('Не удалось загрузить проекты')
+      expect(
+        screen.queryByRole('heading', { name: heading, level: 1 }),
+      ).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+
+      expect(
+        await screen.findByRole('heading', { name: heading, level: 1 }),
+      ).toBeVisible()
+      expect(requestProjects).toHaveBeenCalledTimes(2)
+      expect(screen.getByRole('combobox', { name: 'Проект' })).toHaveValue(
+        project.id,
+      )
+    },
+  )
+
   it('shows the team report and hides process settings for report.read alone', async () => {
     mount(`/?team_id=${team.id}`, mockApi())
     expect(

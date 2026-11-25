@@ -122,15 +122,25 @@ export function HomePage({
       (action !== 'process.manage' || ownsProcess),
   )
   const currentSetting = active && allowed.includes(active) ? active : undefined
-  const checkingProcessTeam =
-    active?.action === 'process.manage' &&
-    current.actions.includes(active.action) &&
-    hasAreas &&
-    Boolean(params.get(teamParam)) &&
-    scope.teams.isPending
+  const isProcessSetting = active?.action === 'process.manage'
   const isReport = reportPaths.some((path) =>
     matchPath(path, location.pathname),
   )
+  const canReadReport = current.actions.includes(report.action)
+  const canManageProcess =
+    isProcessSetting && current.actions.includes('process.manage')
+  const hasProjectParam = Boolean(params.get(projectParam))
+  const checkingTeam =
+    (isReport ? canReadReport : canManageProcess) &&
+    hasAreas &&
+    (Boolean(params.get(teamParam)) || hasProjectParam) &&
+    !scope.teams.isSuccess
+  const checkingProject =
+    (isReport ? canReadReport : currentSetting?.action === 'process.manage') &&
+    hasProjectParam &&
+    Boolean(scope.team) &&
+    !scope.projects.isSuccess
+  const checkingScope = checkingTeam || checkingProject
   const availableViews = views.filter(({ action }) =>
     current.actions.includes(action),
   )
@@ -138,7 +148,7 @@ export function HomePage({
     Boolean(active && !currentSetting) ||
     ((isReport || currentSetting?.action === 'process.manage') &&
       scope.invalid) ||
-    (isReport && !current.actions.includes(report.action))
+    (isReport && !canReadReport)
   const noArea =
     !hasAreas &&
     !currentSetting &&
@@ -167,7 +177,7 @@ export function HomePage({
     if (heading) heading.tabIndex = -1
     const target = heading ?? main
     target?.focus()
-  }, [location.pathname, missing, noArea, restoring, checkingProcessTeam])
+  }, [location.pathname, missing, noArea, restoring, checkingScope])
 
   function updateArea(team: string, project?: string) {
     const { params: next, reset } = changeScope(params, team, project)
@@ -228,7 +238,7 @@ export function HomePage({
 
   const teamError = scope.teams.isError && hasAreas
   const projectError = scope.projects.isError && !!scope.team
-  const overview = hasAreas && current.actions.includes(report.action)
+  const overview = hasAreas && canReadReport
   const hasNavigation = overview || allowed.length > 0
   return (
     <div
@@ -483,8 +493,10 @@ export function HomePage({
                   </ol>
                 </nav>
               )}
-              {checkingProcessTeam ? (
-                <LoadingState />
+              {checkingScope ? (
+                teamError || projectError ? null : (
+                  <LoadingState />
+                )
               ) : missing ? (
                 <Text as="h1" variant="header-1">
                   Объект или область недоступны

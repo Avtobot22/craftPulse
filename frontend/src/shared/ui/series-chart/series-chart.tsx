@@ -58,9 +58,12 @@ export function SeriesChart({
   const titleId = useId()
   const [chosenIds, setChosenIds] = useState<string[]>()
   const [selected, setSelected] = useState<{ id: string; start: string }>()
-  const visible = (
-    chosenIds ? series.filter(({ id }) => chosenIds.includes(id)) : series
-  ).slice(0, maxSeries)
+  const chosen = series.filter(({ id }) => chosenIds?.includes(id))
+  const useDefaultSelection =
+    !chosenIds ||
+    series.length <= 1 ||
+    (chosenIds.length > 0 && chosen.length === 0)
+  const visible = (useDefaultSelection ? series : chosen).slice(0, maxSeries)
   const time = new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'medium',
     timeStyle: 'medium',
@@ -95,19 +98,8 @@ export function SeriesChart({
     },
     xAxis: {
       type: 'datetime',
-      title: { text: `Начало периода (${timeZone})` },
-      labels: {
-        style: { fontSize: '14px' },
-        formatter: (tick: unknown) => {
-          const value =
-            tick && typeof tick === 'object' && 'value' in tick
-              ? tick.value
-              : tick
-          return typeof value === 'number' || value instanceof Date
-            ? time.format(value)
-            : ''
-        },
-      },
+      title: { text: 'Начало периода (UTC)' },
+      labels: { style: { fontSize: '14px' } },
     },
     yAxis: [
       {
