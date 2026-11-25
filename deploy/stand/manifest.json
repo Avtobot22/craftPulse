@@ -1,0 +1,372 @@
+{
+  "craftpulse": {
+    "adapter_contract_version": "1",
+    "adapter_schema_versions": {
+      "craftpulse-adapter-git": 1
+    },
+    "commit_sha": "df1d823148d1933f83f10ac0c9b6bd5e4b689bd0",
+    "core_schema_version": 20,
+    "images": {
+      "craftpulse-adapter-git": "ghcr.io/avtobot22/craftpulse-adapter-git@sha256:023274782df9022eb2532824fce1457d26bb092ed1b8f2e970686f36f6d96519",
+      "craftpulse-frontend": "ghcr.io/avtobot22/craftpulse-frontend@sha256:4a893b842c63a7ae4fc793bfe415a293d7a82b4cf0552a7d189d99bfdbaad74a",
+      "craftpulse-server": "ghcr.io/avtobot22/craftpulse-server@sha256:c55e951823c07b5cac50c8742aa28353b67bc2cd19ad4df6a4fe280385be0aba"
+    },
+    "schema_version": 1,
+    "url": "https://craftpulse.defects.team"
+  },
+  "format": 1,
+  "runtime_images": {
+    "craftpulse-ci90-agent": "jenkins/jenkins:2.580.2-jdk21@sha256:74401de6a6f92e1afe1b02d1c8e3d0c33f263bfb5275dd8813f9150355f2367b",
+    "craftpulse-ci90-db": "postgres:17.12-alpine3.23@sha256:318b8c3c90e13b6fc3a1e57b9bd260965ad578d46401b1b3cfdcc4e17ac81a3f",
+    "craftpulse-ci90-jenkins": "jenkins/jenkins:2.580.2-jdk21@sha256:74401de6a6f92e1afe1b02d1c8e3d0c33f263bfb5275dd8813f9150355f2367b",
+    "craftpulse-ci90-sonarqube": "sonarqube:26.11.0.134175-community@sha256:65541accbdb92e27fe770fc6ba99988a3dd5a0c71ffafd67f88abfad366996fa",
+    "craftpulse-gitlab-gitlab-1": "gitlab/gitlab-ce:19.6.1-ce.0@sha256:d3727f8b1a1ee6de44916bb9113f3dc40339dba2d6a6ad6ef331d0f239004056",
+    "craftpulse-gitlab-runner": "gitlab/gitlab-runner:v19.6.0@sha256:fb454a097fd26ea329b0234d6d82b53ae25f672bd625c278eaaee683a00f2507",
+    "craftpulse-product-frontend-1": "ghcr.io/avtobot22/craftpulse-frontend@sha256:4a893b842c63a7ae4fc793bfe415a293d7a82b4cf0552a7d189d99bfdbaad74a",
+    "craftpulse-product-postgres-1": "postgres:18.7-alpine3.23@sha256:339a86bf416979bb4d3d2e30a1f9e096e7302564faff4151b804cf53463059d5",
+    "craftpulse-product-seaweedfs-1": "chrislusf/seaweedfs:4.55@sha256:7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9",
+    "craftpulse-product-server-1": "ghcr.io/avtobot22/craftpulse-server@sha256:c55e951823c07b5cac50c8742aa28353b67bc2cd19ad4df6a4fe280385be0aba",
+    "craftpulse-product-worker-1": "ghcr.io/avtobot22/craftpulse-server@sha256:c55e951823c07b5cac50c8742aa28353b67bc2cd19ad4df6a4fe280385be0aba"
+  },
+  "sources": {
+    "confluence": {
+      "accounts": [
+        {
+          "login": "stand operator",
+          "permissions": [
+            "Admin ORGA and ORGB",
+            "Edit restricted page"
+          ]
+        },
+        {
+          "login": "cp88-collectors",
+          "permissions": [
+            "Read ORGA, ORGB and restricted page"
+          ]
+        },
+        {
+          "login": "cp88-a-read",
+          "permissions": [
+            "Read ORGA"
+          ]
+        },
+        {
+          "login": "cp88-a-restricted",
+          "permissions": [
+            "Read restricted page in addition to cp88-a-read"
+          ]
+        },
+        {
+          "login": "cp88-b-read",
+          "permissions": [
+            "Read ORGB"
+          ]
+        }
+      ],
+      "api_version": "2 (pages and spaces), 1 (system info and restrictions)",
+      "edition": "Cloud Premium",
+      "spaces": {
+        "ORGA": "360451",
+        "ORGB": "360600"
+      },
+      "url": "https://craftpulse-mvp.atlassian.net/wiki",
+      "version": "2ea405125918b5efc38ce02db553da024749aef1"
+    },
+    "github": {
+      "accounts": [
+        {
+          "login": "API collector",
+          "permissions": [
+            "Metadata, Contents, Pull requests and Actions read in three fixtures"
+          ]
+        },
+        {
+          "login": "clone reader",
+          "permissions": [
+            "One read-only deploy key per fixture"
+          ]
+        },
+        {
+          "login": "craftpulse-mvp-bot",
+          "permissions": [
+            "Metadata read",
+            "Write own PR summary through the comment service"
+          ]
+        },
+        {
+          "login": "stand operator",
+          "permissions": [
+            "Reset the three fixtures through deploy/github/manage.py"
+          ]
+        }
+      ],
+      "api_version": "2022-11-28",
+      "edition": "GitHub.com",
+      "runner": "GitHub-hosted ubuntu-24.04",
+      "url": "https://github.com/craftpulse-mvp",
+      "version": "2022-11-28"
+    },
+    "gitlab": {
+      "accounts": [
+        {
+          "login": "cp87-collector",
+          "permissions": [
+            "Reporter projects 1–4",
+            "read_api"
+          ]
+        },
+        {
+          "login": "cp87-clone",
+          "permissions": [
+            "Reporter projects 1–4",
+            "read_repository"
+          ]
+        },
+        {
+          "login": "cp87-mr-bot",
+          "permissions": [
+            "Reporter projects 1–4",
+            "api for MR comments"
+          ]
+        },
+        {
+          "login": "cp87-admin-a",
+          "permissions": [
+            "Owner cp87-org-a",
+            "OIDC administrator org-a"
+          ]
+        },
+        {
+          "login": "cp87-admin-b",
+          "permissions": [
+            "Owner cp87-org-b",
+            "OIDC administrator org-b"
+          ]
+        },
+        {
+          "login": "cp87-member",
+          "permissions": [
+            "Reporter cp87-org-a"
+          ]
+        },
+        {
+          "login": "cp87-no-repo",
+          "permissions": []
+        },
+        {
+          "login": "cp87-inactive",
+          "permissions": [
+            "Blocked"
+          ]
+        }
+      ],
+      "edition": "Community Edition",
+      "image": "gitlab/gitlab-ce:19.6.1-ce.0@sha256:d3727f8b1a1ee6de44916bb9113f3dc40339dba2d6a6ad6ef331d0f239004056",
+      "projects": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "url": "https://gitlab.defects.team",
+      "version": "19.6.1"
+    },
+    "jenkins": {
+      "accounts": [
+        {
+          "login": "cp90-admin",
+          "permissions": [
+            "Overall/Administer"
+          ],
+          "purpose": "stand operator"
+        },
+        {
+          "login": "cp90-reader",
+          "permissions": [
+            "Overall/Read",
+            "Job/Read:cp90-org-a",
+            "Job/Read:cp90-org-b"
+          ],
+          "purpose": "build API collector"
+        },
+        {
+          "login": "anonymous",
+          "permissions": []
+        }
+      ],
+      "edition": "Jenkins LTS",
+      "jobs": [
+        "cp90-org-a",
+        "cp90-org-b",
+        "cp90-control"
+      ],
+      "plugins": {
+        "antisamy-markup-formatter": "173.v680e3a_b_69ff3",
+        "apache-httpcomponents-client-4-api": "4.5.14-269.vfa_2321039a_83",
+        "asm-api": "9.11.1-226.vff833a_e4c58e",
+        "bootstrap5-api": "5.3.8-1048.va_c299057e35c",
+        "bouncycastle-api": "2.30.1.86.2-310.v4655f6742752",
+        "branch-api": "2.1303.v9f3b_95dc329d",
+        "caffeine-api": "3.3.1-214.v18eb_56b_34920",
+        "checks-api": "441.v54e82638ca_71",
+        "cloudbees-folder": "6.1107.v31f8955765c8",
+        "commons-lang3-api": "3.21.0-122.v6a_ea_4fd34049",
+        "commons-text-api": "1.15.0-218.va_61573470393",
+        "credentials": "1514.vb_01eb_014e7d4",
+        "credentials-binding": "728.v902a_273b_8947",
+        "display-url-api": "2.217.va_6b_de84cc74b_",
+        "durable-task": "686.v80ff80875b_82",
+        "echarts-api": "6.1.0-1321.v86c4c5114494",
+        "font-awesome-api": "7.3.1-1013.v0835a_879ec6d",
+        "git": "5.11.0",
+        "git-client": "6.7.1",
+        "gson-api": "2.15.0-212.v085f60a_8093b_",
+        "instance-identity": "203.v15e81a_1b_7a_38",
+        "ionicons-api": "94.vcc3065403257",
+        "jackson-annotations2-api": "2.23-28.v3db_d0f5f2387",
+        "jackson2-api": "2.22.4-449.v4ee9f4ec4123",
+        "jackson3-api": "3.3.0-106.v7fce5d2b_e547",
+        "jakarta-activation-api": "2.1.4-1",
+        "jakarta-mail-api": "2.1.5-1",
+        "jakarta-xml-bind-api": "4.0.9-19.v2b_a_5b_44d9a_1c",
+        "javax-activation-api": "1.2.0-8",
+        "jaxb": "2.3.9-143.v5979df3304e6",
+        "joda-time-api": "2.15.1-211.ve499f52b_da_33",
+        "jquery3-api": "3.7.1-687.v68d468e40b_30",
+        "json-api": "20260814-226.v20f9685d642c",
+        "junit": "1458.1460.vd53b_087eeb_2c",
+        "mailer": "534.v1b_36f5864073",
+        "matrix-auth": "3.3",
+        "mina-sshd-api-common": "2.20.1-199.v8ce76b_c93542",
+        "mina-sshd-api-core": "2.20.1-199.v8ce76b_c93542",
+        "pipeline-build-step": "605.v00486e8f4b_3e",
+        "pipeline-groovy-lib": "822.vc95f70dea_db_7",
+        "pipeline-input-step": "568.v0c9db_2652741",
+        "pipeline-milestone-step": "152.v6e22b_8cfc66c",
+        "pipeline-model-api": "2.2293.v6e7193cec599",
+        "pipeline-model-definition": "2.2293.v6e7193cec599",
+        "pipeline-model-extensions": "2.2293.v6e7193cec599",
+        "pipeline-stage-step": "345.va_96187909426",
+        "pipeline-stage-tags-metadata": "2.2293.v6e7193cec599",
+        "plain-credentials": "199.v9f8e1f741799",
+        "plugin-util-api": "7.1403.vd380b_c42e90c",
+        "prism-api": "1.30.0-741.v034eb_0b_0a_a_fa_",
+        "scm-api": "728.vc30dcf7a_0df5",
+        "script-security": "1436.v1082791135e4",
+        "snakeyaml-api": "2.7-152.vc672728cf536",
+        "snakeyaml-engine-api": "3.2-18.v885ed7ff698f",
+        "ssh-credentials": "372.va_250881b_08cd",
+        "structs": "362.va_b_695ef4fdf9",
+        "variant": "70.va_d9f17f859e0",
+        "woodstox-core-api": "7.3.0-16.v017f30ed004c",
+        "workflow-aggregator": "608.v67378e9d3db_1",
+        "workflow-api": "1429.v7a_1b_efb_a_f7c5",
+        "workflow-basic-steps": "1129.v60e3c7e6654d",
+        "workflow-cps": "4403.v471713a_cea_19",
+        "workflow-durable-task-step": "1479.v56e587f413a_7",
+        "workflow-job": "1624.ve973eb_34e031",
+        "workflow-multibranch": "842.v3a_b_59b_57b_e6e",
+        "workflow-scm-step": "487.v41313a_96b_65d",
+        "workflow-step-api": "724.v538c2362b_dfb_",
+        "workflow-support": "1035.v6a_23b_e298a_5d"
+      },
+      "url": "https://jenkins.defects.team",
+      "version": "2.580.2"
+    },
+    "jira": {
+      "accounts": [
+        {
+          "login": "cp88-admins",
+          "permissions": [
+            "Manage and write CPA, CPB, CPZ"
+          ]
+        },
+        {
+          "login": "cp88-collectors",
+          "permissions": [
+            "Browse CPA, CPB, CPZ and restricted-a"
+          ]
+        },
+        {
+          "login": "cp88-a-read",
+          "permissions": [
+            "Browse CPA and CPB"
+          ]
+        },
+        {
+          "login": "cp88-a-restricted",
+          "permissions": [
+            "Read restricted-a in addition to cp88-a-read"
+          ]
+        },
+        {
+          "login": "cp88-b-read",
+          "permissions": [
+            "Browse CPZ"
+          ]
+        }
+      ],
+      "api_version": "3",
+      "build": 100296,
+      "edition": "Cloud",
+      "projects": {
+        "CPA": "10002",
+        "CPB": "10003",
+        "CPZ": "10004"
+      },
+      "url": "https://craftpulse-mvp.atlassian.net",
+      "version": "1001.0.0-SNAPSHOT"
+    },
+    "runner": {
+      "accounts": [
+        {
+          "login": "cp87-test",
+          "permissions": [
+            "Execute tagged CI jobs for GitLab projects 1–4"
+          ]
+        }
+      ],
+      "edition": "GitLab Runner (shell executor)",
+      "id": 1,
+      "image": "gitlab/gitlab-runner:v19.6.0@sha256:fb454a097fd26ea329b0234d6d82b53ae25f672bd625c278eaaee683a00f2507",
+      "url": "https://gitlab.defects.team",
+      "version": "19.6.0"
+    },
+    "sonarqube": {
+      "accounts": [
+        {
+          "login": "admin",
+          "permissions": [
+            "system administrator"
+          ],
+          "purpose": "stand operator, default password changed"
+        },
+        {
+          "login": "cp90-reader",
+          "permissions": [
+            "Browse:cp90-org-a",
+            "See Source Code:cp90-org-a",
+            "Browse:cp90-org-b",
+            "See Source Code:cp90-org-b"
+          ],
+          "purpose": "Web API collector",
+          "token_type": "USER_TOKEN"
+        },
+        {
+          "login": "anonymous",
+          "permissions": []
+        }
+      ],
+      "edition": "Community Build",
+      "projects": [
+        "cp90-org-a",
+        "cp90-org-b",
+        "cp90-control"
+      ],
+      "url": "https://sonar.defects.team",
+      "version": "26.11.0.134175"
+    }
+  }
+}

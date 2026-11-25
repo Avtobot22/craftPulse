@@ -3,6 +3,9 @@
 [Манифест](instance.json) фиксирует образы и лимиты стенда после переноса [#397](https://github.com/Avtobot22/craftPulse/issues/397).
 Compose-файлы соответствуют каталогам на сервере.
 
+Перед показом выполни [шаг 0](snapshot/README.md). Команда восстанавливает начальный снимок
+по [manifest стенда](manifest.json) и сверяет состояние и версии источников.
+
 | Файл | Каталог |
 | --- | --- |
 | [GitLab](gitlab.compose.yaml) | `/opt/craftpulse/gitlab` |
