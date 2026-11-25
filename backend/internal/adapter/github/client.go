@@ -47,7 +47,7 @@ func (s source) request(ctx context.Context, operation, path string) (*http.Resp
 }
 
 func (s source) get(ctx context.Context, operation, path string, dst any) error {
-	resp, err := s.request(ctx, operation, path)
+	resp, err := s.request(ctx, operation, path) //nolint:bodyclose // DecodeJSON owns the body
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func nextPage(links []string, current int) (int, error) {
 func walk[T any](ctx context.Context, s source, operation, path string, query url.Values, firstOnly bool, visit func(T) error) error {
 	raw := query.Encode()
 	for current := 1; ; {
-		resp, err := s.request(ctx, operation, path+"?"+raw)
+		resp, err := s.request(ctx, operation, path+"?"+raw) //nolint:bodyclose // DecodeJSONArray owns the body
 		if err != nil {
 			if !firstOnly && current > 1 && hasCode(err, adaptersdk.AdapterErrorCodeNotFound) {
 				return adaptersdk.NewError(adaptersdk.AdapterErrorCodeUnavailable, "GitHub next page is unavailable")

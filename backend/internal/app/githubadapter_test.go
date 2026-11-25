@@ -249,9 +249,12 @@ func TestGitHubAdapterSourceFailures(t *testing.T) {
 		status int32
 		code   adaptersdk.AdapterErrorCode
 	}{
-		{401, adaptersdk.AdapterErrorCodeAuth}, {403, adaptersdk.AdapterErrorCodeAuth},
-		{429, adaptersdk.AdapterErrorCodeRateLimited}, {499, adaptersdk.AdapterErrorCodeRateLimited},
-		{500, adaptersdk.AdapterErrorCodeUnavailable}, {404, adaptersdk.AdapterErrorCodeUnavailable},
+		{401, adaptersdk.AdapterErrorCodeAuth},
+		{403, adaptersdk.AdapterErrorCodeAuth},
+		{429, adaptersdk.AdapterErrorCodeRateLimited},
+		{499, adaptersdk.AdapterErrorCodeRateLimited},
+		{500, adaptersdk.AdapterErrorCodeUnavailable},
+		{404, adaptersdk.AdapterErrorCodeUnavailable},
 		{-1, adaptersdk.AdapterErrorCodeTimeout},
 	} {
 		f.failure.Store(tc.status)

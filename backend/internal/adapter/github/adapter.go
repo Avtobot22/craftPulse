@@ -112,6 +112,12 @@ func writeRecord(page *adaptersdk.Page, r envelope.Record, payload any) error {
 }
 
 func object(kind, namespace, nativeID string, observed time.Time) envelope.Record {
-	return envelope.Record{RecordKind: envelope.RecordRecordKind(kind), PayloadSchema: kind + "/1", RecordClass: envelope.RecordRecordClassObject,
-		NativeNs: namespace, NativeId: nativeID, ObservedTime: &observed}
+	return envelope.Record{
+		RecordKind:    envelope.RecordRecordKind(kind),
+		PayloadSchema: kind + "/1",
+		RecordClass:   envelope.RecordRecordClassObject,
+		NativeNs:      namespace,
+		NativeId:      nativeID,
+		ObservedTime:  &observed,
+	}
 }

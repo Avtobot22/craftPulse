@@ -23,8 +23,10 @@ func historyEndpoints(repo repository, p pull) [4]endpoint {
 	issue := repo.path() + "/issues/" + number
 	pr := repo.path() + "/pulls/" + number
 	return [4]endpoint{
-		{"timeline", issue + "/timeline"}, {"reviews", pr + "/reviews"},
-		{"review_comments", pr + "/comments"}, {"comments", issue + "/comments"},
+		{"timeline", issue + "/timeline"},
+		{"reviews", pr + "/reviews"},
+		{"review_comments", pr + "/comments"},
+		{"comments", issue + "/comments"},
 	}
 }
 
@@ -155,14 +157,14 @@ func (h *history) add(collection, native string, item historyItem) error {
 	}
 	key := collection + "/" + native
 	switch kind {
-	case "draft":
+	case envelope.MrEventV2EventKindDraft:
 		h.seenDraft = true
-	case "ready":
+	case envelope.MrEventV2EventKindReady:
 		h.seenReady = true
 		if at != nil && (h.readyAt == nil || at.Before(*h.readyAt)) {
 			h.readyAt = at
 		}
-	case "head_pushed":
+	case envelope.MrEventV2EventKindHeadPushed:
 		sha := item.HeadSHA
 		if sha == "" {
 			sha = item.CommitID
@@ -186,6 +188,15 @@ func (h *history) add(collection, native string, item historyItem) error {
 			}
 			h.currentRevision = h.currentRevision || sha == h.pull.Head.SHA
 		}
+	case envelope.MrEventV2EventKindApproval,
+		envelope.MrEventV2EventKindClosed,
+		envelope.MrEventV2EventKindComment,
+		envelope.MrEventV2EventKindMerged,
+		envelope.MrEventV2EventKindReopened,
+		envelope.MrEventV2EventKindReview,
+		envelope.MrEventV2EventKindReviewerAssigned,
+		envelope.MrEventV2EventKindReviewerRemoved:
+		// These events require no additional history bookkeeping.
 	}
 	rec := object("mr_event", id(h.pull.ID), key, h.observed)
 	rec.PayloadSchema, rec.RecordClass, rec.EventTime = "mr_event/2", envelope.RecordRecordClassEvent, at

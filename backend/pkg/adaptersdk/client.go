@@ -68,15 +68,15 @@ func (c *SourceClient) Do(req *http.Request) (*http.Response, error) {
 
 // DoDirect keeps source-specific credential headers on the requested origin.
 func (c *SourceClient) DoDirect(req *http.Request, maxBody int64) (*http.Response, error) {
-	return c.doDirect(req, maxBody, classifyStatus)
+	return c.sendWithoutRedirects(req, maxBody, classifyStatus)
 }
 
 // DoGitHub classifies GitHub rate limits before discarding the response body.
 func (c *SourceClient) DoGitHub(req *http.Request, maxBody int64) (*http.Response, error) {
-	return c.doDirect(req, maxBody, classifyGitHubStatus)
+	return c.sendWithoutRedirects(req, maxBody, classifyGitHubStatus)
 }
 
-func (c *SourceClient) doDirect(req *http.Request, maxBody int64, status func(*http.Response, time.Time) *Error) (*http.Response, error) {
+func (c *SourceClient) sendWithoutRedirects(req *http.Request, maxBody int64, status func(*http.Response, time.Time) *Error) (*http.Response, error) {
 	client := *c.http
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return c.send(&client, req, min(c.maxBody, maxBody), status)
