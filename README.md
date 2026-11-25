@@ -207,9 +207,39 @@ location /api/v1/ingest/packages {
 }
 ```
 
-`manifest.source` задаёт провайдера и ключ экземпляра репозитория, а `manifest.area` - `repository` и его native ID. Репозиторий должен быть связан с проектом токена через `org.project_area`. Приём разрешает CI-записи, находки и файлы отчётов; записи другой области или вида отклоняются с причиной, остальные принимаются. Повтор пакета определяется внутри проекта, в том числе до окончания первого разбора; повторное задание не добавляет записи журнала.
+`manifest.source` задаёт провайдера и ключ экземпляра. В `manifest.area` GitLab и GitHub указывают `repository` и его native ID, а Jenkins указывает `ci_project` и полное имя job. Область должна быть связана с проектом токена через `org.project_area`. Приём разрешает CI-записи, находки и файлы отчётов; записи другой области или вида отклоняются с причиной, остальные принимаются. Повтор пакета определяется внутри проекта, в том числе до окончания первого разбора; повторное задание не добавляет записи журнала.
 
 Размер свыше 25 MiB даёт `413`, другой тип тела - `415`, невалидный конверт или CI-манифест - `422`. После отказа карантин удаляется. При недоступном хранилище ответ `503`, квитанция не создаётся. Аудит `uploadPackage` хранит ID токена и область проекта. Метрика `craftpulse_ingest_ci_packages_total{outcome,reason}` считает окончательные исходы и ошибки хранилища; значения токенов в журнал не попадают.
+
+### GitHub Actions и Jenkins
+
+Получить workflow или стадию Jenkins можно через `getCiConfiguration` с
+`ci_system=github_actions` или `ci_system=jenkins`. Задай адрес сайта в
+`CRAFTPULSE_URL`, а токен загрузки сохрани как секрет репозитория GitHub или
+Secret text в Jenkins с ID `CRAFTPULSE_UPLOAD_TOKEN`. Если ключ экземпляра
+адаптера отличается от host и порта CI, задай `CRAFTPULSE_INSTANCE_KEY`.
+Workflow GitHub использует `github.token` с правом `actions: read` для
+поиска числового ID job в текущей попытке run. Для своего workflow с
+переименованным job передай его display name в `CRAFTPULSE_ACTIONS_JOB_NAME`
+и токен Actions в `CRAFTPULSE_ACTIONS_TOKEN`.
+
+В Jenkins стадия требует узел с Docker Pipeline и настроенным SCM. В своём
+pipeline вызывай `craftpulse-ci jenkins record` после каждого выполнения шага
+с логическим именем стадии и шага, номером повтора, исходом и временем начала
+в RFC3339. Для matrix передавай оси через `--axes os=linux,arch=arm64`.
+Укажи общий для сборки каталог `--attempts-dir` всем ветвям и команде
+`jenkins finish`. После завершения ветвей архивируй полученный
+`execution-manifest.json` и передай его в `upload --execution-manifest`.
+Чтобы связать отчёты текущего сканирования с конкретным повтором, передай
+ключ из вывода `jenkins record` в `upload --jenkins-attempt-id`.
+
+Контейнерная проверка обеих сред на Linux с локальным тестовым HTTP-сервером:
+
+```sh
+docker build --target ci-runtime -f backend/ci.Dockerfile -t craftpulse-ci:local backend
+cd backend
+CRAFTPULSE_TEST_IMAGE=craftpulse-ci:local go test ./cmd/craftpulse-ci -run '^TestUpload_AdditionalCIProviders$'
+```
 
 ## Кандидаты связей задачи и MR
 

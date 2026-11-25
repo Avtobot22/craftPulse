@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
@@ -35,11 +36,13 @@ type Package struct {
 
 // Packer builds the canonical package of the job from its recorded tool runs.
 type Packer struct {
-	Job      *Job
-	Store    *Store
-	Scrubber Scrubber
-	Version  string
-	Now      func() time.Time
+	Job       *Job
+	Store     *Store
+	Scrubber  Scrubber
+	Version   string
+	Now       func() time.Time
+	Execution *envelope.JenkinsExecutionManifestV1
+	AttemptID string
 }
 
 type packedFile struct {
@@ -61,6 +64,9 @@ func (p *Packer) Build(limits envelope.Limits) (*Package, error) {
 		if runs[i].ProfileId != nil && *runs[i].ProfileId == SecretsProfileID && p.Scrubber == nil {
 			return nil, errors.New("secrets profile requires a fresh in-memory scrubber before upload")
 		}
+	}
+	if err := p.linkAttempts(runs); err != nil {
+		return nil, err
 	}
 	now := p.Now().UTC()
 	var files []packedFile
@@ -89,6 +95,11 @@ func (p *Packer) Build(limits envelope.Limits) (*Package, error) {
 	}
 	if err := w.AddScanManifest(scan); err != nil {
 		return nil, err
+	}
+	if p.Execution != nil {
+		if err := w.AddExecutionManifest(p.Execution); err != nil {
+			return nil, err
+		}
 	}
 	for _, f := range files {
 		if _, err := w.AddFile(f.path, f.mediaType, f.content); err != nil {
@@ -123,6 +134,46 @@ func (p *Packer) Build(limits envelope.Limits) (*Package, error) {
 	return &Package{Data: buf.Bytes(), Scan: scan}, nil
 }
 
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func (p *Packer) linkAttempts(runs []envelope.ScanToolRun) error {
+	var number *int
+	if p.Execution != nil {
+		if p.Job.Provider != envelope.SourceProviderJenkins || p.Execution.Job != p.Job.JobID ||
+			strconv.Itoa(p.Execution.BuildNumber) != p.Job.PipelineID || p.Execution.BuildUrl != p.Job.BuildURL || p.Execution.Sha != p.Job.SHA {
+			return errors.New("execution manifest belongs to another Jenkins build")
+		}
+		for _, step := range p.Execution.Steps {
+			key := envelope.JenkinsAttemptKey(p.Execution.Job, p.Execution.BuildNumber, step.Stage, step.Name, step.ConfigurationHash, step.Attempt)
+			if key == p.AttemptID {
+				number = &step.Attempt
+				break
+			}
+		}
+	}
+	if p.AttemptID == "" {
+		return nil
+	}
+	if p.Job.Provider != envelope.SourceProviderGithub && number == nil {
+		return errors.New("Jenkins attempt ID is absent from the execution manifest")
+	}
+	for i := range runs {
+		c := runs[i].Ci
+		if c != nil && valueOrEmpty(c.JobNativeId) == p.Job.JobID {
+			c.AttemptNativeId = &p.AttemptID
+			if number != nil {
+				c.AttemptNo = number
+			}
+		}
+	}
+	return nil
+}
+
 func (p *Packer) prepare(report *envelope.ScanReport) (packedFile, error) {
 	content, err := p.Store.ReadReport(report.File.Path)
 	if err != nil {
@@ -149,6 +200,12 @@ func (p *Packer) manifest(runs []envelope.ScanToolRun, now time.Time) *envelope.
 		Selection: envelope.Selection{End: true, Truncated: []envelope.TruncatedHistory{}},
 		Producer:  envelope.Producer{Name: _producer, Version: p.Version}, CreatedAt: now,
 		Completeness: envelope.ManifestCompletenessComplete,
+	}
+	if p.Job.Provider != "" {
+		m.Source.Provider = p.Job.Provider
+	}
+	if p.Job.Provider == envelope.SourceProviderJenkins {
+		m.Area.Kind = envelope.AreaRefKindCiProject
 	}
 	for i := range runs {
 		switch runs[i].Completeness {
@@ -183,6 +240,11 @@ func reportRecord(run *envelope.ScanToolRun, report *envelope.ScanReport, now ti
 		payload.RunNativeId, payload.AttemptNativeId = &run.Ci.RunNativeId, run.Ci.AttemptNativeId
 		if run.Ci.AttemptNativeId != nil {
 			ns = *run.Ci.AttemptNativeId
+		} else if run.Ci.Provider != envelope.ScanCiCoordinatesProviderGitlab {
+			ns = run.Ci.RunNativeId + "/" + valueOrEmpty(run.Ci.JobNativeId)
+			if run.Ci.AttemptNo != nil {
+				ns += "/" + strconv.Itoa(*run.Ci.AttemptNo)
+			}
 		}
 	}
 	body, err := json.Marshal(payload)

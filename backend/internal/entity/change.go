@@ -27,8 +27,11 @@ const (
 	ReasonProfileUnavailable = "profile_unavailable"
 )
 
-// CIGitLab is the CI system the configuration snippet is generated for on M0.
-const CIGitLab = "gitlab_ci"
+const (
+	CIGitLab        = "gitlab_ci"
+	CIGitHubActions = "github_actions"
+	CIJenkins       = "jenkins"
+)
 
 // CheckProfile is a profile of the catalog of a release: a builtin one runs from its image by digest, an import
 // one takes a ready report of the client and has no image. An empty Languages list means a check without a

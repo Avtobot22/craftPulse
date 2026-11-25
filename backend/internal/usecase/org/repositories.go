@@ -7,7 +7,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
 
-func (u *UseCase) ProjectRepositories(ctx context.Context, orgID, projectID entity.ID) ([]entity.AreaSource, error) {
+func (u *UseCase) ProjectSources(ctx context.Context, orgID, projectID entity.ID, kind entity.ScopeKind) ([]entity.AreaSource, error) {
 	var ids []entity.ID
 	err := u.tx.InOrgTx(ctx, orgID, func(ctx context.Context) error {
 		links, err := u.orgs.CurrentLinks(ctx, orgID, entity.LinkProjectArea, u.clock.Now())
@@ -28,5 +28,5 @@ func (u *UseCase) ProjectRepositories(ctx context.Context, orgID, projectID enti
 	if err != nil {
 		return nil, err
 	}
-	return slices.DeleteFunc(sources, func(s entity.AreaSource) bool { return s.Kind != entity.ScopeRepository }), nil
+	return slices.DeleteFunc(sources, func(s entity.AreaSource) bool { return s.Kind != kind }), nil
 }

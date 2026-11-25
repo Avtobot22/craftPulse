@@ -112,7 +112,7 @@ func jenkinsPage(t *testing.T, m *envelope.Manifest, builds []*envelope.Record, 
 }
 
 // jenkinsStepPackage is the package of the CI step of build demo #7 with its execution manifest.
-func jenkinsStepPackage(t *testing.T) []byte {
+func jenkinsStepPackage(t *testing.T, edits ...func(*envelope.Manifest, *envelope.ScanManifestV1)) []byte {
 	t.Helper()
 	var m envelope.Manifest
 	require.NoError(t, json.Unmarshal(jenkinsRetry(t, envelope.ManifestName), &m))
@@ -120,6 +120,9 @@ func jenkinsStepPackage(t *testing.T) []byte {
 	require.NoError(t, json.Unmarshal(jenkinsRetry(t, envelope.ScanManifestName), &scan))
 	var execution envelope.JenkinsExecutionManifestV1
 	require.NoError(t, json.Unmarshal(jenkinsRetry(t, envelope.ExecutionManifestName), &execution))
+	for _, edit := range edits {
+		edit(&m, &scan)
+	}
 	var buf bytes.Buffer
 	w, err := envelope.NewWriter(&buf, &m)
 	require.NoError(t, err)

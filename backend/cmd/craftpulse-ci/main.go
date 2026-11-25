@@ -56,18 +56,22 @@ type app struct {
 }
 
 func execute(ctx context.Context, args []string, stdout, stderr io.Writer, getenv func(string) string, cfg ci.ClientConfig) int {
-	redactedValues := []string{getenv(ci.TokenEnv)}
+	redactedValues := []string{getenv(ci.TokenEnv), getenv(ci.ActionsTokenEnv)}
+	a := &app{getenv: getenv, client: cfg}
+	root := a.root() //nolint:contextcheck // commands take the context from cmd.Context()
+	selected, _, _ := root.Find(args)
+	executionMetadata := selected != nil && selected.Parent() != nil && selected.Parent().Name() == "jenkins"
 	var secretScan *ci.SecretScan
 	var out, errs bytes.Buffer
 	originalOut, originalErr := stdout, stderr
-	if getenv("CRAFTPULSE_SECRETS") == "1" && (len(args) != 1 || (args[0] != "version" && args[0] != "secrets-info")) {
-		repo := getenv("CI_PROJECT_DIR")
+	if getenv("CRAFTPULSE_SECRETS") == "1" && !executionMetadata && (len(args) != 1 || (args[0] != "version" && args[0] != "secrets-info")) {
+		repo := ci.CheckoutRoot(getenv)
 		if repo == "" {
 			repo = "."
 		}
 		scanCtx, cancel := context.WithTimeout(ctx, _defaultTimeout)
 		var err error
-		secretScan, err = ci.ScanSecrets(scanCtx, repo, baseSHA(getenv), getenv("CI_COMMIT_SHA"))
+		secretScan, err = ci.ScanSecrets(scanCtx, repo, baseSHA(getenv), ci.HeadSHA(getenv))
 		cancel()
 		if err != nil {
 			fmt.Fprintln(stderr, "craftpulse-ci: secrets scan failed; no output or package released")
@@ -86,8 +90,8 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer, geten
 			}
 		}()
 	}
-	a := &app{secretScan: secretScan, stdout: logger.Redact(stdout, redactedValues), stderr: logger.Redact(stderr, redactedValues), getenv: getenv, client: cfg}
-	root := a.root() //nolint:contextcheck // commands take the context from cmd.Context()
+	a.secretScan = secretScan
+	a.stdout, a.stderr = logger.Redact(stdout, redactedValues), logger.Redact(stderr, redactedValues)
 	root.SetArgs(args)
 	root.SetOut(a.stdout)
 	root.SetErr(a.stderr)
@@ -109,15 +113,14 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer, geten
 func (a *app) root() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "craftpulse-ci",
-		Short: "craftPulse step of a GitLab CI pipeline",
+		Short: "craftPulse step for GitLab CI, GitHub Actions and Jenkins",
 		Long: `craftpulse-ci reads the check profile of the project, records tool runs and client reports of the
 job and uploads them to craftPulse as one package.
 
 Settings: CRAFTPULSE_URL (site address), CRAFTPULSE_UPLOAD_TOKEN (upload token of the project, sent
 only as a Bearer header and never printed), CRAFTPULSE_WORK_DIR (state of the job, a temporary
-directory by default), CRAFTPULSE_INSTANCE_KEY (GitLab instance key, CI_SERVER_HOST by default),
-CRAFTPULSE_DEBUG=1 (print requests and answers). CI coordinates come from the predefined GitLab CI
-variables.
+directory by default), CRAFTPULSE_INSTANCE_KEY (source instance key override),
+CRAFTPULSE_DEBUG=1 (print requests and answers). CI coordinates come from the runner environment.
 
 Exit codes: 0 - the package is accepted, findings included; 1 - the step failed; 2 - the intake
 refused the package or rejected it whole; 3 - the intake result did not arrive in time.`,
@@ -129,7 +132,7 @@ refused the package or rejected it whole; 3 - the intake result did not arrive i
 	}
 	root.PersistentFlags().BoolVar(&a.debug, "debug", false, "print every request and answer, without the token")
 	root.PersistentFlags().StringVar(&a.workDir, "work-dir", "", "directory with the state of the job")
-	root.AddCommand(a.versionCmd(), a.profileCmd(), a.runCmd(), a.importCmd(), a.uploadCmd(), a.fixturesCmd(), a.codeCmd(), a.sastCmd(), a.trivyCmd(), a.trivyDBCmd(), a.docsCmd(), a.secretsCmd(), a.secretsInfoCmd())
+	root.AddCommand(a.versionCmd(), a.profileCmd(), a.runCmd(), a.importCmd(), a.uploadCmd(), a.fixturesCmd(), a.codeCmd(), a.sastCmd(), a.trivyCmd(), a.trivyDBCmd(), a.docsCmd(), a.secretsCmd(), a.secretsInfoCmd(), a.jenkinsCmd())
 	return root
 }
 
@@ -283,7 +286,7 @@ gives findings in SARIF, Lizard the functions in CSV and jscpd the copies in JSO
 component within one time limit. Dependency and build directories and generated files are excluded,
 test code is marked separately, and a file the linter cannot parse is a skipped target of a partial
 run. The linters use the configuration of the profile only. The profile directory defaults to
-CRAFTPULSE_CODE_PROFILE of the image and the repository to CI_PROJECT_DIR.
+CRAFTPULSE_CODE_PROFILE of the image and the repository to the CI workspace.
 
 With --fixture the profile checks the current directory and writes the reports named by
 CRAFTPULSE_REPORT, CRAFTPULSE_FUNCTIONS_REPORT, CRAFTPULSE_CLONES_REPORT and CRAFTPULSE_SCOPE_REPORT:
@@ -307,7 +310,7 @@ the command of "craftpulse-ci fixtures".`,
 			if err != nil {
 				return err
 			}
-			root := a.getenv("CI_PROJECT_DIR")
+			root := ci.CheckoutRoot(a.getenv)
 			if root == "" {
 				root = "."
 			}
@@ -344,7 +347,7 @@ records one tool run per component with a SARIF report. The report keeps the bar
 severity of the rules and no lines of code. Files Opengrep could not parse or ran out of time on are
 skipped targets, and the run is partial. Vendor and build directories of the profile and directories
 starting with "." are excluded. The profile directory defaults to CRAFTPULSE_SAST_PROFILE of the image
-and the repository to CI_PROJECT_DIR.
+and the repository to the CI workspace.
 
 With --fixture the profile checks the current directory and writes the report named by CRAFTPULSE_REPORT:
 the command of "craftpulse-ci fixtures".`,
@@ -371,7 +374,7 @@ the command of "craftpulse-ci fixtures".`,
 			if err != nil {
 				return err
 			}
-			root := a.getenv("CI_PROJECT_DIR")
+			root := ci.CheckoutRoot(a.getenv)
 			if root == "" {
 				root = "."
 			}
@@ -411,7 +414,7 @@ records the version of the database and the time it was published; without a dat
 IaC checks the configuration kinds of the profile; the lines of configuration are dropped from the
 report and every misconfiguration names its resource. Trivy reads the configuration and ignore file of
 the profile, never those of the repository. The profile directory defaults to CRAFTPULSE_TRIVY_PROFILE,
-the database to CRAFTPULSE_TRIVY_CACHE of the image and the repository to CI_PROJECT_DIR.
+the database to CRAFTPULSE_TRIVY_CACHE of the image and the repository to the CI workspace.
 
 With --fixture the profile checks the current directory and writes its facts to the file named by
 CRAFTPULSE_FACTS_REPORT: the command of "craftpulse-ci fixtures".`,
@@ -432,7 +435,7 @@ CRAFTPULSE_FACTS_REPORT: the command of "craftpulse-ci fixtures".`,
 			if err != nil {
 				return err
 			}
-			root := a.getenv("CI_PROJECT_DIR")
+			root := ci.CheckoutRoot(a.getenv)
 			if root == "" {
 				root = "."
 			}
@@ -473,7 +476,7 @@ links are not checked. The inventory lists every Markdown and OpenAPI document o
 path, the SHA of the job, the content hash, the title and the owner from front matter. openapi:
 Spectral checks the specifications with the ruleset of the profile; a parse or schema error makes a
 specification invalid, other results break a rule. The profile directory defaults to
-CRAFTPULSE_DOCS_PROFILE of the image and the repository to CI_PROJECT_DIR.
+CRAFTPULSE_DOCS_PROFILE of the image and the repository to the CI workspace.
 
 With --fixture the profile checks the current directory and writes the files named by CRAFTPULSE_REPORT
 and CRAFTPULSE_FACTS_REPORT: the command of "craftpulse-ci fixtures".`,
@@ -500,7 +503,7 @@ and CRAFTPULSE_FACTS_REPORT: the command of "craftpulse-ci fixtures".`,
 			if err != nil {
 				return err
 			}
-			root := a.getenv("CI_PROJECT_DIR")
+			root := ci.CheckoutRoot(a.getenv)
 			if root == "" {
 				root = "."
 			}
@@ -573,10 +576,7 @@ func (a *app) trivyProfile(dir, cacheDir string) (*ci.TrivyProfile, string, erro
 // baseSHA is the commit the job compares head with: the merge request base or the previous push, none for a
 // new branch.
 func baseSHA(getenv func(string) string) string {
-	base := getenv("CI_MERGE_REQUEST_DIFF_BASE_SHA")
-	if base == "" {
-		base = getenv("CI_COMMIT_BEFORE_SHA")
-	}
+	base := ci.BaseSHA(getenv)
 	if strings.Trim(base, "0") == "" {
 		return ""
 	}
@@ -613,7 +613,7 @@ produced them. A missing or empty report is recorded as failed, never as a clean
 				in.Reports = append(in.Reports, spec)
 			}
 			if in.SourceRoot == "" {
-				in.SourceRoot = a.getenv("CI_PROJECT_DIR")
+				in.SourceRoot = ci.CheckoutRoot(a.getenv)
 			}
 			s, err := a.session(cmd.Context(), false)
 			if err != nil {
@@ -636,7 +636,7 @@ produced them. A missing or empty report is recorded as failed, never as a clean
 	fl.StringVar(&in.ProducerVersion, "producer-version", "unknown", "version of that tool")
 	fl.StringVar(&in.FormatVersion, "format-version", "1", "version of the report format")
 	fl.StringVar(&in.ProducerJob, "producer-job", "", "ID of the job that produced the reports")
-	fl.StringVar(&in.SourceRoot, "source-root", "", "absolute checkout the tool ran in (default CI_PROJECT_DIR)")
+	fl.StringVar(&in.SourceRoot, "source-root", "", "absolute checkout the tool ran in (default CI workspace)")
 	fl.StringVar(&in.SourceDir, "source-dir", "", "directory of the repository the relative paths of the reports start from, for example src/main/java")
 	_ = cmd.MarkFlagRequired("report") // the flag is declared just above
 	return cmd
@@ -644,9 +644,9 @@ produced them. A missing or empty report is recorded as failed, never as a clean
 
 func (a *app) uploadCmd() *cobra.Command {
 	var (
-		wait   time.Duration
-		save   string
-		dryRun bool
+		wait                                  time.Duration
+		save, executionFile, executionAttempt string
+		dryRun                                bool
 	)
 	cmd := &cobra.Command{
 		Use:   "upload",
@@ -668,6 +668,19 @@ func (a *app) uploadCmd() *cobra.Command {
 				}
 			}
 			p := &ci.Packer{Job: &s.job, Store: s.store, Version: health.CommitSHA(), Now: time.Now}
+			if executionFile != "" {
+				p.Execution, err = ci.ReadJenkinsExecution(executionFile)
+				if err != nil {
+					return err
+				}
+			}
+			p.AttemptID = executionAttempt
+			if s.job.Provider == envelope.SourceProviderGithub {
+				p.AttemptID, err = s.job.ActionsAttemptID(ctx, a.getenv)
+				if err != nil {
+					return err
+				}
+			}
 			if a.secretScan != nil {
 				p.Scrubber = a.secretScan.Scrubber
 			}
@@ -706,6 +719,8 @@ func (a *app) uploadCmd() *cobra.Command {
 	}
 	cmd.Flags().DurationVar(&wait, "wait", _defaultWait, "how long to wait for the intake result")
 	cmd.Flags().StringVar(&save, "save", "", "also write the package to this file")
+	cmd.Flags().StringVar(&executionFile, "execution-manifest", "", "include the finished Jenkins execution manifest")
+	cmd.Flags().StringVar(&executionAttempt, "jenkins-attempt-id", "", "attempt ID printed by jenkins record for the current scan")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "build and check the saved package without uploading")
 	return cmd
 }
