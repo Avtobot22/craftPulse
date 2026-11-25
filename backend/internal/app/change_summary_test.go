@@ -60,12 +60,16 @@ func TestChangeSummary_ExactHeadAndReportLifecycle(t *testing.T) {
 		component := &envelope.ScanComponent{Id: &e.goComponent, PathPrefix: "services/billing"}
 		// Summary evidence must match the producer versions pinned in the test catalog.
 		return reportPackageOf(t, _checksInstance, sha,
-			reportSpec{name: "gitleaks.sarif", kind: "secrets", format: "sarif", producer: "gitleaks", version: "8.28.0",
+			reportSpec{
+				name: "gitleaks.sarif", kind: "secrets", format: "sarif", producer: "gitleaks", version: "8.28.0",
 				profileID: "gitleaks-default", component: component, exit: "success", completeness: "complete",
-				content: []byte(`{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"gitleaks"}},"results":[]}]}`)},
-			reportSpec{name: "trivy.json", kind: "sca", format: "trivy_json", formatVersion: "2", producer: "trivy", version: "0.67.2",
+				content: []byte(`{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"gitleaks"}},"results":[]}]}`),
+			},
+			reportSpec{
+				name: "trivy.json", kind: "sca", format: "trivy_json", formatVersion: "2", producer: "trivy", version: "0.67.2",
 				profileID: "trivy-default", component: component, exit: "success", completeness: "complete",
-				content: []byte(`{"SchemaVersion":2,"ArtifactName":"services/billing","ArtifactType":"filesystem","Results":[]}`)},
+				content: []byte(`{"SchemaVersion":2,"ArtifactName":"services/billing","ArtifactType":"filesystem","Results":[]}`),
+			},
 		)
 	}
 	base, h1, h2 := strings.Repeat("b", 40), strings.Repeat("a", 40), strings.Repeat("c", 40)
