@@ -43,6 +43,7 @@ func actionsSnippet(jobs map[string]gitlabJob, variables []entity.CIVariable) ([
 	if len(jobs) == 0 {
 		return []byte("# No craftPulse checks are configured.\n"), nil
 	}
+	uploadSecretRef := "${{ secrets." + _varToken + " }}"
 	for name, job := range jobs {
 		j := actionsJob{
 			Name: name, RunsOn: "ubuntu-latest",
@@ -52,7 +53,7 @@ func actionsSnippet(jobs map[string]gitlabJob, variables []entity.CIVariable) ([
 		// The runner mounts a checkout owned by its host UID.
 		j.Container.Options = "--user 0"
 		scanEnv := map[string]string{
-			_varToken: "${{ secrets.CRAFTPULSE_UPLOAD_TOKEN }}", _varURL: "${{ vars.CRAFTPULSE_URL }}",
+			_varToken: uploadSecretRef, _varURL: "${{ vars.CRAFTPULSE_URL }}",
 		}
 		if name == "craftpulse-import" {
 			for _, variable := range variables {
@@ -66,7 +67,7 @@ func actionsSnippet(jobs map[string]gitlabJob, variables []entity.CIVariable) ([
 			{Uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", With: map[string]any{"persist-credentials": false, "fetch-depth": 0}},
 			{Env: scanEnv, Run: strings.Join(job.Script[:len(job.Script)-1], "\n")},
 			{Env: map[string]string{
-				_varToken: "${{ secrets.CRAFTPULSE_UPLOAD_TOKEN }}", _varURL: "${{ vars.CRAFTPULSE_URL }}",
+				_varToken: uploadSecretRef, _varURL: "${{ vars.CRAFTPULSE_URL }}",
 				"CRAFTPULSE_ACTIONS_TOKEN": "${{ github.token }}",
 			}, Run: "craftpulse-ci upload"},
 		}

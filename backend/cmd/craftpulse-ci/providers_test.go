@@ -26,8 +26,10 @@ func TestUpload_AdditionalCIProviders(t *testing.T) {
 				}
 			}
 			c.env["CRAFTPULSE_DEBUG"] = "1"
-			var want envelope.ScanCiCoordinates
-			var uploadArgs []string
+			var (
+				want       envelope.ScanCiCoordinates
+				uploadArgs []string
+			)
 			switch system {
 			case "github":
 				c.env["GITHUB_ACTIONS"] = "true"
@@ -45,9 +47,11 @@ func TestUpload_AdditionalCIProviders(t *testing.T) {
 				c.env["JOB_NAME"], c.env["BUILD_NUMBER"], c.env["NODE_NAME"] = "folder/billing", "7", "linux"
 				c.env["GIT_COMMIT"], c.env["BRANCH_NAME"], c.env["CHANGE_ID"], c.env["CHANGE_BRANCH"] = _sha, "PR-19", "19", "feature"
 				for _, attempt := range []struct{ number, outcome string }{{"1", "failure"}, {"2", "success"}} {
-					args := []string{"jenkins", "record", "--attempts-dir", c.path("attempts"), "--stage", "checks", "--step", "scan",
+					args := []string{
+						"jenkins", "record", "--attempts-dir", c.path("attempts"), "--stage", "checks", "--step", "scan",
 						"--attempt", attempt.number, "--outcome", attempt.outcome, "--axes", "os=linux",
-						"--started-at", "2026-11-17T10:00:00Z", "--finished-at", "2026-11-17T10:00:10Z"}
+						"--started-at", "2026-11-17T10:00:00Z", "--finished-at", "2026-11-17T10:00:10Z",
+					}
 					out := runCIProvider(t, c, args...)
 					if attempt.number == "2" {
 						uploadArgs = []string{"--execution-manifest", c.path(envelope.ExecutionManifestName), "--jenkins-attempt-id", strings.TrimSpace(out)}
@@ -103,7 +107,7 @@ func runCIProvider(t *testing.T, c *cli, args ...string) string {
 
 // CRAFTPULSE_TEST_IMAGE runs the same scenarios with the Linux ci-runtime image
 // and its installed CLI. Host networking reaches only the local fake API.
-func runProviderCLI(t *testing.T, c *cli, args ...string) (int, string) {
+func runProviderCLI(t *testing.T, c *cli, args ...string) (code int, out string) {
 	t.Helper()
 	if image := os.Getenv("CRAFTPULSE_TEST_IMAGE"); image != "" {
 		dockerArgs := []string{"run", "--rm", "--network", "host", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--volume", c.dir + ":" + c.dir}
@@ -124,7 +128,7 @@ func runProviderCLI(t *testing.T, c *cli, args ...string) (int, string) {
 		}
 		return 0, string(output)
 	}
-	code, out := c.run(args...)
+	code, out = c.run(args...)
 	assert.NotContains(t, out, _token)
 	return code, out
 }

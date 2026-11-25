@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -19,13 +20,13 @@ func (a *app) jenkinsCmd() *cobra.Command {
 			var err error
 			step.Started, err = time.Parse(time.RFC3339, started)
 			if err != nil {
-				return fmt.Errorf("--started-at must be RFC3339")
+				return errors.New("--started-at must be RFC3339")
 			}
 			step.Finished = time.Now()
 			if finished != "" {
 				step.Finished, err = time.Parse(time.RFC3339, finished)
 				if err != nil {
-					return fmt.Errorf("--finished-at must be RFC3339")
+					return errors.New("--finished-at must be RFC3339")
 				}
 			}
 			key, err := step.Record(a.getenv, dir)

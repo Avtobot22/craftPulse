@@ -71,7 +71,7 @@ func (j *Job) actionsAttemptID(ctx context.Context, getenv func(string) string, 
 	var found int64
 	for page := 1; ; page++ {
 		endpoint := fmt.Sprintf("%s/repos/%s/actions/runs/%s/attempts/%d/jobs?per_page=100&page=%d", api, j.ProjectPath, j.PipelineID, j.AttemptNo, page)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 		if err != nil {
 			return "", errors.New("cannot construct Actions jobs request")
 		}

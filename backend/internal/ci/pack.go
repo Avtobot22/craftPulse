@@ -148,10 +148,11 @@ func (p *Packer) linkAttempts(runs []envelope.ScanToolRun) error {
 			strconv.Itoa(p.Execution.BuildNumber) != p.Job.PipelineID || p.Execution.BuildUrl != p.Job.BuildURL || p.Execution.Sha != p.Job.SHA {
 			return errors.New("execution manifest belongs to another Jenkins build")
 		}
-		for _, step := range p.Execution.Steps {
+		for i := range p.Execution.Steps {
+			step := &p.Execution.Steps[i]
 			key := envelope.JenkinsAttemptKey(p.Execution.Job, p.Execution.BuildNumber, step.Stage, step.Name, step.ConfigurationHash, step.Attempt)
 			if key == p.AttemptID {
-				number = &step.Attempt
+				number = new(step.Attempt)
 				break
 			}
 		}

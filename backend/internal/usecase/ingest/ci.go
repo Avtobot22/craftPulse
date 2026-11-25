@@ -41,14 +41,15 @@ func jenkinsAreaMatches(res *envelope.Result) bool {
 		if execution.Job != job {
 			return false
 		}
-		for _, step := range execution.Steps {
+		for i := range execution.Steps {
+			step := &execution.Steps[i]
 			key := envelope.JenkinsAttemptKey(job, execution.BuildNumber, step.Stage, step.Name, step.ConfigurationHash, step.Attempt)
 			attempts[key] = step.Attempt
 		}
 	}
 	if res.ScanManifest != nil {
-		for _, tool := range res.ScanManifest.Tools {
-			c := tool.Ci
+		for i := range res.ScanManifest.Tools {
+			c := res.ScanManifest.Tools[i].Ci
 			if c == nil || c.Provider != envelope.ScanCiCoordinatesProviderJenkins || c.ProjectNativeId != job ||
 				c.JobNativeId == nil || *c.JobNativeId != job || (execution != nil && c.RunNativeId != strconv.Itoa(execution.BuildNumber)) {
 				return false
