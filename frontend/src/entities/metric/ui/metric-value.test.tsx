@@ -78,6 +78,15 @@ describe('MetricValue', () => {
     expect(screen.getByText('1 д 1 ч')).toBeInTheDocument()
   })
 
+  it.each([
+    [130, '0,036 ч'],
+    [1, '0,00028 ч'],
+    [0, '0 ч'],
+  ] as const)('formats a duration of %s seconds', (value, label) => {
+    render(<MetricValue value={{ ...base, unit: 'seconds', value }} />)
+    expect(screen.getByText(label)).toBeInTheDocument()
+  })
+
   it('shows the reason for a missing value', () => {
     render(
       <MetricValue
@@ -90,12 +99,66 @@ describe('MetricValue', () => {
     ).toBeInTheDocument()
   })
 
+  it('explains conflicting event order for an unknown result', () => {
+    render(
+      <MetricValue
+        value={{
+          ...base,
+          state: 'UNKNOWN',
+          value: null,
+          reason_code: 'event_order_conflict',
+        }}
+      />,
+    )
+    expect(screen.getByText('Не рассчитано')).toBeInTheDocument()
+    expect(
+      screen.getByText('Данные о порядке событий противоречат друг другу'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('event_order_conflict')).not.toBeInTheDocument()
+  })
+
+  it('shows coverage and explains why C05 is provisional', () => {
+    render(
+      <MetricValue
+        value={{
+          ...base,
+          state: 'PROVISIONAL',
+          value: 0.07,
+          unit: 'ratio',
+          numerator: 812,
+          denominator: 11_600,
+          n: null,
+          reason_code: 'history_window_short',
+        }}
+      />,
+    )
+    expect(screen.getByText(/^7\s%$/)).toBeInTheDocument()
+    expect(screen.getByText('частично')).toBeInTheDocument()
+    expect(screen.getByText(/^Охват: 812 из 11\s600$/)).toBeInTheDocument()
+    expect(
+      screen.getByText('Доступная история короче периода расчёта'),
+    ).toBeInTheDocument()
+  })
+
+  it('uses readable text for an unrecognized reason code', () => {
+    render(
+      <MetricValue
+        value={{ ...base, value: null, reason_code: 'new_reason' }}
+      />,
+    )
+    expect(screen.getByText('Описание причины недоступно')).toBeInTheDocument()
+    expect(screen.queryByText('new_reason')).not.toBeInTheDocument()
+  })
+
   it.each([
-    ['lower', 'Не менее 1 д 1 ч'],
-    ['upper', 'Не более 1 д 2 ч'],
+    [720, 'lower', 'Не менее 0,2 ч'],
+    [750, 'lower', 'Не менее 0,2 ч'],
+    [750, 'upper', 'Не более 0,21 ч'],
+    [91_861, 'lower', 'Не менее 1 д 1 ч'],
+    [91_861, 'upper', 'Не более 1 д 2 ч'],
   ] as const)(
-    'preserves the direction of a rounded duration bound (%s)',
-    (kind, label) => {
+    'preserves the direction of a duration bound of %s seconds (%s)',
+    (value, kind, label) => {
       render(
         <MetricValue
           value={{
@@ -103,7 +166,7 @@ describe('MetricValue', () => {
             state: 'BOUNDED',
             unit: 'seconds',
             value: null,
-            bound: { kind, value: 91_861 },
+            bound: { kind, value },
           }}
         />,
       )
@@ -112,17 +175,25 @@ describe('MetricValue', () => {
   )
 
   it.each([0, null])(
-    'omits a percentage when denominator is %s',
+    'omits percentage and coverage when denominator is %s',
     (denominator) => {
       render(
         <MetricValue
-          value={{ ...base, unit: 'ratio', value: 0.25, denominator }}
+          value={{
+            ...base,
+            state: 'PROVISIONAL',
+            unit: 'ratio',
+            value: 0.25,
+            numerator: 25,
+            denominator,
+          }}
         />,
       )
       expect(screen.getByText('Не рассчитано')).toBeInTheDocument()
       expect(
         screen.getByText('Знаменатель отсутствует или равен нулю'),
       ).toBeInTheDocument()
+      expect(screen.queryByText(/Охват:/)).not.toBeInTheDocument()
     },
   )
 
