@@ -82,7 +82,7 @@ export function HomePage({
   const scope = useScope(api, hasAreas, storageKey, params, restore)
   const active = settings.find(
     ({ path }) =>
-      matchPath(path, location.pathname) ||
+      matchPath(path, location.pathname) ??
       (path === routePaths.users &&
         matchPath(path + '/:userId', location.pathname)),
   )
@@ -216,7 +216,9 @@ export function HomePage({
               <select
                 value={scope.team?.id ?? ''}
                 disabled={!scope.teams.isSuccess}
-                onChange={(event) => updateArea(event.target.value)}
+                onChange={(event) => {
+                  updateArea(event.target.value)
+                }}
               >
                 <option value="">
                   {scope.teams.isPending
@@ -236,9 +238,9 @@ export function HomePage({
               <select
                 value={scope.project?.id ?? ''}
                 disabled={!scope.team || !scope.projects.isSuccess}
-                onChange={(event) =>
+                onChange={(event) => {
                   updateArea(scope.team?.id ?? '', event.target.value)
-                }
+                }}
               >
                 <option value="">
                   {scope.team && scope.projects.isPending
@@ -320,7 +322,9 @@ export function HomePage({
             type="button"
             aria-expanded={menuOpen}
             aria-controls="main-navigation"
-            onClick={() => setMenuOpen(!menuOpen)}
+            onClick={() => {
+              setMenuOpen(!menuOpen)
+            }}
           >
             Разделы
           </button>
@@ -402,7 +406,7 @@ export function HomePage({
                   }}
                 />
               )}
-              {(currentSetting || (isHome && scope.team)) && (
+              {(currentSetting ?? (isHome && scope.team)) && (
                 <nav aria-label="Хлебные крошки" className="cp-shell__crumbs">
                   <ol>
                     {scope.team && <li>{scope.team.name}</li>}

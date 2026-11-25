@@ -52,7 +52,7 @@ function mockApi(user = currentUser, availableTeams = teams.data) {
       case '/api/v1/projects':
         return Promise.resolve(
           jsonResponse(
-            url.searchParams.get('team_id') === team.id
+            url.searchParams.get('team_id') === team?.id
               ? projects
               : { ...projects, data: [] },
           ),
@@ -330,7 +330,9 @@ describe('UI-01', () => {
       mockApi(admin, [...teams.data, secondTeam]),
     )
     const teamSelect = await screen.findByRole('combobox', { name: 'Команда' })
-    await waitFor(() => expect(teamSelect).toHaveValue(team.id))
+    await waitFor(() => {
+      expect(teamSelect).toHaveValue(team.id)
+    })
     fireEvent.change(teamSelect, { target: { value: secondTeam.id } })
     expect(router.state.location.pathname).toBe('/users')
     expect(router.state.location.hash).toBe('')
@@ -411,8 +413,9 @@ describe('UI-01', () => {
     await screen.findByRole('option', { name: secondTeam.name })
     expect(screen.getByRole('combobox', { name: 'Проект' })).toBeDisabled()
     expect(
-      nextApi.mock.calls.some(([input]) =>
-        String(input).startsWith('/api/v1/projects'),
+      nextApi.mock.calls.some(
+        ([input]) =>
+          typeof input === 'string' && input.startsWith('/api/v1/projects'),
       ),
     ).toBe(false)
   })
