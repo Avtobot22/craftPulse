@@ -1,0 +1,69 @@
+{
+  "jira": {
+    "url": "https://craftpulse-mvp.atlassian.net",
+    "edition": "Cloud",
+    "version": "1001.0.0-SNAPSHOT",
+    "build": 100296,
+    "api_version": "3",
+    "projects": {"CPA": "10002", "CPB": "10003", "CPZ": "10004"},
+    "accounts": [
+      {"login": "cp88-admins", "permissions": ["Manage and write CPA, CPB, CPZ"]},
+      {"login": "cp88-collectors", "permissions": ["Browse CPA, CPB, CPZ and restricted-a"]},
+      {"login": "cp88-a-read", "permissions": ["Browse CPA and CPB"]},
+      {"login": "cp88-a-restricted", "permissions": ["Read restricted-a in addition to cp88-a-read"]},
+      {"login": "cp88-b-read", "permissions": ["Browse CPZ"]}
+    ]
+  },
+  "confluence": {
+    "url": "https://craftpulse-mvp.atlassian.net/wiki",
+    "edition": "Cloud Premium",
+    "version": "2ea405125918b5efc38ce02db553da024749aef1",
+    "api_version": "2 (pages and spaces), 1 (system info and restrictions)",
+    "spaces": {"ORGA": "360451", "ORGB": "360600"},
+    "accounts": [
+      {"login": "stand operator", "permissions": ["Admin ORGA and ORGB", "Edit restricted page"]},
+      {"login": "cp88-collectors", "permissions": ["Read ORGA, ORGB and restricted page"]},
+      {"login": "cp88-a-read", "permissions": ["Read ORGA"]},
+      {"login": "cp88-a-restricted", "permissions": ["Read restricted page in addition to cp88-a-read"]},
+      {"login": "cp88-b-read", "permissions": ["Read ORGB"]}
+    ]
+  },
+  "gitlab": {
+    "url": "https://gitlab.defects.team",
+    "edition": "Community Edition",
+    "version": "19.6.1",
+    "projects": [1, 2, 3, 4, 5, 6],
+    "accounts": [
+      {"login": "cp87-collector", "permissions": ["Reporter projects 1–4", "read_api"]},
+      {"login": "cp87-clone", "permissions": ["Reporter projects 1–4", "read_repository"]},
+      {"login": "cp87-mr-bot", "permissions": ["Reporter projects 1–4", "api for MR comments"]},
+      {"login": "cp87-admin-a", "permissions": ["Owner cp87-org-a", "OIDC administrator org-a"]},
+      {"login": "cp87-admin-b", "permissions": ["Owner cp87-org-b", "OIDC administrator org-b"]},
+      {"login": "cp87-member", "permissions": ["Reporter cp87-org-a"]},
+      {"login": "cp87-no-repo", "permissions": []},
+      {"login": "cp87-inactive", "permissions": ["Blocked"]}
+    ]
+  },
+  "runner": {
+    "url": "https://gitlab.defects.team",
+    "edition": "GitLab Runner (shell executor)",
+    "version": "19.6.0",
+    "id": 1,
+    "accounts": [
+      {"login": "cp87-test", "permissions": ["Execute tagged CI jobs for GitLab projects 1–4"]}
+    ]
+  },
+  "github": {
+    "url": "https://github.com/craftpulse-mvp",
+    "edition": "GitHub.com",
+    "version": "2022-11-28",
+    "api_version": "2022-11-28",
+    "runner": "GitHub-hosted ubuntu-24.04",
+    "accounts": [
+      {"login": "API collector", "permissions": ["Metadata, Contents, Pull requests and Actions read in three fixtures"]},
+      {"login": "clone reader", "permissions": ["One read-only deploy key per fixture"]},
+      {"login": "craftpulse-mvp-bot", "permissions": ["Metadata read", "Write own PR summary through the comment service"]},
+      {"login": "stand operator", "permissions": ["Reset the three fixtures through deploy/github/manage.py"]}
+    ]
+  }
+}
