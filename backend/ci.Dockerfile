@@ -1,42 +1,54 @@
 # syntax=docker/dockerfile:1
 
-FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS build
-ENV CGO_ENABLED=0 GOFLAGS=-trimpath GOTOOLCHAIN=local
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS cli-source
+ENV CGO_ENABLED=0 GOFLAGS="-trimpath -mod=readonly" GOTOOLCHAIN=local
 WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
 COPY . ./
-ARG COMMIT_SHA=unknown
 ARG TARGETOS
 ARG TARGETARCH
-RUN --mount=type=cache,target=/root/.cache/go-build \
+
+# The pinned DB can reuse an unstamped downloader across application revisions.
+FROM cli-source AS db-downloader
+RUN --mount=type=cache,id=ci-cli-modules,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=ci-cli-build,target=/root/.cache/go-build,sharing=locked \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -buildvcs=false -ldflags="-s -w" \
+      -o /out/craftpulse-ci ./cmd/craftpulse-ci
+
+FROM cli-source AS build
+ARG COMMIT_SHA=unknown
+RUN --mount=type=cache,id=ci-cli-modules,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=ci-cli-build,target=/root/.cache/go-build,sharing=locked \
     GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -buildvcs=false \
       -ldflags="-s -w -X github.com/Avtobot22/craftPulse/backend/pkg/health._commitSHA=${COMMIT_SHA}" \
       -o /out/craftpulse-ci ./cmd/craftpulse-ci
 
 # A GitLab job image needs a shell for the job script, so the runtime is Alpine, not distroless. Profile
 # images build on this one and add their tools.
-FROM alpine:3.23.3@sha256:59855d3dceb3ae53991193bd03301e082b2a7faa56a514b03527ae0ec2ce3a95 AS ci-runtime
+FROM alpine:3.23.3@sha256:59855d3dceb3ae53991193bd03301e082b2a7faa56a514b03527ae0ec2ce3a95 AS ci-base
 RUN apk upgrade --no-cache && \
     apk add --no-cache ca-certificates && \
     addgroup -S -g 65532 nonroot && \
     adduser -S -D -u 65532 -G nonroot nonroot
+LABEL org.opencontainers.image.source="https://github.com/Avtobot22/craftPulse"
+
+FROM ci-base AS ci-runtime
+COPY --link --from=build /out/craftpulse-ci /usr/local/bin/craftpulse-ci
 ARG COMMIT_SHA=unknown
 LABEL org.opencontainers.image.title="craftpulse-ci" \
-      org.opencontainers.image.revision="${COMMIT_SHA}" \
-      org.opencontainers.image.source="https://github.com/Avtobot22/craftPulse"
-COPY --from=build /out/craftpulse-ci /usr/local/bin/craftpulse-ci
+      org.opencontainers.image.revision="${COMMIT_SHA}"
 USER 65532:65532
 
 # Gitleaks is linked into craftpulse-ci at the version in go.mod. Git reads checked-out objects;
 # raw blobs and scanner findings stay in memory. GitLab still needs the base shell.
-FROM ci-runtime AS gitleaks-default
-USER 0
+FROM ci-base AS gitleaks-default
 RUN apk add --no-cache git
 ENV CRAFTPULSE_SECRETS=1
-LABEL org.opencontainers.image.title="craftpulse-ci-gitleaks-default" \
-      io.craftpulse.profile="gitleaks-default"
 COPY pkg/secrets/profiles/gitleaks-default/ /opt/craftpulse/profiles/gitleaks-default/
+COPY --link --from=build /out/craftpulse-ci /usr/local/bin/craftpulse-ci
+ARG COMMIT_SHA=unknown
+LABEL org.opencontainers.image.title="craftpulse-ci-gitleaks-default" \
+      org.opencontainers.image.revision="${COMMIT_SHA}" \
+      io.craftpulse.profile="gitleaks-default"
 USER 65532:65532
 
 FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS golangci-lint
@@ -64,8 +76,7 @@ FROM jscpd-${TARGETARCH} AS jscpd
 # Code profile of Go: golangci-lint, Lizard and jscpd at the versions of profile.json. The job runs
 # "craftpulse-ci code" and "craftpulse-ci upload"; the analysis needs no network when the module
 # dependencies are in the checkout or the module cache.
-FROM ci-runtime AS go-default
-USER 0
+FROM ci-base AS go-default
 RUN apk add --no-cache python3
 COPY --from=go-toolchain /usr/local/go /usr/local/go
 COPY --from=golangci-lint /out/golangci-lint /usr/local/bin/golangci-lint
@@ -80,14 +91,16 @@ RUN --mount=from=jscpd,target=/mnt/jscpd \
 ENV PATH=/usr/local/go/bin:/opt/lizard/bin:$PATH GOTOOLCHAIN=local CGO_ENABLED=0 \
     GOPATH=/tmp/go GOCACHE=/tmp/go-cache GOLANGCI_LINT_CACHE=/tmp/golangci-lint-cache \
     CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/go-default
+COPY --link --from=build /out/craftpulse-ci /usr/local/bin/craftpulse-ci
+ARG COMMIT_SHA=unknown
 LABEL org.opencontainers.image.title="craftpulse-ci-go-default" \
+      org.opencontainers.image.revision="${COMMIT_SHA}" \
       io.craftpulse.profile="go-default"
 USER 65532:65532
 
 # Code profile of Python: Ruff, Lizard and jscpd at the versions of profile.json; Ruff and Lizard come from
 # requirements.txt by hash.
-FROM ci-runtime AS python-default
-USER 0
+FROM ci-base AS python-default
 RUN apk add --no-cache python3
 COPY internal/ci/profiles/python-default/ /opt/craftpulse/profiles/python-default/
 RUN --mount=from=jscpd,target=/mnt/jscpd \
@@ -98,7 +111,10 @@ RUN --mount=from=jscpd,target=/mnt/jscpd \
       -r /opt/craftpulse/profiles/python-default/requirements.txt && \
     ln -s /opt/code-tools/bin/lizard /usr/local/bin/lizard && ln -s /opt/code-tools/bin/ruff /usr/local/bin/ruff
 ENV PATH=/opt/code-tools/bin:$PATH CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/python-default HOME=/tmp
+COPY --link --from=build /out/craftpulse-ci /usr/local/bin/craftpulse-ci
+ARG COMMIT_SHA=unknown
 LABEL org.opencontainers.image.title="craftpulse-ci-python-default" \
+      org.opencontainers.image.revision="${COMMIT_SHA}" \
       io.craftpulse.profile="python-default"
 USER 65532:65532
 
@@ -111,8 +127,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no
 
 # Code profile of JavaScript and TypeScript: ESLint with typescript-eslint, Lizard and jscpd at the
 # versions of profile.json. ESLint loads only the configuration and plugins of the profile.
-FROM ci-runtime AS js-default
-USER 0
+FROM ci-base AS js-default
 RUN apk add --no-cache nodejs python3
 COPY internal/ci/profiles/js-default/ /opt/craftpulse/profiles/js-default/
 COPY --from=eslint /opt/craftpulse/profiles/js-default/node_modules/ /opt/craftpulse/profiles/js-default/node_modules/
@@ -125,7 +140,10 @@ RUN --mount=from=jscpd,target=/mnt/jscpd \
     ln -s /opt/code-tools/bin/lizard /usr/local/bin/lizard && \
     ln -s /opt/craftpulse/profiles/js-default/node_modules/eslint/bin/eslint.js /usr/local/bin/eslint
 ENV PATH=/opt/code-tools/bin:$PATH CRAFTPULSE_CODE_PROFILE=/opt/craftpulse/profiles/js-default HOME=/tmp
+COPY --link --from=build /out/craftpulse-ci /usr/local/bin/craftpulse-ci
+ARG COMMIT_SHA=unknown
 LABEL org.opencontainers.image.title="craftpulse-ci-js-default" \
+      org.opencontainers.image.revision="${COMMIT_SHA}" \
       io.craftpulse.profile="js-default"
 USER 65532:65532
 
@@ -141,12 +159,14 @@ FROM opengrep-${TARGETARCH} AS opengrep
 
 # SAST profile: Opengrep at the version of profile.json with the rule set of the profile. The job runs
 # "craftpulse-ci sast" and "craftpulse-ci upload".
-FROM ci-runtime AS opengrep-default
-USER 0
+FROM ci-base AS opengrep-default
 COPY --from=opengrep --chmod=0755 /opengrep /usr/local/bin/opengrep
 COPY internal/ci/profiles/opengrep-default/ /opt/craftpulse/profiles/opengrep-default/
 ENV CRAFTPULSE_SAST_PROFILE=/opt/craftpulse/profiles/opengrep-default HOME=/tmp
+COPY --link --from=build /out/craftpulse-ci /usr/local/bin/craftpulse-ci
+ARG COMMIT_SHA=unknown
 LABEL org.opencontainers.image.title="craftpulse-ci-opengrep-default" \
+      org.opencontainers.image.revision="${COMMIT_SHA}" \
       io.craftpulse.profile="opengrep-default"
 USER 65532:65532
 
@@ -160,24 +180,27 @@ ADD --checksum=sha256:ab9d51f86e6a5fb936f605faff6b593ac51bc378fff4d3e8b9d58358b9
 
 FROM trivy-${TARGETARCH} AS trivy-archive
 
-FROM ci-runtime AS trivy-tool
-USER 0
+FROM ci-base AS trivy-tool
 RUN apk add --no-cache git
 RUN --mount=from=trivy-archive,target=/mnt/trivy tar -xzf /mnt/trivy/trivy.tgz -C /usr/local/bin trivy
-COPY internal/ci/profiles/trivy-default/ /opt/craftpulse/profiles/trivy-default/
 
 # The vulnerability database snapshot of the image, pinned by the digest of its OCI artifact.
 FROM trivy-tool AS trivy-db
 ARG TRIVY_DB_REPOSITORY=ghcr.io/aquasecurity/trivy-db@sha256:5622a5d226f954dec2919250bc79cd1725e339a1c453587c3a6aa3d6daab4a78
-RUN craftpulse-ci trivy-db --cache-dir /opt/craftpulse/trivy --repository "$TRIVY_DB_REPOSITORY"
+RUN --mount=type=bind,from=db-downloader,source=/out/craftpulse-ci,target=/usr/local/bin/craftpulse-ci \
+    craftpulse-ci trivy-db --cache-dir /opt/craftpulse/trivy --repository "$TRIVY_DB_REPOSITORY"
 
 # SCA and IaC profile: Trivy at the version of profile.json with the database snapshot of the image; the job
 # runs "craftpulse-ci trivy" and "craftpulse-ci upload" without a network. The job user owns the database, so
 # "craftpulse-ci trivy-db" can replace it from an internal mirror.
 FROM trivy-tool AS trivy-default
-COPY --from=trivy-db --chown=65532:65532 /opt/craftpulse/trivy/ /opt/craftpulse/trivy/
+COPY internal/ci/profiles/trivy-default/ /opt/craftpulse/profiles/trivy-default/
+COPY --link --from=trivy-db --chown=65532:65532 /opt/craftpulse/trivy/ /opt/craftpulse/trivy/
 ENV CRAFTPULSE_TRIVY_PROFILE=/opt/craftpulse/profiles/trivy-default CRAFTPULSE_TRIVY_CACHE=/opt/craftpulse/trivy HOME=/tmp
+COPY --link --from=build /out/craftpulse-ci /usr/local/bin/craftpulse-ci
+ARG COMMIT_SHA=unknown
 LABEL org.opencontainers.image.title="craftpulse-ci-trivy-default" \
+      org.opencontainers.image.revision="${COMMIT_SHA}" \
       io.craftpulse.profile="trivy-default"
 USER 65532:65532
 
@@ -189,14 +212,16 @@ RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no
 # Git documentation profile: Markdown links, anchors and the inventory by craftpulse-ci with goldmark, OpenAPI
 # by Spectral at the version of profile.json with the ruleset of the profile. The job runs "craftpulse-ci docs"
 # and "craftpulse-ci upload".
-FROM ci-runtime AS git-markdown-openapi
-USER 0
+FROM ci-base AS git-markdown-openapi
 RUN apk add --no-cache nodejs
 COPY internal/ci/profiles/git-markdown-openapi/ /opt/craftpulse/profiles/git-markdown-openapi/
 COPY --from=spectral /opt/craftpulse/profiles/git-markdown-openapi/node_modules/ /opt/craftpulse/profiles/git-markdown-openapi/node_modules/
 RUN ln -s /opt/craftpulse/profiles/git-markdown-openapi/node_modules/@stoplight/spectral-cli/dist/index.js /usr/local/bin/spectral
 ENV CRAFTPULSE_DOCS_PROFILE=/opt/craftpulse/profiles/git-markdown-openapi HOME=/tmp
+COPY --link --from=build /out/craftpulse-ci /usr/local/bin/craftpulse-ci
+ARG COMMIT_SHA=unknown
 LABEL org.opencontainers.image.title="craftpulse-ci-git-markdown-openapi" \
+      org.opencontainers.image.revision="${COMMIT_SHA}" \
       io.craftpulse.profile="git-markdown-openapi"
 USER 65532:65532
 
