@@ -10,7 +10,10 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase"
 )
 
-type documentation struct{ uc usecase.Documentation }
+type documentation struct {
+	uc        usecase.Documentation
+	documents usecase.ServiceDocumentation
+}
 
 func (h *documentation) ListDocumentationRoots(ctx context.Context, req openapi.ListDocumentationRootsRequestObject) (openapi.ListDocumentationRootsResponseObject, error) {
 	s, scope, err := subjectScope(ctx)
@@ -64,4 +67,66 @@ func rootsBody(roots []entity.DocumentationRoot) openapi.DocumentationRootList {
 		}
 	}
 	return out
+}
+
+func (h *documentation) ListServiceDocuments(ctx context.Context, req openapi.ListServiceDocumentsRequestObject) (openapi.ListServiceDocumentsResponseObject, error) {
+	s, scope, err := subjectScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := pageLimit(req.Params.Limit)
+	if err != nil {
+		return nil, err
+	}
+	const kind = "service_documents"
+	key := s.OrganizationID.String() + ":" + s.UserID.String() + ":" + req.ServiceId.String()
+	var after entity.ID
+	if req.Params.Cursor != nil {
+		if len(*req.Params.Cursor) > 512 {
+			return nil, errMalformedPage
+		}
+		page, ok := decodeCursor(*req.Params.Cursor)
+		if !ok || page.Kind != kind || page.Name != key || page.ID == uuid.Nil {
+			return nil, errMalformedPage
+		}
+		after = entity.ID(page.ID)
+	}
+	page, err := h.documents.ListServiceDocuments(ctx, s, scope, entity.ID(req.ServiceId), after, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := openapi.DocumentPage{
+		DocumentationState: openapi.DataState(page.State), Data: make([]openapi.Document, len(page.Items)),
+		AccessNotes: accessNotes(page.Notes), AccessLimited: len(page.Notes) != 0,
+	}
+	for i := range page.Items {
+		d := &page.Items[i]
+		out.Data[i] = openapi.Document{
+			Id: uuid.UUID(d.DocumentID), Title: optional(d.Title), Path: new(d.Path), VersionRef: d.VersionRef,
+			DocFormat: openapi.DocumentDocFormat(d.Format), LastCheckedAt: d.LastCheckedAt,
+			OpenViolations: d.OpenViolations, SourceUrl: d.SourceURL,
+		}
+	}
+	if page.Next != nil {
+		out.NextCursor = new(encodeCursor(cursorData{Kind: kind, Name: key, ID: uuid.UUID(*page.Next)}))
+	}
+	return openapi.ListServiceDocuments200JSONResponse(out), nil
+}
+
+func (h *documentation) RequestDocumentationCheck(ctx context.Context, req openapi.RequestDocumentationCheckRequestObject) (openapi.RequestDocumentationCheckResponseObject, error) {
+	s, scope, err := subjectScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil || req.Body.RootId == uuid.Nil {
+		return nil, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/root_id", Code: entity.FieldRequired}}}
+	}
+	op, err := h.documents.RequestDocumentationCheck(ctx, s, scope, entity.ID(req.ServiceId), entity.ID(req.Body.RootId))
+	if err != nil {
+		return nil, err
+	}
+	location := "/api/v1/operations/" + op.ID.String()
+	return openapi.RequestDocumentationCheck202JSONResponse{
+		Body: operationBody(op), Headers: openapi.RequestDocumentationCheck202ResponseHeaders{Location: &location},
+	}, nil
 }

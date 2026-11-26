@@ -98,3 +98,34 @@ type DocsReceiptRoot struct {
 	ProfileID  string
 	SHA        string
 }
+
+// DocumentationCheck is an observed check or the latest completed check of its kind.
+type DocumentationCheck struct {
+	SHA           string
+	Kind          string
+	Checks        []string
+	ObservedAt    time.Time
+	SARIFID       ID
+	Complete      bool
+	Latest        bool
+	RepositoryURL string
+	InstanceKey   string
+	ProjectPath   string
+	Provider      Provider
+}
+
+// ServiceDocument combines an accessible Git version with the last checked state.
+type ServiceDocument struct {
+	DocumentVersion
+	LastCheckedAt  *time.Time
+	OpenViolations *int
+	SourceURL      *string
+}
+
+// ServiceDocuments is a page of a service's documentation corpus.
+type ServiceDocuments struct {
+	State DataState
+	Items []ServiceDocument
+	Notes []AccessNote
+	Next  *ID
+}

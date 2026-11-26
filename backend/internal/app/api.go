@@ -15,6 +15,7 @@ import (
 	docsrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/docs"
 	installrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/install"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
+	viewrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/view"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/access"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/audit"
@@ -37,7 +38,8 @@ type apiModules struct {
 	webhooks           usecase.Webhooks
 	intake             usecase.Intake
 	sync               usecase.SyncStatus
-	operations         usecase.Operations
+	collection         view.Sync
+	series             view.Series
 	reports            usecase.TeamReports
 	code               usecase.CodeDetails
 	tasks              usecase.TaskViews
@@ -86,14 +88,21 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 	findingViews := view.New(view.Deps{Clock: c, Tx: tx, Findings: view.FindingDeps{
 		Reader: checks, Rights: decisions, Structure: orgs, Repositories: m.findingReports, Calculator: m.componentCalculator,
 	}})
+	docReports, _ := m.documentationAreas.(view.DocumentationReports)
+	operations := view.New(view.Deps{
+		Repo: viewrepo.NewRepo(pool), Tx: tx, Sync: m.collection, Series: m.series, Access: decisions, Clock: c, NewID: newID,
+		Documentation: view.DocumentationDeps{
+			Roots: documentation, Reports: docReports, Findings: checks, Access: decisions, Tenants: platform.NewRepo(pool),
+		},
+	})
 	return v1.Deps{
 		Handler: handler.New(handler.Deps{
-			SourceLinks: decisions, SiteURL: siteURL, Webhooks: m.webhooks, Documentation: documentation, Checks: checks,
+			SourceLinks: decisions, SiteURL: siteURL, Webhooks: m.webhooks, Documentation: documentation, Documents: operations, Checks: checks,
 			Links: m.links, Exceptions: m.decisions, ExceptionDrafts: checks, Comparisons: checks, Findings: findingViews,
 			UploadTokens: logins, Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
 			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg, Connections: m.connections,
 			Intake: withReceiptResults(m.intake, pool, tx),
-			Sync:   m.sync, Operations: m.operations, Reports: m.reports, Code: m.code, Tasks: m.tasks, Accounts: orgs, Process: m.process, Previews: m.previews, Targets: m.targets,
+			Sync:   m.sync, Operations: operations, Reports: m.reports, Code: m.code, Tasks: m.tasks, Accounts: orgs, Process: m.process, Previews: m.previews, Targets: m.targets,
 		}),
 		UploadTokens: logins,
 		APIKeys:      logins,

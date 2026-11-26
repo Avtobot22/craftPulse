@@ -246,6 +246,12 @@ type Documentation interface {
 	RootsAt(ctx context.Context, orgID entity.ID, scope entity.Scope, serviceID, areaID entity.ID, seq int64) ([]entity.DocumentationRoot, error)
 }
 
+// ServiceDocumentation exposes the service corpus and requests for repeat checks.
+type ServiceDocumentation interface {
+	ListServiceDocuments(context.Context, entity.Subject, entity.Scope, entity.ID, entity.ID, int) (entity.ServiceDocuments, error)
+	RequestDocumentationCheck(context.Context, entity.Subject, entity.Scope, entity.ID, entity.ID) (entity.Operation, error)
+}
+
 type SourceLinks interface {
 	ListSourceLinks(context.Context, entity.Subject) ([]entity.SourceLink, error)
 	StartSourceLink(context.Context, entity.Subject, entity.ID, string, string) (string, error)

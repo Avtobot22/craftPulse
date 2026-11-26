@@ -5,8 +5,9 @@ import "time"
 type OperationKind string
 
 const (
-	OperationSyncRun       OperationKind = "sync_run"
-	OperationSeriesRefresh OperationKind = "series_refresh"
+	OperationSyncRun            OperationKind = "sync_run"
+	OperationSeriesRefresh      OperationKind = "series_refresh"
+	OperationDocumentationCheck OperationKind = "documentation_check"
 )
 
 type OperationStatus string
