@@ -78,6 +78,14 @@ func (c *cohort) crossBasis(row *entity.CohortRow, v *visibility, f *entity.Repo
 			}
 			m.Technical = &public
 		}
+		if reports := m.PipelineReports; reports != nil && !v.securityAllowed(c.objects[m.ID].AreaID, reports.ProjectID) {
+			public := *reports
+			public.Scopes = slices.DeleteFunc(slices.Clone(reports.Scopes), func(s entity.TechnicalScope) bool {
+				return entity.SensitiveSummaryAnalysis(s.Kind)
+			})
+			hidden = hidden || len(public.Scopes) != len(reports.Scopes)
+			m.PipelineReports = &public
+		}
 		b.MRs = append(b.MRs, m)
 	}
 	return b, hidden

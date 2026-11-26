@@ -41,8 +41,21 @@ func (r *TechnicalSummaryRevision) AppliesAt(at time.Time) bool {
 // TechnicalHead identifies an MR head at one report point.
 type TechnicalHead struct {
 	MRVersion
-	PipelineID      ID
-	PipelineStarted *time.Time
+	PipelineID          ID
+	PipelineStarted     *time.Time
+	SuccessfulPipelines []TechnicalPipeline
+}
+
+// TechnicalPipeline identifies a successful run and the date used to select its profile.
+type TechnicalPipeline struct {
+	ID        ID
+	ProfileAt time.Time
+}
+
+// TechnicalCrossEvidence separates head findings from each pipeline's report coverage.
+type TechnicalCrossEvidence struct {
+	Head            TechnicalCross
+	PipelineReports map[ID]TechnicalCross
 }
 
 // TechnicalScope carries only aggregates; security data stays in its own scopes until read access is applied.
@@ -66,4 +79,4 @@ type TechnicalCross struct {
 }
 
 // TechnicalCrossSnapshot evaluates evidence at the date of a point on a fixed knowledge cut.
-type TechnicalCrossSnapshot func(context.Context, time.Time, []TechnicalHead) (map[ID]TechnicalCross, error)
+type TechnicalCrossSnapshot func(context.Context, time.Time, []TechnicalHead) (map[ID]TechnicalCrossEvidence, error)

@@ -32,7 +32,13 @@ func TestReport_TechnicalCrossScopesAndCohort(t *testing.T) {
 	require.NoError(t, err)
 	decisions, err := newDecision(e.app, nil, e.clock)
 	require.NoError(t, err)
-	e.calc, err = newCalc(e.app, calcModules{structure: orgs, facts: e.runner.norm, settings: e.process, decisions: decisions}, e.clock, prometheus.NewRegistry())
+	catalog := entity.CheckCatalog{Profiles: []entity.CheckProfile{
+		{ID: "junit-import", Mode: entity.CheckModeImport, ReportFormat: "junit_xml"},
+		{ID: "lcov-import", Mode: entity.CheckModeImport, ReportFormat: "lcov"},
+	}}
+	e.calc, err = newCalc(e.app, calcModules{
+		catalog: catalog, structure: orgs, facts: e.runner.norm, settings: e.process, decisions: decisions,
+	}, e.clock, prometheus.NewRegistry())
 	require.NoError(t, err)
 	admin := entity.Subject{OrganizationID: e.orgID, UserID: entity.ID(e.adminID)}
 	tenants := platform.NewRepo(e.app)
@@ -70,15 +76,22 @@ func TestReport_TechnicalCrossScopesAndCohort(t *testing.T) {
 	submit(mrManifest("42"), mrRecordOf("9001", 1, _headA), mrRecordOf("9002", 2, _headB))
 	task := e.objectID(t, "task", "31003")
 	mr1, mr2 := e.objectID(t, "merge_request", "9001"), e.objectID(t, "merge_request", "9002")
-	run := ciRun(t, runSpec{id: "5001", project: "42", sha: _headA, status: "success", revision: "v1", updated: e.day(4), mr: "9001"})
-	var pipeline map[string]any
-	require.NoError(t, json.Unmarshal(run.Payload, &pipeline))
-	pipeline["started_at"], pipeline["finished_at"] = e.day(3), e.day(4)
-	run.Payload = mustMarshal(t, pipeline)
-	submit(ciManifest("42"), run,
+	pipelineAt := func(id, mr, sha string, start int) *envelope.Record {
+		run := ciRun(t, runSpec{id: id, project: "42", sha: sha, status: "success", revision: "v1", updated: e.day(start + 1), mr: mr})
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal(run.Payload, &payload))
+		payload["started_at"], payload["finished_at"] = e.day(start), e.day(start+1)
+		run.Payload = mustMarshal(t, payload)
+		return run
+	}
+	submit(ciManifest("42"), pipelineAt("5001", "9001", _headA, 3),
+		pipelineAt("5002", "9001", _headA, 5), pipelineAt("5003", "9002", _headB, 5),
 		ciAttempt(t, attemptSpec{id: "7001", run: "5001", job: "tests", fingerprint: _linux, no: 1, status: "failed", seconds: 60}),
 		ciAttempt(t, attemptSpec{id: "7002", run: "5001", job: "tests", fingerprint: _linux, no: 2, status: "success", seconds: 45}))
 	runID := e.objectID(t, "ci_run", "5001")
+	laterRunID := e.objectID(t, "ci_run", "5002")
+	unsummarizedRunID := e.objectID(t, "ci_run", "5003")
+	component := seedTechnicalCrossReports(t, e, area, rc.ID, runID, laterRunID, unsummarizedRunID)
 	links := linkuc.New(linkuc.Deps{Repo: linkrepo.NewRepo(e.app), Tenants: tenants, Tx: tx, Clock: e.clock, NewID: newID})
 	store := changerepo.NewRepo(e.app)
 	require.NoError(t, tx.InOrgTx(ctx, e.orgID, func(ctx context.Context) error {
@@ -91,11 +104,25 @@ func TestReport_TechnicalCrossScopesAndCohort(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		junit := entity.ProfileEntry{
+			ComponentID: component, Language: "go", AnalysisKind: entity.AnalysisJUnit, Mode: entity.CheckModeImport,
+			ProfileID: "junit-import", ToolVersions: map[string]string{},
+		}
+		coverage := junit
+		coverage.AnalysisKind, coverage.ProfileID = entity.AnalysisCoverage, "lcov-import"
 		profile := entity.CheckProfileVersion{
 			ID: entity.ID(uuid.New()), ProjectID: entity.ID(e.project), VersionNo: 1, KnownSeq: seq,
 			ConfirmedBy: admin.UserID, ConfirmedAt: e.day(0), ConfirmationID: entity.ID(uuid.New()), ContentHash: make([]byte, 32),
+			Entries: []entity.ProfileEntry{junit},
 		}
 		if err := store.InsertProfileVersion(ctx, e.orgID, profile); err != nil {
+			return err
+		}
+		later := profile
+		later.ID, later.ConfirmationID = entity.ID(uuid.New()), entity.ID(uuid.New())
+		later.VersionNo, later.BaseVersionNo, later.ConfirmedAt = 2, new(1), e.day(5)
+		later.Entries = []entity.ProfileEntry{junit, coverage}
+		if err := store.InsertProfileVersion(ctx, e.orgID, later); err != nil {
 			return err
 		}
 		finding := entity.SummaryFinding{Lifecycle: entity.FindingNew, FindingCoordinates: entity.FindingCoordinates{
@@ -104,11 +131,14 @@ func TestReport_TechnicalCrossScopesAndCohort(t *testing.T) {
 		code := entity.TechnicalStream{ExpectedReport: entity.ExpectedReport{Kind: entity.AnalysisCode}, Complete: true, Comparable: true}
 		security := entity.TechnicalStream{ExpectedReport: entity.ExpectedReport{Kind: entity.AnalysisSAST}, Complete: true, Comparable: true, Findings: []entity.SummaryFinding{finding}}
 		for i, rev := range []*entity.SummaryRevision{
-			{MRID: mr1, HeadSHA: _headA, PipelineState: "complete", Technical: entity.TechnicalSummary{Streams: []entity.TechnicalStream{code, security}}},
+			{
+				MRID: mr1, HeadSHA: _headA, PipelineState: "complete",
+				Technical: entity.TechnicalSummary{Streams: []entity.TechnicalStream{code, security}},
+				Items: []entity.SummaryItem{{Kind: "ci_attempts", RequiredRight: "none", Value: mustMarshal(t, map[string]entity.ID{
+					"pipeline_id": laterRunID,
+				})}},
+			},
 			{MRID: mr2, HeadSHA: _headA, PipelineState: "complete", Technical: entity.TechnicalSummary{Streams: []entity.TechnicalStream{code}}},
-			{MRID: mr2, HeadSHA: _headB, PipelineState: "reports_missing", Technical: entity.TechnicalSummary{Streams: []entity.TechnicalStream{
-				{ExpectedReport: entity.ExpectedReport{Kind: entity.AnalysisJUnit}},
-			}}},
 		} {
 			rev.BuiltAt, rev.KnowledgeSeq, rev.ProfileVersionID, rev.InputHash = e.clock.Now(), seq, profile.ID, make([]byte, 32)
 			// The summary was built after the historical events. Its data still belongs at their date.
@@ -137,6 +167,8 @@ func TestReport_TechnicalCrossScopesAndCohort(t *testing.T) {
 	assert.Equal(t, ptr(1.0), published.value(t, "X03", "new_security", e.week).Numerator)
 	assert.Equal(t, ptr(1.0), published.value(t, "X02", "missing_report", e.week).Numerator)
 	assert.Equal(t, ptr(1.0), published.value(t, "X04", "fail_to_pass", e.week).Numerator)
+	assert.Equal(t, ptr(1.0), published.value(t, "X04", "missing_report", e.week).Numerator)
+	assert.Equal(t, ptr(3.0), published.value(t, "X04", "missing_report", e.week).Denominator)
 	assert.Equal(t, ptr(1.0), published.value(t, "X05", "current_head_ci", e.week).Numerator)
 	assert.Equal(t, ptr(1.0), published.value(t, "X05", "complete_reports", e.week).Numerator)
 	assert.Equal(t, ptr(1.0), published.value(t, "X06", "sast:new", e.week).Numerator)
@@ -156,7 +188,7 @@ func TestReport_TechnicalCrossScopesAndCohort(t *testing.T) {
 	full := cohort(e.admin)
 	require.Len(t, full.Data, 1)
 	assert.Equal(t, uuid.UUID(task), full.Data[0].Object.Id)
-	assert.ElementsMatch(t, []entity.ID{mr1, mr2, runID}, crossBasisIDs(&full.Data[0]))
+	assert.ElementsMatch(t, []entity.ID{mr1, mr2, laterRunID, unsummarizedRunID}, crossBasisIDs(&full.Data[0]))
 	require.NotNil(t, full.Data[0].Signals)
 	assert.Contains(t, *full.Data[0].Signals, "new_security")
 
@@ -169,6 +201,18 @@ func TestReport_TechnicalCrossScopesAndCohort(t *testing.T) {
 	assert.Equal(t, "pipeline", string(pipelinePage.Data[0].Object.Kind))
 	assert.ElementsMatch(t, []entity.ID{task, mr1}, crossBasisIDs(&pipelinePage.Data[0]))
 
+	pipelineQuery.Set("estimator", "missing_report")
+	pipelineResponse = e.checked(t, e.admin, "/api/v1/revisions/"+published.Revision.ID.String()+"/cohort?"+pipelineQuery.Encode())
+	pipelinePage = decode[openapi.CohortPage](t, pipelineResponse)
+	require.Len(t, pipelinePage.Data, 1)
+	assert.Equal(t, uuid.UUID(laterRunID), pipelinePage.Data[0].Object.Id)
+
+	pipelineQuery.Set("metric_id", "X02")
+	taskResponse := e.checked(t, e.admin, "/api/v1/revisions/"+published.Revision.ID.String()+"/cohort?"+pipelineQuery.Encode())
+	taskPage := decode[openapi.CohortPage](t, taskResponse)
+	require.Len(t, taskPage.Data, 1)
+	assert.Equal(t, uuid.UUID(task), taskPage.Data[0].Object.Id)
+
 	require.Equal(t, http.StatusFound, e.login(t, e.member, _otherSub).Code)
 	narrow := e.readReport(t, e.member, nil)
 	assert.Equal(t, published.Revision.ID, narrow.Revision.ID)
@@ -176,4 +220,28 @@ func TestReport_TechnicalCrossScopesAndCohort(t *testing.T) {
 	assert.Nil(t, narrow.value(t, "X06", "sast:new", e.week).Numerator)
 	assert.Empty(t, cohort(e.member).Data)
 	assert.Equal(t, ptr(1.0), narrow.value(t, "X02", "missing_report", e.week).Numerator)
+}
+
+// seedTechnicalCrossReports supplies the normalized reports independently of the check attempts.
+func seedTechnicalCrossReports(t *testing.T, e *reportEnv, area, receipt, first, later, unsummarized entity.ID) entity.ID {
+	t.Helper()
+	ctx, org := t.Context(), uuid.UUID(e.orgID)
+	service, component := uuid.New(), uuid.New()
+	_, err := e.owner.Exec(ctx, `INSERT INTO org.service (organization_id, id, name, status, created_at)
+		VALUES ($1, $2, 'CI service', 'active', $3)`, org, service, e.day(0))
+	require.NoError(t, err)
+	_, err = e.owner.Exec(ctx, `INSERT INTO org.component (organization_id, id, known_seq, service_id, repository_area_id,
+		path_prefix, status, origin, confirmed_by, confirmed_at) VALUES ($1, $2, 1, $3, $4, '', 'confirmed', 'manual', $5, $6)`,
+		org, component, service, uuid.UUID(area), e.adminID, e.day(0))
+	require.NoError(t, err)
+	_, err = e.owner.Exec(ctx, `INSERT INTO normalize.report (organization_id, receipt_id, record_no, known_seq, area_id, component_id,
+		report_kind, report_format, profile_id, mode, schema_version, parser_version, language, sha, run_id, finished_at, exit_class, completeness)
+		VALUES ($1, $2, 101, 1, $3, $4, 'junit', 'junit_xml', 'junit-import', 'import', '1', '1', 'go', $5, $7, $10, 'success', 'complete'),
+		       ($1, $2, 102, 1, $3, $4, 'junit', 'junit_xml', 'junit-import', 'import', '1', '1', 'go', $5, $8, $11, 'success', 'complete'),
+		       ($1, $2, 103, 1, $3, $4, 'junit', 'junit_xml', 'junit-import', 'import', '1', '1', 'go', $6, $9, $11, 'success', 'complete'),
+		       ($1, $2, 104, 1, $3, $4, 'coverage', 'lcov', 'lcov-import', 'import', '1', '1', 'go', $6, $9, $11, 'success', 'complete'),
+		       ($1, $2, 105, 1, $3, $4, 'coverage', 'lcov', 'lcov-import', 'import', '1', '1', 'go', $5, $7, $10, 'success', 'complete')`,
+		org, uuid.UUID(receipt), uuid.UUID(area), component, _headA, _headB, uuid.UUID(first), uuid.UUID(later), uuid.UUID(unsummarized), e.day(4), e.day(6))
+	require.NoError(t, err)
+	return entity.ID(component)
 }

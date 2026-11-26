@@ -38,6 +38,8 @@ type Deps struct {
 	Summary            SummaryDeps
 	TaskSummaries      TaskSummaries
 	TechnicalSummaries TechnicalSummaryStore
+	TechnicalPipelines TechnicalPipelines
+	MissingChecksAt    func(entity.CIRun, time.Time, []string) bool
 	Repo               repo.ChangeRepo
 	Reports            Reports
 	Decisions          Decisions

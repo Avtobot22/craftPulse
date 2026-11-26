@@ -144,7 +144,7 @@ func (r *Repo) SummaryReportReadyAt(ctx context.Context, org, report entity.ID) 
 
 // SummaryReports reads the complete history of one exact stream. Completeness and configured rules
 // are checked before choosing an observation, so a newer partial report cannot hide a valid one.
-func (r *Repo) SummaryReports(ctx context.Context, org entity.ID, mr entity.SummaryMR, e entity.ProfileEntry) ([]entity.TechnicalReport, error) {
+func (r *Repo) SummaryReports(ctx context.Context, org entity.ID, mr entity.SummaryMR, e entity.ProfileEntry, runs []entity.ID) ([]entity.TechnicalReport, error) {
 	rows, err := postgres.Conn(ctx, r.pool).Query(ctx, `
 		WITH observations AS (
 			SELECT r.id, r.sha, r.report_format AS format, COALESCE(r.language,'') AS language, COALESCE(r.producer,'') AS producer,
@@ -161,6 +161,7 @@ func (r *Repo) SummaryReports(ctx context.Context, org entity.ID, mr entity.Summ
 				AND ($5 = '' OR r.language = $5) AND COALESCE(r.profile_id,'') = $6 AND r.mode = $7
 				AND r.sha = ANY($8::text[]) AND r.known_seq <= $9
 				AND ($10::bytea IS NULL OR r.rules_hash = $10)
+				AND (cardinality($11::uuid[]) = 0 OR r.run_id = ANY($11))
 			UNION ALL
 			SELECT r.id, r.sha, COALESCE(r.report_format,''), r.language, COALESCE(r.producer,''), '',
 				CAST(NULL AS bytea), NULL, r.scope_hash, '', 'unknown', '', false, true, '', '',
@@ -170,12 +171,13 @@ func (r *Repo) SummaryReports(ctx context.Context, org entity.ID, mr entity.Summ
 			WHERE r.organization_id = $1 AND r.area_id = $2 AND r.component_id = $3 AND r.report_kind = $4
 				AND ($5 = '' OR r.language = $5) AND COALESCE(r.profile_id,'') = $6 AND r.mode = $7
 				AND r.sha = ANY($8::text[]) AND r.known_seq <= $9
+				AND (cardinality($11::uuid[]) = 0 OR r.run_id = ANY($11))
 		)
 		SELECT id, sha, format, language, producer, producer_version, rules_hash, config_hash, scope_hash, db_version,
 			completeness, exit_class, interrupted, rejected, delta, delta_base, observed_at
 		FROM observations ORDER BY observed_at DESC, known_seq DESC, record_no DESC, id DESC`,
 		uuid.UUID(org), uuid.UUID(mr.AreaID), uuid.UUID(e.ComponentID), e.AnalysisKind, e.Language, e.ProfileID, e.Mode,
-		[]string{mr.HeadSHA, mr.BaseSHA}, mr.KnowledgeSeq, e.RulesHash)
+		[]string{mr.HeadSHA, mr.BaseSHA}, mr.KnowledgeSeq, e.RulesHash, ids(runs))
 	if err != nil {
 		return nil, err
 	}

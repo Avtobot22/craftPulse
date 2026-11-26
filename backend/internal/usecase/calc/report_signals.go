@@ -12,7 +12,7 @@ import (
 )
 
 type reportSignals struct {
-	technical map[int64]map[entity.ID]entity.TechnicalCross
+	technical map[int64]map[entity.ID]entity.TechnicalCrossEvidence
 	edges     map[entity.ID][]entity.LinkEdge
 	review    reviewInput
 	facts     entity.TaskObservationFacts

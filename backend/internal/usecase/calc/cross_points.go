@@ -27,6 +27,7 @@ type crossMR struct {
 	AllowFailureSupported bool                   `json:"allow_failure_supported,omitempty"`
 	Tasks                 []entity.ID            `json:"tasks,omitempty"`
 	Technical             *entity.TechnicalCross `json:"technical,omitempty"`
+	PipelineReports       *entity.TechnicalCross `json:"pipeline_reports,omitempty"`
 	FailToPass            *bool                  `json:"fail_to_pass,omitempty"`
 	AllowedFailure        *bool                  `json:"allowed_failure,omitempty"`
 
@@ -200,7 +201,6 @@ func (x *reportSignals) crossObservations(at time.Time, allRuns bool) (mrs map[e
 		if head.HeadSHA == "" {
 			continue
 		}
-		technicalHeads = append(technicalHeads, head)
 		if allRuns {
 			for _, i := range ci.byMR[v.MRID] {
 				run := &ci.source.runs[i]
@@ -210,8 +210,14 @@ func (x *reportSignals) crossObservations(at time.Time, allRuns bool) (mrs map[e
 				b := crossMR{ID: v.MRID}
 				b.setPipeline(&facts, &ci, run)
 				pipelines[v.MRID] = append(pipelines[v.MRID], b)
+				if b.CIClass == "success" {
+					head.SuccessfulPipelines = append(head.SuccessfulPipelines, entity.TechnicalPipeline{
+						ID: run.version.RunID, ProfileAt: runOrderTime(&run.version),
+					})
+				}
 			}
 		}
+		technicalHeads = append(technicalHeads, head)
 	}
 	return mrs, technicalHeads, pipelines
 }

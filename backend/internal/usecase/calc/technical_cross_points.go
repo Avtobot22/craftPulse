@@ -18,7 +18,7 @@ type technicalCohort struct {
 func (u *UseCase) loadTechnicalCross(ctx context.Context, org entity.ID, rev *entity.CalcRevision, flow *flowSource, periods []period) error {
 	x := flow.signals
 	if flow.in.mapping == nil {
-		x.technical = map[int64]map[entity.ID]entity.TechnicalCross{}
+		x.technical = map[int64]map[entity.ID]entity.TechnicalCrossEvidence{}
 		return nil
 	}
 	snapshot, err := u.d.ReportEvidence(ctx, org, slices.Collect(maps.Keys(x.linked)), rev.KnowledgeSeq, rev.AsOf)
@@ -26,7 +26,7 @@ func (u *UseCase) loadTechnicalCross(ctx context.Context, org entity.ID, rev *en
 		return err
 	}
 	flow.prepare()
-	x.technical = make(map[int64]map[entity.ID]entity.TechnicalCross, len(periods))
+	x.technical = make(map[int64]map[entity.ID]entity.TechnicalCrossEvidence, len(periods))
 	x.edges = map[entity.ID][]entity.LinkEdge{}
 	taskIDs := make([]entity.ID, 0, len(flow.pr.tls))
 	for _, tl := range flow.pr.tls {
@@ -57,7 +57,7 @@ func (u *UseCase) loadTechnicalCross(ctx context.Context, org entity.ID, rev *en
 				}
 			}
 		}
-		_, heads, _ := x.crossObservations(p.end, false)
+		_, heads, _ := x.crossObservations(p.end, true)
 		heads = slices.DeleteFunc(heads, func(head entity.TechnicalHead) bool { return !eligible[head.MRID] })
 		if len(heads) == 0 {
 			continue
@@ -108,7 +108,7 @@ func (x *reportSignals) technicalCohort(pr *prepared, p period) technicalCohort 
 				continue
 			}
 			if projection, ok := projections[m.ID]; ok {
-				m.Technical = &projection
+				m.Technical = &projection.Head
 			}
 			b.MRs = append(b.MRs, m)
 			if member == memberIn {
@@ -137,6 +137,9 @@ func (x *reportSignals) technicalCohort(pr *prepared, p period) technicalCohort 
 				continue
 			}
 			run.Tasks, run.Technical = m.Tasks, m.Technical
+			if reports, ok := projections[id].PipelineReports[*run.PipelineID]; ok {
+				run.PipelineReports = &reports
+			}
 			if runs[*run.PipelineID] == nil {
 				runs[*run.PipelineID] = map[entity.ID]crossMR{}
 			}

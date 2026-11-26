@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	calcrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/calc"
 	changerepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/change"
@@ -69,6 +70,7 @@ func (m calcMetrics) ChainPublished(d time.Duration) { m.chain.Observe(d.Seconds
 // settings and the confirmation of a target from process, the state of collection from sync and the rights of a
 // reader from access. None of them depends on calc.
 type calcModules struct {
+	catalog      entity.CheckCatalog
 	structure    calc.Structure
 	facts        calc.Facts
 	testCoverage calc.TestCoverageFacts
@@ -101,10 +103,12 @@ func newCalc(pool *pgxpool.Pool, m calcModules, c clock.Clock, reg prometheus.Re
 	var evidence calc.ReportEvidence
 	components, _ := m.structure.(change.Components)
 	decisions, _ := m.decisions.(change.Decisions)
-	if components != nil && decisions != nil {
+	pipelines, _ := m.facts.(change.TechnicalPipelines)
+	if components != nil && decisions != nil && pipelines != nil {
 		summaryStore := changerepo.NewRepo(pool)
 		reader := change.New(change.Deps{
 			Components: components, Decisions: decisions, Tx: tx, TechnicalSummaries: summaryStore,
+			Catalog: m.catalog, TechnicalPipelines: pipelines, MissingChecksAt: calc.MissingChecksAt,
 			Summary: change.SummaryDeps{Store: summaryStore, Facts: normalizerepo.NewRepo(pool)},
 		})
 		evidence = reader.TechnicalSnapshot

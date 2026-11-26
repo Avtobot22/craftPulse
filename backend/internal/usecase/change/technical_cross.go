@@ -13,6 +13,11 @@ type TechnicalSummaryStore interface {
 	TechnicalSummaries(context.Context, entity.ID, []entity.ID, int64, time.Time) ([]entity.TechnicalSummaryRevision, error)
 }
 
+// TechnicalPipelines reads the normalized graph of a pipeline at the report's knowledge cut.
+type TechnicalPipelines interface {
+	TechnicalPipeline(context.Context, entity.ID, entity.ID, entity.ID, int64) (entity.CIRun, error)
+}
+
 // TechnicalSnapshot binds report points to immutable summary inputs and evaluates exceptions at each point.
 func (u *UseCase) TechnicalSnapshot(ctx context.Context, org entity.ID, mrs []entity.ID, seq int64, asOf time.Time) (entity.TechnicalCrossSnapshot, error) {
 	byMR := make(map[entity.ID][]entity.TechnicalSummaryRevision, len(mrs))
@@ -30,8 +35,8 @@ func (u *UseCase) TechnicalSnapshot(ctx context.Context, org entity.ID, mrs []en
 	if err != nil {
 		return nil, err
 	}
-	return func(ctx context.Context, at time.Time, heads []entity.TechnicalHead) (map[entity.ID]entity.TechnicalCross, error) {
-		out := make(map[entity.ID]entity.TechnicalCross, len(heads))
+	return func(ctx context.Context, at time.Time, heads []entity.TechnicalHead) (map[entity.ID]entity.TechnicalCrossEvidence, error) {
+		out := make(map[entity.ID]entity.TechnicalCrossEvidence, len(heads))
 		err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 			decisions := map[entity.ID][]entity.ExceptionVersion{}
 			for i := range heads {
@@ -40,27 +45,22 @@ func (u *UseCase) TechnicalSnapshot(ctx context.Context, org entity.ID, mrs []en
 				j := slices.IndexFunc(history, func(row entity.TechnicalSummaryRevision) bool {
 					return row.HeadSHA == head.HeadSHA && row.AppliesAt(at)
 				})
-				if j < 0 || len(history[j].Streams) == 0 {
-					// A new head can lack a summary precisely because its expected reports have not arrived.
-					evidence, err := u.unsummarizedHead(ctx, org, head, seq, at)
-					if err != nil {
-						return err
+				var row *entity.TechnicalSummaryRevision
+				if j >= 0 && len(history[j].Streams) > 0 {
+					if _, ok := decisions[head.AreaID]; !ok {
+						var err error
+						decisions[head.AreaID], err = u.d.Decisions.ActiveAt(ctx, org, head.AreaID, seq, at)
+						if err != nil {
+							return err
+						}
 					}
-					out[head.MRID] = evidence
-					continue
+					selected := history[j]
+					selected.Streams = recheckDocumentation(&selected, history[j+1:], at)
+					row = &selected
 				}
-				if _, ok := decisions[head.AreaID]; !ok {
-					var err error
-					decisions[head.AreaID], err = u.d.Decisions.ActiveAt(ctx, org, head.AreaID, seq, at)
-					if err != nil {
-						return err
-					}
-				}
-				row := history[j]
-				row.Streams = recheckDocumentation(&row, history[j+1:], at)
-				evidence := technicalEvidence(&row, decisions[head.AreaID])
-				if row.PipelineID == head.PipelineID {
-					evidence.MissingChecks, evidence.PublicMissingChecks = row.MissingChecks, row.PublicMissingChecks
+				evidence, err := u.technicalCrossAt(ctx, org, head, seq, at, row, decisions[head.AreaID])
+				if err != nil {
+					return err
 				}
 				out[head.MRID] = evidence
 			}
@@ -70,27 +70,91 @@ func (u *UseCase) TechnicalSnapshot(ctx context.Context, org entity.ID, mrs []en
 	}, nil
 }
 
-func (u *UseCase) unsummarizedHead(ctx context.Context, org entity.ID, head *entity.TechnicalHead, seq int64, at time.Time) (entity.TechnicalCross, error) {
+func (u *UseCase) technicalCrossAt(ctx context.Context, org entity.ID, head *entity.TechnicalHead, seq int64, at time.Time,
+	row *entity.TechnicalSummaryRevision, exceptions []entity.ExceptionVersion,
+) (entity.TechnicalCrossEvidence, error) {
+	mr := entity.SummaryMR{MRVersion: head.MRVersion, KnowledgeSeq: seq}
+	var out entity.TechnicalCrossEvidence
+	if row != nil {
+		out.Head = technicalEvidence(row, exceptions)
+	}
+	var headRun entity.CIRun
+	if len(head.SuccessfulPipelines) > 0 {
+		out.PipelineReports = make(map[entity.ID]entity.TechnicalCross, len(head.SuccessfulPipelines))
+	}
+	for _, pipeline := range head.SuccessfulPipelines {
+		project, entries, err := u.reportProfile(ctx, org, head.AreaID, seq, pipeline.ProfileAt)
+		if err != nil {
+			return out, err
+		}
+		reports := entity.TechnicalCross{ProjectID: project}
+		if len(entries) > 0 {
+			run, err := u.d.TechnicalPipelines.TechnicalPipeline(ctx, org, head.AreaID, pipeline.ID, seq)
+			if err != nil {
+				return out, err
+			}
+			if pipeline.ID == head.PipelineID {
+				headRun = run
+			}
+			runIDs := make([]entity.ID, 1, len(run.Children)+1)
+			runIDs[0] = pipeline.ID
+			for i := range run.Children {
+				runIDs = append(runIDs, run.Children[i].RunID)
+			}
+			reports, err = u.reportCompletenessAt(ctx, org, mr, project, entries, at, runIDs)
+			if err != nil {
+				return out, err
+			}
+		}
+		out.PipelineReports[pipeline.ID] = reports
+	}
+	if row != nil {
+		if row.PipelineID == head.PipelineID {
+			out.Head.MissingChecks, out.Head.PublicMissingChecks = row.MissingChecks, row.PublicMissingChecks
+		}
+		return out, nil
+	}
 	profileAt := at
 	if head.PipelineStarted != nil {
 		profileAt = *head.PipelineStarted
 	}
 	project, entries, err := u.reportProfile(ctx, org, head.AreaID, seq, profileAt)
 	if err != nil {
-		return entity.TechnicalCross{}, err
+		return out, err
 	}
+	out.Head, err = u.reportCompletenessAt(ctx, org, mr, project, entries, at, nil)
+	if err != nil {
+		return out, err
+	}
+	jobs := u.summaryCheckJobs(entries)
+	if len(jobs.All) == 0 {
+		return out, nil
+	}
+	if headRun.Run.RunID.IsZero() && !head.PipelineID.IsZero() {
+		headRun, err = u.d.TechnicalPipelines.TechnicalPipeline(ctx, org, head.AreaID, head.PipelineID, seq)
+		if err != nil {
+			return out, err
+		}
+	}
+	out.Head.MissingChecks = u.d.MissingChecksAt(headRun, at, jobs.All)
+	out.Head.PublicMissingChecks = u.d.MissingChecksAt(headRun, at, jobs.Public)
+	return out, nil
+}
+
+func (u *UseCase) reportCompletenessAt(ctx context.Context, org entity.ID, mr entity.SummaryMR, project entity.ID,
+	entries []entity.ProfileEntry, at time.Time, runIDs []entity.ID,
+) (entity.TechnicalCross, error) {
 	row := entity.TechnicalSummaryRevision{ProjectID: project}
-	mr := entity.SummaryMR{MRVersion: head.MRVersion, KnowledgeSeq: seq}
 	for _, entry := range entries {
 		stream := entity.TechnicalStream{ExpectedReport: entity.ExpectedReport{ComponentID: entry.ComponentID, Kind: entry.AnalysisKind, Language: entry.Language}}
-		reports, err := u.d.Summary.Facts.SummaryReports(ctx, org, mr, entry)
+		reports, err := u.d.Summary.Facts.SummaryReports(ctx, org, mr, entry, runIDs)
 		if err != nil {
 			return entity.TechnicalCross{}, err
 		}
 		for i := range reports {
 			r := &reports[i]
 			pinned := entry.ToolVersions[r.Producer]
-			if r.SHA != head.HeadSHA || !r.Complete() || summaryCodeAuxiliary(r) || pinned != "" && r.ProducerVersion != "" && r.ProducerVersion != pinned {
+			if r.SHA != mr.HeadSHA || !r.Complete() || summaryCodeAuxiliary(r) || pinned != "" && r.ProducerVersion != "" && r.ProducerVersion != pinned {
 				continue
 			}
 			if !r.EventAt.After(at) {

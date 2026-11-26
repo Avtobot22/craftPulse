@@ -40,7 +40,7 @@ func (u *UseCase) summarizeReports(ctx context.Context, org entity.ID, mr entity
 func (u *UseCase) summarizeRow(ctx context.Context, org entity.ID, mr entity.SummaryMR, e *entity.ProfileEntry, versions []entity.ExceptionVersion,
 	v *entity.SummaryRevision,
 ) (time.Time, error) {
-	rs, err := u.d.Summary.Facts.SummaryReports(ctx, org, mr, *e)
+	rs, err := u.d.Summary.Facts.SummaryReports(ctx, org, mr, *e, nil)
 	if err != nil {
 		return time.Time{}, err
 	}

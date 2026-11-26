@@ -115,6 +115,9 @@ func technicalSignal(m *crossMR, metric, est string) (count int, known, applicab
 		}
 		return evidenceBool(m.AllowedFailure)
 	}
+	if metric == "X04" && est == "missing_report" && m.PipelineReports != nil {
+		return reportCompleteness(m.PipelineReports, metric, est)
+	}
 	if m.Technical == nil {
 		return 0, false, true
 	}
@@ -124,13 +127,12 @@ func technicalSignal(m *crossMR, metric, est string) (count int, known, applicab
 	case "warning":
 		return anyTechnicalSignal(m, metric, "new_code", "new_security", "docs_violation")
 	case "missing_report", "complete_reports":
-		return reportCompleteness(m, metric, est)
+		return reportCompleteness(m.Technical, metric, est)
 	}
 	return scopedSignal(m.Technical.Scopes, metric, est)
 }
 
-func reportCompleteness(m *crossMR, metric, est string) (count int, known, applicable bool) {
-	t := m.Technical
+func reportCompleteness(t *entity.TechnicalCross, metric, est string) (count int, known, applicable bool) {
 	if metric == "X02" && t.MissingChecks {
 		return 1, true, true
 	}

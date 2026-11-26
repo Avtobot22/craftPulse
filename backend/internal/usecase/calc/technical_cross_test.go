@@ -71,6 +71,9 @@ func TestTechnicalCrossCohortCountsOneTaskAndOnePipeline(t *testing.T) {
 		{version: f.Task, instance: f.InstanceID, events: f.TaskEvents}, other,
 	}})
 	p := period{start: d(2), end: f.AsOf}
+	run, secondRun, staleRun := idOf("run"), idOf("second run"), idOf("stale run")
+	completeCode := entity.TechnicalScope{Kind: entity.AnalysisCode, Expected: 1, Complete: 1, Comparable: 1}
+	missingTests := entity.TechnicalScope{Kind: entity.AnalysisJUnit, Expected: 1}
 	x := reportSignals{
 		facts: f, review: reviewInput{mrs: observationReviews(&f)},
 		linked: map[entity.ID]bool{first.MRID: true, second.MRID: true},
@@ -78,19 +81,30 @@ func TestTechnicalCrossCohortCountsOneTaskAndOnePipeline(t *testing.T) {
 			f.Task.TaskID:        {{To: first.MRID}, {To: second.MRID}},
 			other.version.TaskID: {{To: first.MRID}},
 		},
-		technical: map[int64]map[entity.ID]entity.TechnicalCross{p.end.UnixNano(): {
-			first.MRID:  {Scopes: []entity.TechnicalScope{{Kind: entity.AnalysisCode, Expected: 1, Complete: 1, Comparable: 1}}},
-			second.MRID: {Scopes: []entity.TechnicalScope{{Kind: entity.AnalysisCode, Expected: 1, Complete: 1, Comparable: 1, New: 1}}},
+		technical: map[int64]map[entity.ID]entity.TechnicalCrossEvidence{p.end.UnixNano(): {
+			first.MRID: {
+				Head: entity.TechnicalCross{Scopes: []entity.TechnicalScope{completeCode, missingTests}},
+				PipelineReports: map[entity.ID]entity.TechnicalCross{
+					run:       {Scopes: []entity.TechnicalScope{completeCode}},
+					secondRun: {Scopes: []entity.TechnicalScope{completeCode, missingTests}},
+				},
+			},
+			second.MRID: {Head: entity.TechnicalCross{Scopes: []entity.TechnicalScope{
+				{Kind: entity.AnalysisCode, Expected: 1, Complete: 1, Comparable: 1, New: 1},
+			}}},
 		}},
 	}
-	start, finish := d(4), d(5)
-	run, secondRun, staleRun := idOf("run"), idOf("second run"), idOf("stale run")
+	start, finish, laterStart, laterFinish := d(3), d(4), d(5), d(6)
 	x.facts.CI.Runs = []entity.CIRunVersion{
 		{RunID: run, AreaID: first.AreaID, SHA: first.HeadSHA, StartedAt: &start, FinishedAt: &finish, Outcome: entity.CISuccess},
-		{RunID: secondRun, AreaID: first.AreaID, SHA: first.HeadSHA, StartedAt: &start, FinishedAt: &finish, Outcome: entity.CISuccess},
+		{RunID: secondRun, AreaID: first.AreaID, SHA: first.HeadSHA, StartedAt: &laterStart, FinishedAt: &laterFinish, Outcome: entity.CISuccess},
 		{RunID: staleRun, AreaID: first.AreaID, SHA: "previous head", StartedAt: &start, FinishedAt: &finish, Outcome: entity.CISuccess},
 	}
 	x.runs = map[entity.ID]entity.ID{run: first.MRID, secondRun: first.MRID, staleRun: first.MRID}
+	_, heads, _ := x.crossObservations(p.end, true)
+	i := slices.IndexFunc(heads, func(h entity.TechnicalHead) bool { return h.MRID == first.MRID })
+	require.NotEqual(t, -1, i)
+	assert.ElementsMatch(t, []entity.TechnicalPipeline{{ID: run, ProfileAt: start}, {ID: secondRun, ProfileAt: laterStart}}, heads[i].SuccessfulPipelines)
 	points := x.technicalPoints(pr, p)
 	point := func(metric, est string) entity.Point {
 		t.Helper()
@@ -106,4 +120,16 @@ func TestTechnicalCrossCohortCountsOneTaskAndOnePipeline(t *testing.T) {
 	assert.Equal(t, num(2), pipelines.Denominator)
 	require.Len(t, pipelines.Contributions, 2)
 	assert.ElementsMatch(t, []entity.ID{run, secondRun}, []entity.ID{pipelines.Contributions[0].ObjectID, pipelines.Contributions[1].ObjectID})
+
+	missing := point("X04", "missing_report")
+	assert.Equal(t, num(1), missing.Numerator)
+	assert.Equal(t, num(2), missing.Denominator)
+	require.Len(t, missing.Contributions, 2)
+	for _, c := range missing.Contributions {
+		want := entity.RoleDenominator
+		if c.ObjectID == secondRun {
+			want = entity.RoleNumerator
+		}
+		assert.Equal(t, want, c.Role)
+	}
 }

@@ -29,7 +29,7 @@ type SummaryFacts interface {
 	SummaryMR(context.Context, entity.ID, entity.ID, bool) (entity.SummaryMR, error)
 	SummarySeverities(context.Context, entity.ID, []entity.ID) (map[entity.ID]string, error)
 	SummaryReportReadyAt(context.Context, entity.ID, entity.ID) (time.Time, error)
-	SummaryReports(context.Context, entity.ID, entity.SummaryMR, entity.ProfileEntry) ([]entity.TechnicalReport, error)
+	SummaryReports(context.Context, entity.ID, entity.SummaryMR, entity.ProfileEntry, []entity.ID) ([]entity.TechnicalReport, error)
 }
 
 // SummarySource reads the live head through connect.
