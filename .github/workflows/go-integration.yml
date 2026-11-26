@@ -1,0 +1,76 @@
+name: Go integration tests
+
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        required: true
+        type: string
+      profile:
+        default: ''
+        type: string
+      artifacts:
+        default: ''
+        type: string
+      save-cache:
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: ${{ matrix.count }} shard(s), index ${{ matrix.index }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.matrix) }}
+    env:
+      CGO_ENABLED: '1'
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/go-cache
+        id: go-cache
+        with:
+          module: backend
+          mode: race-integration
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: inputs.profile != ''
+        with:
+          name: ${{ inputs.profile }}
+          path: ${{ runner.temp }}/baseline
+      - name: Run the integration shard
+        working-directory: backend
+        env:
+          SHARD_COUNT: ${{ matrix.count }}
+          SHARD_INDEX: ${{ matrix.index }}
+          PROFILE_ARTIFACT: ${{ inputs.profile }}
+          TIMINGS: ${{ runner.temp }}/shard.json
+        run: |
+          profile=()
+          if [[ -n "$PROFILE_ARTIFACT" ]]; then
+            profile=(--profile "$RUNNER_TEMP/baseline/shard.json")
+          elif [[ -f ../scripts/ci-integration-timings.json ]]; then
+            profile=(--profile ../scripts/ci-integration-timings.json)
+          fi
+          python3 ../scripts/ci_shards.py run --count "$SHARD_COUNT" --index "$SHARD_INDEX" \
+            --output "$TIMINGS" "${profile[@]}"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: inputs.artifacts != ''
+        with:
+          name: ${{ inputs.artifacts }}-${{ matrix.count }}-${{ matrix.index }}
+          path: ${{ runner.temp }}/shard.json
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: matrix.index == 0 && inputs.save-cache && steps.go-cache.outputs.hit != 'true'
+        continue-on-error: true
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}

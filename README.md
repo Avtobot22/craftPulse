@@ -56,9 +56,39 @@ docker build -t craftpulse-server:local -f Dockerfile .
 
 Границы слоёв проверяет depguard в `backend/.golangci.yml`. Для сценариев и репозиториев перечислены модули из раздела 10.3 ТЗ: разрешён импорт собственных подпакетов, а связи между модулями передаются через интерфейсы в `internal/app`. Новый модуль нужно добавить в эти правила; для неизвестных модулей импорты других сценариев и реализаций репозиториев запрещены по умолчанию.
 
-Workflow `Repository` запускается на каждом PR и push в `main`. Обязательные проверки `repository-check` и `ci` выполняются при любом наборе изменений. Остальные jobs выбираются по путям. Ручной запуск выполняет полный набор.
+Workflow `Repository` запускается на PR и push в `main`. `repository-check` проверяет репозиторий, а `ci` сводит результаты выбранных jobs. В PR проверки выбираются по путям. Независимые jobs Go, OpenAPI, frontend и OCI идут параллельно. Dockerfile фронтенда проверяет тему и типы и собирает статику за один запуск `npm run build`.
 
-Go-тесты идут параллельно с линтером, генерацией, `govulncheck` и сборкой образа сервера. Тесты `backend/internal/app` распределены между двумя раннерами, каждый поднимает свой PostgreSQL. Frontend проходит проверки кода и тесты отдельно от Docker-сборки. В Dockerfile одна команда `npm run build` проверяет тему и типы и собирает статику. Контракт OpenAPI, образы адаптеров и профилей CI проверяются отдельными jobs.
+Для выборочного запуска в GitHub Actions укажи ветку и `target`:
+
+```sh
+gh workflow run repository.yml --ref "$(git branch --show-current)" -f target=integration
+gh workflow run repository.yml --ref "$(git branch --show-current)" -f target=shard-benchmark
+```
+
+`all` запускает обычный полный CI. `backend`, `integration`, `dataset`, `frontend`,
+`openapi` и `oci` запускают выбранные проверки. `shard-benchmark` сначала собирает
+длительности тестов `backend/internal/app`, затем сравнивает 1, 2 и 4 шарда на
+одинаковых раннерах. В отчёте есть время самого долгого шарда и суммарное время
+сборки и тестов по всем шардам. Актуальный профиль берётся из артефакта
+`integration-profile-1-0`. Для регулярного CI поле `tests` этого файла хранится
+в `scripts/ci-integration-timings.json`. Новые тесты получают медианный вес.
+
+Локальный harness может вызвать тот же runner из `backend/`. По умолчанию Python
+использует кэши установленного Go. Чтобы выделить кэш для race-сборки, установи
+`GOCACHE` один раз перед запуском:
+
+```sh
+cd backend
+export GOCACHE="$(go env GOCACHE)/race-integration"
+python3 ../scripts/ci_shards.py run --count 2 --index 0 \
+  --profile ../scripts/ci-integration-timings.json --output /tmp/craftpulse-shard-0.json
+```
+
+На GitHub кэши Go разделены по модулю, версии, платформе и типу сборки. Обычная
+сборка, race-тесты и генераторы OpenAPI используют отдельные кэши. Golangci-lint
+использует собственный кэш. BuildKit хранит слои по имени образа. PR читают кэши
+`main`, а ручные запуски записывают кэши своей ветки. Push в `main` актуализирует
+кэши выбранных jobs, а еженедельный запуск освежает полный набор.
 
 Устаревшие прогоны отменяются только на PR. Каждый push в `main` проверяется отдельно.
 

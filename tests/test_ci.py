@@ -30,13 +30,13 @@ class AggregateCITest(unittest.TestCase):
         cls.required = ["detect", "repository-check"]
         cls.conditional = [name for name in names if name not in cls.required]
 
-    def run_gate(self, *, results=None, affected=None, event="pull_request"):
+    def run_gate(self, *, results=None, affected=None):
         jobs = {name: {"result": "success"} for name in self.required + self.conditional}
         jobs["detect"]["outputs"] = dict.fromkeys(self.conditional, "true")
         jobs["detect"]["outputs"].update(affected or {})
         for name, result in (results or {}).items():
             jobs[name]["result"] = result
-        env = dict(os.environ, JOBS=json.dumps(jobs), EVENT_NAME=event)
+        env = dict(os.environ, JOBS=json.dumps(jobs))
         return subprocess.run([BASH, "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", self.command],
                               env=env, cwd=ROOT, capture_output=True, text=True).returncode
 
@@ -63,11 +63,6 @@ class AggregateCITest(unittest.TestCase):
         self.assertNotEqual(0, self.run_gate(results={"openapi": "skipped"},
                                             affected={"openapi": ""}))
 
-    def test_manual_run_requires_every_job(self):
-        for name in self.conditional:
-            with self.subTest(job=name):
-                self.assertNotEqual(0, self.run_gate(results={name: "skipped"}, affected={name: "false"},
-                                                    event="workflow_dispatch"))
 
 
 if __name__ == "__main__":

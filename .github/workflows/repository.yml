@@ -5,7 +5,23 @@ on:
     types: [opened, synchronize, reopened, edited, ready_for_review]
   push:
     branches: [main]
+  schedule:
+    - cron: '23 3 * * 1'
   workflow_dispatch:
+    inputs:
+      target:
+        description: Checks to run
+        type: choice
+        default: all
+        options:
+          - all
+          - backend
+          - integration
+          - dataset
+          - frontend
+          - openapi
+          - oci
+          - shard-benchmark
 
 permissions:
   contents: read
@@ -25,25 +41,39 @@ jobs:
       pull-requests: read
     outputs:
       openapi: >-
-        ${{ (github.event_name == 'workflow_dispatch' || steps.filter.outputs.openapi-build == 'true')
-        && 'true' || steps.filter.outputs.openapi }}
-      openapi-build: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.openapi-build }}
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'openapi') && 'true' || 'false')
+        || ((steps.filter.outputs.openapi == 'true') && 'true' || steps.filter.outputs.openapi-build) }}
+      openapi-build: >-
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'openapi') && 'true' || 'false')
+        || steps.filter.outputs.openapi-build }}
       backend: >-
-        ${{ (github.event_name == 'workflow_dispatch' || steps.filter.outputs.dataset-source == 'true')
-        && 'true' || steps.filter.outputs.backend }}
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'backend') && 'true' || 'false')
+        || ((steps.filter.outputs.dataset-source == 'true') && 'true' || steps.filter.outputs.backend) }}
+      backend-integration: >-
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'backend' || inputs.target == 'integration') && 'true' || 'false')
+        || ((steps.filter.outputs.dataset-source == 'true') && 'true' || steps.filter.outputs.backend) }}
       backend-image: >-
-        ${{ (github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend-source == 'true')
-        && 'true' || steps.filter.outputs.backend-image }}
-      dataset: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.dataset }}
-      frontend-checks: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.frontend-checks }}
-      frontend-image: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.frontend-image }}
-      release-metadata: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.release-metadata }}
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'oci') && 'true' || 'false')
+        || ((steps.filter.outputs.backend-source == 'true') && 'true' || steps.filter.outputs.backend-image) }}
+      dataset: >-
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'dataset') && 'true' || 'false')
+        || steps.filter.outputs.dataset }}
+      frontend-checks: >-
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'frontend') && 'true' || 'false')
+        || steps.filter.outputs.frontend-checks }}
+      frontend-image: >-
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'frontend' || inputs.target == 'oci') && 'true' || 'false')
+        || steps.filter.outputs.frontend-image }}
+      release-metadata: >-
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'oci') && 'true' || 'false')
+        || steps.filter.outputs.release-metadata }}
       release-adapters: >-
-        ${{ (github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend-source == 'true')
-        && 'true' || steps.filter.outputs.release-adapters }}
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'oci') && 'true' || 'false')
+        || ((steps.filter.outputs.backend-source == 'true') && 'true' || steps.filter.outputs.release-adapters) }}
       release-profiles: >-
-        ${{ (github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend-source == 'true'
-        || steps.filter.outputs.dataset-source == 'true') && 'true' || steps.filter.outputs.release-profiles }}
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'oci') && 'true' || 'false')
+        || ((steps.filter.outputs.backend-source == 'true' || steps.filter.outputs.dataset-source == 'true') && 'true' || steps.filter.outputs.release-profiles) }}
+      shard-benchmark: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'shard-benchmark' && 'true' || 'false' }}
     steps:
       # The pull request files API is capped at 3,000 files. Use Git for larger PRs and pushes.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,7 +82,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        if: github.event_name != 'workflow_dispatch'
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         id: filter
         with:
           token: ${{ github.event_name == 'pull_request' && github.event.pull_request.changed_files < 3000 && github.token || '' }}
@@ -64,21 +94,26 @@ jobs:
               - 'docs/requirements/{features,use-cases}.md'
               - 'demo-dataset/schemas/jenkins-execution.schema.json'
             openapi-build:
+              - '.github/actions/go-cache/**'
               - 'scripts/openapi/**'
               - 'docs/technical-specification/*.yaml'
               - '.github/workflows/repository.yml'
             backend:
               - 'backend/**'
               - '!backend/{adapter.Dockerfile,ci.Dockerfile}'
+              - '.github/actions/go-cache/**'
+              - 'scripts/ci_shards.py'
+              - 'scripts/ci-integration-timings.json'
               - 'deploy/postgres/**'
               - 'docs/technical-specification/{openapi,adapter,envelope}.yaml'
-              - '.github/workflows/{repository,go-check}.yml'
+              - '.github/workflows/{repository,go-check,go-integration}.yml'
             # Production builds use the committed sources and generated code, without compiling Go tests.
             backend-source:
               - 'backend/**'
               - '!backend/**/*_test.go'
               - '!backend/{Dockerfile,adapter.Dockerfile,ci.Dockerfile}'
             backend-image:
+              - '.github/actions/buildkit-cache/**'
               - 'backend/Dockerfile'
               - 'deploy/postgres/**'
               - 'scripts/check_release_server.py'
@@ -86,6 +121,7 @@ jobs:
               - '.github/workflows/repository.yml'
             dataset:
               - 'demo-dataset/**'
+              - '.github/actions/go-cache/**'
               - '.github/workflows/{repository,go-check}.yml'
             # The manifest test and docs-profile smoke test execute the dataset generator.
             dataset-source:
@@ -98,6 +134,8 @@ jobs:
               - 'docs/technical-specification/openapi.yaml'
               - '.github/workflows/repository.yml'
             frontend-image:
+              - 'scripts/oci_release.py'
+              - '.github/actions/buildkit-cache/**'
               - 'frontend/**'
               - '.github/workflows/repository.yml'
             release-metadata:
@@ -108,10 +146,12 @@ jobs:
               - '.github/release-tools.json'
               - '.github/workflows/{repository,oci-release}.yml'
             release-adapters:
+              - '.github/actions/buildkit-cache/**'
               - 'backend/adapter.Dockerfile'
               - 'scripts/oci_release.py'
               - '.github/workflows/{repository,oci-release}.yml'
             release-profiles:
+              - '.github/actions/buildkit-cache/**'
               - 'backend/ci.Dockerfile'
               # Profile smoke tests consume fixtures, including files named *_test.go.
               - 'backend/internal/ci/profiles/**'
@@ -151,17 +191,25 @@ jobs:
         run: npm --prefix scripts/openapi ci --ignore-scripts --no-audit --no-fund
       - name: Validate contract, examples and SRS operation map
         run: npm --prefix scripts/openapi run verify
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/go-cache
         if: needs.detect.outputs.openapi-build == 'true'
+        id: go-cache
         with:
+          module: scripts/openapi
+          mode: generators
           go-version: '1.27.0'
-          cache: false
       - name: Generate and compile Go and TypeScript contracts
         if: needs.detect.outputs.openapi-build == 'true'
         run: npm --prefix scripts/openapi run generators
       - name: Build API documentation
         if: needs.detect.outputs.openapi-build == 'true'
         run: npm --prefix scripts/openapi run docs
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: needs.detect.outputs.openapi-build == 'true' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && steps.go-cache.outputs.hit != 'true'
+        continue-on-error: true
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
 
   backend:
     needs: detect
@@ -170,7 +218,20 @@ jobs:
     with:
       module: backend
       check-generated: true
-      split-test-package: ./internal/app
+      exclude-test-package: ./internal/app
+
+  backend-integration:
+    needs: detect
+    if: needs.detect.outputs.backend-integration == 'true'
+    uses: ./.github/workflows/go-integration.yml
+    with:
+      matrix: '[{"count":2,"index":0},{"count":2,"index":1}]'
+      save-cache: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+
+  shard-benchmark:
+    needs: detect
+    if: needs.detect.outputs.shard-benchmark == 'true'
+    uses: ./.github/workflows/go-benchmark.yml
 
   backend-image:
     needs: detect
@@ -181,10 +242,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/buildkit-cache
       - name: Build server image
         env:
           COMMIT_SHA: ${{ github.sha }}
-        run: docker build --build-arg COMMIT_SHA="$COMMIT_SHA" --tag "craftpulse-server:$COMMIT_SHA" backend
+        run: python3 scripts/oci_release.py build-server --sha "$COMMIT_SHA"
       - name: Verify server version on disposable PostgreSQL
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -239,9 +301,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/buildkit-cache
       # npm run build in the Dockerfile includes the theme check and strict TypeScript.
       - name: Build frontend image without publishing
-        run: docker build --tag craftpulse-frontend:ci frontend
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: python3 scripts/oci_release.py build-frontend --sha "$COMMIT_SHA"
 
   release-metadata:
     needs: detect
@@ -264,6 +329,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/buildkit-cache
       - name: Build discovered adapter images without registry credentials
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -278,6 +344,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/buildkit-cache
       - name: Build the CI step and profile images without registry credentials
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -290,6 +357,8 @@ jobs:
       - repository-check
       - openapi
       - backend
+      - backend-integration
+      - shard-benchmark
       - backend-image
       - dataset
       - frontend-checks
@@ -304,7 +373,6 @@ jobs:
       - name: Check required job results
         env:
           JOBS: ${{ toJSON(needs) }}
-          EVENT_NAME: ${{ github.event_name }}
         run: |
           python3 - <<'PYTHON'
           import json
@@ -314,13 +382,12 @@ jobs:
           jobs = json.loads(os.environ["JOBS"])
           required = ("detect", "repository-check")
           affected = jobs["detect"].get("outputs", {})
-          manual = os.environ["EVENT_NAME"] == "workflow_dispatch"
           failures = []
           for name, job in jobs.items():
               result = job["result"]
               if result == "success":
                   continue
-              if result == "skipped" and name not in required and not manual and affected.get(name) == "false":
+              if result == "skipped" and name not in required and affected.get(name) == "false":
                   continue
               failures.append(f"{name}: {result}")
           sys.exit("\n".join(failures) if failures else 0)

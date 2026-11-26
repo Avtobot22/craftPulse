@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -34,6 +35,10 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	flag.Parse()
+	if flag.Lookup("test.list").Value.String() != "" {
+		os.Exit(m.Run())
+	}
 	os.Exit(runWithPostgres(m))
 }
 

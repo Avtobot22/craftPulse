@@ -263,6 +263,12 @@ def build(image, sha, ref, root=ROOT):
     args = ["docker", "build", "--platform", "linux/amd64", "--build-arg", f"COMMIT_SHA={sha}",
             "--label", f"org.opencontainers.image.revision={sha}", "--tag", ref,
             "--file", str(root / image["dockerfile"])]
+    if os.environ.get("CRAFTPULSE_BUILDKIT_CACHE") == "gha":
+        scope = f"craftpulse-amd64-{image['name']}"
+        cache = ["--cache-from", f"type=gha,scope={scope},timeout=30s"]
+        if os.environ.get("CRAFTPULSE_BUILDKIT_CACHE_WRITE") == "1":
+            cache += ["--cache-to", f"type=gha,scope={scope},mode=max,timeout=2m,ignore-error=true"]
+        args = ["docker", "buildx", "build", "--load", *cache, *args[2:]]
     if image.get("target"):
         args += ["--target", image["target"]]
     if image.get("adapter"):
@@ -420,7 +426,8 @@ def release(sha, output, tools, root=ROOT):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["plan", "check", "build-adapters", "build-ci", "install-tools", "release"])
+    parser.add_argument("command", choices=["plan", "check", "build-server", "build-frontend",
+                                           "build-adapters", "build-ci", "install-tools", "release"])
     parser.add_argument("--sha", default="0" * 40)
     parser.add_argument("--output", type=Path, default=ROOT / "build/release")
     parser.add_argument("--tools", type=Path, default=ROOT / "build/release-tools")
@@ -431,6 +438,12 @@ def main():
         elif args.command == "check":
             print(json.dumps(metadata(ROOT, plan()), indent=2))
             npm_licenses(read_json(ROOT / "frontend/package-lock.json"))
+        elif args.command == "build-server":
+            build({"name": "craftpulse-server", "context": "backend",
+                   "dockerfile": "backend/Dockerfile"}, args.sha, f"craftpulse-server:{args.sha}")
+        elif args.command == "build-frontend":
+            build({"name": "craftpulse-frontend", "context": "frontend",
+                   "dockerfile": "frontend/Dockerfile"}, args.sha, "craftpulse-frontend:ci")
         elif args.command == "build-adapters":
             for image in plan():
                 if image.get("adapter"):
