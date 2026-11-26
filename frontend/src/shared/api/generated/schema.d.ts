@@ -9997,6 +9997,8 @@ export interface operations {
                 /** @description Оценка точки показателя с несколькими рядами, как `MetricSeries.estimator`; без параметра - первая оценка показателя. */
                 estimator?: string;
                 role?: "numerator" | "denominator" | "excluded" | "missing";
+                /** @description Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport. */
+                project_id?: string[];
                 /** @description Размер страницы. */
                 limit?: components["parameters"]["Limit"];
                 /** @description Непрозрачный курсор из `next_cursor` предыдущей страницы. Содержимое курсора не разбирается клиентом; курсор действует 24 ч. */

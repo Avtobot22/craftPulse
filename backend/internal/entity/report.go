@@ -38,6 +38,7 @@ type CohortQuery struct {
 	Estimator  string
 	PointStart time.Time
 	Role       ContributionRole
+	Projects   []ID
 	After      *ContributionKey
 	Limit      int
 }

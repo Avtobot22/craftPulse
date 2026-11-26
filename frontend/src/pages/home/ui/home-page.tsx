@@ -10,7 +10,7 @@ import {
   useOutlet,
   useOutletContext,
 } from 'react-router'
-import type { ApiClient } from '@/shared/api'
+import type { ApiClient, Team } from '@/shared/api'
 import type { CurrentUser, SessionController } from '@/shared/auth'
 import {
   contentGridProps,
@@ -19,6 +19,7 @@ import {
   readTaskReturnFocus,
   routePaths,
 } from '@/shared/config'
+import type { ReportPointFocus, TeamReportScope } from '@/shared/config'
 import { ErrorState, LoadingState } from '@/shared/ui'
 import { adminDetailRoutes, adminNavigation } from '../model/admin-navigation'
 import {
@@ -100,6 +101,7 @@ export function HomePage({
   const current = useOutletContext<CurrentUser>()
   const location = useLocation()
   const navigate = useNavigate()
+  const [reportFocus, setReportFocus] = useState<ReportPointFocus>()
   const content = useRef<HTMLElement>(null)
   const navButton = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -143,7 +145,6 @@ export function HomePage({
       (path === routePaths.users &&
         matchPath(path + '/:userId', location.pathname)),
   )
-  const outlet = useOutlet({ teams: scope.teams.data })
   const selectedTeamId = scope.team?.id
   const ownsProcess =
     selectedTeamId !== undefined &&
@@ -155,6 +156,15 @@ export function HomePage({
     current.actions.includes(action) &&
     (action !== 'process.manage' || ownsProcess)
   const allowed = settings.filter(canOpenSetting)
+  const outlet = useOutlet({
+    teams: scope.teams.data,
+    ...(scope.team ? { team: scope.team } : {}),
+    ...(scope.project ? { project: scope.project } : {}),
+    projects: scope.projectChoices ?? [],
+    canManageProcess: allowed.some(({ action }) => action === 'process.manage'),
+    focus: reportFocus?.locationKey === location.key ? reportFocus : undefined,
+    rememberPoint: setReportFocus,
+  } satisfies TeamReportScope & { teams: Team[] | undefined })
   const currentSetting = active && canOpenSetting(active) ? active : undefined
   const isProcessSetting = active?.action === 'process.manage'
   const isReport = reportPaths.some((path) =>

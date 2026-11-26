@@ -11,7 +11,6 @@ import { OrganizationPage } from '@/pages/organization'
 import { UsersPage } from '@/pages/users'
 import { WorkflowSettingsPage } from '@/pages/workflow-settings'
 import { TargetSettingsPage } from '@/pages/target-settings'
-import { TeamReportPage } from '@/pages/team-report'
 import { MetricPassportPage } from '@/pages/metric-passport'
 import { MetricCohortPage } from '@/pages/metric-cohort'
 import { SavedViewPage } from '@/pages/saved-view'
@@ -20,6 +19,7 @@ import { TaskDetailPage } from '@/pages/task-detail'
 import { ProjectTimelinePage } from '@/pages/project-timeline'
 import { MergeRequestQueuePage } from '@/pages/merge-request-queue'
 import { routePaths } from '@/shared/config'
+import { LoadingState } from '@/shared/ui'
 import type { AppRuntime } from '../initialization/runtime'
 import { ProtectedRoute } from './protected-route'
 import { SessionNavigation } from './session-navigation'
@@ -84,7 +84,12 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.teamReport,
-                  element: <TeamReportPage />,
+                  HydrateFallback: LoadingState,
+                  lazy: async () => {
+                    const { TeamReportPage } =
+                      await import('@/pages/team-report')
+                    return { element: <TeamReportPage api={runtime.api} /> }
+                  },
                 },
                 {
                   path: routePaths.metricPassport,

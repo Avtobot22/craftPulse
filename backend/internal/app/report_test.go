@@ -284,6 +284,14 @@ func TestReport_V03ValuesCohortFiltersAndPassport(t *testing.T) {
 	assert.Equal(t, "S", *page.Data[0].SizeLabel)
 	assert.Equal(t, "Story", *page.Data[0].TaskType)
 
+	outcomes := url.Values{"metric_id": {"T07"}, "point_start": start["point_start"], "role": {"numerator"}, "project_id": {e.project.String()}}
+	inProject := e.cohort(t, e.admin, r.Revision.ID, outcomes)
+	require.Equal(t, []string{"R-B:numerator"}, inProject.keys())
+	require.NotNil(t, inProject.Data[0].ReasonCode)
+	assert.Equal(t, "cancelled", *inProject.Data[0].ReasonCode)
+	outcomes.Set("project_id", uuid.NewString())
+	assert.Empty(t, e.cohort(t, e.admin, r.Revision.ID, outcomes).Data)
+
 	wip := e.cohort(t, e.admin, r.Revision.ID, url.Values{"metric_id": {"T12"}, "point_start": start["point_start"]})
 	i := slices.IndexFunc(wip.Data, func(it cohortItemBody) bool { return *it.Object.DisplayKey == "R-C" })
 	require.GreaterOrEqual(t, i, 0, "C is in work at the end of the week")

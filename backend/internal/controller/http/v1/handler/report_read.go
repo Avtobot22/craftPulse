@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"slices"
 	"strconv"
@@ -209,6 +210,14 @@ func (h *reports) ListRevisionCohort(ctx context.Context, req openapi.ListRevisi
 		q.Role = entity.ContributionRole(*p.Role)
 	}
 	filter := q.MetricID + "/" + q.Estimator + "/" + string(q.Role)
+	if p.ProjectId != nil && len(*p.ProjectId) > 0 {
+		q.Projects = make([]entity.ID, len(*p.ProjectId))
+		for i, id := range *p.ProjectId {
+			q.Projects[i] = entity.ID(id)
+		}
+		// Keep the cursor within the contract's length limit even for 50 projects.
+		filter += fmt.Sprintf("/%x", sha256.Sum256(fmt.Append(nil, *p.ProjectId)))
+	}
 	if p.Cursor != nil {
 		c, ok := decodeCursor(*p.Cursor)
 		item, err := strconv.Atoi(c.Sort)

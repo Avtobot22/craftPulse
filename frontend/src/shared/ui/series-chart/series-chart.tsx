@@ -11,6 +11,7 @@ import './series-chart.css'
 export interface ChartPoint {
   point_start: string
   value: number | null
+  detail?: string
 }
 
 export interface ChartSeries {
@@ -32,6 +33,8 @@ export interface SeriesChartProps {
   unit: string
   timeZone: string
   series: readonly ChartSeries[]
+  pointId?: (point: ChartPointSelection) => string
+  restoredSeriesId?: string
   onPointSelect: (point: ChartPointSelection) => void
 }
 
@@ -55,6 +58,8 @@ export function SeriesChart({
   timeZone,
   series,
   onPointSelect,
+  pointId,
+  restoredSeriesId,
 }: SeriesChartProps) {
   const titleId = useId()
   const [chosenIds, setChosenIds] = useState<string[]>()
@@ -64,7 +69,11 @@ export function SeriesChart({
     !chosenIds ||
     series.length <= 1 ||
     (chosenIds.length > 0 && chosen.length === 0)
-  const visible = (useDefaultSelection ? series : chosen).slice(0, maxSeries)
+  const defaults = series.slice(0, maxSeries)
+  const restored = series.find(({ id }) => id === restoredSeriesId)
+  if (restored && !defaults.includes(restored))
+    defaults.splice(maxSeries - 1, 1, restored)
+  const visible = useDefaultSelection ? defaults : chosen.slice(0, maxSeries)
   const time = new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'medium',
     timeStyle: 'medium',
@@ -73,8 +82,13 @@ export function SeriesChart({
   const formatDate = (start: string) => time.format(new Date(start))
   const formatValue = (value: number | null) =>
     value === null ? 'Не рассчитано' : number.format(value)
-  const pointDetails = (name: string, start: string, value: number | null) =>
-    `${name}, ${formatDate(start)}, ${formatValue(value)}${value === null ? '' : ` ${unit}`}`
+  const pointDetails = (
+    name: string,
+    start: string,
+    value: number | null,
+    detail?: string,
+  ) =>
+    `${name}, ${formatDate(start)}, ${formatValue(value)}${value === null ? '' : ` ${unit}`}${detail ? `, ${detail}` : ''}`
   const hasPoints = visible.some(({ points }) => points.length > 0)
   const hasValues = visible.some(({ points }) =>
     points.some(({ value }) => value !== null),
@@ -100,9 +114,9 @@ export function SeriesChart({
         symbol: (markers[index] ?? markers[0]).symbol,
       },
       data: points
-        .map(({ point_start, value }) => {
+        .map(({ point_start, value, detail }) => {
           const x = Date.parse(point_start)
-          const details = pointDetails(name, point_start, value)
+          const details = pointDetails(name, point_start, value, detail)
           const custom = { series_id: id, metric_id, point_start, details }
           const periodPoints = pointsByPeriod.get(x)
           if (periodPoints) periodPoints.push(custom)
@@ -219,10 +233,15 @@ export function SeriesChart({
               <tbody>
                 {visible.flatMap(
                   ({ id, metric_id, name, points }, seriesIndex) =>
-                    points.map(({ point_start, value }, rowIndex) => {
+                    points.map(({ point_start, value, detail }, rowIndex) => {
                       const date = formatDate(point_start)
                       const display = formatValue(value)
-                      const details = pointDetails(name, point_start, value)
+                      const details = pointDetails(
+                        name,
+                        point_start,
+                        value,
+                        detail,
+                      )
                       const detailsId = `${titleId}-${String(seriesIndex)}-${String(rowIndex)}`
                       const active =
                         selected?.id === id && selected.start === point_start
@@ -231,6 +250,11 @@ export function SeriesChart({
                           <td>{name}</td>
                           <td>
                             <button
+                              id={pointId?.({
+                                series_id: id,
+                                metric_id,
+                                point_start,
+                              })}
                               type="button"
                               aria-label={details}
                               aria-describedby={detailsId}
@@ -252,7 +276,10 @@ export function SeriesChart({
                               {periodDetails(point_start)}
                             </ul>
                           </td>
-                          <td>{display}</td>
+                          <td>
+                            {display}
+                            {detail && <div>{detail}</div>}
+                          </td>
                         </tr>
                       )
                     }),
