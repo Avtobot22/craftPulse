@@ -2,6 +2,7 @@ package normalize
 
 import (
 	"context"
+	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
@@ -35,4 +36,26 @@ func (u *UseCase) ReceiptDocumentationRoots(ctx context.Context, org, receipt en
 		return err
 	})
 	return out, err
+}
+
+// LatestDocumentationChecks reads profile observations in one confirmed root.
+func (u *UseCase) LatestDocumentationChecks(ctx context.Context, org entity.ID, root entity.DocumentationRoot, through, after int64) ([]entity.DocumentationCheck, error) {
+	var out []entity.DocumentationCheck
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.LatestDocumentationChecks(ctx, org, root, through, after)
+		return err
+	})
+	return out, err
+}
+
+// DocumentationCheckCompleted reports whether a new pipeline finished the checks of the requested root.
+func (u *UseCase) DocumentationCheckCompleted(ctx context.Context, org entity.ID, root entity.DocumentationRoot, through, after int64, requestedAt time.Time) (bool, error) {
+	var complete bool
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		complete, err = u.d.Repo.DocumentationCheckCompleted(ctx, org, root, through, after, requestedAt)
+		return err
+	})
+	return complete, err
 }
