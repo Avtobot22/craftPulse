@@ -41,3 +41,5 @@ export {
 } from './inspection-link'
 export { TaskDetailLink, TaskReturnLink } from './task-detail-link'
 export { DialogFrame } from './settings-dialogs/dialog-frame'
+
+export { CursorPagination, pageSizes } from './cursor-pagination'

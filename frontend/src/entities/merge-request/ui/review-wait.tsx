@@ -11,12 +11,22 @@ function duration(seconds: number): string {
     : `${String(hours)} ч`
 }
 
-export function ReviewWaitDetails({ wait }: { wait: ReviewWait }) {
+export function ReviewWaitDetails({
+  wait,
+  showKind = true,
+}: {
+  wait: ReviewWait
+  showKind?: boolean
+}) {
   if (!wait) return <Text>Данные об ожидании ревью недоступны</Text>
   return (
     <Text as="div">
-      {contractLabel(contractLabels.reviewWait, wait.kind)}
-      {' · '}
+      {showKind && (
+        <>
+          {contractLabel(contractLabels.reviewWait, wait.kind)}
+          {' · '}
+        </>
+      )}
       {wait.wait_seconds >= 0
         ? duration(wait.wait_seconds)
         : 'Длительность неизвестна'}

@@ -5,14 +5,18 @@ import { Navigate, useLocation, useSearchParams } from 'react-router'
 import { ApiError, listTasks } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import { routePaths } from '@/shared/config'
-import { ErrorState, LoadingState, StaleState } from '@/shared/ui'
+import {
+  CursorPagination,
+  ErrorState,
+  LoadingState,
+  StaleState,
+} from '@/shared/ui'
 import {
   readPreviousCursors,
   readTaskListSearch,
 } from '../model/task-list-search'
 import { TaskFilters } from './task-filters'
 import { TaskListResults } from './task-list-results'
-import { TaskPagination } from './task-pagination'
 import './task-list-page.css'
 
 export function TaskListPage({ api }: { api: ApiClient }) {
@@ -124,7 +128,8 @@ export function TaskListPage({ api }: { api: ApiClient }) {
       ) : (
         (results ?? failure)
       )}
-      <TaskPagination
+      <CursorPagination
+        label="Страницы задач"
         cursor={cursor}
         next={stale ? null : (page?.next_cursor ?? null)}
         previous={previous}
