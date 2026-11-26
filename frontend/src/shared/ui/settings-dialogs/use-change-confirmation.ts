@@ -159,7 +159,11 @@ export function useChangeConfirmation<Draft, Result>({
   }
 
   function confirm() {
-    if (status.kind === 'preview' && isStrongETag(status.proposal.etag)) {
+    if (
+      status.kind === 'preview' &&
+      status.proposal.changes.length > 0 &&
+      isStrongETag(status.proposal.etag)
+    ) {
       const proposal = status.proposal
       run(() => send(proposal))
     }

@@ -92,6 +92,24 @@ export class ApiClient {
     return this.request(method, path, body, decode, options, true)
   }
 
+  previewMapping<T>(
+    teamId: string,
+    body: NonNullable<
+      paths['/teams/{team_id}/mapping-previews']['post']
+    >['requestBody']['content']['application/json'],
+    decode: Decoder<T>,
+    signal: AbortSignal,
+  ): Promise<ApiResponse<T>> {
+    return this.request(
+      'POST',
+      '/teams/{team_id}/mapping-previews',
+      body,
+      decode,
+      { pathParams: { team_id: teamId }, signal },
+      false,
+    )
+  }
+
   startSeriesRefresh<T>(
     seriesId: string,
     decode: Decoder<T>,

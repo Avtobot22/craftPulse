@@ -61,6 +61,13 @@ export type {
 export { getPipeline, listPipelineAttempts } from './pipeline-queries'
 export type { PipelineAttemptsParams } from './pipeline-queries'
 
+export {
+  readCursorPage,
+  readMetricValue,
+  readNullableNumber,
+  readNumber,
+  readObjectRef,
+} from './read-fields'
 export type { OpenCodes } from './read-fields'
 export { getMergeRequestSummary } from './merge-request-summary-queries'
 export {

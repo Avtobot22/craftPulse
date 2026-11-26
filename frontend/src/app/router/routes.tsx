@@ -76,7 +76,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.workflowSettings,
-                  element: <WorkflowSettingsPage />,
+                  element: <WorkflowSettingsPage api={runtime.api} />,
                 },
                 {
                   path: routePaths.targetSettings,
