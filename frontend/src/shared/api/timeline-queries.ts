@@ -22,6 +22,7 @@ export type TaskEventsParams = NonNullable<
 >
 export type ProjectTimelineParams =
   operations['listProjectTimeline']['parameters']['query']
+export type ProjectTimelinePageData = OpenCodes<Schema['TimelinePage']>
 export type TimelineEvent = OpenCodes<Schema['TimelineEvent']>
 
 function readEvent(value: unknown): TimelineEvent {
@@ -42,7 +43,7 @@ function readEvent(value: unknown): TimelineEvent {
   }
 }
 
-function readTimeline(value: unknown): OpenCodes<Schema['TimelinePage']> {
+function readTimeline(value: unknown): ProjectTimelinePageData {
   const raw = readRecord(value)
   return {
     ...readScopedPage(raw),
@@ -108,6 +109,21 @@ export function taskEventPages(api: ApiClient, taskId: string) {
   })
 }
 
+function readProjectTimeline(
+  api: ApiClient,
+  projectId: string,
+  params: ProjectTimelineParams,
+  signal: AbortSignal,
+) {
+  return api
+    .read('/projects/{project_id}/timeline', readTimeline, {
+      pathParams: { project_id: projectId },
+      query: params,
+      signal,
+    })
+    .then(({ data }) => data)
+}
+
 export function listProjectTimeline(
   api: ApiClient,
   projectId: operations['listProjectTimeline']['parameters']['path']['project_id'],
@@ -115,13 +131,26 @@ export function listProjectTimeline(
 ) {
   return queryOptions({
     queryKey: ['projects', 'timeline', projectId, params],
-    queryFn: async ({ signal }) =>
-      (
-        await api.read('/projects/{project_id}/timeline', readTimeline, {
-          pathParams: { project_id: projectId },
-          query: params,
-          signal,
-        })
-      ).data,
+    queryFn: ({ signal }) =>
+      readProjectTimeline(api, projectId, params, signal),
+  })
+}
+
+export function projectTimelinePages(
+  api: ApiClient,
+  projectId: string,
+  params: ProjectTimelineParams,
+) {
+  return infiniteQueryOptions({
+    queryKey: ['projects', 'timeline-pages', projectId, params],
+    initialPageParam: params.cursor ?? '',
+    queryFn: ({ signal, pageParam }) => {
+      const query = pageParam ? { ...params, cursor: pageParam } : params
+      return readProjectTimeline(api, projectId, query, signal)
+    },
+    getNextPageParam: ({ next_cursor }, _pages, _param, pageParams) =>
+      next_cursor && !pageParams.includes(next_cursor)
+        ? next_cursor
+        : undefined,
   })
 }

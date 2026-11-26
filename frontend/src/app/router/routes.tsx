@@ -113,7 +113,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.projectTimeline,
-                  element: <ProjectTimelinePage />,
+                  element: <ProjectTimelinePage api={runtime.api} />,
                 },
                 {
                   path: routePaths.mergeRequestQueue,

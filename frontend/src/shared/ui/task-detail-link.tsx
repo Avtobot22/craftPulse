@@ -10,18 +10,27 @@ export function TaskDetailLink({
   focusId = `task-link-${taskId}`,
   children,
   preserveHistoryFocus = false,
+  returnFocusId = focusId,
+  returnPageCount,
 }: {
   taskId: string
   params?: TaskDetailSearch
   focusId?: string
   children: ReactNode
   preserveHistoryFocus?: boolean
+  returnFocusId?: string
+  returnPageCount?: number
 }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { pathname, search, hash } = location
   const to = taskAnalysisLinks.taskDetail(taskId, params)
-  const taskOrigin: TaskOrigin = { pathname, search, hash, focusId }
+  const taskOrigin: TaskOrigin = {
+    pathname,
+    search,
+    hash,
+    focusId: returnFocusId,
+  }
   const ref = useRef<HTMLAnchorElement>(null)
   const opening = useRef(false)
   const restoreFocus = readTaskReturnFocus(location.state) === focusId
@@ -51,7 +60,13 @@ export function TaskDetailLink({
           preventScrollReset: true,
           state: {
             ...(typeof state === 'object' && state !== null ? state : {}),
-            taskReturnFocus: focusId,
+            taskReturnFocus: returnFocusId,
+            ...(returnFocusId !== focusId
+              ? {
+                  taskReturnScrollTop: window.scrollY,
+                  taskReturnPageCount: returnPageCount,
+                }
+              : {}),
           },
         },
       )
