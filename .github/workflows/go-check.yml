@@ -6,23 +6,23 @@ on:
       module:
         required: true
         type: string
-      cache:
-        default: false
-        type: boolean
       check-generated:
         default: false
         type: boolean
-      image:
+      split-test-package:
         default: ''
         type: string
+      build:
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
-  check:
+  quality:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ${{ inputs.module }}
@@ -36,8 +36,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.module }}/go.mod
-          cache: ${{ inputs.cache }}
-          cache-dependency-path: ${{ inputs.module }}/go.sum
+          cache: false
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.15.0
@@ -55,28 +54,64 @@ jobs:
             printf 'Generation produced untracked files:\n%s\n' "$untracked"
             exit 1
           fi
-      - name: Vet module
-        run: go vet ./...
-      - name: Test module
-        run: go test -race ./...
       - name: Check vulnerabilities
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
       - name: Build module
-        if: inputs.image == ''
+        if: inputs.build
         run: go build ./...
-      - name: Build image
-        if: inputs.image != ''
+
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.split-test-package != '' && '["first-half", "second-half", "other-packages"]' || '["all"]') }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.module }}
+    env:
+      CGO_ENABLED: '1'
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ inputs.module }}/go.mod
+          cache-dependency-path: |
+            ${{ inputs.module }}/go.mod
+            ${{ inputs.module }}/go.sum
+      - name: Vet and test module with the race detector
+        if: matrix.shard == 'all'
+        run: go test -race -vet=all ./...
+      - name: Vet and test the first half of the integration package
+        if: matrix.shard == 'first-half'
         env:
-          COMMIT_SHA: ${{ github.sha }}
-          IMAGE_NAME: ${{ inputs.image }}
-        run: docker build --build-arg COMMIT_SHA="$COMMIT_SHA" -t "$IMAGE_NAME:$COMMIT_SHA" -f Dockerfile .
-      - name: Verify server version on disposable PostgreSQL
-        if: inputs.image == 'craftpulse-server'
+          PACKAGE: ${{ inputs.split-test-package }}
+        run: go test -race -vet=all -run '^Test[A-M]' "$PACKAGE"
+      - name: Test the remaining cases in the integration package
+        if: matrix.shard == 'second-half'
         env:
-          COMMIT_SHA: ${{ github.sha }}
-        # The step image is not built here; the server only checks that the catalog names it by digest.
-        run: >-
-          python3 ../scripts/check_release_server.py --image "craftpulse-server:$COMMIT_SHA" --sha "$COMMIT_SHA"
-          --ci-image "craftpulse-ci@sha256:$(printf '%064d' 0)"
+          PACKAGE: ${{ inputs.split-test-package }}
+        run: go test -race -vet=off -skip '^Test[A-M]' "$PACKAGE"
+      - name: Vet and test all other packages
+        if: matrix.shard == 'other-packages'
+        env:
+          PACKAGE: ${{ inputs.split-test-package }}
+        run: |
+          integration=$(go list "$PACKAGE")
+          packages=$(go list ./...)
+          targets=()
+          while IFS= read -r package; do
+            if [[ "$package" != "$integration" ]]; then
+              targets+=("$package")
+            fi
+          done <<< "$packages"
+          if (( ${#targets[@]} )); then
+            go test -race -vet=all "${targets[@]}"
+          fi

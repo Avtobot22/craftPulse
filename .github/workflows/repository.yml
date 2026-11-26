@@ -24,52 +24,100 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      dataset: ${{ steps.filter.outputs.dataset }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      release: ${{ steps.filter.outputs.release }}
+      openapi: >-
+        ${{ (github.event_name == 'workflow_dispatch' || steps.filter.outputs.openapi-build == 'true')
+        && 'true' || steps.filter.outputs.openapi }}
+      openapi-build: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.openapi-build }}
+      backend: >-
+        ${{ (github.event_name == 'workflow_dispatch' || steps.filter.outputs.dataset-source == 'true')
+        && 'true' || steps.filter.outputs.backend }}
+      backend-image: >-
+        ${{ (github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend-source == 'true')
+        && 'true' || steps.filter.outputs.backend-image }}
+      dataset: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.dataset }}
+      frontend-checks: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.frontend-checks }}
+      frontend-image: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.frontend-image }}
+      release-metadata: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.release-metadata }}
+      release-adapters: >-
+        ${{ (github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend-source == 'true')
+        && 'true' || steps.filter.outputs.release-adapters }}
+      release-profiles: >-
+        ${{ (github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend-source == 'true'
+        || steps.filter.outputs.dataset-source == 'true') && 'true' || steps.filter.outputs.release-profiles }}
     steps:
+      # The pull request files API is capped at 3,000 files. Use Git for larger PRs and pushes.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'push' || github.event.pull_request.changed_files >= 3000
         with:
           fetch-depth: 0
           persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name != 'workflow_dispatch'
         id: filter
         with:
-          base: ${{ github.ref }}
+          token: ${{ github.event_name == 'pull_request' && github.event.pull_request.changed_files < 3000 && github.token || '' }}
+          base: ${{ github.event_name == 'push' && github.ref || '' }}
+          predicate-quantifier: some-with-excludes
           filters: |
+            openapi:
+              - 'docs/technical-specification/{technical-specification,mvp-scope}.md'
+              - 'docs/requirements/{features,use-cases}.md'
+              - 'demo-dataset/schemas/jenkins-execution.schema.json'
+            openapi-build:
+              - 'scripts/openapi/**'
+              - 'docs/technical-specification/*.yaml'
+              - '.github/workflows/repository.yml'
             backend:
               - 'backend/**'
-              - 'scripts/check_release_server.py'
+              - '!backend/{adapter.Dockerfile,ci.Dockerfile}'
               - 'deploy/postgres/**'
-              - 'docs/technical-specification/openapi.yaml'
-              - 'docs/technical-specification/adapter.yaml'
-              - 'docs/technical-specification/envelope.yaml'
-              - '.github/workflows/repository.yml'
-              - '.github/workflows/go-check.yml'
-            frontend:
-              - 'frontend/**'
-              - 'docs/technical-specification/openapi.yaml'
+              - 'docs/technical-specification/{openapi,adapter,envelope}.yaml'
+              - '.github/workflows/{repository,go-check}.yml'
+            # Production builds use the committed sources and generated code, without compiling Go tests.
+            backend-source:
+              - 'backend/**'
+              - '!backend/**/*_test.go'
+              - '!backend/{Dockerfile,adapter.Dockerfile,ci.Dockerfile}'
+            backend-image:
+              - 'backend/Dockerfile'
+              - 'deploy/postgres/**'
+              - 'scripts/check_release_server.py'
+              - 'scripts/oci_release.py'
               - '.github/workflows/repository.yml'
             dataset:
               - 'demo-dataset/**'
+              - '.github/workflows/{repository,go-check}.yml'
+            # The manifest test and docs-profile smoke test execute the dataset generator.
+            dataset-source:
+              - 'demo-dataset/{cmd,dataset}/**'
+              - 'demo-dataset/go.{mod,sum}'
+              - '!demo-dataset/**/*_test.go'
+            frontend-checks:
+              - 'frontend/**'
+              - '!frontend/{Dockerfile,.dockerignore}'
+              - 'docs/technical-specification/openapi.yaml'
               - '.github/workflows/repository.yml'
-              - '.github/workflows/go-check.yml'
-            release:
+            frontend-image:
+              - 'frontend/**'
+              - '.github/workflows/repository.yml'
+            release-metadata:
               - 'backend/**'
-              - 'scripts/check_release_server.py'
-              - 'frontend/Dockerfile'
-              - 'frontend/package-lock.json'
+              - '!backend/**/*_test.go'
+              - 'frontend/{Dockerfile,package-lock.json}'
               - 'scripts/oci_release.py'
-              - 'scripts/check_code_profile.py'
-              - 'scripts/check_sast_profile.py'
-              - 'scripts/check_trivy_profile.py'
-              - 'scripts/check_docs_profile.py'
-              - 'demo-dataset/**'
-              - 'tests/test_oci_release.py'
               - '.github/release-tools.json'
-              - '.github/workflows/oci-release.yml'
-              - '.github/workflows/repository.yml'
+              - '.github/workflows/{repository,oci-release}.yml'
+            release-adapters:
+              - 'backend/adapter.Dockerfile'
+              - 'scripts/oci_release.py'
+              - '.github/workflows/{repository,oci-release}.yml'
+            release-profiles:
+              - 'backend/ci.Dockerfile'
+              # Profile smoke tests consume fixtures, including files named *_test.go.
+              - 'backend/internal/ci/profiles/**'
+              - 'scripts/check_*_profile.py'
+              - 'scripts/oci_release.py'
+              - '.github/workflows/{repository,oci-release}.yml'
 
   repository-check:
     name: repository-check
@@ -78,53 +126,85 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
           persist-credentials: false
       - name: Check repository, branch and commit titles
         run: python3 scripts/check_repository.py --event "$GITHUB_EVENT_PATH"
       - name: Test repository tooling
         run: python3 -m unittest discover -s tests -v
+
+  openapi:
+    needs: detect
+    if: needs.detect.outputs.openapi == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26.3.0'
           cache: npm
           cache-dependency-path: scripts/openapi/package-lock.json
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.27.0'
-          cache: false
       - name: Install OpenAPI checks
         run: npm --prefix scripts/openapi ci --ignore-scripts --no-audit --no-fund
       - name: Validate contract, examples and SRS operation map
         run: npm --prefix scripts/openapi run verify
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: needs.detect.outputs.openapi-build == 'true'
+        with:
+          go-version: '1.27.0'
+          cache: false
       - name: Generate and compile Go and TypeScript contracts
+        if: needs.detect.outputs.openapi-build == 'true'
         run: npm --prefix scripts/openapi run generators
       - name: Build API documentation
+        if: needs.detect.outputs.openapi-build == 'true'
         run: npm --prefix scripts/openapi run docs
 
   backend:
-    name: backend
     needs: detect
-    if: github.event_name == 'workflow_dispatch' || needs.detect.outputs.backend == 'true'
+    if: needs.detect.outputs.backend == 'true'
     uses: ./.github/workflows/go-check.yml
     with:
       module: backend
-      cache: true
       check-generated: true
-      image: craftpulse-server
+      split-test-package: ./internal/app
+
+  backend-image:
+    needs: detect
+    if: needs.detect.outputs.backend-image == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build server image
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: docker build --build-arg COMMIT_SHA="$COMMIT_SHA" --tag "craftpulse-server:$COMMIT_SHA" backend
+      - name: Verify server version on disposable PostgreSQL
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        # The server only checks that the catalog names the CI step image by digest.
+        run: >-
+          python3 scripts/check_release_server.py --image "craftpulse-server:$COMMIT_SHA" --sha "$COMMIT_SHA"
+          --ci-image "craftpulse-ci@sha256:$(printf '%064d' 0)"
 
   dataset:
     name: demo-dataset
     needs: detect
-    if: github.event_name == 'workflow_dispatch' || needs.detect.outputs.dataset == 'true'
+    if: needs.detect.outputs.dataset == 'true'
     uses: ./.github/workflows/go-check.yml
     with:
       module: demo-dataset
+      build: true
 
-  frontend:
-    name: frontend
+  frontend-checks:
     needs: detect
-    if: github.event_name == 'workflow_dispatch' || needs.detect.outputs.frontend == 'true'
+    if: needs.detect.outputs.frontend-checks == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -142,92 +222,106 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
       - name: Verify generated API types
-        run: |
-          npm run generate:api
-          git diff --exit-code -- src/shared/api/generated/
-          test -z "$(git ls-files --others --exclude-standard -- src/shared/api/generated/)"
+        run: npm run check:generated
       - name: Check formatting
         run: npm run format:check
-      - name: Check strict TypeScript
-        run: npm run typecheck
       - name: Lint TypeScript and FSD boundaries
         run: npm run lint
       - name: Test frontend
         run: npm test
-      - name: Build static frontend
-        run: npm run build
-      - name: Build frontend image without publishing
-        run: docker build --tag craftpulse-frontend:ci .
 
-  release-check:
-    name: release-check
+  frontend-image:
     needs: detect
-    if: github.event_name == 'workflow_dispatch' || needs.detect.outputs.release == 'true'
+    if: needs.detect.outputs.frontend-image == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # npm run build in the Dockerfile includes the theme check and strict TypeScript.
+      - name: Build frontend image without publishing
+        run: docker build --tag craftpulse-frontend:ci frontend
+
+  release-metadata:
+    needs: detect
+    if: needs.detect.outputs.release-metadata == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Validate release discovery and metadata
         run: python3 scripts/oci_release.py check
+
+  release-adapters:
+    needs: detect
+    if: needs.detect.outputs.release-adapters == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Build discovered adapter images without registry credentials
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: python3 scripts/oci_release.py build-adapters --sha "$COMMIT_SHA"
-      - name: Build the CI step image without registry credentials
+
+  release-profiles:
+    needs: detect
+    if: needs.detect.outputs.release-profiles == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the CI step and profile images without registry credentials
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: python3 scripts/oci_release.py build-ci --sha "$COMMIT_SHA"
 
   ci:
     name: ci
-    needs: [detect, repository-check, backend, dataset, frontend, release-check]
+    needs:
+      - detect
+      - repository-check
+      - openapi
+      - backend
+      - backend-image
+      - dataset
+      - frontend-checks
+      - frontend-image
+      - release-metadata
+      - release-adapters
+      - release-profiles
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Check required job results
         env:
-          DETECT: ${{ needs.detect.result }}
-          REPOSITORY: ${{ needs.repository-check.result }}
-          BACKEND: ${{ needs.backend.result }}
-          BACKEND_CHANGED: ${{ needs.detect.outputs.backend }}
-          DATASET: ${{ needs.dataset.result }}
-          DATASET_CHANGED: ${{ needs.detect.outputs.dataset }}
-          FRONTEND: ${{ needs.frontend.result }}
-          FRONTEND_CHANGED: ${{ needs.detect.outputs.frontend }}
-          RELEASE: ${{ needs.release-check.result }}
-          RELEASE_CHANGED: ${{ needs.detect.outputs.release }}
+          JOBS: ${{ toJSON(needs) }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          [ "$DETECT" = success ] || { echo "detect: $DETECT"; exit 1; }
-          [ "$REPOSITORY" = success ] || { echo "repository-check: $REPOSITORY"; exit 1; }
-          case "$BACKEND" in
-            success) ;;
-            skipped)
-              [ "$BACKEND_CHANGED" = false ] && [ "$EVENT_NAME" != workflow_dispatch ] || exit 1
-              ;;
-            *) echo "backend: $BACKEND"; exit 1 ;;
-          esac
-          case "$DATASET" in
-            success) ;;
-            skipped)
-              [ "$DATASET_CHANGED" = false ] && [ "$EVENT_NAME" != workflow_dispatch ] || exit 1
-              ;;
-            *) echo "demo-dataset: $DATASET"; exit 1 ;;
-          esac
-          case "$FRONTEND" in
-            success) ;;
-            skipped)
-              [ "$FRONTEND_CHANGED" = false ] && [ "$EVENT_NAME" != workflow_dispatch ] || exit 1
-              ;;
-            *) echo "frontend: $FRONTEND"; exit 1 ;;
-          esac
-          case "$RELEASE" in
-            success) ;;
-            skipped)
-              [ "$RELEASE_CHANGED" = false ] && [ "$EVENT_NAME" != workflow_dispatch ] || exit 1
-              ;;
-            *) echo "release-check: $RELEASE"; exit 1 ;;
-          esac
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import sys
+
+          jobs = json.loads(os.environ["JOBS"])
+          required = ("detect", "repository-check")
+          affected = jobs["detect"].get("outputs", {})
+          manual = os.environ["EVENT_NAME"] == "workflow_dispatch"
+          failures = []
+          for name, job in jobs.items():
+              result = job["result"]
+              if result == "success":
+                  continue
+              if result == "skipped" and name not in required and not manual and affected.get(name) == "false":
+                  continue
+              failures.append(f"{name}: {result}")
+          sys.exit("\n".join(failures) if failures else 0)
+          PYTHON

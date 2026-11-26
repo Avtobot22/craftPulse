@@ -26,7 +26,7 @@ git config --local core.hooksPath .githooks
 
 Нужны Go версии из `backend/go.mod`, Node.js 26.3.0 с npm и Docker с Linux-контейнерами. Для `go test -race` нужен C-компилятор: GCC на Linux или MinGW-w64 на Windows. Добавь в `PATH` каталог `bin` внутри пути, который выводит `go env GOPATH`. Команды ниже рассчитаны на Linux, как раннер CI; на Windows полный набор можно выполнять в Linux-контейнере с Go и Node.js.
 
-В корне репозитория проверь контракт теми же командами, что выполняет `repository-check`:
+Для локальной проверки контракта выполни команды job `openapi` из корня репозитория:
 
 ```sh
 npm --prefix scripts/openapi ci --ignore-scripts --no-audit --no-fund
@@ -46,8 +46,7 @@ golangci-lint fmt --diff
 go generate ./...
 git diff --exit-code
 git ls-files --others --exclude-standard
-go vet ./...
-go test -race ./...
+go test -race -vet=all ./...
 go install golang.org/x/vuln/cmd/govulncheck@latest
 govulncheck ./...
 docker build -t craftpulse-server:local -f Dockerfile .
@@ -57,9 +56,11 @@ docker build -t craftpulse-server:local -f Dockerfile .
 
 Границы слоёв проверяет depguard в `backend/.golangci.yml`. Для сценариев и репозиториев перечислены модули из раздела 10.3 ТЗ: разрешён импорт собственных подпакетов, а связи между модулями передаются через интерфейсы в `internal/app`. Новый модуль нужно добавить в эти правила; для неизвестных модулей импорты других сценариев и реализаций репозиториев запрещены по умолчанию.
 
-Workflow `Repository` запускается на каждом PR и push в `main`. `repository-check` выполняется всегда, `backend` - при изменениях `backend/`, `deploy/postgres/` или `openapi.yaml`, а `demo-dataset` - при изменениях `demo-dataset/`. Обе Go-проверки используют общий workflow `go-check.yml`: линтер, форматирование, vet, тесты с детектором гонок, проверку уязвимостей и сборку. Backend дополнительно проверяет генерацию и собирает Docker-образ без публикации.
+Workflow `Repository` запускается на каждом PR и push в `main`. Обязательные проверки `repository-check` и `ci` выполняются при любом наборе изменений. Остальные jobs выбираются по путям. Ручной запуск выполняет полный набор.
 
-Изменение `repository.yml` или `go-check.yml`, как и ручной запуск, включает обе Go-проверки. Итоговый job `ci` требует успешные `detect` и `repository-check`, а пропуск Go-проверки принимает только для незатронутого модуля. Устаревшие прогоны отменяются только на PR; каждый push в `main` проверяется отдельно.
+Go-тесты идут параллельно с линтером, генерацией, `govulncheck` и сборкой образа сервера. Тесты `backend/internal/app` распределены между двумя раннерами, каждый поднимает свой PostgreSQL. Frontend проходит проверки кода и тесты отдельно от Docker-сборки. В Dockerfile одна команда `npm run build` проверяет тему и типы и собирает статику. Контракт OpenAPI, образы адаптеров и профилей CI проверяются отдельными jobs.
+
+Устаревшие прогоны отменяются только на PR. Каждый push в `main` проверяется отдельно.
 
 ## Frontend
 
