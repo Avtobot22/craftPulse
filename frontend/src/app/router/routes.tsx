@@ -93,7 +93,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.metricPassport,
-                  element: <MetricPassportPage />,
+                  element: <MetricPassportPage api={runtime.api} />,
                 },
                 {
                   path: routePaths.metricCohort,

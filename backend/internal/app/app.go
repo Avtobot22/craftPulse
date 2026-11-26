@@ -78,6 +78,8 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, check
 	defer pool.Close()
 
 	gin.SetMode(gin.ReleaseMode)
+	// Configure the process-wide decoder before serving requests so the API rejects unknown fields.
+	gin.EnableJsonDecoderDisallowUnknownFields()
 	reg := newRegistry()
 	probes := databaseProbes(pool)
 	idp := oidc.New(&http.Client{Timeout: _providerTimeout})

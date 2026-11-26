@@ -129,3 +129,16 @@ export type {
   PersonListParams,
   SourceAccountListParams,
 } from './account-queries'
+
+export {
+  isDateTime,
+  loadReport,
+  loadRevisionMetadata,
+  RevisionNotPublished,
+} from './report-queries'
+export type {
+  ReportQuery,
+  ReportSeries,
+  RevisionMetadata,
+  TeamReport,
+} from './report-queries'

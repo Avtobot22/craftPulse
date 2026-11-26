@@ -2,10 +2,8 @@ package v1
 
 import (
 	"net/netip"
-	"sync"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
 	"github.com/google/uuid"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/handler"
@@ -15,8 +13,6 @@ import (
 )
 
 const _maxBodyBytes = 25 << 20
-
-var _strictJSON sync.Once
 
 type Deps struct {
 	RunnerNetwork  []netip.Prefix
@@ -32,8 +28,6 @@ type Deps struct {
 }
 
 func RegisterRoutes(root, api *gin.RouterGroup, d Deps) {
-	// An unknown field of a body is refused (contract: 422 unknown_field); gin keeps the switch global.
-	_strictJSON.Do(func() { binding.EnableDecoderDisallowUnknownFields = true })
 	strict := openapi.NewStrictHandlerWithOptions(d.Handler, []openapi.StrictMiddlewareFunc{middleware.Detach},
 		openapi.StrictGinServerOptions{
 			RequestErrorHandlerFunc:  handler.RequestError,

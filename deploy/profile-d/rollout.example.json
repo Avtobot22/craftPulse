@@ -8,10 +8,14 @@
   "required_adapters": ["jiracloud"],
   "adapter_master_key_versions": {"jiracloud": 1},
   "install": {
-    "INSTALL_ORGANIZATIONS": "stand",
-    "ORG_STAND_NAME": "Служебная организация стенда",
-    "ORG_STAND_OIDC_ISSUER": "https://gitlab.example.com",
-    "ORG_STAND_OIDC_CLIENT_ID": "<OIDC client ID>",
-    "ORG_STAND_ADMIN_SUBJECT": "<first administrator subject>"
+    "INSTALL_ORGANIZATIONS": "org-a,org-b",
+    "ORG_ORG_A_NAME": "Организация A",
+    "ORG_ORG_A_OIDC_ISSUER": "https://gitlab.defects.team",
+    "ORG_ORG_A_OIDC_CLIENT_ID": "<application_id for craftpulse-org-a>",
+    "ORG_ORG_A_ADMIN_SUBJECT": "<OIDC sub for cp87-admin-a>",
+    "ORG_ORG_B_NAME": "Организация B",
+    "ORG_ORG_B_OIDC_ISSUER": "https://gitlab.defects.team",
+    "ORG_ORG_B_OIDC_CLIENT_ID": "<application_id for craftpulse-org-b>",
+    "ORG_ORG_B_ADMIN_SUBJECT": "<OIDC sub for cp87-admin-b>"
   }
 }

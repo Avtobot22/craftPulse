@@ -31,9 +31,10 @@ Compose-файлы соответствуют каталогам на серве
 
 Перед запуском выполни `docker compose config --quiet`. Для чистой базы приложения сначала
 подними PostgreSQL и SeaweedFS, выполни `docker compose run --rm migrate` и запусти frontend,
-API и worker. После загрузки HTTPS выполни `docker compose run --rm install` и проверь
-`/readyz`, `/version` и вход через GitLab для обеих организаций.
-Добавь [маршруты](Caddyfile) к конфигурации Caddy, проверь их через `caddy validate` и выполни reload.
+API и worker. Добавь [маршруты](Caddyfile) к конфигурации Caddy, проверь их через
+`caddy validate` и выполни reload. После настройки HTTPS выполни `docker compose run --rm install` и проверь
+`/readyz` и `/version`. Для приёмки входа, выхода и изоляции через API выполни
+[AC-01](ac01.md) до первого входа администраторов.
 Порты 9191 и 9192 предназначены для локального получения метрик.
 
 Версии GitLab и SonarQube восстанавливай по версии и редакции, указанным в архиве.

@@ -88,6 +88,24 @@ class SimulatedStand(rollout_host.Stand):
 
 
 class RolloutTest(unittest.TestCase):
+    def test_ac01_install_example_matches_two_oidc_secret_files(self):
+        settings = json.loads((PROFILE / "rollout.example.json").read_text(encoding="utf-8"))
+        for org, subject in (("A", "17"), ("B", "24")):
+            settings["install"][f"ORG_ORG_{org}_OIDC_CLIENT_ID"] = f"client-{org.lower()}"
+            settings["install"][f"ORG_ORG_{org}_ADMIN_SUBJECT"] = subject
+        bundle = {**generated_values(), "oidc_client_secrets": {"org-a": "TEST-SECRET-A", "org-b": "TEST-SECRET-B"}}
+
+        adapters, encoded = rollout.process_files(bundle, manifest(FIRST, 1), "openssl")
+        files = rollout_host.decode_files(encoded, adapters)
+        config = rollout_host.install_config(settings, files)
+
+        self.assertEqual(config["INSTALL_ORGANIZATIONS"], "org-a,org-b")
+        self.assertEqual(files["oidc/org-a"], (65532, b"TEST-SECRET-A\n"))
+        self.assertEqual(files["oidc/org-b"], (65532, b"TEST-SECRET-B\n"))
+        self.assertEqual(config, settings["install"])
+        self.assertEqual(config["ORG_ORG_A_OIDC_ISSUER"], "https://gitlab.defects.team")
+        self.assertEqual(config["ORG_ORG_B_OIDC_ISSUER"], "https://gitlab.defects.team")
+
     def test_manifest_rejects_a_tag_and_other_release(self):
         data = manifest(FIRST, 1, adapter=True)
         self.assertEqual(rollout.validate_manifest(data, FIRST), data)

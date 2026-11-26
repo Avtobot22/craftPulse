@@ -194,13 +194,15 @@ function mount({
   refresh = () => jsonResponse(queued, 202),
   readRevision = (id: string) => revision(id),
   readCohort = () => cohort,
+  readTargets = () => ({ data: [], next_cursor: null }),
 }: {
   path?: string
   user?: Schemas['CurrentUser']
   read?: (url: URL) => Response | Promise<Response>
   refresh?: () => Response | Promise<Response>
   readRevision?: (id: string) => Schemas['Revision']
-  readCohort?: () => Schemas['CohortPage']
+  readCohort?: (url: URL) => Schemas['CohortPage']
+  readTargets?: (url: URL) => Schemas['TargetVersionPage']
 } = {}) {
   const fetcher = vi
     .fn<typeof fetch>()
@@ -217,6 +219,8 @@ function mount({
             ...projects,
             data: [...projects.data, otherProject],
           } satisfies Schemas['ProjectPage'])
+        case `/api/v1/teams/${teamId}/target-versions`:
+          return jsonResponse(readTargets(url))
         case reportApi:
           return read(url)
         case `/api/v1/series/${seriesId}/refreshes`:
@@ -229,7 +233,7 @@ function mount({
         default: {
           const segments = url.pathname.split('/')
           if (segments[3] === 'revisions' && segments[4]) {
-            if (segments[5] === 'cohort') return jsonResponse(readCohort())
+            if (segments[5] === 'cohort') return jsonResponse(readCohort(url))
             return jsonResponse(readRevision(segments[4]))
           }
           throw new Error(`Unexpected URL ${url.pathname}`)
@@ -824,5 +828,468 @@ describe('UI-20', () => {
         } satisfies Schemas['TeamReport']),
     })
     expect(await screen.findByRole('status', { name: message })).toBeVisible()
+  })
+})
+
+const detailReport = (...metrics: Schemas['MetricSeries'][]) => ({
+  ...report(),
+  metrics: [...report().metrics, ...metrics],
+})
+
+const unknownTarget = {
+  state: 'UNKNOWN',
+  value: null,
+  reason_code: 'target_missing',
+  missing_count: 2,
+  n: 0,
+} satisfies Partial<Schemas['MetricValue']>
+
+const reopening = metric('T23', 0.5, {
+  value: {
+    unit: 'ratio',
+    numerator: 2,
+    denominator: 4,
+    n: 4,
+    excluded_count: 3,
+  },
+})
+
+function detailTask(
+  index: number,
+  data: Partial<Schemas['CohortItem']> = {},
+): Schemas['CohortItem'] {
+  const key = `CORE-${String(index)}`
+  return {
+    object: {
+      kind: 'task',
+      id: `0193a5b0-0800-7000-8000-${String(index).padStart(12, '0')}`,
+      display_key: key,
+      source_url: `https://jira.example/browse/${key}`,
+      title: null,
+    },
+    item_no: 0,
+    basis_deleted: false,
+    task_type: 'Story',
+    size_label: 'S',
+    value: 3600,
+    role: 'numerator',
+    reason_code: null,
+    ...data,
+  }
+}
+
+describe('UI-20: длительности, возраст, целевые сроки и переоткрытия', () => {
+  it('shows the paginated T08 sample with its original values and a column without size', async () => {
+    const readCohort = vi.fn((url: URL) => ({
+      ...cohort,
+      data: url.searchParams.has('cursor')
+        ? [
+            detailTask(2, { size_label: null, value: 10800 }),
+            detailTask(3, { role: 'excluded', value: null }),
+          ]
+        : [detailTask(1), detailTask(4, { value: 7200 })],
+      next_cursor: url.searchParams.has('cursor') ? null : 'page-2',
+    }))
+    mount({
+      read: () =>
+        jsonResponse(
+          detailReport(
+            metric('T08', 7200, {
+              estimator: 'p50',
+              value: { unit: 'seconds', n: 3 },
+            }),
+            metric('T08', 10800, {
+              estimator: 'p85',
+              value: { unit: 'seconds', n: 3 },
+            }),
+          ),
+        ),
+      readCohort,
+    })
+    const chart = await screen.findByRole('figure', {
+      name: /Длительность отдельных задач/,
+    })
+    const markers = within(chart).getAllByRole('link')
+    expect(markers).toHaveLength(3)
+    expect(
+      within(chart).getByRole('link', { name: 'CORE-1 · 3600 с' }),
+    ).toHaveAttribute('href', 'https://jira.example/browse/CORE-1')
+    expect(
+      within(chart).getByRole('link', { name: 'CORE-4 · 7200 с' }),
+    ).toBeVisible()
+    expect(
+      within(chart).getByRole('link', { name: 'CORE-2 · 10800 с' }),
+    ).toBeVisible()
+    expect(within(chart).getByText('Без размера ·')).toBeVisible()
+    expect(within(chart).getByRole('button', { name: 'n = 1' })).toBeVisible()
+    expect(
+      readCohort.mock.calls.map(([url]) => [
+        url.pathname,
+        url.searchParams.get('metric_id'),
+        url.searchParams.get('point_start'),
+        url.searchParams.get('cursor'),
+      ]),
+    ).toEqual([
+      [`/api/v1/revisions/${revisionId}/cohort`, 'T08', pointStart, null],
+      [`/api/v1/revisions/${revisionId}/cohort`, 'T08', pointStart, 'page-2'],
+    ])
+    const distribution = screen.getByRole('table', {
+      name: 'Длительность по типу и размеру',
+    })
+    const row = within(distribution).getByRole('row', { name: /Story · S/ })
+    expect(within(row).getByRole('button', { name: '1 ч' })).toBeVisible()
+    expect(within(row).getByRole('button', { name: '2 ч' })).toBeVisible()
+    expect(within(row).getByText(/Малая выборка/)).toBeVisible()
+  })
+
+  it('returns from a T08 group passport to the selected cohort step', async () => {
+    const duration = metric('T08', 3600, {
+      estimator: 'p50',
+      value: { unit: 'seconds', n: 1 },
+    })
+    const [point] = duration.points
+    if (!point) throw new Error('Expected a point fixture')
+    const older = { ...point, point_start: period.from }
+    const { router, currentSearch } = mount({
+      read: () =>
+        jsonResponse(detailReport({ ...duration, points: [older, point] })),
+      readCohort: (url) => ({
+        ...cohort,
+        data: [
+          url.searchParams.get('point_start') === period.from
+            ? detailTask(2, { size_label: null })
+            : detailTask(1),
+        ],
+      }),
+    })
+    const select = await screen.findByLabelText('Шаг длительности')
+    fireEvent.change(select, { target: { value: period.from } })
+    const chart = await screen.findByRole('figure', {
+      name: /Длительность отдельных задач/,
+    })
+    expect(within(chart).getByText('Без размера ·')).toBeVisible()
+    fireEvent.click(within(chart).getByRole('button', { name: 'n = 1' }))
+    await screen.findByRole('heading', { name: 'Паспорт показателя' })
+    expect(router.state.location.pathname).toBe(
+      ['/reports/revisions', revisionId, 'metrics', 'T08'].join('/'),
+    )
+    expect(currentSearch().get('point_start')).toBe(period.from)
+    expect(currentSearch().get('size_label')).toBe('unknown')
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуться к отчёту' }))
+    const restored = await screen.findByRole('figure', {
+      name: /Длительность отдельных задач/,
+    })
+    expect(screen.getByLabelText('Шаг длительности')).toHaveValue(period.from)
+    await waitFor(() => {
+      expect(
+        within(restored).getByRole('button', { name: 'n = 1' }),
+      ).toHaveFocus()
+    })
+  })
+
+  it.each([
+    ['T10', 'Соблюдение целевых сроков', 'ratio'],
+    ['T11', 'Возраст текущей работы и блокировки', 'count'],
+  ])(
+    'shows %s without a target as unknown with a count and without a percentage',
+    async (metricId, title, unit) => {
+      mount({
+        read: () =>
+          jsonResponse(
+            detailReport(
+              metric(metricId, 0, { value: { ...unknownTarget, unit } }),
+            ),
+          ),
+      })
+      const region = await screen.findByRole('region', { name: title })
+      expect(
+        within(region).getByRole('button', {
+          name: 'Не рассчитано · Целевой срок не задан',
+        }),
+      ).toBeVisible()
+      expect(within(region).getByRole('button', { name: '2' })).toBeVisible()
+      expect(region).not.toHaveTextContent('%')
+    },
+  )
+
+  it('shows current episode, full age, target ratios and time blocked from separate contributions', async () => {
+    mount({
+      read: () =>
+        jsonResponse(
+          detailReport(
+            metric('T14', 3600, {
+              estimator: 'p50',
+              value: { unit: 'seconds' },
+            }),
+            metric('T11', 1, { value: { numerator: 1, denominator: 1 } }),
+            metric('T15', 0.25, {
+              value: { unit: 'ratio', numerator: 3600, denominator: 14400 },
+            }),
+          ),
+        ),
+      readCohort: (url) => ({
+        ...cohort,
+        data:
+          url.searchParams.get('metric_id') === 'T14'
+            ? [
+                detailTask(1),
+                detailTask(1, {
+                  item_no: 1,
+                  value: 10800,
+                  reason_code: 'full_age',
+                }),
+                detailTask(2),
+              ]
+            : url.searchParams.get('metric_id') === 'T11'
+              ? [
+                  detailTask(1, { role: 'denominator', value: 1.5 }),
+                  detailTask(2, {
+                    role: 'missing',
+                    value: null,
+                    reason_code: 'target_missing',
+                  }),
+                ]
+              : [
+                  detailTask(1),
+                  detailTask(1, {
+                    item_no: 1,
+                    role: 'denominator',
+                    value: 14400,
+                  }),
+                  detailTask(2, { value: 0 }),
+                ],
+      }),
+    })
+    const age = await screen.findByRole('table', {
+      name: 'Возраст задач в работе',
+    })
+    expect(
+      within(age).getByRole('row', { name: /CORE-1 1 ч 3 ч 150\s*%/ }),
+    ).toBeVisible()
+    expect(
+      within(age).getByRole('row', {
+        name: /CORE-2 .*Не рассчитано · Целевой срок не задан/,
+      }),
+    ).toBeVisible()
+    expect(await screen.findByRole('button', { name: '1 из 1' })).toBeVisible()
+    const blocked = await screen.findByRole('table', {
+      name: 'Блокировки за шаг',
+    })
+    expect(
+      within(blocked).getByRole('row', { name: /CORE-1 1 ч 25\s*%/ }),
+    ).toBeVisible()
+    expect(within(blocked).queryByText('CORE-2')).not.toBeInTheDocument()
+  })
+
+  it('separates immature tasks from the T23 denominator and reads the observation window from the revision', async () => {
+    mount({
+      read: () => jsonResponse(detailReport(reopening)),
+      readRevision: (id) => ({
+        ...revision(id),
+        definitions: [
+          {
+            metric_id: 'T23',
+            definition_version: 1,
+            name: 'Reopened',
+            unit: 'ratio',
+            catalog_ref: '#t23',
+            parameters: { follow_up_days: 42 },
+          },
+        ],
+      }),
+    })
+    const region = await screen.findByRole('region', {
+      name: 'Переоткрытия workflow',
+    })
+    expect(
+      within(region).getByText('42 дн. после первого завершения'),
+    ).toBeVisible()
+    expect(
+      within(region).getByRole('button', { name: /50\s*% \(2 из 4\)/ }),
+    ).toBeVisible()
+    expect(
+      within(region).getByRole('columnheader', { name: 'Незрелые задачи' }),
+    ).toBeVisible()
+    expect(within(region).getByRole('button', { name: '3' })).toBeVisible()
+    expect(region).not.toHaveTextContent(/дефект|production/iu)
+  })
+
+  it.each([
+    ['T10', 'Соблюдение целевых сроков'],
+    ['T23', 'Переоткрытия workflow'],
+  ])(
+    'shows the selected %s value and its basis and restores focus on return',
+    async (metricId, title) => {
+      const read = vi.fn((url: URL) => {
+        const series = {
+          ...reopening,
+          metric_id: metricId,
+          group: { size_label: 'S' },
+        }
+        const otherGroup = { ...series, group: { size_label: 'M' } }
+        const [point] = reopening.points
+        if (!point) throw new Error('Expected a point fixture')
+        const older = {
+          point_start: period.from,
+          value: {
+            ...point.value,
+            value: 0.25,
+            numerator: 1,
+            denominator: 4,
+          },
+        }
+        return jsonResponse({
+          ...detailReport(otherGroup, {
+            ...series,
+            points: [...series.points, older],
+          }),
+          revision: {
+            ...report().revision,
+            id: url.searchParams.get('revision_id') ?? revisionId,
+          },
+        })
+      })
+      const { router, currentSearch } = mount({
+        read,
+        path:
+          reportUrl +
+          '&task_type=Story&group_by=size_label&report_project_id=' +
+          project.id,
+        readRevision: (id) => ({
+          ...revision(id),
+          inputs: [
+            { input_kind: 'mapping', input_id: teamId, version: '1' },
+            { input_kind: 'target', input_id: 'Story/S', version: '7' },
+          ],
+          definitions: [
+            {
+              metric_id: 'T23',
+              definition_version: 1,
+              name: 'Reopened',
+              unit: 'ratio',
+              catalog_ref: '#t23',
+              parameters: { follow_up_days: 45 },
+            },
+          ],
+        }),
+      })
+      const region = await screen.findByRole('region', { name: title })
+      const selected = within(region).getByRole('button', { name: /1 из 4/ })
+      fireEvent.click(selected)
+      await screen.findByRole('heading', { name: 'Паспорт показателя' })
+      expect(router.state.location.pathname).toBe(
+        '/reports/revisions/' + revisionId + '/metrics/' + metricId,
+      )
+      expect(currentSearch().get('point_start')).toBe(period.from)
+
+      const passport = await screen.findByRole('heading', { name: title })
+      const section = passport.closest('section')
+      if (!section) throw new Error('Expected passport section')
+      const details = within(section)
+      expect(details.getByText(/^25\s*%$/u)).toBeVisible()
+      expect(
+        details.getByText('Числитель').nextElementSibling,
+      ).toHaveTextContent(/^1$/u)
+      expect(
+        details.getByText('Знаменатель').nextElementSibling,
+      ).toHaveTextContent(/^4$/u)
+      if (metricId === 'T23') {
+        expect(
+          details.getByText('45 дн. после первого завершения'),
+        ).toBeVisible()
+        expect(
+          details.getByText('Незрелые задачи').nextElementSibling,
+        ).toHaveTextContent(/^3$/u)
+      } else {
+        expect(
+          details.getByText('Целевой срок · Story/S · Версия 7'),
+        ).toBeVisible()
+      }
+      const pinnedRead = read.mock.calls.at(-1)?.[0].searchParams
+      expect(pinnedRead?.get('revision_id')).toBe(revisionId)
+      expect(pinnedRead?.get('task_type')).toBe('Story')
+      expect(pinnedRead?.get('group_by')).toBe('size_label')
+      expect(currentSearch().get('group_value')).toBe('S')
+      expect(pinnedRead?.getAll('project_id')).toEqual([project.id])
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Вернуться к отчёту' }),
+      )
+      const restored = await screen.findByRole('region', { name: title })
+      await waitFor(() => {
+        expect(
+          within(restored).getByRole('button', { name: /1 из 4/ }),
+        ).toHaveFocus()
+      })
+      expect(read.mock.calls.at(-1)?.[0].searchParams.get('revision_id')).toBe(
+        revisionId,
+      )
+    },
+  )
+
+  it('opens the uncalculated T10 point without inventing a percentage', async () => {
+    mount({
+      read: () =>
+        jsonResponse(
+          detailReport(
+            metric('T10', 0, { value: { ...unknownTarget, unit: 'ratio' } }),
+          ),
+        ),
+    })
+    const outcome = await screen.findByRole('region', {
+      name: 'Соблюдение целевых сроков',
+    })
+    fireEvent.click(
+      within(outcome).getByRole('button', { name: /Целевой срок не задан/u }),
+    )
+    expect(
+      await screen.findByText('Не рассчитано', { exact: true }),
+    ).toBeVisible()
+    expect(screen.getByText('Целевой срок не задан')).toBeVisible()
+    expect(
+      screen.getByText('Знаменатель отсутствует или равен нулю'),
+    ).toBeVisible()
+    expect(screen.queryByText(/^\d+\s*%$/u)).toBeNull()
+  })
+
+  it('shows the latest target version of each group with its basis n', async () => {
+    const target = {
+      task_type: 'Story',
+      size_label: 'S',
+      version_no: 2,
+      base_version_no: 1,
+      duration_seconds: 7200,
+      basis: 'historical_p85',
+      basis_revision_id: revisionId,
+      basis_value_seconds: 7200,
+      basis_n: 11,
+      basis_period: period,
+      confirmed_by: currentUser.user.id,
+      confirmed_at: pointStart,
+    } satisfies Schemas['TargetVersion']
+    mount({
+      user: processOwner,
+      read: () =>
+        jsonResponse(
+          detailReport(
+            metric('T10', 1, {
+              value: { unit: 'ratio', numerator: 1, denominator: 1 },
+            }),
+          ),
+        ),
+      readTargets: () => ({
+        data: [
+          target,
+          { ...target, version_no: 1, base_version_no: null, basis_n: 5 },
+        ],
+        next_cursor: null,
+      }),
+    })
+    expect(
+      await screen.findByRole('row', { name: 'Story · S 2 2 ч 11' }),
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('row', { name: 'Story · S 1 2 ч 5' }),
+    ).not.toBeInTheDocument()
   })
 })
