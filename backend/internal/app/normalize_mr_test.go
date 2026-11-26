@@ -255,21 +255,22 @@ func TestNormalizeMR_EventsBeforeStateAndCurrentAccess(t *testing.T) {
 
 func TestNormalizeMR_InterruptedBatchContinues(t *testing.T) {
 	t.Parallel()
-	records := make([]*envelope.Record, 0, 450)
-	for i := range 450 {
+	const partSize, recordCount = 3, 7
+	records := make([]*envelope.Record, 0, recordCount)
+	for i := range recordCount {
 		records = append(records, mrState(t, strconv.Itoa(9000+i), "42", "MR", "v1", _t1, nil))
 	}
 	data := pack(t, mrManifest("42"), records...)
-	whole := newNormalizeEnv(t)
+	whole := newNormalizeEnvWithPartSize(t, partSize)
 	whole.imported(t, whole.admin, data)
 	assert.Equal(t, 3, whole.drain(t))
-	cut := newNormalizeEnv(t)
+	cut := newNormalizeEnvWithPartSize(t, partSize)
 	cut.imported(t, cut.admin, data)
 	require.NoError(t, cut.run(t, cut.pending(t)[0]))
 	second := cut.pending(t)[0]
 	err := cut.norm.RunBatch(t.Context(), second.args, func(context.Context) error { return errors.New("worker stopped") })
 	require.Error(t, err)
-	assert.Equal(t, 200, cut.n(t, "SELECT count(*) FROM normalize.mr_version"))
+	assert.Equal(t, partSize, cut.n(t, "SELECT count(*) FROM normalize.mr_version"))
 	assert.Equal(t, 2, cut.drain(t))
 	snapshot := func(e *normalizeEnv) []string {
 		rows, err := e.owner.Query(t.Context(), `SELECT o.native_id,v.source_revision,v.known_seq-(SELECT min(known_seq) FROM normalize.mr_version) FROM normalize.mr_version v JOIN normalize.source_object o ON o.id=v.mr_id ORDER BY o.native_id`)
@@ -286,7 +287,7 @@ func TestNormalizeMR_InterruptedBatchContinues(t *testing.T) {
 		return out
 	}
 	assert.Equal(t, snapshot(whole), snapshot(cut))
-	assert.Equal(t, 450, cut.n(t, "SELECT count(*) FROM normalize.mr_version"))
+	assert.Equal(t, recordCount, cut.n(t, "SELECT count(*) FROM normalize.mr_version"))
 }
 
 func ptr[T any](value T) *T { return &value }

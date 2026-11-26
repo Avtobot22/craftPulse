@@ -194,6 +194,7 @@ func TestAccess_ProjectFollowsTheRightInTheSource(t *testing.T) {
 }
 
 func TestAccess_AreaThatCannotBeCheckedIsClosed(t *testing.T) {
+	t.Parallel()
 	e := newAccessEnv(t)
 	before := e.checks()
 	noAccount := e.projects(t, e.member)

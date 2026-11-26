@@ -182,6 +182,7 @@ func (e *ingestEnv) assertCleanObjects(t *testing.T, rc entity.Receipt) []byte {
 }
 
 func TestIngestRedaction_CIArtifactsFindingAndReplay(t *testing.T) {
+	t.Parallel()
 	e := newCIEnv(t)
 	data := markerCIPackage(t)
 	response := e.uploadCI(t, e.token.Value, data)
@@ -229,6 +230,7 @@ func (e *ingestEnv) assertRedactionMetric(t *testing.T, count int64) {
 }
 
 func TestIngestRedaction_ImportAndSync(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	record := task(t, "J-SECRET", ingestMarker(), "1")
 	raw, err := json.Marshal([]*envelope.Record{record})
@@ -249,6 +251,7 @@ func TestIngestRedaction_ImportAndSync(t *testing.T) {
 }
 
 func TestIngestRedaction_RejectedRecordIdentity(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	bad := task(t, ingestMarker(), "invalid kind", "1")
 	bad.RecordKind = "unsupported"
@@ -264,6 +267,7 @@ func TestIngestRedaction_RejectedRecordIdentity(t *testing.T) {
 }
 
 func TestIngestRedaction_RejectedManifestHasNoSecret(t *testing.T) {
+	t.Parallel()
 	e := newIngestEnv(t)
 	manifest := importManifest("1")
 	manifest.Producer.Name = ingestMarker()

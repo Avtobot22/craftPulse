@@ -161,11 +161,13 @@ func newGitLabCIEnv(t *testing.T, source http.Handler) gitLabTestEnv {
 }
 
 func TestContract_GitLabAdapterCI(t *testing.T) {
+	t.Parallel()
 	e := newGitLabCIEnv(t, &gitLabCIFixture{})
 	contracttest.Run(t, e.target)
 }
 
 func TestGitLabAdapterCIRetryReportsAndManifest(t *testing.T) {
+	t.Parallel()
 	fixture := &gitLabCIFixture{}
 	e := newGitLabCIEnv(t, fixture)
 	e.probe(t)
@@ -234,6 +236,7 @@ func TestGitLabAdapterCIRetryReportsAndManifest(t *testing.T) {
 }
 
 func TestGitLabAdapterCIPartialHistoryAndOversizeReport(t *testing.T) {
+	t.Parallel()
 	fixture := &gitLabCIFixture{}
 	fixture.broken.Store(true)
 	fixture.large.Store(true)
@@ -338,6 +341,7 @@ func writeGitLabFixture(w http.ResponseWriter, value json.RawMessage) {
 }
 
 func TestGitLabAdapterCIRecordedStand(t *testing.T) {
+	t.Parallel()
 	body, err := os.ReadFile("testdata/gitlab-ci/stand.json")
 	require.NoError(t, err)
 	var recorded gitLabRecordedSource

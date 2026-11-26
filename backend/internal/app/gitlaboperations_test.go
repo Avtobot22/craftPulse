@@ -294,16 +294,19 @@ func TestContract_GitLabAccessLimitSharedByConcurrentCalls(t *testing.T) {
 	}
 	f.countAccess.Store(true)
 	t.Run("concurrent calls", func(t *testing.T) {
+		var requests sync.WaitGroup
 		for i := range 4 {
-			t.Run(fmt.Sprintf("request %d", i), func(t *testing.T) {
-				t.Parallel()
-				out := readGitLabOperation[adaptersdk.CheckAccessResult](t, e, "check-access", in)
-				require.Len(t, out.Decisions, len(in.Items))
-				for _, decision := range out.Decisions {
-					assert.Equal(t, adaptersdk.AccessDecisionDecisionAllowed, decision.Decision)
-				}
+			requests.Go(func() {
+				t.Run(fmt.Sprintf("request %d", i), func(t *testing.T) {
+					out := readGitLabOperation[adaptersdk.CheckAccessResult](t, e, "check-access", in)
+					require.Len(t, out.Decisions, len(in.Items))
+					for _, decision := range out.Decisions {
+						assert.Equal(t, adaptersdk.AccessDecisionDecisionAllowed, decision.Decision)
+					}
+				})
 			})
 		}
+		requests.Wait()
 	})
 	assert.Equal(t, int32(8), f.peak.Load())
 }
@@ -509,15 +512,18 @@ func TestContract_GitLabConcurrentPublish(t *testing.T) {
 		Target: adaptersdk.ObjectKey{ObjectKind: adaptersdk.ObjectKeyObjectKindMergeRequest, NativeId: "10"},
 	}
 	t.Run("overlapping calls", func(t *testing.T) {
+		var requests sync.WaitGroup
 		for i := range 4 {
-			t.Run(fmt.Sprintf("call %d", i), func(t *testing.T) {
-				t.Parallel()
-				out := readGitLabOperation[adaptersdk.PublishResult](t, e, "publish", in)
-				require.Equal(t, adaptersdk.PublishResultOutcomeSucceeded, out.Outcome)
-				require.NotNil(t, out.ExternalId)
-				assert.Equal(t, "1234", *out.ExternalId)
+			requests.Go(func() {
+				t.Run(fmt.Sprintf("call %d", i), func(t *testing.T) {
+					out := readGitLabOperation[adaptersdk.PublishResult](t, e, "publish", in)
+					require.Equal(t, adaptersdk.PublishResultOutcomeSucceeded, out.Outcome)
+					require.NotNil(t, out.ExternalId)
+					assert.Equal(t, "1234", *out.ExternalId)
+				})
 			})
 		}
+		requests.Wait()
 	})
 	f.mu.Lock()
 	defer f.mu.Unlock()

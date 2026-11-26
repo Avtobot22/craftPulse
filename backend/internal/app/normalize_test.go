@@ -35,11 +35,18 @@ type normalizeEnv struct {
 
 func newNormalizeEnv(t *testing.T) *normalizeEnv {
 	t.Helper()
+	return newNormalizeEnvWithPartSize(t, 0)
+}
+
+func newNormalizeEnvWithPartSize(t *testing.T, partSize int) *normalizeEnv {
+	t.Helper()
 	e := &normalizeEnv{ingestEnv: newIngestEnv(t)}
 	orgs, _, err := newOrgAccess(e.app, e.clock, nil, nil)
 	require.NoError(t, err)
-	e.norm, err = newNormalize(e.app, e.store, e.uc, orgs, nil, e.clock)
+	deps, err := normalizeDeps(e.app, e.store, e.uc, orgs, nil, e.clock)
 	require.NoError(t, err)
+	deps.PartSize = partSize
+	e.norm = normalize.New(deps)
 	return e
 }
 
@@ -387,18 +394,29 @@ func TestNormalize_KnowledgeNumbersFollowCommits(t *testing.T) {
 
 	holder, err := e.owner.Begin(t.Context())
 	require.NoError(t, err)
+	defer func() { _ = holder.Rollback(t.Context()) }()
 	var held int64
-	require.NoError(t, holder.QueryRow(t.Context(), "UPDATE platform.org_clock SET last_seq = last_seq + 1 WHERE organization_id = $1 RETURNING last_seq",
-		uuid.UUID(e.orgID)).Scan(&held))
+	var holderPID int32
+	require.NoError(t, holder.QueryRow(t.Context(), "UPDATE platform.org_clock SET last_seq = last_seq + 1 WHERE organization_id = $1 RETURNING last_seq, pg_backend_pid()",
+		uuid.UUID(e.orgID)).Scan(&held, &holderPID))
 	first := make(chan error, 1)
 	go func() { first <- e.run(t, jobs[0]) }()
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		var blocked bool
+		err := e.owner.QueryRow(t.Context(), `SELECT EXISTS (
+			SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND $1 = ANY(pg_blocking_pids(pid))
+		)`, holderPID).Scan(&blocked)
+		if assert.NoError(c, err) {
+			assert.True(c, blocked, "normalization waits for the knowledge counter")
+		}
+	}, 10*time.Second, 10*time.Millisecond)
+	require.NoError(t, holder.Commit(t.Context()))
 	select {
 	case err := <-first:
-		t.Fatalf("normalization took a number while another transaction held the counter: %v", err)
-	case <-time.After(300 * time.Millisecond):
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("normalization did not finish after the counter was released")
 	}
-	require.NoError(t, holder.Commit(t.Context()))
-	require.NoError(t, <-first)
 	assert.Equal(t, int(held)+1, e.n(t, "SELECT known_seq FROM normalize.task_version WHERE receipt_id = $1", uuid.UUID(receipts[0])),
 		"the number comes after the commit of the transaction that held it")
 
@@ -491,27 +509,28 @@ func TestNormalize_AcceptedNewMakesANewVersion(t *testing.T) {
 
 func TestNormalize_InterruptedBatchContinuesFromItsCursor(t *testing.T) {
 	t.Parallel()
-	recs := make([]*envelope.Record, 0, 450)
-	for i := range 450 {
+	const partSize, records = 3, 7
+	recs := make([]*envelope.Record, 0, records)
+	for i := range records {
 		recs = append(recs, jiraTask(t, taskSpec{id: strconv.Itoa(40000 + i), project: "10000", key: fmt.Sprintf("PA-%d", i), title: "t", updated: &_t1}))
 	}
 
-	whole := newNormalizeEnv(t)
+	whole := newNormalizeEnvWithPartSize(t, partSize)
 	data := pack(t, jiraTasks("10000"), recs...)
 	whole.imported(t, whole.admin, data)
-	assert.Equal(t, 3, whole.drain(t), "450 records take three parts of 200")
+	assert.Equal(t, 3, whole.drain(t), "the third part contains the remaining record")
 
-	cut := newNormalizeEnv(t)
+	cut := newNormalizeEnvWithPartSize(t, partSize)
 	cut.imported(t, cut.admin, data)
 	require.NoError(t, cut.run(t, cut.pending(t)[0]))
 	second := cut.pending(t)[0]
 	stopped := cut.norm.RunBatch(t.Context(), second.args, func(context.Context) error { return errors.New("worker stopped") })
 	require.Error(t, stopped)
-	assert.Equal(t, 200, cut.n(t, "SELECT count(*) FROM normalize.task_version"), "the interrupted part left nothing")
+	assert.Equal(t, partSize, cut.n(t, "SELECT count(*) FROM normalize.task_version"), "the interrupted part left nothing")
 	assert.Equal(t, 2, cut.drain(t), "the job of the part repeats from its cursor")
 
 	assert.Equal(t, snapshotOf(t, whole), snapshotOf(t, cut), "the result is that of an uninterrupted run")
-	assert.Equal(t, 450, cut.n(t, "SELECT count(*) FROM normalize.task_version"))
+	assert.Equal(t, records, cut.n(t, "SELECT count(*) FROM normalize.task_version"))
 }
 
 // snapshotOf lists the versions of tasks by native ID with their knowledge number and revision.

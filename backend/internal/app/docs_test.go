@@ -234,6 +234,7 @@ func TestDocumentationRoots_ValidationAndAccess(t *testing.T) {
 }
 
 func TestDocumentationRoots_ConcurrentConfirmation(t *testing.T) {
+	t.Parallel()
 	e := newDocsEnv(t)
 	raw, err := json.Marshal(map[string]any{"data": []map[string]any{e.root("docs")}})
 	require.NoError(t, err)

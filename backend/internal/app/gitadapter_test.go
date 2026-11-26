@@ -775,13 +775,13 @@ func TestGitAdapter_RepositoryContentDoesNotRun(t *testing.T) {
 func TestGitAdapter_LargeRepositoryAnswersPreparingAndRespectsLimits(t *testing.T) {
 	const isolated = "CRAFTPULSE_GIT_ADAPTER_ISOLATED_TEST"
 	if os.Getenv(isolated) != "1" {
+		t.Parallel()
 		executable, err := os.Executable()
 		require.NoError(t, err)
 		cmd := oexec.CommandContext(t.Context(), executable, "-test.run=^"+t.Name()+"$", "-test.v")
 		cmd.Env = append(os.Environ(), isolated+"=1")
 		output, err := cmd.CombinedOutput()
-		t.Logf("%s", output)
-		require.NoError(t, err, "isolated Git adapter test")
+		require.NoError(t, err, "isolated Git adapter test:\n%s", output)
 		return
 	}
 

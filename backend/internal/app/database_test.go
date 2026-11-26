@@ -45,6 +45,7 @@ func TestMigrate_AppliesOnce(t *testing.T) {
 }
 
 func TestRowLevelSecurity(t *testing.T) {
+	t.Parallel()
 	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
 	ctx := t.Context()
@@ -77,6 +78,7 @@ func TestRowLevelSecurity(t *testing.T) {
 }
 
 func TestPool_DoesNotCarryOrganization(t *testing.T) {
+	t.Parallel()
 	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app", pg.MaxConns(1))
 	ctx := t.Context()
@@ -95,6 +97,7 @@ func TestPool_DoesNotCarryOrganization(t *testing.T) {
 }
 
 func TestBackupRole(t *testing.T) {
+	t.Parallel()
 	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
 	ctx := t.Context()
@@ -123,6 +126,7 @@ func TestBackupRole(t *testing.T) {
 }
 
 func TestReadiness(t *testing.T) {
+	t.Parallel()
 	db := newDB(t)
 	app := db.pool(t, "craftpulse_app")
 	probes := databaseProbes(app)
@@ -142,6 +146,7 @@ func TestReadiness(t *testing.T) {
 }
 
 func TestInOrgTx_RollsBackOnError(t *testing.T) {
+	t.Parallel()
 	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
 	ctx := t.Context()
@@ -165,6 +170,7 @@ func TestInOrgTx_RollsBackOnError(t *testing.T) {
 }
 
 func TestDatabaseSettings(t *testing.T) {
+	t.Parallel()
 	db := newDB(t)
 	app := db.pool(t, "craftpulse_app")
 	var encoding, provider, locale, tz string

@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/google/uuid"
@@ -49,19 +48,17 @@ func (e *reportEnv) savedRequest(t *testing.T, b *browser, method, path string, 
 	} else {
 		rec = e.do(t, b, method, path, _changing)
 	}
-	_contractOnce.Do(func() {
-		_contractDoc, _contractErr = openapi3.NewLoader().LoadFromFile("../../../docs/technical-specification/openapi.yaml")
-	})
-	require.NoError(t, _contractErr)
+	contract, err := _loadAPIContract()
+	require.NoError(t, err)
 	pattern := "/saved-views"
 	if strings.HasPrefix(path, _savedViewsPath+"/") {
 		pattern += "/{saved_view_id}"
 	}
-	item := _contractDoc.Paths.Value(pattern)
+	item := contract.Paths.Value(pattern)
 	req := httptest.NewRequestWithContext(t.Context(), method, path, http.NoBody)
 	input := &openapi3filter.ResponseValidationInput{
 		RequestValidationInput: &openapi3filter.RequestValidationInput{Request: req, Route: &routers.Route{
-			Spec: _contractDoc, Path: pattern, PathItem: item, Method: method, Operation: item.GetOperation(method),
+			Spec: contract, Path: pattern, PathItem: item, Method: method, Operation: item.GetOperation(method),
 		}},
 		Status: rec.Code, Header: rec.Header(), Body: io.NopCloser(bytes.NewReader(rec.Body.Bytes())),
 	}

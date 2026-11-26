@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	gosync "sync"
 	"sync/atomic"
 	"testing"
@@ -52,14 +53,14 @@ type syncEnv struct {
 	jitter  atomic.Value
 }
 
-func newSyncEnv(t *testing.T, scenario testadapter.Config) *syncEnv {
+func newSyncEnv(t *testing.T, scenario testadapter.Config, wrap ...func(http.Handler) http.Handler) *syncEnv {
 	t.Helper()
 	db := newMigratedDB(t)
 	ca := newTestCA(t, "internal CA")
 	cfg, _ := ca.serverTLS(t, time.Now().Add(time.Hour))
 	e := &syncEnv{
 		app: db.pool(t, "craftpulse_app"), owner: db.pool(t, "craftpulse_owner"),
-		clock: clock.NewManual(time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)), adapter: testAdapter(t, cfg, scenario, _adapterKey),
+		clock: clock.NewManual(time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)), adapter: testAdapter(t, cfg, scenario, _adapterKey, wrap...),
 		org: entity.ID(uuid.New()),
 	}
 	e.jitter.Store(0.0)
@@ -368,28 +369,50 @@ func TestSync_UnavailableSourceIsRepeatedWithBackoff(t *testing.T) {
 
 func TestSync_OneRunPerConnection(t *testing.T) {
 	t.Parallel()
-	e := newSyncEnv(t, testadapter.Config{Faults: []testadapter.Fault{
-		{Operation: testadapter.OpFetch, SchemaID: "tasks", Page: 1, Attempts: []int{1}, Kind: testadapter.FaultHang, DelayMS: 500},
-	}})
+	var inflight, peak atomic.Int64
+	var firstFetch atomic.Bool
+	started, release := make(chan struct{}), make(chan struct{})
+	finish := gosync.OnceFunc(func() { close(release) })
+	defer finish()
+	e := newSyncEnv(t, testadapter.Config{}, func(next http.Handler) http.Handler {
+		return countingInflight(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/fetch") && firstFetch.CompareAndSwap(false, true) {
+				close(started)
+				select {
+				case <-release:
+				case <-r.Context().Done():
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		}), &inflight, &peak)
+	})
 	conn := e.connection(t, "10000")
 	q := e.next(t, conn)
 	e.enqueue(t, entity.SyncPageJob{OrganizationID: e.org, ConnectionID: conn, DataKind: "accounts"})
 	var other queued
 	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT id,kind,args,scheduled_at FROM river_job
         WHERE kind='sync.page' AND args->>'connection_id'=$1 AND args->>'data_kind'='accounts'`, conn.String()).Scan(&other.id, &other.kind, &other.args, &other.scheduledAt))
-	runs := []*queued{q, &other}
-	var inflight, peak atomic.Int64
-	e.adapter.Config.Handler = countingInflight(e.adapter.Config.Handler, &inflight, &peak)
-	errs := make([]error, 2)
-	var wg gosync.WaitGroup
-	for i := range errs {
-		wg.Go(func() { errs[i] = e.run(t, runs[i], false) })
-		time.Sleep(50 * time.Millisecond)
+	result := make(chan error, 1)
+	go func() { result <- e.run(t, q, false) }()
+	select {
+	case <-started:
+	case err := <-result:
+		t.Fatalf("the first run finished before reaching the adapter: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first run did not reach the adapter")
 	}
-	wg.Wait()
+
 	var retry *entity.RetryLaterError
-	assert.True(t, errors.As(errs[0], &retry) || errors.As(errs[1], &retry), "the second run waits for the lease: %v", errs)
+	require.ErrorAs(t, e.run(t, &other, false), &retry, "the second run waits for the lease")
 	assert.Equal(t, int64(1), peak.Load(), "the adapter is never called twice at once for one connection")
+	finish()
+	select {
+	case err := <-result:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first run did not finish")
+	}
 
 	_, err := e.owner.Exec(t.Context(), "INSERT INTO sync.lease (organization_id, connection_id, holder, lease_until) VALUES ($1, $2, 'dead-process', $3) ON CONFLICT (organization_id, connection_id) DO UPDATE SET holder = 'dead-process', lease_until = EXCLUDED.lease_until",
 		uuid.UUID(e.org), uuid.UUID(conn), e.clock.Now().Add(120*time.Second))

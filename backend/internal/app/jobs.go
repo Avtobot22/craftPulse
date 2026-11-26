@@ -80,7 +80,15 @@ func runJobs(ctx context.Context, c jobsConfig) error {
 		}
 	}
 	c.watchdog.disarm()
+	return stopJobs(ctx, c, client)
+}
 
+type jobStopper interface {
+	Stop(context.Context) error
+	StopAndCancel(context.Context) error
+}
+
+func stopJobs(ctx context.Context, c jobsConfig, client jobStopper) error {
 	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.stopTimeout)
 	defer cancel()
 	if err := client.Stop(stopCtx); err == nil {
