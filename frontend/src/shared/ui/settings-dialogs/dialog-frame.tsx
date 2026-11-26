@@ -27,8 +27,16 @@ function focusPageHeading() {
 
 function tabStops(dialog: HTMLDialogElement) {
   return [
-    ...dialog.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]'),
-  ].filter((element) => element.tabIndex >= 0 && !element.closest('[hidden]'))
+    ...dialog.querySelectorAll<HTMLElement>('button, a[href], input'),
+  ].filter(
+    (element) =>
+      element.tabIndex >= 0 &&
+      !element.matches(':disabled') &&
+      !element.closest('[hidden]') &&
+      (!(element instanceof HTMLInputElement) ||
+        (element.type !== 'hidden' &&
+          (element.type !== 'radio' || element.checked))),
+  )
 }
 
 export function DialogFrame({

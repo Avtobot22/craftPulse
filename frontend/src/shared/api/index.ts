@@ -132,6 +132,7 @@ export type {
 
 export {
   isDateTime,
+  readReport,
   loadReport,
   loadRevisionMetadata,
   RevisionNotPublished,

@@ -98,7 +98,7 @@ function readSeries(value: unknown): ReportSeries {
   }
 }
 
-function readReport(value: unknown) {
+export function readReport(value: unknown) {
   const raw = readRecord(value)
   const revision = readRecord(raw.revision)
   const period = readRecord(raw.period)

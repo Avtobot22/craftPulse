@@ -50,6 +50,7 @@ const reportPaths = [
   routePaths.metricPassport,
   routePaths.metricCohort,
   routePaths.savedView,
+  routePaths.savedViews,
 ]
 
 const settings = [

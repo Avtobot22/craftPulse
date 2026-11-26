@@ -20,6 +20,7 @@ export { useNotifications } from './notifications'
 export type { NotificationOptions } from './notifications'
 import './states.css'
 export { ChangeConfirmationDialog } from './settings-dialogs/change-confirmation-dialog'
+export { DialogFrame } from './settings-dialogs/dialog-frame'
 export type {
   ChangeAttempt,
   ChangeConfirmationDialogProps,

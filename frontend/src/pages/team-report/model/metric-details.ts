@@ -24,7 +24,15 @@ export function useTaskContributions(
   const revision = block.report.revision.id
   const filters = { projectIds, taskType, size }
   return useQuery({
-    queryKey: ['team-report', 'task-cohort', revision, metricId, step, filters],
+    queryKey: [
+      'team-report',
+      'task-cohort',
+      revision,
+      metricId,
+      step,
+      filters,
+      block.detailsCacheKey,
+    ],
     queryFn: ({ signal }) =>
       loadTaskContributions(api, revision, metricId, step, filters, signal),
     enabled: block.report.metrics.some(

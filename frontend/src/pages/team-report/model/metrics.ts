@@ -74,6 +74,7 @@ export function latestPoint(series: ReportSeries) {
 
 export interface ReportBlockProps {
   report: TeamReport
+  detailsCacheKey?: string
   metadata: RevisionMetadata | undefined
   groupBy: string
   focus: ReportPointFocus | undefined
