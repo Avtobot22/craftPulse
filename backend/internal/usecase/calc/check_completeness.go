@@ -2,6 +2,7 @@ package calc
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -196,6 +197,30 @@ func (*UseCase) CalculateSummaryCompleteness(mr entity.SummaryMR, expected []ent
 
 // CalculateSummaryChecks applies I08 to the configured jobs and the selected pipeline graph.
 func (*UseCase) CalculateSummaryChecks(mr entity.SummaryMR, run entity.CIRun, keys []string) (entity.SeriesPoint, entity.RevisionInput) {
+	d := definition("I08")
+	in := CheckCompletenessInput{AreaID: mr.AreaID, AsOf: mr.ObservedAt, Checks: summaryChecks(run, keys)}
+	return missingChecks(&in), entity.RevisionInput{Kind: InputDefinition, ID: d.ID, Version: strconv.Itoa(d.Version)}
+}
+
+// MissingChecksAt evaluates I08 using only attempts and outcomes visible at the report point.
+func MissingChecksAt(run entity.CIRun, at time.Time, keys []string) bool {
+	if len(keys) == 0 {
+		return false
+	}
+	run.Attempts = slices.DeleteFunc(slices.Clone(run.Attempts), func(a entity.CIAttemptVersion) bool {
+		return !attemptKnownBy(&a, at)
+	})
+	for i := range run.Attempts {
+		a := &run.Attempts[i]
+		if a.FinishedAt != nil && a.FinishedAt.After(at) || a.FinishedAt == nil && a.ObservedAt.After(at) {
+			a.Outcome = entity.CIUnknown
+		}
+	}
+	point := missingChecks(&CheckCompletenessInput{AreaID: run.Run.AreaID, AsOf: at, Checks: summaryChecks(run, keys)})
+	return point.Numerator != nil && *point.Numerator > 0
+}
+
+func summaryChecks(run entity.CIRun, keys []string) []ExpectedCheck {
 	checks := make([]ExpectedCheck, 0, len(keys))
 	expected := make(map[string]bool, len(keys))
 	for _, key := range keys {
@@ -213,7 +238,5 @@ func (*UseCase) CalculateSummaryChecks(mr entity.SummaryMR, run entity.CIRun, ke
 			}
 		}
 	}
-	d := definition("I08")
-	in := CheckCompletenessInput{AreaID: mr.AreaID, AsOf: mr.ObservedAt, Checks: checks}
-	return missingChecks(&in), entity.RevisionInput{Kind: InputDefinition, ID: d.ID, Version: strconv.Itoa(d.Version)}
+	return checks
 }

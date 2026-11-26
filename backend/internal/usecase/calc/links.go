@@ -71,32 +71,10 @@ func linkInputOf(in input, facts []entity.ReviewFacts, edges []entity.LinkEdge) 
 		window: in.window, asOf: in.asOf, location: in.location, pr: pr, known: map[entity.ID]*entity.MRVersion{},
 		byTask: map[entity.ID][]entity.LinkEdge{}, byMR: map[entity.ID][]entity.LinkEdge{}, edges: edges,
 	}
-	byInstance := map[entity.ID]*rules{}
-	if in.mapping == nil {
-		out.reason = entity.ReasonMappingMissing
-	} else {
-		byInstance = rulesOf(in.mapping)
-		for _, rs := range byInstance {
-			for _, required := range rs.codeRequired {
-				out.policy = out.policy || required
-			}
-		}
-		if !out.policy {
-			out.reason = entity.ReasonCodePolicyMissing
-		}
-	}
-	types := make(map[entity.ID]string, len(in.tasks))
-	instances := make(map[entity.ID]entity.ID, len(in.tasks))
-	for i := range in.tasks {
-		types[in.tasks[i].version.TaskID], instances[in.tasks[i].version.TaskID] = in.tasks[i].version.TypeNativeID, in.tasks[i].instance
-	}
+	required, policy, reason := codeRequiredTasks(&in)
+	out.policy, out.reason = policy, reason
 	for _, tl := range pr.tls {
-		id := tl.slice.TaskID
-		required := false
-		if rs, ok := byInstance[instances[id]]; ok {
-			required = rs.codeRequired[types[id]]
-		}
-		out.tasks = append(out.tasks, linkTask{tl: tl, required: required})
+		out.tasks = append(out.tasks, linkTask{tl: tl, required: required[tl.slice.TaskID]})
 	}
 	slices.SortFunc(out.tasks, func(a, b linkTask) int { return bytes.Compare(a.tl.slice.TaskID[:], b.tl.slice.TaskID[:]) })
 	for i := range facts {
@@ -113,6 +91,30 @@ func linkInputOf(in input, facts []entity.ReviewFacts, edges []entity.LinkEdge) 
 		out.byMR[e.To] = append(out.byMR[e.To], *e)
 	}
 	return out
+}
+
+// codeRequiredTasks applies the A20 policy to the report's task facts.
+func codeRequiredTasks(in *input) (required map[entity.ID]bool, policy bool, reason string) {
+	if in.mapping == nil {
+		return nil, false, entity.ReasonMappingMissing
+	}
+	byInstance := rulesOf(in.mapping)
+	for _, rs := range byInstance {
+		for _, required := range rs.codeRequired {
+			policy = policy || required
+		}
+	}
+	if !policy {
+		return nil, false, entity.ReasonCodePolicyMissing
+	}
+	required = make(map[entity.ID]bool, len(in.tasks))
+	for i := range in.tasks {
+		task := &in.tasks[i]
+		if rs, ok := byInstance[task.instance]; ok && rs.codeRequired[task.version.TypeNativeID] {
+			required[task.version.TaskID] = true
+		}
+	}
+	return required, true, ""
 }
 
 // linkStatus is the reason of a contribution: the method of a confirmed link, else candidate or rejected, else none.

@@ -58,7 +58,8 @@ func (r *Repo) SaveSummary(ctx context.Context, org entity.ID, v *entity.Summary
 	calculation, err := json.Marshal(struct {
 		Definitions []entity.RevisionInput        `json:"definitions"`
 		Findings    []entity.SummaryFindingValues `json:"findings"`
-	}{v.Definitions, v.FindingValues})
+		Technical   entity.TechnicalSummary       `json:"technical"`
+	}{v.Definitions, v.FindingValues, v.Technical})
 	if err != nil {
 		return false, err
 	}
@@ -105,11 +106,11 @@ func (r *Repo) LastGoodSummary(ctx context.Context, org, mr entity.ID) (entity.S
 }
 
 // SummaryProfileAt selects the matrix in force at the start of the pipeline.
-func (r *Repo) SummaryProfileAt(ctx context.Context, org, project entity.ID, at time.Time) (entity.CheckProfileVersion, error) {
+func (r *Repo) SummaryProfileAt(ctx context.Context, org, project entity.ID, at time.Time, seq int64) (entity.CheckProfileVersion, error) {
 	row, err := scanSummaryProfile(postgres.Conn(ctx, r.pool).QueryRow(ctx, `SELECT organization_id, id, project_id,
 		version_no, base_version_no, content_hash, known_seq, confirmed_by, confirmed_at, confirmation_id
-		FROM change.profile_version WHERE organization_id = $1 AND project_id = $2 AND confirmed_at <= $3
-		ORDER BY version_no DESC LIMIT 1`, uuid.UUID(org), uuid.UUID(project), at))
+		FROM change.profile_version WHERE organization_id = $1 AND project_id = $2 AND confirmed_at <= $3 AND ($4::bigint = 0 OR known_seq <= $4)
+		ORDER BY version_no DESC LIMIT 1`, uuid.UUID(org), uuid.UUID(project), at, seq))
 	return r.withEntries(ctx, row, err)
 }
 

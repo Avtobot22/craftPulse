@@ -120,7 +120,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, check
 	if err != nil {
 		return err
 	}
-	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights, decisions: exceptions},
+	calculator, err := newCalc(pool, calcModules{catalog: catalog, structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights, decisions: exceptions},
 		clock.System{}, reg)
 	if err != nil {
 		return err
@@ -209,7 +209,7 @@ func RunWorker(cfg config.Config, adapters config.Adapters, checks config.Checks
 	if err != nil {
 		return err
 	}
-	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights, decisions: exceptions},
+	calculator, err := newCalc(pool, calcModules{catalog: catalog, structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights, decisions: exceptions},
 		clock.System{}, reg)
 	if err != nil {
 		return err

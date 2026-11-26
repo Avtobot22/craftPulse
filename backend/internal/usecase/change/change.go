@@ -35,20 +35,23 @@ type Auditor interface {
 }
 
 type Deps struct {
-	Summary       SummaryDeps
-	TaskSummaries TaskSummaries
-	Repo          repo.ChangeRepo
-	Reports       Reports
-	Decisions     Decisions
-	FindingRights FindingRights
-	Tenants       repo.TenantRepo
-	Tx            repo.Transactor
-	Components    Components
-	Roots         Roots
-	Auditor       Auditor
-	Catalog       entity.CheckCatalog
-	Clock         clock.Clock
-	NewID         func() (entity.ID, error)
+	Summary            SummaryDeps
+	TaskSummaries      TaskSummaries
+	TechnicalSummaries TechnicalSummaryStore
+	TechnicalPipelines TechnicalPipelines
+	MissingChecksAt    func(entity.CIRun, time.Time, []string) bool
+	Repo               repo.ChangeRepo
+	Reports            Reports
+	Decisions          Decisions
+	FindingRights      FindingRights
+	Tenants            repo.TenantRepo
+	Tx                 repo.Transactor
+	Components         Components
+	Roots              Roots
+	Auditor            Auditor
+	Catalog            entity.CheckCatalog
+	Clock              clock.Clock
+	NewID              func() (entity.ID, error)
 }
 
 type UseCase struct {

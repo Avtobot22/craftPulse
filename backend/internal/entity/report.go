@@ -6,11 +6,13 @@ import "time"
 // size at start of a task. UnknownSize selects the tasks without a size; GroupBy splits every series by type
 // or size.
 type ReportFilter struct {
-	Projects    []ID
-	TaskType    *string
-	SizeLabel   *string
-	UnknownSize bool
-	GroupBy     GroupBy
+	Projects          []ID
+	TaskType          *string
+	SizeLabel         *string
+	UnknownSize       bool
+	GroupBy           GroupBy
+	MinTaskAgeSeconds *int64
+	OverTarget        *bool
 }
 
 // VisibleSeries are the series of a revision computed by their definitions over the part of the cohort the
@@ -34,6 +36,7 @@ type CohortRow struct {
 
 // CohortQuery reads one point of a revision: its contributions of a role after the key.
 type CohortQuery struct {
+	Filter     ReportFilter
 	MetricID   string
 	Estimator  string
 	PointStart time.Time
@@ -63,6 +66,7 @@ type CohortItem struct {
 	SizeLabel      *string
 	Interval       *WorkflowInterval
 	TaskAgeSeconds *int64
+	OverTarget     *bool
 	Basis          []ObjectRef
 	Signals        []ObservationKind
 }

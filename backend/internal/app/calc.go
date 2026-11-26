@@ -7,13 +7,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	calcrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/calc"
+	changerepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/change"
 	docsrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/docs"
 	linkrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/link"
+	normalizerepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/normalize"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/queue"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/change"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/docs"
 	linkuc "github.com/Avtobot22/craftPulse/backend/internal/usecase/link"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
@@ -66,6 +70,7 @@ func (m calcMetrics) ChainPublished(d time.Duration) { m.chain.Observe(d.Seconds
 // settings and the confirmation of a target from process, the state of collection from sync and the rights of a
 // reader from access. None of them depends on calc.
 type calcModules struct {
+	catalog      entity.CheckCatalog
 	structure    calc.Structure
 	facts        calc.Facts
 	testCoverage calc.TestCoverageFacts
@@ -95,8 +100,22 @@ func newCalc(pool *pgxpool.Pool, m calcModules, c clock.Clock, reg prometheus.Re
 	analysis, _ := m.facts.(calc.AnalysisReports)
 	documents, _ := m.facts.(docs.Documents)
 	documentation := docs.New(docs.Deps{Repo: docsrepo.NewRepo(pool), Tx: tx, Documents: documents})
+	var evidence calc.ReportEvidence
+	components, _ := m.structure.(change.Components)
+	decisions, _ := m.decisions.(change.Decisions)
+	pipelines, _ := m.facts.(change.TechnicalPipelines)
+	if components != nil && decisions != nil && pipelines != nil {
+		summaryStore := changerepo.NewRepo(pool)
+		reader := change.New(change.Deps{
+			Components: components, Decisions: decisions, Tx: tx, TechnicalSummaries: summaryStore,
+			Catalog: m.catalog, TechnicalPipelines: pipelines, MissingChecksAt: calc.MissingChecksAt,
+			Summary: change.SummaryDeps{Store: summaryStore, Facts: normalizerepo.NewRepo(pool)},
+		})
+		evidence = reader.TechnicalSnapshot
+	}
 	return calc.New(calc.Deps{
-		Structure: m.structure, Facts: m.facts, TestCoverage: m.testCoverage, Security: m.security, Settings: m.settings,
+		ReportEvidence: evidence,
+		Structure:      m.structure, Facts: m.facts, TestCoverage: m.testCoverage, Security: m.security, Settings: m.settings,
 		Collection: m.collection, Activity: m.activity, Code: code, CodeSources: codeSources, Rights: m.rights, Links: links,
 		Docs: documentation, DocReports: docReports, Decisions: m.decisions, Analysis: analysis,
 		Repo: calcrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Queue: queue.New(jobs), Tx: tx,

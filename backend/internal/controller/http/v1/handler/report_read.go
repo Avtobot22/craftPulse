@@ -39,6 +39,7 @@ func (h *reports) GetTeamReport(ctx context.Context, req openapi.GetTeamReportRe
 		}
 	}
 	q.Filter.TaskType = p.TaskType
+	q.Filter.MinTaskAgeSeconds, q.Filter.OverTarget = p.MinTaskAgeSeconds, p.OverTarget
 	switch {
 	case p.SizeLabel != nil && *p.SizeLabel == _unknownSize:
 		q.Filter.UnknownSize = true
@@ -111,9 +112,10 @@ func metricSeries(s *entity.Series) openapi.MetricSeries {
 		out.Group = &struct {
 			ActorKind *openapi.ActorKind `json:"actor_kind,omitempty"`
 			EventKind *string            `json:"event_kind,omitempty"`
+			Signal    *string            `json:"signal,omitempty"`
 			SizeLabel *string            `json:"size_label,omitempty"`
 			TaskType  *string            `json:"task_type,omitempty"`
-		}{SizeLabel: g.SizeLabel, TaskType: g.TaskType, EventKind: optional(g.EventKind)}
+		}{SizeLabel: g.SizeLabel, TaskType: g.TaskType, EventKind: optional(g.EventKind), Signal: optional(g.Signal)}
 		if g.ActorKind != "" {
 			actor := openapi.ActorKind(g.ActorKind)
 			out.Group.ActorKind = &actor
@@ -236,7 +238,17 @@ func (h *reports) ListRevisionCohort(ctx context.Context, req openapi.ListRevisi
 	if p.Role != nil {
 		q.Role = entity.ContributionRole(*p.Role)
 	}
+	q.Filter = entity.ReportFilter{TaskType: p.TaskType, SizeLabel: p.SizeLabel, MinTaskAgeSeconds: p.MinTaskAgeSeconds, OverTarget: p.OverTarget}
+	if p.SizeLabel != nil && *p.SizeLabel == "unknown" {
+		q.Filter.SizeLabel, q.Filter.UnknownSize = nil, true
+	}
 	filter := q.MetricID + "/" + q.Estimator + "/" + string(q.Role)
+	if p.TaskType != nil || p.SizeLabel != nil || p.MinTaskAgeSeconds != nil || p.OverTarget != nil {
+		filter += fmt.Sprintf("/%x", sha256.Sum256(fmt.Appendf(nil, "%q/%q/%d/%t/%t/%t/%t", valueOrZero(p.TaskType), valueOrZero(p.SizeLabel), valueOrZero(p.MinTaskAgeSeconds), valueOrZero(p.OverTarget), p.TaskType != nil, p.SizeLabel != nil, p.MinTaskAgeSeconds != nil)))
+		if p.OverTarget == nil {
+			filter += "/any"
+		}
+	}
 	if p.ProjectId != nil && len(*p.ProjectId) > 0 {
 		q.Projects = make([]entity.ID, len(*p.ProjectId))
 		for i, id := range *p.ProjectId {
@@ -268,11 +280,22 @@ func (h *reports) ListRevisionCohort(ctx context.Context, req openapi.ListRevisi
 	return openapi.ListRevisionCohort200JSONResponse(out), nil
 }
 
+func valueOrZero[T any](v *T) (zero T) {
+	if v != nil {
+		return *v
+	}
+	return zero
+}
+
 func cohortItem(it *entity.CohortItem, url string) openapi.CohortItem {
+	kind := openapi.ObjectRefKind(it.Object.Kind)
+	if it.Object.Kind == entity.ObjectCIRun {
+		kind = openapi.ObjectRefKind("pipeline")
+	}
 	out := openapi.CohortItem{
-		Object: openapi.ObjectRef{Kind: openapi.ObjectRefKind(it.Object.Kind), Id: uuid.UUID(it.ObjectID), SourceUrl: optional(url)},
+		Object: openapi.ObjectRef{Kind: kind, Id: uuid.UUID(it.ObjectID), SourceUrl: optional(url)},
 		ItemNo: it.ItemNo, Role: openapi.CohortItemRole(it.Role), Value: float32Of(it.Value), ReasonCode: optional(it.ReasonCode),
-		TaskType: it.TaskType, SizeLabel: it.SizeLabel, BasisDeleted: it.Object.Deleted,
+		TaskType: it.TaskType, SizeLabel: it.SizeLabel, BasisDeleted: it.Object.Deleted, OverTarget: it.OverTarget,
 	}
 	if !it.Object.Deleted {
 		out.Object.DisplayKey, out.Object.Title = it.Object.DisplayKey, it.Object.Title

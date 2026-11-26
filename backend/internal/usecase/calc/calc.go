@@ -86,13 +86,17 @@ type Metrics interface {
 	ChainPublished(d time.Duration)
 }
 
+// ReportEvidence binds optional technical evidence to the knowledge and time cut of a report revision.
+type ReportEvidence func(context.Context, entity.ID, []entity.ID, int64, time.Time) (entity.TechnicalCrossSnapshot, error)
+
 type Deps struct {
-	Structure    Structure
-	Facts        Facts
-	TestCoverage TestCoverageFacts
-	Security     SecurityFacts
-	Analysis     AnalysisReports
-	Settings     Settings
+	ReportEvidence ReportEvidence
+	Structure      Structure
+	Facts          Facts
+	TestCoverage   TestCoverageFacts
+	Security       SecurityFacts
+	Analysis       AnalysisReports
+	Settings       Settings
 	// Collection is nil where no source is collected; then only the history of the facts tells completeness.
 	Collection  Collection
 	Activity    ActivityCollection
