@@ -66,12 +66,15 @@ gh workflow run repository.yml --ref "$(git branch --show-current)" -f target=sh
 ```
 
 `all` запускает обычный полный CI. `backend`, `integration`, `dataset`, `frontend`,
-`openapi` и `oci` запускают выбранные проверки. `shard-benchmark` сначала собирает
+`openapi` и `oci` запускают выбранные проверки. Обычный CI использует четыре
+интеграционных шарда. Для ручного `integration` можно выбрать 1, 2 или 4.
+`shard-benchmark` сначала собирает
 длительности тестов `backend/internal/app`, затем сравнивает 1, 2 и 4 шарда на
 одинаковых раннерах. В отчёте есть время самого долгого шарда и суммарное время
 сборки и тестов по всем шардам. Актуальный профиль берётся из артефакта
 `integration-profile-1-0`. Для регулярного CI поле `tests` этого файла хранится
-в `scripts/ci-integration-timings.json`. Новые тесты получают медианный вес.
+в `scripts/ci-integration-timings.json`. Для обновления профиля скачай этот артефакт
+из успешного замера и замени поле `tests`. Новые тесты получают медианный вес.
 
 Локальный harness может вызвать тот же runner из `backend/`. По умолчанию Python
 использует кэши установленного Go. Чтобы выделить кэш для race-сборки, установи
@@ -83,6 +86,9 @@ export GOCACHE="$(go env GOCACHE)/race-integration"
 python3 ../scripts/ci_shards.py run --count 2 --index 0 \
   --profile ../scripts/ci-integration-timings.json --output /tmp/craftpulse-shard-0.json
 ```
+
+В контейнерном harness подключи постоянные каталоги для `GOCACHE` и `GOMODCACHE`
+и используй тот же builder Docker для повторных сборок.
 
 На GitHub кэши Go разделены по модулю, версии, платформе и типу сборки. Обычная
 сборка, race-тесты и генераторы OpenAPI используют отдельные кэши. Golangci-lint

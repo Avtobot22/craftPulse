@@ -2,7 +2,7 @@ name: Repository
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited, ready_for_review]
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
   schedule:
@@ -25,7 +25,7 @@ on:
       shards:
         description: Runner count for the integration target
         type: choice
-        default: '2'
+        default: '4'
         options: ['1', '2', '4']
 
 permissions:
@@ -233,9 +233,9 @@ jobs:
       matrix: >-
         ${{ (github.event_name == 'workflow_dispatch' && inputs.target == 'integration' && inputs.shards == '1')
         && '[{"count":1,"index":0}]'
-        || (github.event_name == 'workflow_dispatch' && inputs.target == 'integration' && inputs.shards == '4')
-        && '[{"count":4,"index":0},{"count":4,"index":1},{"count":4,"index":2},{"count":4,"index":3}]'
-        || '[{"count":2,"index":0},{"count":2,"index":1}]' }}
+        || (github.event_name == 'workflow_dispatch' && inputs.target == 'integration' && inputs.shards == '2')
+        && '[{"count":2,"index":0},{"count":2,"index":1}]'
+        || '[{"count":4,"index":0},{"count":4,"index":1},{"count":4,"index":2},{"count":4,"index":3}]' }}
       save-cache: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
 
   shard-benchmark:
