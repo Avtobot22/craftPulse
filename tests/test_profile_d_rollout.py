@@ -320,7 +320,13 @@ class RolloutTest(unittest.TestCase):
                 (root / name).touch()
             stand = rollout_host.Stand(root, config)
             release = {**manifest(FIRST, 1), "adapters": [], "snapshot": FIRST}
-            files = rollout_host.decode_files(request(FIRST, 1)["files"], [])
+            orgs = settings["install"]["INSTALL_ORGANIZATIONS"].split(",")
+            bundle = {
+                **generated_values(),
+                "oidc_client_secrets": dict.fromkeys(orgs, "TEST-OIDC-SECRET"),
+            }
+            adapters, encoded = rollout.process_files(bundle, release, "openssl")
+            files = rollout_host.decode_files(encoded, adapters)
 
             def render(label, args):
                 if label == "check existing stand data volume":
