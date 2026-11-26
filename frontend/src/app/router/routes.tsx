@@ -97,7 +97,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.metricCohort,
-                  element: <MetricCohortPage />,
+                  element: <MetricCohortPage api={runtime.api} />,
                 },
                 {
                   path: routePaths.savedView,
