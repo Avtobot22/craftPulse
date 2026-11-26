@@ -22,8 +22,14 @@ func (u *UseCase) ListTasks(ctx context.Context, s entity.Subject, scope entity.
 		return entity.TaskViewPage{}, err
 	}
 	areas, err := u.listTrackerAreas(ctx, org, structure, q)
-	if err != nil || len(areas) == 0 {
+	if err != nil {
 		return entity.TaskViewPage{}, err
+	}
+	if len(areas) == 0 {
+		if q.After == nil {
+			return entity.TaskViewPage{EmptyReason: entity.TaskSourceNotConfigured}, nil
+		}
+		return entity.TaskViewPage{}, nil
 	}
 	visible, err := u.taskListScope(ctx, s, scope, areas)
 	if err != nil {
@@ -38,6 +44,7 @@ func (u *UseCase) ListTasks(ctx context.Context, s entity.Subject, scope entity.
 	if err != nil {
 		return entity.TaskViewPage{}, err
 	}
+	hasTasks := false
 	for _, id := range areas {
 		facts, err := u.d.Tasks.Facts.VisibleAreaFacts(ctx, visible, org, id, cut.seq)
 		if err != nil {
@@ -46,11 +53,15 @@ func (u *UseCase) ListTasks(ctx context.Context, s entity.Subject, scope entity.
 		if err := read.keepCurrentTasks(ctx, visible, &facts); err != nil {
 			return entity.TaskViewPage{}, err
 		}
+		hasTasks = hasTasks || len(facts.Tasks) > 0
 		rows, err := read.listRows(ctx, &facts, q)
 		if err != nil {
 			return entity.TaskViewPage{}, err
 		}
 		page.Items = append(page.Items, rows...)
+	}
+	if q.After == nil && !visible.Limited() && !hasTasks && waitingForTaskHistory(areas, read.collection) {
+		page.EmptyReason = entity.TaskHistoryNotReceived
 	}
 	slices.SortFunc(page.Items, func(a, b entity.TaskSummary) int {
 		return compareTaskPosition(taskPosition(&a, cut), taskPosition(&b, cut), q.Sort)
@@ -68,6 +79,19 @@ func (u *UseCase) ListTasks(ctx context.Context, s entity.Subject, scope entity.
 		page.Notes = []entity.AccessNote{{Code: entity.NoteRestricted}}
 	}
 	return page, err
+}
+
+// Import-only areas have no collection state. They do not imply a pending sync.
+func waitingForTaskHistory(areas []entity.ID, collection []entity.AreaCollection) bool {
+	pending := make(map[entity.ID]struct{}, len(areas))
+	for i := range collection {
+		item := &collection[i]
+		if item.HistoryFrom != nil || item.LastSuccessAt != nil {
+			return false
+		}
+		pending[item.AreaID] = struct{}{}
+	}
+	return len(pending) == len(areas)
 }
 
 func (u *UseCase) hiddenTaskLinks(ctx context.Context, s entity.Subject, scope entity.Scope, ids []entity.ID, seq int64) (bool, error) {

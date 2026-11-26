@@ -29,6 +29,10 @@ func (h *tasks) ListTasks(ctx context.Context, req openapi.ListTasksRequestObjec
 		return nil, err
 	}
 	out := openapi.TaskPage{Data: make([]openapi.TaskSummary, len(page.Items)), AccessLimited: len(page.Notes) > 0, AccessNotes: accessNotes(page.Notes)}
+	if page.EmptyReason != "" {
+		reason := openapi.TaskPageEmptyReason(page.EmptyReason)
+		out.EmptyReason = &reason
+	}
 	for i := range page.Items {
 		out.Data[i] = taskSummaryBody(&page.Items[i])
 	}
@@ -220,10 +224,11 @@ func timelineBody(page *entity.TaskEventPage, kind, binding string) openapi.Time
 }
 
 func taskSummaryBody(task *entity.TaskSummary) openapi.TaskSummary {
+	targetConfigured := task.Target != nil
 	return openapi.TaskSummary{
 		Id: uuid.UUID(task.Version.TaskID), Key: optional(task.Version.TaskKey), Title: optional(task.Version.Title),
 		ProjectId: uuidPtr(task.ProjectID), TeamId: uuidPtr(task.TeamID), TaskType: task.Type, SizeLabel: task.Size,
-		AgeSeconds: task.AgeSeconds, OverTarget: task.OverTarget, UpdatedAt: task.Version.SourceUpdatedAt, SourceUrl: task.SourceURL,
+		AgeSeconds: task.AgeSeconds, OverTarget: task.OverTarget, TargetConfigured: &targetConfigured, UpdatedAt: task.Version.SourceUpdatedAt, SourceUrl: task.SourceURL,
 		Status: openapi.TaskStatus{NativeId: task.Version.StatusNativeID, Name: task.StatusName, Meaning: openapi.TaskStatusMeaning(task.Meaning)},
 	}
 }

@@ -39,4 +39,4 @@ export {
   InspectionBack,
   useInspectionReturn,
 } from './inspection-link'
-export { TaskDetailLink } from './task-detail-link'
+export { TaskDetailLink, TaskReturnLink } from './task-detail-link'

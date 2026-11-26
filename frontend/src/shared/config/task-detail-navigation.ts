@@ -1,11 +1,12 @@
 import { matchPath } from 'react-router'
 import { routePaths } from './routes'
 
-interface TaskOrigin {
+export interface TaskOrigin {
   pathname: string
   search: string
   hash: string
   focusId: string
+  returnViaHistory?: true
 }
 
 export function readTaskOrigin(state: unknown): TaskOrigin | null {
@@ -36,7 +37,17 @@ export function readTaskOrigin(state: unknown): TaskOrigin | null {
     routePaths.projectTimeline,
   ].some((path) => matchPath(path, pathname))
   return isSource && pathname.startsWith('/') && !/[\\?#]/u.test(pathname)
-    ? { pathname, search, hash, focusId }
+    ? {
+        pathname,
+        search,
+        hash,
+        focusId,
+        ...(matchPath(routePaths.taskList, pathname) &&
+        'returnViaHistory' in origin &&
+        origin.returnViaHistory === true
+          ? { returnViaHistory: true }
+          : {}),
+      }
     : null
 }
 

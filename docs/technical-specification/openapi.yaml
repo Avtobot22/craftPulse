@@ -7077,7 +7077,8 @@ components:
         size_label: {type: [string, 'null'], description: '`null` - размер неизвестен; задача в группе «без размера».'}
         team_id: {type: [string, 'null'], format: uuid, description: '`null` - команда не определена правилами сопоставления.'}
         age_seconds: {type: [integer, 'null'], description: Возраст текущего эпизода; `null` при неизвестном начале.}
-        over_target: {type: [boolean, 'null'], description: '`null` - срок для группы не задан.'}
+        over_target: {type: [boolean, 'null'], description: '`null` - превышение срока не определено.'}
+        target_configured: {type: boolean, description: Есть ли целевой срок для группы задачи. Позволяет отличить отсутствие срока от неизвестного превышения при неизвестном начале эпизода.}
         updated_at: {type: [string, 'null'], format: date-time}
         source_url: {type: [string, 'null'], format: uri}
     TaskPage:
@@ -7085,6 +7086,10 @@ components:
       required: [data, next_cursor, access_limited, access_notes]
       properties:
         data: {type: array, items: {$ref: '#/components/schemas/TaskSummary'}}
+        empty_reason:
+          type: string
+          enum: [source_not_configured, history_not_received]
+          description: Причина пустой выдачи на первой странице, если она известна. При ограничении доступа не передаётся. Отсутствие поля не подтверждает состояние источника.
         next_cursor: {type: [string, 'null']}
         access_limited: {type: boolean}
         access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}

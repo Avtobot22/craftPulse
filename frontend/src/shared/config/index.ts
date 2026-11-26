@@ -1,5 +1,6 @@
 export { routePaths } from './routes'
 export { readTaskOrigin, readTaskReturnFocus } from './task-detail-navigation'
+export type { TaskOrigin } from './task-detail-navigation'
 
 export { layoutTheme, contentGridProps, layoutSizes } from './layout'
 

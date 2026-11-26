@@ -26,19 +26,26 @@ const emptyReasons = {
 } as const
 export interface EmptyStateProps {
   reason: keyof typeof emptyReasons
+  title?: string
   description?: string
   action?: { label: string; onClick: () => void }
 }
-export function EmptyState({ reason, description, action }: EmptyStateProps) {
-  const { title, icon } = emptyReasons[reason]
+export function EmptyState({
+  reason,
+  title,
+  description,
+  action,
+}: EmptyStateProps) {
+  const { title: defaultTitle, icon } = emptyReasons[reason]
+  const heading = title ?? defaultTitle
   return (
-    <Box as="section" role="status" aria-label={title}>
+    <Box as="section" role="status" aria-label={heading}>
       <PlaceholderContainer
         className="cp-empty-state"
         size="s"
         align="left"
         direction="column"
-        title={title}
+        title={heading}
         {...(description
           ? {
               description: (

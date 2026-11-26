@@ -19,10 +19,18 @@ type TaskViewCursor struct {
 	Key       string
 }
 
+type TaskListEmptyReason string
+
+const (
+	TaskSourceNotConfigured TaskListEmptyReason = "source_not_configured"
+	TaskHistoryNotReceived  TaskListEmptyReason = "history_not_received"
+)
+
 type TaskViewPage struct {
-	Items []TaskSummary
-	Next  *TaskViewCursor
-	Notes []AccessNote
+	Items       []TaskSummary
+	Next        *TaskViewCursor
+	Notes       []AccessNote
+	EmptyReason TaskListEmptyReason
 }
 
 type TaskSummary struct {
