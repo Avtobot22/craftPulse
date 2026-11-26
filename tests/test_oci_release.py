@@ -41,6 +41,47 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(names, ["craftpulse-server", "craftpulse-frontend", "craftpulse-ci", "craftpulse-adapter-future", "craftpulse-adapter-git"])
         self.assertNotIn("craftpulse-adapter-test", names)
 
+    def test_bake_keeps_each_image_target_tag_revision_and_cache_scope(self):
+        images = [
+            {"name": "craftpulse-ci", "context": "backend", "dockerfile": "backend/ci.Dockerfile"},
+            {"name": "craftpulse-ci-trivy-default", "context": "backend",
+             "dockerfile": "backend/ci.Dockerfile", "target": "trivy-default"},
+        ]
+        with patch.dict(release.os.environ, {"CRAFTPULSE_BUILDKIT_CACHE": "gha",
+                                             "CRAFTPULSE_BUILDKIT_CACHE_WRITE": "1"}):
+            with patch.object(release, "run") as run:
+                release.build_profile_images(images, SHA, self.root)
+        args, kwargs = run.call_args
+        self.assertEqual(args[0], ["docker", "buildx", "bake", "--file", "-", "--load", "--progress", "plain"])
+        self.assertEqual(kwargs["cwd"], self.root)
+        definition = json.loads(kwargs["input_text"])
+        self.assertEqual(definition["group"]["default"]["targets"], [image["name"] for image in images])
+        for image in images:
+            name = image["name"]
+            target = definition["target"][name]
+            self.assertEqual(target["context"], "backend")
+            self.assertEqual(target["dockerfile"], "ci.Dockerfile")
+            self.assertEqual(target.get("target"), image.get("target"))
+            self.assertEqual(target["tags"], [name + ":check"])
+            self.assertEqual(target["platforms"], ["linux/amd64"])
+            self.assertEqual(target["args"], {"COMMIT_SHA": SHA})
+            self.assertEqual(target["labels"], {"org.opencontainers.image.revision": SHA})
+            self.assertIn("scope=craftpulse-amd64-" + name + ",", target["cache-from"][0])
+            self.assertIn("scope=craftpulse-amd64-" + name + ",", target["cache-to"][0])
+
+    def test_profile_smoke_failure_fails_the_group(self):
+        profile = self.root / "backend/pkg/secrets/profiles/gitleaks-default/profile.json"
+        profile.parent.mkdir(parents=True)
+        profile.touch()
+        failure = subprocess.CalledProcessError(1, ["check"])
+        with patch.object(release, "build_profile_images") as build:
+            with patch.object(release, "check_profile_image", side_effect=[None, failure]) as check:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    release.check_ci_images(SHA, self.root)
+        names = ["craftpulse-ci", "craftpulse-ci-gitleaks-default"]
+        self.assertEqual([image["name"] for image in build.call_args.args[0]], names)
+        self.assertCountEqual([call.args[0]["name"] for call in check.call_args_list], names)
+
     def test_profile_discovery_pins_dependency_and_hashes_policy(self):
         directory = self.root / "backend/pkg/secrets/profiles/gitleaks-default"
         directory.mkdir(parents=True)

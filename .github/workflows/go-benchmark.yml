@@ -1,0 +1,40 @@
+name: Go integration benchmark
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    uses: ./.github/workflows/go-integration.yml
+    with:
+      matrix: '[{"count":1,"index":0}]'
+      artifacts: integration-profile
+      save-cache: true
+
+  compare:
+    needs: profile
+    uses: ./.github/workflows/go-integration.yml
+    with:
+      matrix: >-
+        [{"count":1,"index":0},{"count":2,"index":0},{"count":2,"index":1},
+        {"count":4,"index":0},{"count":4,"index":1},{"count":4,"index":2},{"count":4,"index":3}]
+      profile: integration-profile-1-0
+      artifacts: integration-benchmark
+
+  report:
+    needs: compare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: integration-benchmark-*
+          path: ${{ runner.temp }}/benchmark
+      - name: Compare identical test sets and report elapsed time
+        run: python3 scripts/ci_shards.py report "$RUNNER_TEMP/benchmark" | tee -a "$GITHUB_STEP_SUMMARY"

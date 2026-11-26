@@ -2,6 +2,7 @@
 """Build, scan and publish the images of one checked main commit."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import base64
 import hashlib
 import io
@@ -12,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import tarfile
 import urllib.error
 import urllib.parse
@@ -259,15 +261,80 @@ class Registry:
         return digest
 
 
+def build_cache(image):
+    if os.environ.get("CRAFTPULSE_BUILDKIT_CACHE") != "gha":
+        return [], []
+    scope = f"craftpulse-amd64-{image['name']}"
+    restore = [f"type=gha,scope={scope},timeout=30s"]
+    save = []
+    if os.environ.get("CRAFTPULSE_BUILDKIT_CACHE_WRITE") == "1":
+        save.append(f"type=gha,scope={scope},mode=max,timeout=2m,ignore-error=true")
+    return restore, save
+
+
 def build(image, sha, ref, root=ROOT):
     args = ["docker", "build", "--platform", "linux/amd64", "--build-arg", f"COMMIT_SHA={sha}",
             "--label", f"org.opencontainers.image.revision={sha}", "--tag", ref,
             "--file", str(root / image["dockerfile"])]
+    restore, save = build_cache(image)
+    if restore:
+        builder = ["docker", "buildx", "build", "--load", "--cache-from", restore[0]]
+        if save:
+            builder += ["--cache-to", save[0]]
+        args = builder + args[2:]
     if image.get("target"):
         args += ["--target", image["target"]]
     if image.get("adapter"):
         args += ["--build-arg", f"ADAPTER={image['adapter']}"]
     run(args + [str(root / image["context"])], cwd=root)
+
+
+def build_profile_images(images, sha, root):
+    targets = {}
+    for image in images:
+        name = image["name"]
+        context = image["context"]
+        target = {
+            "context": context,
+            "dockerfile": str(Path(image["dockerfile"]).relative_to(context)),
+            "platforms": ["linux/amd64"],
+            "tags": [f"{name}:check"],
+            "args": {"COMMIT_SHA": sha},
+            "labels": {"org.opencontainers.image.revision": sha},
+        }
+        if image.get("target"):
+            target["target"] = image["target"]
+        restore, save = build_cache(image)
+        if restore:
+            target["cache-from"] = restore
+        if save:
+            target["cache-to"] = save
+        targets[name] = target
+    definition = {"group": {"default": {"targets": list(targets)}}, "target": targets}
+    run(["docker", "buildx", "bake", "--file", "-", "--load", "--progress", "plain"],
+        cwd=root, input_text=json.dumps(definition))
+
+
+def check_profile_image(image, root):
+    name = image["name"]
+    reference = f"{name}:check"
+    started = time.monotonic()
+    print(f"Checking {name}", flush=True)
+    smoke_ci(reference)
+    if image.get("target") in PROFILE_CHECKS:
+        script, *options = PROFILE_CHECKS[image["target"]]
+        run([sys.executable, str(root / script), *options, "--image", reference], cwd=root)
+    print(f"Checked {name} in {time.monotonic() - started:.1f}s", flush=True)
+
+
+def check_ci_images(sha, root=ROOT):
+    images = [image for image in plan(root)
+              if image["name"] == "craftpulse-ci" or image.get("target") in PROFILE_CHECKS]
+    build_profile_images(images, sha, root)
+    # Each smoke check uses its own temporary workspace and containers.
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        for _ in workers.map(lambda image: check_profile_image(image, root), images):
+            pass
 
 
 def smoke_adapter(ref):
@@ -420,7 +487,8 @@ def release(sha, output, tools, root=ROOT):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["plan", "check", "build-adapters", "build-ci", "install-tools", "release"])
+    parser.add_argument("command", choices=["plan", "check", "build-server", "build-frontend",
+                                           "build-adapters", "build-ci", "install-tools", "release"])
     parser.add_argument("--sha", default="0" * 40)
     parser.add_argument("--output", type=Path, default=ROOT / "build/release")
     parser.add_argument("--tools", type=Path, default=ROOT / "build/release-tools")
@@ -431,6 +499,12 @@ def main():
         elif args.command == "check":
             print(json.dumps(metadata(ROOT, plan()), indent=2))
             npm_licenses(read_json(ROOT / "frontend/package-lock.json"))
+        elif args.command == "build-server":
+            build({"name": "craftpulse-server", "context": "backend",
+                   "dockerfile": "backend/Dockerfile"}, args.sha, f"craftpulse-server:{args.sha}")
+        elif args.command == "build-frontend":
+            build({"name": "craftpulse-frontend", "context": "frontend",
+                   "dockerfile": "frontend/Dockerfile"}, args.sha, "craftpulse-frontend:ci")
         elif args.command == "build-adapters":
             for image in plan():
                 if image.get("adapter"):
@@ -438,14 +512,7 @@ def main():
                     build(image, args.sha, reference)
                     smoke_adapter(reference)
         elif args.command == "build-ci":
-            for image in plan():
-                if image["name"] == "craftpulse-ci" or image.get("target") in PROFILE_CHECKS:
-                    reference = f"{image['name']}:check"
-                    build(image, args.sha, reference)
-                    smoke_ci(reference)
-                    if image.get("target") in PROFILE_CHECKS:
-                        script, *options = PROFILE_CHECKS[image["target"]]
-                        run([sys.executable, str(ROOT / script), *options, "--image", reference])
+            check_ci_images(args.sha)
         elif args.command == "install-tools":
             install_tools(args.tools.resolve())
         else:

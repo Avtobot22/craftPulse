@@ -6,23 +6,23 @@ on:
       module:
         required: true
         type: string
-      cache:
-        default: false
-        type: boolean
       check-generated:
         default: false
         type: boolean
-      image:
+      exclude-test-package:
         default: ''
         type: string
+      build:
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
-  check:
+  quality:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ${{ inputs.module }}
@@ -33,16 +33,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/go-cache
+        id: go-cache
         with:
-          go-version-file: ${{ inputs.module }}/go.mod
-          cache: ${{ inputs.cache }}
-          cache-dependency-path: ${{ inputs.module }}/go.sum
+          module: ${{ inputs.module }}
+          mode: build
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.15.0
           working-directory: ${{ inputs.module }}
           args: --timeout=5m
+          skip-save-cache: ${{ github.ref != 'refs/heads/main' && github.event_name != 'workflow_dispatch' }}
       - name: Check formatting
         run: golangci-lint fmt --diff
       - name: Check generated code
@@ -55,28 +56,63 @@ jobs:
             printf 'Generation produced untracked files:\n%s\n' "$untracked"
             exit 1
           fi
-      - name: Vet module
-        run: go vet ./...
-      - name: Test module
-        run: go test -race ./...
       - name: Check vulnerabilities
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
       - name: Build module
-        if: inputs.image == ''
+        if: inputs.build
         run: go build ./...
-      - name: Build image
-        if: inputs.image != ''
+
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && steps.go-cache.outputs.hit != 'true'
+        continue-on-error: true
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
+
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.module }}
+    env:
+      CGO_ENABLED: '1'
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/go-cache
+        id: go-cache
+        with:
+          module: ${{ inputs.module }}
+          mode: race
+      - name: Vet and test the whole module
+        if: inputs.exclude-test-package == ''
+        run: go test -race -vet=all ./...
+      - name: Vet and test packages outside the integration suite
+        if: inputs.exclude-test-package != ''
         env:
-          COMMIT_SHA: ${{ github.sha }}
-          IMAGE_NAME: ${{ inputs.image }}
-        run: docker build --build-arg COMMIT_SHA="$COMMIT_SHA" -t "$IMAGE_NAME:$COMMIT_SHA" -f Dockerfile .
-      - name: Verify server version on disposable PostgreSQL
-        if: inputs.image == 'craftpulse-server'
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-        # The step image is not built here; the server only checks that the catalog names it by digest.
-        run: >-
-          python3 ../scripts/check_release_server.py --image "craftpulse-server:$COMMIT_SHA" --sha "$COMMIT_SHA"
-          --ci-image "craftpulse-ci@sha256:$(printf '%064d' 0)"
+          PACKAGE: ${{ inputs.exclude-test-package }}
+        run: |
+          integration=$(go list "$PACKAGE")
+          packages=$(go list ./...)
+          targets=()
+          while IFS= read -r package; do
+            if [[ "$package" != "$integration" ]]; then
+              targets+=("$package")
+            fi
+          done <<< "$packages"
+          if (( ${#targets[@]} )); then
+            go test -race -vet=all "${targets[@]}"
+          fi
+
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && steps.go-cache.outputs.hit != 'true'
+        continue-on-error: true
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
