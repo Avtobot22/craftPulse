@@ -1,5 +1,6 @@
 import type { TaskListParams } from '@/shared/api'
 import { contractLabel, contractLabels } from '@/shared/config'
+import { pageSizes } from '@/shared/ui'
 
 const meanings = Object.keys(contractLabels.taskStatus)
 export const statusOptions = Object.entries(contractLabels.taskStatus).map(
@@ -21,7 +22,6 @@ const sorts: readonly Sort[] = [
   'key',
   '-key',
 ]
-export const pageSizes = [25, 50, 100] as const
 
 export function readTaskListSearch(search: URLSearchParams): TaskListParams & {
   sort: Sort

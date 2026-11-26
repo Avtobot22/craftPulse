@@ -1,11 +1,16 @@
 import { useQueries } from '@tanstack/react-query'
-import { generatePath, Link } from 'react-router'
+import { generatePath, useSearchParams } from 'react-router'
 import { ActivityTime, ActorKindBadge, SourceLink } from '@/entities/activity'
 import { ReviewWaitDetails } from '@/entities/merge-request'
 import { getMergeRequest } from '@/shared/api'
 import type { ApiClient, components, OpenCodes } from '@/shared/api'
 import { contractLabel, routePaths, taskAnalysisLinks } from '@/shared/config'
-import { ErrorState, InspectionLink, LoadingState } from '@/shared/ui'
+import {
+  ErrorState,
+  InspectionLink,
+  LoadingState,
+  useInspectionReturn,
+} from '@/shared/ui'
 import { basisLabel } from '../model/task-evidence'
 import type { TaskDetail } from '../model/task-evidence'
 import { taskLinks } from '../model/task-links'
@@ -30,6 +35,9 @@ function MergeRequestDetails({
   reference: TaskLink['to']
   task: TaskDetail
 }) {
+  const [search] = useSearchParams()
+  const from = search.get('from')
+  const to = search.get('to')
   const label = [mr.iid === null ? null : `!${String(mr.iid)}`, mr.title]
     .filter(Boolean)
     .join(' · ')
@@ -94,14 +102,17 @@ function MergeRequestDetails({
       </p>
       {task.project_id && (
         <p>
-          <Link
+          <InspectionLink
+            id={`task-review-queue-${mr.id}`}
             to={taskAnalysisLinks.mergeRequestQueue({
               project_id: task.project_id,
               ...(task.team_id ? { team_id: task.team_id } : {}),
+              ...(from ? { from } : {}),
+              ...(to ? { to } : {}),
             })}
           >
             Очередь ревью проекта
-          </Link>
+          </InspectionLink>
         </p>
       )}
     </>
@@ -123,6 +134,7 @@ export function TaskChangeDetails({
   const requests = useQueries({
     queries: confirmed.map(({ to }) => getMergeRequest(api, to.id)),
   })
+  useInspectionReturn(requests.every((request) => !request.isPending))
   const heads = new Map<string, string>()
   const linkedRunMRs = new Set(runs.map(({ from_object_id }) => from_object_id))
   let waitingForHead = false

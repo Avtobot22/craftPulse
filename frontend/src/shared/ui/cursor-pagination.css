@@ -1,0 +1,10 @@
+.cp-cursor-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cp-cursor-pagination select {
+  min-height: 44px;
+}

@@ -1,7 +1,10 @@
 import { Button } from '@gravity-ui/uikit'
-import { pageSizes } from '../model/task-list-search'
+import './cursor-pagination.css'
 
-export function TaskPagination({
+export const pageSizes = [25, 50, 100] as const
+
+export function CursorPagination({
+  label,
   cursor,
   next,
   previous,
@@ -9,6 +12,7 @@ export function TaskPagination({
   received,
   goTo,
 }: {
+  label: string
   cursor: string
   next: string | null
   previous: readonly string[]
@@ -20,7 +24,7 @@ export function TaskPagination({
   const nextCursor =
     next && next !== cursor && !previous.includes(next) ? next : null
   return (
-    <nav className="cp-task-list__pagination" aria-label="Страницы задач">
+    <nav className="cp-cursor-pagination" aria-label={label}>
       <label>
         Строк на странице
         <select
@@ -45,7 +49,7 @@ export function TaskPagination({
           ? 'К первой странице'
           : 'Предыдущая страница'}
       </Button>
-      <span role="status">
+      <span role="status" aria-current="page">
         {page === null ? 'Текущая страница' : `Страница ${String(page)}`}
         {received !== undefined && ` · получено ${String(received)}`}
       </span>

@@ -117,7 +117,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.mergeRequestQueue,
-                  element: <MergeRequestQueuePage />,
+                  element: <MergeRequestQueuePage api={runtime.api} />,
                 },
                 ...adminRoutes,
                 ...technicalRoutes(runtime.api),
