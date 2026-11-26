@@ -22,6 +22,7 @@ import (
 	httpctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/http"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/oidc"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/change"
 	decisionuc "github.com/Avtobot22/craftPulse/backend/internal/usecase/decision"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/normalize"
@@ -43,6 +44,7 @@ type checksEnv struct {
 	orgs              *org.UseCase
 	norm              *normalize.UseCase
 	decisions         *decisionuc.UseCase
+	calculator        *calc.UseCase
 }
 
 func newChecksEnv(t *testing.T) *checksEnv {
@@ -59,8 +61,10 @@ func newChecksEnv(t *testing.T) *checksEnv {
 	e.decisions, err = newDecision(e.app, e.rights, e.clock)
 	require.NoError(t, err)
 	reg := prometheus.NewRegistry()
+	e.calculator, err = newCalc(e.app, calcModules{structure: e.orgs, facts: e.norm}, e.clock, reg)
+	require.NoError(t, err)
 	api := newAPI(e.app, e.keyring, oidc.New(e.idp.srv.Client()), e.clock, _site, reg,
-		apiModules{orgs: orgs, access: e.rights, connections: e.connect, intake: e.uc, catalog: catalog, findingReports: e.norm, decisions: e.decisions})
+		apiModules{orgs: orgs, access: e.rights, connections: e.connect, intake: e.uc, catalog: catalog, findingReports: e.norm, componentCalculator: e.calculator, decisions: e.decisions})
 	api.RunnerNetwork = []netip.Prefix{netip.MustParsePrefix("10.20.0.0/16")}
 	e.router = httpctrl.NewRouter(zerolog.New(zerolog.SyncWriter(e.logs)), reg, health.Probes{Ready: &health.Readiness{}}, api)
 

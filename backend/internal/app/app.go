@@ -129,7 +129,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, check
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection, webhooks: collection,
 		operations: views, reports: views, code: views, tasks: views, process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
-		findingReports: normalizer, catalog: catalog, decisions: exceptions,
+		findingReports: normalizer, componentCalculator: calculator, catalog: catalog, decisions: exceptions,
 	}
 	api := newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules)
 	api.RunnerNetwork, api.TrustedProxies = cfg.RunnerNetwork, cfg.TrustedProxies

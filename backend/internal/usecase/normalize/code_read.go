@@ -25,3 +25,13 @@ func (u *UseCase) ReceiptCodeScopes(ctx context.Context, org, receipt entity.ID)
 	})
 	return out, err
 }
+
+func (u *UseCase) CodeReportSources(ctx context.Context, org entity.ID, ids []entity.ID) (map[entity.ID]entity.CodeReportSource, error) {
+	var out map[entity.ID]entity.CodeReportSource
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.CodeReportSources(ctx, org, ids)
+		return err
+	})
+	return out, err
+}

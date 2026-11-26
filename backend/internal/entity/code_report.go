@@ -67,3 +67,13 @@ type CodeReport struct {
 	Skipped      []SkippedTarget
 	Facts        CodeFacts
 }
+
+type ComponentCodeRevision struct {
+	ID, ReportID                ID
+	Format, Producer, ProfileID string
+	Window                      Window
+}
+
+type CodeReportSource struct {
+	Mode, Language string
+}

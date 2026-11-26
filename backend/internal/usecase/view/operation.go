@@ -46,6 +46,7 @@ type Authorizer interface {
 }
 
 type Deps struct {
+	Findings         FindingDeps
 	Summaries        Summaries
 	Tasks            TaskDeps
 	ReviewCalculator ReviewCalculator

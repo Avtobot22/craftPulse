@@ -69,7 +69,16 @@ func Conn(ctx context.Context, pool *pgxpool.Pool) DBTX {
 }
 
 func InOrgTx(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, fn func(ctx context.Context) error) error {
-	return withTransaction(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
+	return withOrgTx(ctx, pool, orgID, pgx.TxOptions{}, fn)
+}
+
+// InOrgSnapshot serves reads that need one committed view of facts and decisions.
+func InOrgSnapshot(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, fn func(ctx context.Context) error) error {
+	return withOrgTx(ctx, pool, orgID, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, fn)
+}
+
+func withOrgTx(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, opts pgx.TxOptions, fn func(ctx context.Context) error) error {
+	return withTransaction(ctx, pool, opts, func(ctx context.Context, tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, "SELECT set_config('craftpulse.org_id', $1, true)", orgID.String()); err != nil {
 			return fmt.Errorf("postgres: set organization: %w", err)
 		}
@@ -94,7 +103,7 @@ func JoinOrgTx(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, fn func
 
 // InTx serves tables outside row-level security (TZ 12.2), read before the organization is known.
 func InTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context) error) error {
-	return withTransaction(ctx, pool, func(ctx context.Context, _ pgx.Tx) error { return fn(ctx) })
+	return withTransaction(ctx, pool, pgx.TxOptions{}, func(ctx context.Context, _ pgx.Tx) error { return fn(ctx) })
 }
 
 const (
@@ -106,8 +115,8 @@ const (
 // runs again, and the scenarios that open it are idempotent (TZ 12.8).
 var _retryable = []string{pgerrcode.DeadlockDetected, pgerrcode.SerializationFailure, pgerrcode.LockNotAvailable}
 
-func withTransaction(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
-	return retry(ctx, func() error { return transaction(ctx, pool, fn) })
+func withTransaction(ctx context.Context, pool *pgxpool.Pool, opts pgx.TxOptions, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	return retry(ctx, func() error { return transaction(ctx, pool, opts, fn) })
 }
 
 // retry repeats run up to _retries times with a random pause while it fails with a retryable error.
@@ -127,8 +136,8 @@ func retry(ctx context.Context, run func() error) error {
 	}
 }
 
-func transaction(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
-	tx, err := pool.Begin(ctx)
+func transaction(ctx context.Context, pool *pgxpool.Pool, opts pgx.TxOptions, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	tx, err := pool.BeginTx(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("postgres: begin: %w", err)
 	}
