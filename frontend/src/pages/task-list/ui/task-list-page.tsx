@@ -1,103 +1,143 @@
 import { Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useSearchParams } from 'react-router'
-import { RestrictedResults } from '@/entities/result-access'
-import { listTasks } from '@/shared/api'
-import type { ApiClient, TaskListParams } from '@/shared/api'
-import { contractLabels } from '@/shared/config'
+import { useRef } from 'react'
+import { Navigate, useLocation, useSearchParams } from 'react-router'
+import { ApiError, listTasks } from '@/shared/api'
+import type { ApiClient } from '@/shared/api'
+import { routePaths } from '@/shared/config'
+import { ErrorState, LoadingState, StaleState } from '@/shared/ui'
 import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  TaskDetailLink,
-} from '@/shared/ui'
-
-const sorts = [
-  'age',
-  '-age',
-  'updated_at',
-  '-updated_at',
-  'key',
-  '-key',
-] as const
-
-function taskFilters(search: URLSearchParams): TaskListParams {
-  const meaning = Object.keys(contractLabels.taskStatus).find(
-    (value): value is keyof typeof contractLabels.taskStatus =>
-      value === search.get('status_meaning'),
-  )
-  const sort = sorts.find((value) => value === search.get('sort'))
-  const overTarget = search.get('over_target')
-  const cursor = search.get('cursor')
-  const team = search.get('team_id')
-  const project = search.get('project_id')
-
-  return {
-    ...(team ? { team_id: team } : {}),
-    ...(project ? { project_id: project } : {}),
-    ...(meaning ? { status_meaning: meaning } : {}),
-    ...(sort ? { sort } : {}),
-    ...(cursor ? { cursor } : {}),
-    ...(overTarget === 'true' || overTarget === 'false'
-      ? { over_target: overTarget === 'true' }
-      : {}),
-  }
-}
+  readPreviousCursors,
+  readTaskListSearch,
+} from '../model/task-list-search'
+import { TaskFilters } from './task-filters'
+import { TaskListResults } from './task-list-results'
+import { TaskPagination } from './task-pagination'
+import './task-list-page.css'
 
 export function TaskListPage({ api }: { api: ApiClient }) {
-  const [search] = useSearchParams()
-  const filters = taskFilters(search)
-  const { team_id, project_id } = filters
-  const query = useQuery(listTasks(api, filters))
-  const next = new URLSearchParams(search)
-  if (query.data?.next_cursor) next.set('cursor', query.data.next_cursor)
+  const [search, setSearch] = useSearchParams()
+  const location = useLocation()
+  const heading = useRef<HTMLHeadingElement>(null)
+  const params = readTaskListSearch(search)
+  const {
+    cursor = '',
+    limit,
+    sort,
+    status_meaning: status = '',
+    over_target: overTarget,
+    team_id,
+    project_id,
+  } = params
+  const previous = cursor ? readPreviousCursors(location.state) : []
+  const deadline = overTarget === undefined ? '' : String(overTarget)
+  const scope = {
+    ...(team_id ? { team_id } : {}),
+    ...(project_id ? { project_id } : {}),
+  }
+
+  const query = useQuery({
+    ...listTasks(api, params),
+    refetchOnMount: 'always',
+  })
+  const error = query.error instanceof ApiError ? query.error : null
+  const correlationId = error?.problem?.correlation_id
+  if (error?.kind === 'forbidden' || error?.kind === 'not-found') {
+    return <Navigate to={routePaths.unavailable} replace />
+  }
+  const waiting =
+    query.isPending || (query.isFetching && !query.isFetchedAfterMount)
+  const stale =
+    query.isError &&
+    (error?.kind === 'network' || (error?.problem?.status ?? 0) >= 500)
+  const page = waiting || (query.isError && !stale) ? undefined : query.data
+  const failure = query.isError && (
+    <ErrorState
+      reason="Не удалось загрузить список задач"
+      {...(correlationId ? { correlationId } : {})}
+      retrying={query.isFetching}
+      onRetry={() => void query.refetch()}
+    />
+  )
+
+  function update(
+    values: Record<string, string>,
+    taskListCursors: string[] = [],
+  ) {
+    const next = new URLSearchParams(search)
+    for (const [name, value] of Object.entries(values)) {
+      if (value === '') next.delete(name)
+      else next.set(name, value)
+    }
+    heading.current?.focus()
+    setSearch(next, { state: { taskListCursors } })
+  }
+
+  function apply(status: string, target: string) {
+    update({ status_meaning: status, over_target: target, cursor: '' })
+  }
+
+  const results = page && (
+    <TaskListResults
+      page={page}
+      scope={scope}
+      sort={sort}
+      onSort={(nextSort) => {
+        update({ sort: nextSort, cursor: '' })
+      }}
+      {...(status || deadline
+        ? {
+            resetFilters: () => {
+              apply('', '')
+            },
+          }
+        : {})}
+    />
+  )
 
   return (
-    <section>
-      <Text as="h1" variant="header-1">
+    <section className="cp-task-list" aria-labelledby="task-list-heading">
+      <Text
+        as="h1"
+        id="task-list-heading"
+        ref={heading}
+        variant="header-1"
+        tabIndex={-1}
+      >
         Задачи
       </Text>
-      {query.isPending ? (
+      <TaskFilters
+        key={JSON.stringify([team_id, project_id, status, deadline])}
+        status={status}
+        overTarget={deadline}
+        onApply={apply}
+      />
+      {waiting ? (
         <LoadingState />
-      ) : query.isError ? (
-        <ErrorState
-          reason="Не удалось загрузить список задач"
-          retrying={query.isFetching}
-          onRetry={() => {
-            void query.refetch()
-          }}
-        />
+      ) : page && stale ? (
+        <StaleState
+          snapshotAt={new Date(query.dataUpdatedAt).toISOString()}
+          currentError={failure}
+        >
+          {results}
+        </StaleState>
       ) : (
-        <>
-          <RestrictedResults
-            access_limited={query.data.access_limited}
-            access_notes={query.data.access_notes}
-          />
-          {query.data.data.length > 0 ? (
-            <ul>
-              {query.data.data.map((task) => (
-                <li key={task.id}>
-                  <TaskDetailLink
-                    taskId={task.id}
-                    params={{
-                      ...(team_id ? { team_id } : {}),
-                      ...(project_id ? { project_id } : {}),
-                    }}
-                  >
-                    {[task.key, task.title].filter(Boolean).join(' · ') ||
-                      'Открыть задачу'}
-                  </TaskDetailLink>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState reason="filters" />
-          )}
-          {query.data.next_cursor && (
-            <Link to={{ search: next.toString() }}>Следующая страница</Link>
-          )}
-        </>
+        (results ?? failure)
       )}
+      <TaskPagination
+        cursor={cursor}
+        next={stale ? null : (page?.next_cursor ?? null)}
+        previous={previous}
+        limit={limit}
+        received={
+          page && !page.access_limited && page.access_notes.length === 0
+            ? page.data.length
+            : undefined
+        }
+        goTo={(cursor, cursors, limit) => {
+          update({ cursor, limit }, cursors)
+        }}
+      />
     </section>
   )
 }

@@ -11,7 +11,12 @@ import { RestrictedResults } from '@/entities/result-access'
 import { ApiError, getTask } from '@/shared/api'
 import type { ApiClient, Team } from '@/shared/api'
 import { readTaskOrigin, routePaths, taskAnalysisLinks } from '@/shared/config'
-import { ErrorState, LoadingState, StaleState } from '@/shared/ui'
+import {
+  ErrorState,
+  LoadingState,
+  StaleState,
+  TaskReturnLink,
+} from '@/shared/ui'
 import { useTaskHistory } from '../model/use-task-history'
 import { TaskHeader } from './task-header'
 import { TaskHistory } from './task-history'
@@ -88,17 +93,15 @@ function TaskDetailContent({
   const detail = task.data
   const teamId = params.get('team_id')
   const projectId = params.get('project_id')
-  const back = (
+  const back = origin ? (
+    <TaskReturnLink origin={origin} />
+  ) : (
     <Link
-      to={
-        origin ??
-        taskAnalysisLinks.taskList({
-          ...(teamId ? { team_id: teamId } : {}),
-          ...(projectId ? { project_id: projectId } : {}),
-        })
-      }
+      to={taskAnalysisLinks.taskList({
+        ...(teamId ? { team_id: teamId } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      })}
       replace
-      state={origin ? { taskReturnFocus: origin.focusId } : undefined}
     >
       Назад
     </Link>

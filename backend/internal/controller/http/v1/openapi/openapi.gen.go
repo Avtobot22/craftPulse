@@ -3571,6 +3571,24 @@ func (e TaskDodObligationsState) Valid() bool {
 	}
 }
 
+// Defines values for TaskPageEmptyReason.
+const (
+	HistoryNotReceived  TaskPageEmptyReason = "history_not_received"
+	SourceNotConfigured TaskPageEmptyReason = "source_not_configured"
+)
+
+// Valid indicates whether the value is a known member of the TaskPageEmptyReason enum.
+func (e TaskPageEmptyReason) Valid() bool {
+	switch e {
+	case HistoryNotReceived:
+		return true
+	case SourceNotConfigured:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TaskStatusMeaning.
 const (
 	TaskStatusMeaningActive    TaskStatusMeaning = "active"
@@ -7961,8 +7979,14 @@ type TaskPage struct {
 	AccessLimited bool          `json:"access_limited"`
 	AccessNotes   []AccessNote  `json:"access_notes"`
 	Data          []TaskSummary `json:"data"`
-	NextCursor    *string       `json:"next_cursor"`
+
+	// EmptyReason Причина пустой выдачи на первой странице, если она известна. При ограничении доступа не передаётся. Отсутствие поля не подтверждает состояние источника.
+	EmptyReason *TaskPageEmptyReason `json:"empty_reason,omitempty"`
+	NextCursor  *string              `json:"next_cursor"`
 }
+
+// TaskPageEmptyReason Причина пустой выдачи на первой странице, если она известна. При ограничении доступа не передаётся. Отсутствие поля не подтверждает состояние источника.
+type TaskPageEmptyReason string
 
 // TaskStatus defines model for TaskStatus.
 type TaskStatus struct {
@@ -7981,7 +8005,7 @@ type TaskSummary struct {
 	Id         openapi_types.UUID `json:"id"`
 	Key        *string            `json:"key"`
 
-	// OverTarget `null` - срок для группы не задан.
+	// OverTarget `null` - превышение срока не определено.
 	OverTarget *bool               `json:"over_target"`
 	ProjectId  *openapi_types.UUID `json:"project_id"`
 
@@ -7989,7 +8013,10 @@ type TaskSummary struct {
 	SizeLabel *string    `json:"size_label"`
 	SourceUrl *string    `json:"source_url"`
 	Status    TaskStatus `json:"status"`
-	TaskType  *string    `json:"task_type"`
+
+	// TargetConfigured Есть ли целевой срок для группы задачи. Позволяет отличить отсутствие срока от неизвестного превышения при неизвестном начале эпизода.
+	TargetConfigured *bool   `json:"target_configured,omitempty"`
+	TaskType         *string `json:"task_type"`
 
 	// TeamId `null` - команда не определена правилами сопоставления.
 	TeamId    *openapi_types.UUID `json:"team_id"`

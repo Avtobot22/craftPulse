@@ -1,0 +1,118 @@
+.cp-task-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.cp-task-list h1 {
+  margin: 0;
+}
+
+.cp-task-list__filters,
+.cp-task-list__applied,
+.cp-task-list__pagination {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.cp-task-list__applied {
+  margin-top: 8px;
+}
+
+.cp-task-list__pagination {
+  align-items: center;
+  gap: 8px;
+}
+
+.cp-task-list label {
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.cp-task-list select {
+  min-height: 44px;
+  border: 1px solid var(--g-color-line-generic-solid);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--g-color-text-primary);
+  background: var(--g-color-base-background);
+  font: inherit;
+}
+
+.cp-task-list :is(a, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--g-color-line-focus);
+  outline-offset: 2px;
+}
+
+.cp-task-list__scroll {
+  overflow: auto;
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: 8px;
+}
+
+.cp-task-list__table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: start;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.cp-task-list__table :is(th, td) {
+  min-width: 120px;
+  padding: 12px;
+  border-bottom: 1px solid var(--g-color-line-generic);
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+.cp-task-list__table th:first-child {
+  min-width: 240px;
+}
+
+.cp-task-list__table :is(th, td):nth-child(5) {
+  min-width: 96px;
+}
+
+.cp-task-list__table thead th {
+  height: 44px;
+  background: var(--g-color-base-generic);
+}
+
+.cp-task-list__table tbody :is(th, td) {
+  height: 48px;
+}
+
+.cp-task-list__table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.cp-task-list__table tbody tr {
+  cursor: pointer;
+}
+
+.cp-task-list__table tbody tr:is(:hover, :focus-within) {
+  background: var(--g-color-base-simple-hover);
+}
+
+.cp-task-list__table th > button {
+  margin-inline-start: -12px;
+}
+
+.cp-task-list__native-status,
+.cp-task-list__sort {
+  display: block;
+  color: var(--g-color-text-secondary);
+}
+
+.cp-task-list__sort {
+  font-size: 12px;
+}
+
+.cp-task-list__table a {
+  color: var(--g-color-text-link);
+}

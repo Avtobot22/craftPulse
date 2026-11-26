@@ -1,0 +1,63 @@
+import { Button } from '@gravity-ui/uikit'
+import { pageSizes } from '../model/task-list-search'
+
+export function TaskPagination({
+  cursor,
+  next,
+  previous,
+  limit,
+  received,
+  goTo,
+}: {
+  cursor: string
+  next: string | null
+  previous: readonly string[]
+  limit: number
+  received: number | undefined
+  goTo: (cursor: string, previous: string[], limit: string) => void
+}) {
+  const page = !cursor ? 1 : previous[0] === '' ? previous.length + 1 : null
+  const nextCursor =
+    next && next !== cursor && !previous.includes(next) ? next : null
+  return (
+    <nav className="cp-task-list__pagination" aria-label="Страницы задач">
+      <label>
+        Строк на странице
+        <select
+          value={limit}
+          onChange={(event) => {
+            goTo('', [], event.target.value)
+          }}
+        >
+          {pageSizes.map((size) => (
+            <option key={size}>{size}</option>
+          ))}
+        </select>
+      </label>
+      <Button
+        size="xl"
+        disabled={!cursor}
+        onClick={() => {
+          goTo(previous.at(-1) ?? '', previous.slice(0, -1), String(limit))
+        }}
+      >
+        {cursor && previous.length === 0
+          ? 'К первой странице'
+          : 'Предыдущая страница'}
+      </Button>
+      <span role="status">
+        {page === null ? 'Текущая страница' : `Страница ${String(page)}`}
+        {received !== undefined && ` · получено ${String(received)}`}
+      </span>
+      <Button
+        size="xl"
+        disabled={!nextCursor}
+        onClick={() => {
+          if (nextCursor) goTo(nextCursor, [...previous, cursor], String(limit))
+        }}
+      >
+        Следующая страница
+      </Button>
+    </nav>
+  )
+}

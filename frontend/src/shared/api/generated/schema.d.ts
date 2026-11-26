@@ -4488,8 +4488,10 @@ export interface components {
             team_id: string | null;
             /** @description Возраст текущего эпизода; `null` при неизвестном начале. */
             age_seconds: number | null;
-            /** @description `null` - срок для группы не задан. */
+            /** @description `null` - превышение срока не определено. */
             over_target: boolean | null;
+            /** @description Есть ли целевой срок для группы задачи. Позволяет отличить отсутствие срока от неизвестного превышения при неизвестном начале эпизода. */
+            target_configured?: boolean;
             /** Format: date-time */
             updated_at: string | null;
             /** Format: uri */
@@ -4497,6 +4499,11 @@ export interface components {
         };
         TaskPage: {
             data: components["schemas"]["TaskSummary"][];
+            /**
+             * @description Причина пустой выдачи на первой странице, если она известна. При ограничении доступа не передаётся. Отсутствие поля не подтверждает состояние источника.
+             * @enum {string}
+             */
+            empty_reason?: "source_not_configured" | "history_not_received";
             next_cursor: string | null;
             access_limited: boolean;
             access_notes: components["schemas"]["AccessNote"][];

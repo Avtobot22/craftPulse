@@ -114,6 +114,7 @@ type taskRead struct {
 	cut          taskCut
 	structure    taskStructure
 	history      map[entity.ID]*time.Time
+	collection   []entity.AreaCollection
 	settings     map[entity.ID]taskSettings
 	instances    map[entity.ID]entity.SourceInstance
 	repositories map[entity.ID]entity.RepositoryVersion
@@ -135,7 +136,7 @@ func (u *UseCase) taskRead(ctx context.Context, org entity.ID, cut taskCut, stru
 		return nil, err
 	}
 	r := &taskRead{
-		uc: u, org: org, cut: cut, structure: structure, history: taskHistory(collection),
+		uc: u, org: org, cut: cut, structure: structure, history: taskHistory(collection), collection: collection,
 		settings: map[entity.ID]taskSettings{}, instances: map[entity.ID]entity.SourceInstance{},
 		dictionary: make(map[entity.ID]map[entity.DictionaryKind]map[string]string, len(dict)),
 	}

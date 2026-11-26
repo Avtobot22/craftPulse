@@ -43,6 +43,7 @@ const cleanups: (() => void)[] = []
 function addSourceOpener(routes: RouteObject[], path: string): void {
   for (const route of routes) {
     if (route.path === path) {
+      delete route.lazy
       route.element = (
         <TaskDetailLink taskId={taskId}>
           Открыть задачу из источника

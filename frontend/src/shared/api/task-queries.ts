@@ -41,6 +41,9 @@ function readTaskSummary(
     team_id: readNullableString(raw.team_id),
     age_seconds: readNullableNumber(raw.age_seconds),
     over_target: raw.over_target === null ? null : readBoolean(raw.over_target),
+    ...(raw.target_configured === undefined
+      ? {}
+      : { target_configured: readBoolean(raw.target_configured) }),
     updated_at: readNullableString(raw.updated_at),
     source_url: readNullableString(raw.source_url),
   }
@@ -50,6 +53,9 @@ function readTaskPage(value: unknown): OpenCodes<Schema['TaskPage']> {
   const raw = readRecord(value)
   return {
     ...readScopedPage(raw),
+    ...(raw.empty_reason === undefined
+      ? {}
+      : { empty_reason: readString(raw.empty_reason) }),
     data: readArray(raw.data, (item) => readTaskSummary(readRecord(item))),
   }
 }
