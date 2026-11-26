@@ -164,7 +164,9 @@ def overrides(settings, adapters, manifest, secret_dir):
         if name == "git":
             services[service]["cpus"] = 1.0
         if name == "jiracloud":
-            services[service]["environment"].update(ADAPTER_METRICS_ADDR=":9090", SOURCE_PRIVATE_NETWORKS="")
+            services[service]["environment"]["SOURCE_PRIVATE_NETWORKS"] = ""
+        if name in ("gitlab", "jiracloud"):
+            services[service]["environment"]["ADAPTER_METRICS_ADDR"] = ":9090"
             services[service]["healthcheck"] = {
                 "test": ["CMD", "/usr/local/bin/adapter", "healthcheck"],
                 "interval": "10s", "timeout": "3s", "retries": 5,

@@ -203,7 +203,7 @@
     },
     {
       "id": 8,
-      "title": "Рабочий набор адаптера Jira Cloud",
+      "title": "Рабочий набор адаптеров Jira Cloud и GitLab",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -223,7 +223,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "container_memory_working_set_bytes{service=\"adapter-jiracloud\"}",
+          "expr": "container_memory_working_set_bytes{service=~\"adapter-(gitlab|jiracloud)\"}",
           "legendFormat": "{{container}}"
         }
       ]
