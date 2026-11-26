@@ -61,7 +61,7 @@ Workflow `Repository` запускается на PR и push в `main`. `reposit
 Для выборочного запуска в GitHub Actions укажи ветку и `target`:
 
 ```sh
-gh workflow run repository.yml --ref "$(git branch --show-current)" -f target=integration
+gh workflow run repository.yml --ref "$(git branch --show-current)" -f target=integration -f shards=2
 gh workflow run repository.yml --ref "$(git branch --show-current)" -f target=shard-benchmark
 ```
 
@@ -86,7 +86,7 @@ python3 ../scripts/ci_shards.py run --count 2 --index 0 \
 
 На GitHub кэши Go разделены по модулю, версии, платформе и типу сборки. Обычная
 сборка, race-тесты и генераторы OpenAPI используют отдельные кэши. Golangci-lint
-использует собственный кэш. BuildKit хранит слои по имени образа. PR читают кэши
+использует собственный кэш. BuildKit хранит слои по имени образа, а Go-зависимости сохраняются в слое сборочного образа. PR читают кэши
 `main`, а ручные запуски записывают кэши своей ветки. Push в `main` актуализирует
 кэши выбранных jobs, а еженедельный запуск освежает полный набор.
 

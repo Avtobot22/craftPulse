@@ -22,6 +22,11 @@ on:
           - openapi
           - oci
           - shard-benchmark
+      shards:
+        description: Runner count for the integration target
+        type: choice
+        default: '2'
+        options: ['1', '2', '4']
 
 permissions:
   contents: read
@@ -225,7 +230,12 @@ jobs:
     if: needs.detect.outputs.backend-integration == 'true'
     uses: ./.github/workflows/go-integration.yml
     with:
-      matrix: '[{"count":2,"index":0},{"count":2,"index":1}]'
+      matrix: >-
+        ${{ (github.event_name == 'workflow_dispatch' && inputs.target == 'integration' && inputs.shards == '1')
+        && '[{"count":1,"index":0}]'
+        || (github.event_name == 'workflow_dispatch' && inputs.target == 'integration' && inputs.shards == '4')
+        && '[{"count":4,"index":0},{"count":4,"index":1},{"count":4,"index":2},{"count":4,"index":3}]'
+        || '[{"count":2,"index":0},{"count":2,"index":1}]' }}
       save-cache: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
 
   shard-benchmark:

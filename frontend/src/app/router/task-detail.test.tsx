@@ -464,7 +464,9 @@ it('redirects a closed task to UI-04 without showing the task title', async () =
     name: 'Объект или область недоступны',
   })
   expect(router.state.location.pathname).toBe('/access-denied')
-  expect(unavailable).toHaveFocus()
+  await waitFor(() => {
+    expect(unavailable).toHaveFocus()
+  })
   expect(screen.queryByText(taskDetail.title ?? '')).not.toBeInTheDocument()
   expect(fetcher).not.toHaveBeenCalledWith(
     `/api/v1/tasks/${taskId}/events`,
@@ -482,7 +484,9 @@ it('returns from UI-04 to the originating task link after the API denies access'
   const unavailable = await screen.findByRole('heading', {
     name: 'Объект или область недоступны',
   })
-  expect(unavailable).toHaveFocus()
+  await waitFor(() => {
+    expect(unavailable).toHaveFocus()
+  })
   expect(
     screen.queryByRole('heading', { name: taskTitle }),
   ).not.toBeInTheDocument()
