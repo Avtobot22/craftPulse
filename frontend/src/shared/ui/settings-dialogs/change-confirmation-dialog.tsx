@@ -18,7 +18,14 @@ export function ChangeConfirmationDialog<Draft, Result>(
   } = props
   const { status, proposal, working, uncertain, confirm, cancel, retryCheck } =
     useChangeConfirmation(props)
-  const canSubmit = status.kind === 'preview' && isStrongETag(proposal.etag)
+  const unchanged = status.kind === 'preview' && proposal.changes.length === 0
+  const missingVersion = !isStrongETag(proposal.etag)
+  const retryable = status.kind === 'retryable'
+  const canSubmit =
+    retryable || (status.kind === 'preview' && !missingVersion && !unchanged)
+  let confirmLabel = 'Подтвердить'
+  if (status.kind === 'saving') confirmLabel = 'Сохранение'
+  if (retryable) confirmLabel = 'Повторить сохранение'
   let progressMessage = ''
   if (status.kind === 'saving') progressMessage = 'Сохранение'
   if (status.kind === 'checking') {
@@ -62,7 +69,7 @@ export function ChangeConfirmationDialog<Draft, Result>(
                 disabled={!canSubmit}
                 onClick={confirm}
               >
-                {status.kind === 'saving' ? 'Сохранение' : 'Подтвердить'}
+                {confirmLabel}
               </Button>
             )}
           </>
@@ -85,6 +92,15 @@ export function ChangeConfirmationDialog<Draft, Result>(
           />
         </div>
       )}
+      {retryable && (
+        <div role="alert">
+          <Alert
+            theme="warning"
+            title="Версия пока не изменилась"
+            message="Исход сохранения неизвестен. Повторите запрос или вернитесь к черновику."
+          />
+        </div>
+      )}
       {status.kind === 'preview' && status.notice && (
         <div role="alert">
           <Alert
@@ -98,7 +114,7 @@ export function ChangeConfirmationDialog<Draft, Result>(
           />
         </div>
       )}
-      {status.kind === 'preview' && !canSubmit && (
+      {status.kind === 'preview' && missingVersion && (
         <div role="alert">
           <Alert
             theme="danger"
@@ -106,6 +122,7 @@ export function ChangeConfirmationDialog<Draft, Result>(
           />
         </div>
       )}
+      {unchanged && <p role="status">Изменений нет</p>}
       {status.kind === 'rejected' && (
         <div role="alert">
           <Alert

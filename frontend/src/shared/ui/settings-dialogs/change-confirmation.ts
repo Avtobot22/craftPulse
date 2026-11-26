@@ -25,6 +25,7 @@ export type RecheckReason = 'conflict' | 'uncertain'
 
 export type ChangeRecheck<Draft, Result> =
   | { kind: 'not-applied'; proposal: ChangeProposal<Draft> }
+  | { kind: 'retryable' }
   | { kind: 'applied'; result: Result }
   | { kind: 'unknown' }
 
@@ -50,6 +51,8 @@ export interface ChangeConfirmationDialogProps<Draft, Result> {
    * an operation receipt. After a timeout, an unchanged ETag alone leaves the
    * outcome unknown. Report `not-applied` with that ETag only if the operation
    * status confirms that the write did not apply.
+   * For an unchanged strong ETag, `retryable` allows cancel or an explicit
+   * replay of the same attempt when the endpoint guarantees idempotency.
    * After a conflict, the new preview requires a different strong ETag.
    */
   recheck: (

@@ -1,0 +1,129 @@
+.cp-workflow-page {
+  min-width: 0;
+}
+
+.cp-workflow,
+.cp-workflow section,
+.cp-workflow__rules {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.cp-workflow section {
+  padding: clamp(0.75rem, 2vw, 1.5rem);
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-l);
+}
+
+.cp-workflow section section {
+  padding: 0;
+  border: 0;
+}
+
+.cp-workflow fieldset {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-m);
+  padding: 0.75rem;
+}
+
+.cp-workflow legend,
+.cp-workflow dt,
+.cp-workflow summary {
+  font-weight: 600;
+}
+
+.cp-workflow h2,
+.cp-workflow h3,
+.cp-workflow h4,
+.cp-workflow p,
+.cp-workflow dl {
+  margin: 0;
+}
+
+.cp-workflow__row,
+.cp-workflow__days,
+.cp-workflow__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.cp-workflow__pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding-block: 0.375rem;
+}
+
+.cp-workflow__field,
+.cp-workflow small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.cp-workflow small {
+  color: var(--g-color-text-secondary);
+}
+
+.cp-workflow__field > input,
+.cp-workflow select,
+.cp-workflow__pair input {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 0.375rem;
+  font: inherit;
+  color: var(--g-color-text-primary);
+  background-color: var(--g-color-base-background);
+  border: 1px solid var(--g-color-line-generic-solid);
+  border-radius: var(--g-border-radius-m);
+}
+
+.cp-workflow [aria-invalid='true'] {
+  border-color: var(--g-color-line-danger);
+}
+
+.cp-workflow__error {
+  color: var(--g-color-text-danger);
+}
+
+.cp-workflow__table {
+  overflow: auto;
+}
+
+.cp-workflow table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cp-workflow :is(th, td) {
+  padding: 0.5rem 0.75rem;
+  text-align: start;
+  vertical-align: top;
+  border-bottom: 1px solid var(--g-color-line-generic);
+  overflow-wrap: anywhere;
+}
+
+.cp-workflow td time {
+  white-space: nowrap;
+}
+
+.cp-workflow__metrics > div {
+  flex: 1 1 12rem;
+}
+
+.cp-workflow dd {
+  margin: 0;
+}
+
+@media (max-width: 650px) {
+  .cp-workflow__pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

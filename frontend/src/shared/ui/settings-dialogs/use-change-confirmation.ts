@@ -15,6 +15,7 @@ type Notice = 'updated' | 'not-applied'
 type Status<Draft, Result> =
   | { kind: 'preview'; proposal: ChangeProposal<Draft>; notice?: Notice }
   | { kind: 'saving'; attempt: ChangeAttempt<Draft> }
+  | { kind: 'retryable'; attempt: ChangeAttempt<Draft> }
   | {
       kind: 'checking' | 'check-failed'
       attempt: ChangeAttempt<Draft>
@@ -90,6 +91,10 @@ export function useChangeConfirmation<Draft, Result>({
         setStatus({ kind: 'applied', attempt, result: outcome.result })
         return
       }
+      if (outcome.kind === 'retryable' && reason === 'uncertain') {
+        setStatus({ kind: 'retryable', attempt })
+        return
+      }
       if (
         outcome.kind === 'not-applied' &&
         isStrongETag(outcome.proposal.etag) &&
@@ -108,8 +113,7 @@ export function useChangeConfirmation<Draft, Result>({
     setStatus({ kind: 'check-failed', attempt, reason })
   }
 
-  async function send(proposal: ChangeProposal<Draft>) {
-    const attempt = { ...proposal, idempotencyKey: crypto.randomUUID() }
+  async function send(attempt: ChangeAttempt<Draft>) {
     setStatus({ kind: 'saving', attempt })
     let result: Result
     try {
@@ -159,9 +163,18 @@ export function useChangeConfirmation<Draft, Result>({
   }
 
   function confirm() {
-    if (status.kind === 'preview' && isStrongETag(status.proposal.etag)) {
+    if (status.kind === 'retryable') {
+      const { attempt } = status
+      run(() => send(attempt))
+      return
+    }
+    if (
+      status.kind === 'preview' &&
+      status.proposal.changes.length > 0 &&
+      isStrongETag(status.proposal.etag)
+    ) {
       const proposal = status.proposal
-      run(() => send(proposal))
+      run(() => send({ ...proposal, idempotencyKey: crypto.randomUUID() }))
     }
   }
 
