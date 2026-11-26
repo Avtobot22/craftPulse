@@ -101,6 +101,14 @@ func TestFindingsAPI_VisibilityEvidenceAndOverview(t *testing.T) {
 		metrics = append(metrics, fact.MetricId)
 		assert.Equal(t, "builtin", string(fact.Source))
 		assert.True(t, fact.Window.From.Before(fact.Window.To))
+		switch fact.MetricId {
+		case "C05":
+			require.NotNil(t, fact.Value.Value)
+			assert.InDelta(t, 1.0/3, *fact.Value.Value, 1e-6)
+		case "C08":
+			require.NotNil(t, fact.Value.Value)
+			assert.InDelta(t, 56.0/62, *fact.Value.Value, 1e-6)
+		}
 	}
 	assert.ElementsMatch(t, []string{"C01", "C01", "C04", "C04", "C04", "C05", "C06", "C06", "C06", "C06", "C08", "C09"}, metrics)
 	masked := decode[openapi.ComponentOverview](t, get(pm, overviewPath, http.StatusOK))
@@ -165,9 +173,17 @@ func (e *identityEnv) importOverviewFindings(t *testing.T) map[string]uuid.UUID 
 	functions.component, clones.component = component, component
 	other := clones
 	other.name, other.profileID, other.mode = "unselected-clones.json", "sonar-import", envelope.ScanToolRunModeImport
-	wrongLanguage := clones
-	wrongLanguage.name, wrongLanguage.language, wrongLanguage.producer = "unselected-language.json", "python", "other-jscpd"
-	rec := e.submit(t, reportPackageOf(t, _checksInstance, _reportSHA, lint, sast, secret, sca, docs, functions, clones, other, wrongLanguage))
+	rec := e.submit(t, reportPackageOf(t, _checksInstance, _reportSHA, lint, sast, secret, sca, docs, functions, clones, other))
+	buildCalcJobs(t, e.owner, e.clock, e.calculator)
+
+	pythonClones := codeReportSpec(t, e.goComponent, "python-clones.json", "jscpd", entity.CodeFormatJscpd)
+	pythonFunctions := codeReportSpec(t, e.goComponent, "python-functions.csv", "lizard", entity.CodeFormatLizard)
+	pythonClones.component, pythonClones.profileID = component, clones.profileID
+	pythonFunctions.component, pythonFunctions.profileID = component, functions.profileID
+	pythonFunctions.thresholds = functions.thresholds
+	importedClones := clones
+	importedClones.name, importedClones.mode = "imported-go-clones.json", envelope.ScanToolRunModeImport
+	e.submit(t, reportPackageOf(t, _checksInstance, _reportSHA, pythonClones, pythonFunctions, importedClones))
 	buildCalcJobs(t, e.owner, e.clock, e.calculator)
 	out := map[string]uuid.UUID{}
 	for _, f := range e.identities(t, rec) {

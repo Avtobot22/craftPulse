@@ -40,6 +40,7 @@ func TestCalcCode_ReceiptsPublishSeparateCommitAndProducerRevisions(t *testing.T
 	lizardScope := entity.CodeScope{
 		RepositoryID: e.area, ComponentID: entity.ID(component), SHA: sha,
 		Format: entity.CodeFormatLizard, Producer: "lizard", ProfileID: "go-default",
+		Source: entity.CodeReportSource{Mode: "builtin", Language: "go"},
 	}
 	bare, err := e.calc.CodeSeries(t.Context(), e.orgID, lizardScope)
 	require.NoError(t, err)
@@ -105,9 +106,10 @@ func TestCalcCode_ReceiptsPublishSeparateCommitAndProducerRevisions(t *testing.T
 	codeValue(t, e, second, "C06", "above_threshold", 0, entity.StateAssessed)
 	secondScope.Format, secondScope.Producer = entity.CodeFormatJscpd, "jscpd"
 	codeValue(t, e, codeRevision(t, e, secondScope), "C08", "", 56.0/62, entity.StateAssessed)
-	secondScope.Producer = foreign.producer
+	secondScope.Producer, secondScope.Source.Mode = foreign.producer, string(envelope.ScanToolRunModeImport)
 	checkImportedCloneScope(t, e, codeRevision(t, e, secondScope))
 	secondScope.Format, secondScope.Producer = entity.CodeFormatLizard, alternative.producer
+	secondScope.Source = lizardScope.Source
 	partial := codeRevision(t, e, secondScope)
 	assert.NotEqual(t, second.SeriesID, partial.SeriesID)
 	pt := codeValue(t, e, partial, "C04", "max", 13, entity.StateProvisional)
@@ -117,6 +119,49 @@ func TestCalcCode_ReceiptsPublishSeparateCommitAndProducerRevisions(t *testing.T
 	assert.Equal(t, 2, e.n(t, `SELECT count(*) FROM calc.revision_input
 		WHERE revision_id = $1 AND input_kind = 'profile_threshold' AND (input_id, version) IN (('ccn_threshold','13'),('nloc_threshold','58'))`,
 		uuid.UUID(second.ID)))
+	lizardScope.SHA = secondSHA
+	checkLegacyCodeRevision(t, e, lizardScope)
+}
+
+func checkLegacyCodeRevision(t *testing.T, e *reviewEnv, scope entity.CodeScope) {
+	t.Helper()
+	legacy := scope
+	legacy.Source = entity.CodeReportSource{}
+	series, err := e.calc.CodeSeries(t.Context(), e.orgID, legacy)
+	require.NoError(t, err)
+	refresh := func() entity.CalcRevision {
+		t.Helper()
+		now := e.clock.Now()
+		window := entity.Window{From: now.Add(-time.Hour), To: now, Step: entity.StepDay}
+		require.NoError(t, e.calc.Refresh(t.Context(), e.orgID, series.ID, window, now))
+		e.build(t)
+		return codeRevision(t, e, legacy)
+	}
+	goRevision := refresh()
+	python := codeReportSpec(t, uuid.UUID(scope.ComponentID), "python-functions.csv", scope.Producer, scope.Format)
+	python.profileID = scope.ProfileID
+	python.thresholds = &envelope.ScanFunctionThresholds{CcnThreshold: 10, NlocThreshold: 50}
+	e.imported(t, e.admin, reportPackage(t, scope.SHA, python))
+	e.drain(t)
+	pythonRevision := refresh()
+	require.NotEqual(t, goRevision.ID, pythonRevision.ID)
+	codeValue(t, e, pythonRevision, "C05", "", 1.0/3, entity.StateAssessed)
+
+	component := entity.Component{ID: scope.ComponentID, RepositoryAreaID: scope.RepositoryID}
+	profiles := []entity.ProfileEntry{{ProfileID: scope.ProfileID, Mode: scope.Source.Mode, Language: scope.Source.Language}}
+	facts, err := e.calc.ComponentCodeFacts(t.Context(), e.orgID, component, profiles)
+	require.NoError(t, err)
+	for i := range facts {
+		fact := &facts[i]
+		if fact.MetricID == "C05" {
+			assert.True(t, goRevision.Window.From.Equal(fact.Window.From))
+			assert.True(t, goRevision.Window.To.Equal(fact.Window.To))
+			require.NotNil(t, fact.Value)
+			assert.Equal(t, 0.0, *fact.Value)
+			return
+		}
+	}
+	t.Fatal("missing C05 from the superseded legacy revision")
 }
 
 func checkImportedCloneScope(t *testing.T, e *reviewEnv, rev entity.CalcRevision) {
@@ -166,6 +211,7 @@ func checkCodeProfiles(t *testing.T, e *reviewEnv, lizard entity.CodeScope, comp
 	functions := codeReportSpec(t, component, language+"-functions.csv", "lizard", entity.CodeFormatLizard)
 	functions.thresholds = &envelope.ScanFunctionThresholds{CcnThreshold: 10, NlocThreshold: 50}
 	clones := codeReportSpec(t, component, language+"-clones.json", "jscpd", entity.CodeFormatJscpd)
+	lizard.Source.Language, jscpd.Source.Language = functions.language, clones.language
 	rc := e.imported(t, e.admin, reportPackage(t, sha, functions, clones))
 	require.Equal(t, entity.ReceiptAccepted, rc.Status)
 	e.drain(t)

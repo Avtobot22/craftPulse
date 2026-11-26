@@ -52,12 +52,13 @@ type CodeFacts struct {
 
 // CodeScope identifies one report stream at a commit. A format determines which metrics that stream supplies.
 type CodeScope struct {
-	RepositoryID ID     `json:"repository_id"`
-	ComponentID  ID     `json:"component_id"`
-	SHA          string `json:"sha"`
-	Format       string `json:"format"`
-	Producer     string `json:"producer"`
-	ProfileID    string `json:"profile_id"`
+	RepositoryID ID               `json:"repository_id"`
+	ComponentID  ID               `json:"component_id"`
+	SHA          string           `json:"sha"`
+	Format       string           `json:"format"`
+	Producer     string           `json:"producer"`
+	ProfileID    string           `json:"profile_id"`
+	Source       CodeReportSource `json:"source,omitzero"`
 }
 
 type CodeReport struct {
@@ -75,5 +76,6 @@ type ComponentCodeRevision struct {
 }
 
 type CodeReportSource struct {
-	Mode, Language string
+	Mode     string `json:"mode"`
+	Language string `json:"language"`
 }

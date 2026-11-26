@@ -37,6 +37,7 @@ func (r *Repo) CodeReportAt(ctx context.Context, org entity.ID, scope entity.Cod
 	row, err := r.q(ctx).CodeReportAt(ctx, CodeReportAtParams{
 		OrganizationID: uuid.UUID(org), AreaID: uuid.UUID(scope.RepositoryID), ComponentID: nullID(component),
 		Sha: text(scope.SHA), Format: scope.Format, Producer: text(scope.Producer), ProfileID: text(scope.ProfileID), KnownSeq: seq,
+		Mode: text(scope.Source.Mode), Language: text(scope.Source.Language),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -65,6 +66,7 @@ func (r *Repo) ReceiptCodeScopes(ctx context.Context, org, receipt entity.ID) ([
 		out = append(out, entity.CodeScope{
 			RepositoryID: entity.ID(row.AreaID), ComponentID: entity.ID(row.ComponentID.UUID), SHA: row.Sha.String,
 			Format: row.ReportFormat, Producer: row.Producer.String, ProfileID: row.ProfileID.String,
+			Source: entity.CodeReportSource{Mode: row.Mode, Language: row.Language.String},
 		})
 	}
 	return out, nil

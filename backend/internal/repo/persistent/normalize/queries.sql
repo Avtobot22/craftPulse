@@ -603,17 +603,19 @@ WHERE r.organization_id = sqlc.arg(organization_id)
   AND r.sha = sqlc.arg(sha) AND r.report_format = sqlc.arg(format)
   AND r.producer IS NOT DISTINCT FROM sqlc.narg(producer)::text AND r.profile_id IS NOT DISTINCT FROM sqlc.narg(profile_id)::text
   AND r.known_seq <= sqlc.arg(known_seq)
+  AND (sqlc.narg(mode)::text IS NULL OR (r.mode = sqlc.narg(mode)::text
+      AND r.language IS NOT DISTINCT FROM sqlc.narg(language)::text))
   AND r.exit_class NOT IN ('timeout', 'failed')
   AND r.report_format IN ('lizard_csv', 'jscpd_json')
 ORDER BY r.known_seq DESC, r.record_no DESC, r.id DESC
 LIMIT 1;
 
 -- name: ReceiptCodeScopes :many
-SELECT DISTINCT r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id
+SELECT DISTINCT r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id, r.mode, r.language
 FROM normalize.report r
 JOIN normalize.code_report_fact f ON f.organization_id = r.organization_id AND f.report_id = r.id
 WHERE r.organization_id = $1 AND r.receipt_id = $2 AND r.sha IS NOT NULL
-ORDER BY r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id;
+ORDER BY r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id, r.mode, r.language;
 
 -- name: ReceiptReports :many
 SELECT r.id, r.area_id, r.component_id, r.report_kind, COALESCE(r.language, '')::text AS language, COALESCE(r.ref_name, '')::text AS ref_name,

@@ -105,8 +105,8 @@ func (u *UseCase) recountCode(ctx context.Context, job entity.CalcRecountJob, co
 	now := u.d.Clock.Now().UTC()
 	from := now.Truncate(24 * time.Hour)
 	var plans []due
-	for _, scope := range scopes {
-		s, err := u.CodeSeries(ctx, job.OrganizationID, scope)
+	for i := range scopes {
+		s, err := u.CodeSeries(ctx, job.OrganizationID, scopes[i])
 		if err != nil {
 			return err
 		}
