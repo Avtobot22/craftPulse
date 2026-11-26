@@ -306,6 +306,7 @@ type SyncRepo interface {
 
 // NormalizeRepo is the normalize schema under row-level security: canonical facts in versions of knowledge.
 type NormalizeRepo interface {
+	TimelineFacts(context.Context, entity.ID, []entity.ID, []entity.ID, entity.TimelineFactQuery) ([]entity.TimelineFact, error)
 	InsertAnalysisRuns(ctx context.Context, org entity.ID, runs []entity.AnalysisRun) error
 	ReadAnalysisFacts(ctx context.Context, org entity.ID, scope entity.AnalysisScope, seq int64, asOf time.Time) (entity.AnalysisFacts, error)
 	ReceiptAnalysisScopes(ctx context.Context, org, receipt entity.ID) ([]entity.AnalysisScope, error)
@@ -446,6 +447,7 @@ type ProcessRepo interface {
 // CalcRepo keeps the series of calc, their immutable revisions and the parts they share (TZ 12.5.8, 12.7).
 // Every call runs in an organization transaction; a missing series or revision is entity.ErrNotFound.
 type CalcRepo interface {
+	TimelinePublications(context.Context, entity.ID, []entity.ID, time.Time, time.Time) ([]entity.TimelinePublication, error)
 	// EnsureSeries creates the series of the scope, set and step unless it exists, and returns it.
 	EnsureSeries(ctx context.Context, orgID entity.ID, s entity.CalcSeries) (entity.CalcSeries, error)
 	Series(ctx context.Context, orgID, id entity.ID) (entity.CalcSeries, error)

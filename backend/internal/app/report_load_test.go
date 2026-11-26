@@ -32,6 +32,7 @@ type loadManifest struct {
 	Sessions   []string            `json:"sessions"`
 	Filters    []map[string]string `json:"filters"`
 	Points     []map[string]string `json:"points"`
+	ProjectID  string              `json:"project_id,omitempty"`
 	TaskPaths  []string            `json:"task_paths,omitempty"`
 }
 

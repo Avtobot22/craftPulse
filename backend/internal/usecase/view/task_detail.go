@@ -176,10 +176,7 @@ func (r *taskRead) taskMRRef(ctx context.Context, scope entity.Scope, end entity
 	}
 	key := "!" + strconv.Itoa(*mr.IID)
 	ref.DisplayKey = &key
-	repo, err := r.uc.d.Code.Repository(ctx, scope, r.org, end.AreaID)
-	if errors.Is(err, entity.ErrNotFound) {
-		return ref, nil
-	}
+	repo, err := r.repository(ctx, scope, end.AreaID)
 	if err != nil {
 		return ref, err
 	}
@@ -192,6 +189,21 @@ func (r *taskRead) taskMRRef(ctx context.Context, scope entity.Scope, end entity
 	}
 	ref.SourceURL = mergeRequestURL(repo.WebURL, src.Provider, *mr.IID)
 	return ref, nil
+}
+
+func (r *taskRead) repository(ctx context.Context, scope entity.Scope, area entity.ID) (entity.RepositoryVersion, error) {
+	if v, ok := r.repositories[area]; ok {
+		return v, nil
+	}
+	v, err := r.uc.d.Code.Repository(ctx, scope, r.org, area)
+	if err != nil && !errors.Is(err, entity.ErrNotFound) {
+		return v, err
+	}
+	if r.repositories == nil {
+		r.repositories = make(map[entity.ID]entity.RepositoryVersion)
+	}
+	r.repositories[area] = v
+	return v, nil
 }
 
 func pipelineEdges(edges []entity.LinkEdge, mrs []entity.ID) []entity.LinkEdge {

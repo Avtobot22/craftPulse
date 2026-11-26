@@ -71,7 +71,21 @@ func TestCalcDocumentation_ProfileReceiptsPublishCommitRevisions(t *testing.T) {
 			analysisRev, err := e.calc.Revision(t.Context(), e.orgID, analysis.ID, nil)
 			require.NoError(t, err)
 			if i == 0 {
-				earliestVersion = float64(e.report(t, rc.ID, "docs").FinishedAt.Unix())
+				at := *e.report(t, rc.ID, "docs").FinishedAt
+				earliestVersion = float64(at.Unix())
+				visible := e.areaScope(t, e.admin, e.area)
+				events, err := e.norm.TimelineFacts(t.Context(), visible, e.orgID, []entity.ID{e.area}, entity.TimelineFactQuery{
+					Kind: entity.ObjectDocument, Knowledge: rev.KnowledgeSeq, From: at.Add(-time.Minute), To: at.Add(time.Minute),
+				})
+				require.NoError(t, err)
+				require.Len(t, events, 7)
+				for j := range events {
+					event := &events[j]
+					assert.Equal(t, "version_created", event.Kind)
+					assert.Equal(t, scope.SHA, event.Value)
+					assert.Equal(t, entity.ViaImport, event.ObservedVia)
+					assert.True(t, event.ObservedAt.After(event.EventTime))
+				}
 			}
 			codeValue(t, e, analysisRev, "D27", "", 1, entity.StateAssessed)
 			codeValue(t, e, analysisRev, "D27", "earliest_version", earliestVersion, entity.StateAssessed)

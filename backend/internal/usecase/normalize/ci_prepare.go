@@ -106,9 +106,10 @@ func (in *input) ciRun(rec *envelope.Record, b baseFact, areaKind entity.ObjectK
 		key: in.runKey(rec.NativeNs, rec.NativeId), area: entity.SourceKey{InstanceID: in.instance, Kind: areaKind, NativeID: p.ProjectNativeId},
 		mr: deref(p.MrNativeId),
 		version: entity.CIRunVersion{
-			Record: b.ref, Revision: b.revision, ObservedAt: b.observed, SourceUpdatedAt: p.UpdatedAt,
+			Record: b.ref, Revision: b.revision, ObservedAt: b.observed, ObservedVia: b.via, SourceUpdatedAt: p.UpdatedAt,
 			RefName: p.RefName, SHA: p.Sha, DefinitionVersion: deref(p.DefinitionVersion), NativeStatus: p.NativeStatus,
 			Outcome: in.outcome(p.NativeStatus, entity.CIOutcome(p.Outcome)), StartedAt: p.StartedAt, FinishedAt: p.FinishedAt,
+			StartOffsetS: ciTimeOffset(p.StartedAt), FinishOffsetS: ciTimeOffset(p.FinishedAt),
 			AttemptHistory: history, AllowFailureSemantics: in.provider == _providerGitLab,
 		},
 	}
@@ -138,10 +139,11 @@ func (in *input) ciAttempt(rec *envelope.Record, b baseFact) (*ciAttemptCandidat
 	return &ciAttemptCandidate{
 		key: in.attemptKey(rec.NativeNs, rec.NativeId), run: in.ciKey(entity.ObjectCIRun, p.RunNativeId),
 		version: entity.CIAttemptVersion{
-			Record: b.ref, Revision: b.revision, ObservedAt: b.observed, JobKey: p.JobKey, ConfigFingerprint: fingerprint,
+			Record: b.ref, Revision: b.revision, ObservedAt: b.observed, ObservedVia: b.via, JobKey: p.JobKey, ConfigFingerprint: fingerprint,
 			AttemptNo: p.AttemptNo, NativeStatus: p.NativeStatus, Outcome: in.outcome(p.NativeStatus, entity.CIOutcome(p.Outcome)),
 			AllowFailure: p.AllowFailure, FailureKind: failure, RunnerClass: deref(p.RunnerClass),
-			StartedAt: p.StartedAt, FinishedAt: p.FinishedAt, DurationS: duration(p.DurationS),
+			StartedAt: p.StartedAt, FinishedAt: p.FinishedAt,
+			StartOffsetS: ciTimeOffset(p.StartedAt), FinishOffsetS: ciTimeOffset(p.FinishedAt), DurationS: duration(p.DurationS),
 		},
 	}, nil
 }
@@ -181,4 +183,15 @@ func changedAt(started, finished *time.Time) *time.Time {
 		return started
 	}
 	return finished
+}
+
+func ciTimeOffset(at *time.Time) int32 {
+	if at == nil {
+		return 0
+	}
+	_, offset := at.Zone()
+	if offset < -64800 || offset > 64800 {
+		return 0
+	}
+	return int32(offset)
 }

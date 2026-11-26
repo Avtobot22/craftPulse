@@ -82,6 +82,18 @@ type LinkEdge struct {
 	ActorUserID    *ID
 	ConfirmationID *ID
 	DecidedAt      *time.Time
+	Validity       *LinkValidity
+}
+
+type LinkValidity struct {
+	From, To                          *time.Time
+	FromExclusive, ToInclusive, Empty bool
+}
+
+func (v *LinkValidity) Contains(at time.Time) bool {
+	return v == nil || !v.Empty &&
+		(v.From == nil || at.After(*v.From) || !v.FromExclusive && at.Equal(*v.From)) &&
+		(v.To == nil || at.Before(*v.To) || v.ToInclusive && at.Equal(*v.To))
 }
 
 // SameEnds tells whether both links connect the same objects with the same type.

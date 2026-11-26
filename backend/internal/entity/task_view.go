@@ -76,12 +76,15 @@ type TaskEventCursor struct {
 type TaskEventPage struct {
 	Items       []TaskHistoryEvent
 	HistoryFrom *time.Time
+	Sources     []TimelineSource
 	Notes       []AccessNote
 	Next        *TaskEventCursor
 }
 
 type TaskHistoryEvent struct {
 	Object                ObjectRef
+	AreaID                ID
+	Late                  bool
 	ID                    ID
 	Kind                  string
 	Field, Before, After  *string
@@ -90,4 +93,43 @@ type TaskHistoryEvent struct {
 	EventTime, ObservedAt time.Time
 	EventOffsetS          int
 	ObservedVia           ObservedVia
+}
+
+type ProjectTimelineQuery struct {
+	TaskEventQuery
+	From, To   time.Time
+	RevisionID *ID
+	ActorKind  PersonKind
+	ObjectKind ObjectKind
+}
+
+type TimelineSource struct {
+	ConnectionID ID
+	Provider     Provider
+	HistoryFrom  *time.Time
+	Completeness string
+}
+
+// TimelineFact is an event projected from CI or document versions by normalize.
+// For an attempt, RunID identifies the pipeline to which the event belongs.
+type TimelineFact struct {
+	ID, ObjectID, AreaID, InstanceID, RunID                  ID
+	ObjectKind                                               ObjectKind
+	Kind, NativeID, ParentNativeID, DisplayKey, Title, Value string
+	EventTime, ObservedAt                                    time.Time
+	EventOffsetS                                             int
+	ObservedVia                                              ObservedVia
+}
+
+type TimelineFactQuery struct {
+	From, To  time.Time
+	Runs      []ID
+	Kind      ObjectKind
+	Knowledge int64
+}
+
+type TimelinePublication struct {
+	TeamID            ID
+	AsOf, PublishedAt time.Time
+	Knowledge         int64
 }

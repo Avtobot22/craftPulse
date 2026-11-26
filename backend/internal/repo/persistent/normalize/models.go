@@ -35,6 +35,9 @@ type NormalizeCiAttemptVersion struct {
 	StartedAt         pgtype.Timestamptz
 	FinishedAt        pgtype.Timestamptz
 	DurationS         pgtype.Int8
+	ObservedVia       pgtype.Text
+	StartOffsetS      int32
+	FinishOffsetS     int32
 }
 
 type NormalizeCiRunVersion struct {
@@ -62,6 +65,9 @@ type NormalizeCiRunVersion struct {
 	FinishedAt            pgtype.Timestamptz
 	AttemptHistory        string
 	AllowFailureSemantics bool
+	ObservedVia           pgtype.Text
+	StartOffsetS          int32
+	FinishOffsetS         int32
 }
 
 type NormalizeDictionaryEntry struct {

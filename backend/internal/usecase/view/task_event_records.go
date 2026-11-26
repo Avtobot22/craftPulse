@@ -3,35 +3,39 @@ package view
 import (
 	"cmp"
 	"context"
-	"errors"
+	"net/url"
 	"strconv"
 	"strings"
-	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
 
-func (r *taskRead) trackerEvents(ctx context.Context, end entity.LinkEnd, facts *entity.AreaFacts) ([]entity.TaskHistoryEvent, error) {
+func (r *taskRead) trackerEvents(ctx context.Context, facts *entity.AreaFacts) ([]entity.TaskHistoryEvent, error) {
 	actors, err := r.uc.d.Tasks.Facts.TaskActorKinds(ctx, r.org, r.cut.seq, facts.Events)
 	if err != nil {
 		return nil, err
 	}
-	task := &facts.Tasks[0]
-	src, err := r.instance(ctx, end.InstanceID)
+	src, err := r.instance(ctx, facts.InstanceID)
 	if err != nil {
 		return nil, err
 	}
-	ref := entity.ObjectRef{
-		ID: end.ID, Kind: entity.ObjectTask, DisplayKey: taskKey(task.TaskKey),
-		Title: taskKey(task.Title), SourceURL: trackerTaskURL(src, task.TaskKey),
+	objects := make(map[entity.ID]entity.ObjectRef, len(facts.Tasks))
+	for i := range facts.Tasks {
+		task := &facts.Tasks[i]
+		objects[task.TaskID] = entity.ObjectRef{
+			ID: task.TaskID, Kind: entity.ObjectTask, DisplayKey: taskKey(task.TaskKey),
+			Title: taskKey(task.Title), SourceURL: trackerTaskURL(src, task.TaskKey),
+		}
 	}
 	out := make([]entity.TaskHistoryEvent, 0, len(facts.Events))
 	for i := range facts.Events {
 		event := &facts.Events[i]
+		ref, ok := objects[event.TaskID]
+		if !ok {
+			continue
+		}
 		out = append(out, entity.TaskHistoryEvent{
-			ID: event.ID, Object: ref, Kind: string(event.Kind), Field: taskKey(event.FieldNativeID),
+			ID: event.ID, Object: ref, AreaID: facts.AreaID, Kind: string(event.Kind), Field: taskKey(event.FieldNativeID),
 			Before:    taskEventValue(event.FieldNativeID, event.BeforeValue, event.BeforeAccountID),
 			After:     taskEventValue(event.FieldNativeID, event.AfterValue, event.AfterAccountID),
 			AccountID: event.ActorAccountID, ActorKind: historyActor(actors, event.ActorAccountID),
@@ -60,79 +64,101 @@ func historyActor(kinds map[entity.ID]entity.PersonKind, id *entity.ID) entity.P
 }
 
 func (r *taskRead) mergeRequestEvents(ctx context.Context, scope entity.Scope, end entity.LinkEnd, facts *entity.ReviewFacts) ([]entity.TaskHistoryEvent, error) {
-	ref, err := r.taskMRRef(ctx, scope, end, &facts.MRs[0])
-	if err != nil {
-		return nil, err
-	}
 	src, err := r.instance(ctx, end.InstanceID)
 	if err != nil {
 		return nil, err
 	}
+	versions := make(map[entity.ID]*entity.MRVersion, len(facts.MRs))
+	for i := range facts.MRs {
+		v := &facts.MRs[i]
+		versions[v.MRID] = v
+	}
+	objects := make(map[entity.ID]entity.ObjectRef)
 	out := make([]entity.TaskHistoryEvent, 0, len(facts.MREvents))
 	for i := range facts.MREvents {
 		event := &facts.MREvents[i]
-		object := ref
+		mr := versions[event.MRID]
+		if mr == nil {
+			continue
+		}
+		ref, ok := objects[event.MRID]
+		if !ok {
+			end.ID = event.MRID
+			ref, err = r.taskMRRef(ctx, scope, end, mr)
+			if err != nil {
+				return nil, err
+			}
+			objects[event.MRID] = ref
+		}
 		if src.Provider == entity.ProviderGitLab && ref.SourceURL != nil {
 			if key, found := strings.CutPrefix(event.EventKey, "note/"); found {
 				note, _, _ := strings.Cut(key, "/")
 				if id, err := strconv.ParseUint(note, 10, 64); err == nil && id > 0 {
 					link := *ref.SourceURL + "#note_" + strconv.FormatUint(id, 10)
-					object.SourceURL = &link
+					ref.SourceURL = &link
 				}
 			}
 		}
-		out = append(out, entity.TaskHistoryEvent{
-			ID: event.ID, Object: object, Kind: event.Kind, After: taskKey(event.ReviewState),
+		e := entity.TaskHistoryEvent{
+			ID: event.ID, Object: ref, AreaID: end.AreaID, Kind: event.Kind, After: taskKey(event.ReviewState),
 			AccountID: event.ActorAccountID, ActorKind: historyActor(facts.ActorKinds, event.ActorAccountID),
 			EventTime: event.EventTime, EventOffsetS: event.EventOffsetS, ObservedAt: event.ObservedAt, ObservedVia: event.ObservedVia,
-		})
+		}
+		switch event.Kind {
+		case "reviewer_assigned":
+			e.Field, e.After = new("reviewer"), taskEventValue("reviewer", nil, event.TargetAccountID)
+		case "reviewer_removed":
+			e.Field, e.Before, e.After = new("reviewer"), taskEventValue("reviewer", nil, event.TargetAccountID), nil
+		case "head_pushed":
+			e.Field, e.After = new("head_sha"), taskKey(event.HeadSHA)
+		}
+		out = append(out, e)
 	}
 	return out, nil
 }
 
-func (r *taskRead) pipelineHistory(ctx context.Context, scope entity.Scope, end entity.LinkEnd, run *entity.CIRun) ([]entity.TaskHistoryEvent, error) {
-	ref := entity.ObjectRef{Kind: entity.ObjectCIRun, ID: end.ID}
-	if end.NativeID != "" {
-		ref.DisplayKey = taskKey("#" + end.NativeID)
-	}
-	src, err := r.instance(ctx, end.InstanceID)
+func (r *taskRead) projectedEvent(ctx context.Context, scope entity.Scope, f *entity.TimelineFact) (entity.TaskHistoryEvent, error) {
+	src, err := r.instance(ctx, f.InstanceID)
 	if err != nil {
-		return nil, err
+		return entity.TaskHistoryEvent{}, err
 	}
-	if src.Provider == entity.ProviderGitLab {
-		repo, err := r.uc.d.Code.Repository(ctx, scope, r.org, end.AreaID)
-		if err != nil && !errors.Is(err, entity.ErrNotFound) {
-			return nil, err
+	repo, err := r.repository(ctx, scope, f.AreaID)
+	if err != nil {
+		return entity.TaskHistoryEvent{}, err
+	}
+	ref := entity.ObjectRef{Kind: f.ObjectKind, ID: f.ObjectID, DisplayKey: taskKey(f.DisplayKey), Title: taskKey(f.Title)}
+	actor := entity.PersonSystem
+	switch string(f.ObjectKind) {
+	case string(entity.ObjectCIRun):
+		switch string(src.Provider) {
+		case string(entity.ProviderGitLab):
+			ref.SourceURL = sourceURL(repo.WebURL, "/-/pipelines/"+url.PathEscape(f.NativeID))
+		case string(entity.ProviderGitHub):
+			ref.SourceURL = sourceURL(repo.WebURL, "/actions/runs/"+url.PathEscape(f.NativeID))
 		}
-		if id, err := strconv.ParseUint(end.NativeID, 10, 64); err == nil && id > 0 {
-			ref.SourceURL = sourceURL(repo.WebURL, "/-/pipelines/"+strconv.FormatUint(id, 10))
+	case string(entity.ObjectCIAttempt):
+		switch string(src.Provider) {
+		case string(entity.ProviderGitLab):
+			ref.SourceURL = sourceURL(repo.WebURL, "/-/jobs/"+url.PathEscape(f.NativeID))
+		case string(entity.ProviderGitHub):
+			ref.SourceURL = sourceURL(repo.WebURL, "/actions/runs/"+url.PathEscape(f.ParentNativeID)+"/job/"+url.PathEscape(f.NativeID))
+		}
+	case string(entity.ObjectDocument):
+		actor = entity.PersonUnknown
+		parts := strings.Split(f.DisplayKey, "/")
+		for i := range parts {
+			parts[i] = url.PathEscape(parts[i])
+		}
+		path := f.Value + "/" + strings.Join(parts, "/")
+		switch string(src.Provider) {
+		case string(entity.ProviderGitLab):
+			ref.SourceURL = sourceURL(repo.WebURL, "/-/blob/"+path)
+		case string(entity.ProviderGitHub):
+			ref.SourceURL = sourceURL(repo.WebURL, "/blob/"+path)
 		}
 	}
-
-	var out []entity.TaskHistoryEvent
-	v := &run.Run
-	out = appendCIEvent(out, ref, "pipeline_started", v.StartedAt, v.ObservedAt, "")
-	out = appendCIEvent(out, ref, "pipeline_finished", v.FinishedAt, v.ObservedAt, v.Outcome)
-	for i := range run.Attempts {
-		a := &run.Attempts[i]
-		if a.RunID != v.RunID {
-			continue
-		}
-		attempt := entity.ObjectRef{Kind: entity.ObjectCIAttempt, ID: a.AttemptID, DisplayKey: taskKey(a.JobKey), SourceURL: ref.SourceURL}
-		out = appendCIEvent(out, attempt, "attempt_started", a.StartedAt, a.ObservedAt, "")
-		out = appendCIEvent(out, attempt, "attempt_finished", a.FinishedAt, a.ObservedAt, a.Outcome)
-	}
-	return out, nil
-}
-
-func appendCIEvent(out []entity.TaskHistoryEvent, object entity.ObjectRef, kind string, at *time.Time, observed time.Time, outcome entity.CIOutcome) []entity.TaskHistoryEvent {
-	if at == nil || at.IsZero() {
-		return out
-	}
-	// A CI version supplies both timestamps without a separate actor or observation-mode field.
-	_, offset := at.Zone()
-	return append(out, entity.TaskHistoryEvent{
-		ID: entity.ID(uuid.NewSHA1(uuid.UUID(object.ID), []byte(kind))), Object: object, Kind: kind, After: taskKey(string(outcome)),
-		ActorKind: entity.PersonUnknown, EventTime: *at, EventOffsetS: offset, ObservedAt: observed, ObservedVia: entity.ViaIncremental,
-	})
+	return entity.TaskHistoryEvent{
+		Object: ref, ID: f.ID, AreaID: f.AreaID, Kind: f.Kind, After: taskKey(f.Value), ActorKind: actor,
+		EventTime: f.EventTime, ObservedAt: f.ObservedAt, EventOffsetS: f.EventOffsetS, ObservedVia: f.ObservedVia,
+	}, nil
 }
