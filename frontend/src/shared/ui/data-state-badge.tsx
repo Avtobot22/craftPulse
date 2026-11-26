@@ -5,7 +5,8 @@ import {
   TriangleExclamation,
   CircleXmark,
 } from '@gravity-ui/icons'
-import { Flex, Icon, Label, Text } from '@gravity-ui/uikit'
+import { Flex, Text } from '@gravity-ui/uikit'
+import { StatusLabel } from './status-label'
 
 const states = {
   PROVISIONAL: {
@@ -26,13 +27,7 @@ export interface DataStateBadgeProps {
 }
 export function DataStateBadge({ state, reason }: DataStateBadgeProps) {
   const { text, icon, theme } = states[state]
-  const badge = (
-    <Label size="m" theme={theme} icon={<Icon data={icon} size={16} />}>
-      <Text variant="caption-1" style={{ fontWeight: 600 }}>
-        {text}
-      </Text>
-    </Label>
-  )
+  const badge = <StatusLabel text={text} icon={icon} theme={theme} />
   if (!reason) return badge
   return (
     <Flex inline alignItems="center" wrap gap="spacing-2">

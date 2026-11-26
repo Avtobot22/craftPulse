@@ -136,6 +136,66 @@ it('shows the ready MR, the original ready event, and the GitLab reviewer action
   expect(screen.getByText('Платформа', { selector: 'dd' })).toBeVisible()
 })
 
+it('finds ready evidence on a later page without opening more history', async () => {
+  const newer = {
+    ...lateTimelineEvent,
+    event_time: '2026-11-07T12:00:00Z',
+    observed_at: '2026-11-07T12:01:00Z',
+  }
+  const { fetcher } = mount({
+    loadHistory: (url) => {
+      const cursor = url.searchParams.get('cursor')
+      return jsonResponse({
+        ...taskHistory,
+        ...(cursor === 'older'
+          ? { data: [readyEvent], next_cursor: 'unrelated' }
+          : { data: [newer], next_cursor: 'older' }),
+      } satisfies Schema['TimelinePage'])
+    },
+  })
+  const facts = within(
+    await screen.findByRole('region', { name: 'Наблюдения' }),
+  )
+  expect(
+    await facts.findByRole('link', { name: 'Готов к ревью · GitLab' }),
+  ).toHaveAttribute('href', readyEvent.object.source_url)
+  expect(fetcher).toHaveBeenCalledWith(
+    `/api/v1/tasks/${taskId}/events?cursor=older`,
+    expect.anything(),
+  )
+  expect(fetcher).not.toHaveBeenCalledWith(
+    `/api/v1/tasks/${taskId}/events?cursor=unrelated`,
+    expect.anything(),
+  )
+})
+
+it('continues looking for the ready event when a reviewer change shares its timestamp', async () => {
+  mount({
+    loadHistory: (url) =>
+      jsonResponse({
+        ...taskHistory,
+        ...(url.searchParams.get('cursor') === 'ready'
+          ? { data: [readyEvent] }
+          : {
+              data: [
+                {
+                  ...readyEvent,
+                  id: lateTimelineEvent.id,
+                  event_kind: 'reviewer_removed',
+                },
+              ],
+              next_cursor: 'ready',
+            }),
+      } satisfies Schema['TimelinePage']),
+  })
+  const facts = within(
+    await screen.findByRole('region', { name: 'Наблюдения' }),
+  )
+  expect(
+    await facts.findByRole('link', { name: 'Готов к ревью · GitLab' }),
+  ).toHaveAttribute('href', readyEvent.object.source_url)
+})
+
 it.each([
   [
     'awaiting_first_response',
@@ -262,7 +322,8 @@ it('uses the generic template for a new observation code', async () => {
 it('shows an open blocking interval with its start event and metric passport', async () => {
   const blockEvent: Schema['TimelineEvent'] = {
     ...lateTimelineEvent,
-    after_value: 'Blocked',
+    field: 'customfield_10020',
+    after_value: 'Impediment',
     object: {
       ...taskReference,
       source_url: taskReference.source_url + '#change-23',
@@ -274,10 +335,12 @@ it('shows an open blocking interval with its start event and metric passport', a
       ...taskDetail,
       blocked_intervals: [{ from: blockEvent.event_time, to: null }],
     },
-    loadHistory: () =>
+    loadHistory: (url) =>
       jsonResponse({
         ...taskHistory,
-        data: [blockEvent],
+        ...(url.searchParams.get('cursor') === 'block-start'
+          ? { data: [blockEvent] }
+          : { data: [readyEvent], next_cursor: 'block-start' }),
       } satisfies Schema['TimelinePage']),
   })
   const blocks = within(

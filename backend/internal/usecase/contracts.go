@@ -255,6 +255,7 @@ type SourceLinks interface {
 type TaskViews interface {
 	ListTasks(context.Context, entity.Subject, entity.Scope, entity.TaskViewQuery) (entity.TaskViewPage, error)
 	GetTask(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.TaskDetail, error)
+	ListTaskEvents(context.Context, entity.Subject, entity.Scope, entity.ID, entity.TaskEventQuery) (entity.TaskEventPage, error)
 }
 
 // CodeDetails serves MR, pipelines and their attempts after source access checks.

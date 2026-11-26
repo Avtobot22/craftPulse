@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   Link,
   Navigate,
@@ -8,10 +8,11 @@ import {
   useSearchParams,
 } from 'react-router'
 import { RestrictedResults } from '@/entities/result-access'
-import { ApiError, getTask, taskEventPages } from '@/shared/api'
-import type { ApiClient, Team, TimelineEvent } from '@/shared/api'
+import { ApiError, getTask } from '@/shared/api'
+import type { ApiClient, Team } from '@/shared/api'
 import { readTaskOrigin, routePaths, taskAnalysisLinks } from '@/shared/config'
 import { ErrorState, LoadingState, StaleState } from '@/shared/ui'
+import { useTaskHistory } from '../model/use-task-history'
 import { TaskHeader } from './task-header'
 import { TaskHistory } from './task-history'
 import { TaskObservations } from './task-observations'
@@ -64,12 +65,16 @@ function TaskDetailContent({
   })
   const waiting =
     task.isPending || (task.isFetching && !task.isFetchedAfterMount)
-  const history = useInfiniteQuery({
-    ...taskEventPages(api, taskId),
-    gcTime: 0,
-    refetchOnMount: 'always',
-    enabled: Boolean(task.data && !waiting && !unavailable(task.error)),
-  })
+  const {
+    history,
+    pending: historyPending,
+    pages,
+    events,
+  } = useTaskHistory(
+    api,
+    taskId,
+    !waiting && !unavailable(task.error) ? task.data : undefined,
+  )
 
   if (unavailable(task.error) || unavailable(history.error))
     return (
@@ -112,19 +117,6 @@ function TaskDetailContent({
       retrying={task.isFetching}
     />
   )
-  // Cursors can overlap when a source imports events between reads.
-  const historyPending =
-    history.isPending || (history.isFetching && !history.isFetchedAfterMount)
-  const pages = historyPending ? [] : (history.data?.pages ?? [])
-  const eventsById = new Map<string, TimelineEvent>()
-  for (const page of pages) {
-    for (const event of page.data) {
-      if (!eventsById.has(event.id)) eventsById.set(event.id, event)
-    }
-  }
-  const events = [...eventsById.values()].sort(
-    (left, right) => Date.parse(right.event_time) - Date.parse(left.event_time),
-  )
   const team = context?.teams?.find(({ id }) => id === detail?.team_id)
   const content = !waiting && detail && (
     <>
@@ -148,7 +140,7 @@ function TaskDetailContent({
         error={history.error}
         snapshotAt={history.dataUpdatedAt}
         loadMore={() => {
-          void history.fetchNextPage()
+          void history.fetchNextPage({ cancelRefetch: false })
         }}
         retry={() => {
           if (history.isFetchNextPageError) void history.fetchNextPage()

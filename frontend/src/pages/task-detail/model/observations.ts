@@ -1,6 +1,6 @@
 import type { components, TimelineEvent } from '@/shared/api'
 import type { Basis, Observation } from './task-evidence'
-import { atEvidenceTime, isStatusChange } from './task-evidence'
+import { atEvidenceTime, blockStartEvent } from './task-evidence'
 
 type KnownObservation =
   components['schemas']['TaskDetail']['observations'][number]
@@ -77,25 +77,47 @@ export function observationEvents(
   basis: Basis,
   events: readonly TimelineEvent[],
 ) {
-  const { since, kind, question } = observation
+  const { since } = observation
   if (since === null) return []
-  return events.filter((event) => {
-    if (!atEvidenceTime(event, basis, since)) return false
-    if (basis.kind === 'merge_request')
-      return (
-        (kind === 'awaiting_reviewer' ||
-          kind === 'awaiting_first_response' ||
-          question === 'reviewer_assigned') &&
-        ['ready', 'reviewer_removed', 'reviewer_assigned'].includes(
-          event.event_kind,
-        )
+  const kinds = evidenceKinds(observation, basis)
+  if (basis.kind === 'task' && kinds.length) {
+    const start = blockStartEvent(basis.id, since, events)
+    return start ? [start] : []
+  }
+  return events.filter(
+    (event) =>
+      kinds.includes(event.event_kind) && atEvidenceTime(event, basis, since),
+  )
+}
+
+function evidenceKinds({ kind, question }: Observation, basis: Basis) {
+  if (
+    basis.kind === 'merge_request' &&
+    (kind === 'awaiting_reviewer' ||
+      kind === 'awaiting_first_response' ||
+      question === 'reviewer_assigned')
+  ) {
+    return ['ready', 'reviewer_removed', 'reviewer_assigned']
+  }
+  if (basis.kind === 'pipeline') {
+    if (kind === 'ci_running') return ['pipeline_started']
+    if (kind === 'ci_failed' || kind === 'ci_passed_after_retry')
+      return ['pipeline_finished']
+  }
+  return kind === 'blocked' && basis.kind === 'task' ? ['field_change'] : []
+}
+
+export function missingObservationEvidence(
+  observation: Observation,
+  events: readonly TimelineEvent[],
+) {
+  return observation.basis.some((basis) => {
+    const [startKind] = evidenceKinds(observation, basis)
+    return (
+      startKind !== undefined &&
+      !observationEvents(observation, basis, events).some(
+        (event) => event.event_kind === startKind && event.object.source_url,
       )
-    if (basis.kind === 'pipeline')
-      return (
-        (kind === 'ci_running' && event.event_kind === 'pipeline_started') ||
-        (['ci_failed', 'ci_passed_after_retry'].includes(kind) &&
-          event.event_kind === 'pipeline_finished')
-      )
-    return kind === 'blocked' && basis.kind === 'task' && isStatusChange(event)
+    )
   })
 }

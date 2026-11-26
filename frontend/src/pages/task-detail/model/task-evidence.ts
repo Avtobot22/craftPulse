@@ -20,6 +20,16 @@ export function atEvidenceTime(
   )
 }
 
-export function isStatusChange(event: TimelineEvent) {
-  return event.event_kind === 'field_change' && event.field === 'status'
+export function blockStartEvent(
+  taskId: string,
+  start: string,
+  events: readonly TimelineEvent[],
+) {
+  const changes = events.filter(
+    (event) =>
+      event.event_kind === 'field_change' &&
+      atEvidenceTime(event, { kind: 'task', id: taskId }, start),
+  )
+  // A blocking interval can start with a status change or a mapped tracker flag.
+  return changes.length === 1 ? changes[0] : undefined
 }

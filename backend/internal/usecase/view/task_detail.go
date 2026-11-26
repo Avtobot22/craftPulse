@@ -64,7 +64,7 @@ type taskMRLinks struct {
 	hidden    bool
 }
 
-func (u *UseCase) taskMRs(ctx context.Context, s entity.Subject, scope entity.Scope, op string, tasks []entity.ID, seq int64) (taskMRLinks, error) {
+func (u *UseCase) taskMRs(ctx context.Context, s entity.Subject, scope entity.Scope, op string, tasks []entity.ID, seq int64, onlyConfirmed bool) (taskMRLinks, error) {
 	if len(tasks) == 0 {
 		return taskMRLinks{}, nil
 	}
@@ -73,7 +73,8 @@ func (u *UseCase) taskMRs(ctx context.Context, s entity.Subject, scope entity.Sc
 		return taskMRLinks{}, err
 	}
 	edges = slices.DeleteFunc(edges, func(e entity.LinkEdge) bool {
-		return e.Type != entity.LinkTaskMR || e.Status == entity.LinkRejected || !slices.Contains(tasks, e.From)
+		return e.Type != entity.LinkTaskMR || e.Status == entity.LinkRejected || !slices.Contains(tasks, e.From) ||
+			(onlyConfirmed && e.Status != entity.LinkConfirmed)
 	})
 	if len(edges) == 0 {
 		return taskMRLinks{}, nil
@@ -111,7 +112,7 @@ func (u *UseCase) taskMRs(ctx context.Context, s entity.Subject, scope entity.Sc
 
 func (r *taskRead) linkedFacts(ctx context.Context, s entity.Subject, scope entity.Scope, f *entity.TaskObservationFacts, out *entity.TaskDetail) error {
 	u := r.uc
-	links, err := u.taskMRs(ctx, s, scope, _getTask, []entity.ID{f.Task.TaskID}, f.KnowledgeSeq)
+	links, err := u.taskMRs(ctx, s, scope, _getTask, []entity.ID{f.Task.TaskID}, f.KnowledgeSeq, false)
 	if err != nil {
 		return err
 	}

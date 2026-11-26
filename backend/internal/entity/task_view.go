@@ -60,3 +60,34 @@ type TaskViewLink struct {
 	Edge LinkEdge
 	To   ObjectRef
 }
+
+type TaskEventQuery struct {
+	Limit int
+	After *TaskEventCursor
+}
+
+type TaskEventCursor struct {
+	AsOf      time.Time
+	Knowledge int64
+	EventTime time.Time
+	ID        ID
+}
+
+type TaskEventPage struct {
+	Items       []TaskHistoryEvent
+	HistoryFrom *time.Time
+	Notes       []AccessNote
+	Next        *TaskEventCursor
+}
+
+type TaskHistoryEvent struct {
+	Object                ObjectRef
+	ID                    ID
+	Kind                  string
+	Field, Before, After  *string
+	AccountID             *ID
+	ActorKind             PersonKind
+	EventTime, ObservedAt time.Time
+	EventOffsetS          int
+	ObservedVia           ObservedVia
+}

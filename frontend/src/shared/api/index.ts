@@ -93,3 +93,28 @@ export type { ServiceDocumentListParams } from './documentation-queries'
 export { listTestExecutions } from './pipeline-queries'
 export type { TestExecutionListParams } from './pipeline-queries'
 export type { MergeRequestSummaryParams } from './merge-request-summary-queries'
+
+export {
+  listAdapters,
+  listConnections,
+  getConnection,
+  getSyncStatus,
+  getConnectionProbe,
+} from './connection-queries'
+export type { ConnectionListParams } from './connection-queries'
+export {
+  listReceipts,
+  getReceipt,
+  listReceiptRecords,
+  listIngestConflicts,
+} from './receipt-queries'
+export type {
+  IngestConflictListParams,
+  ReceiptListParams,
+  ReceiptRecordsParams,
+} from './receipt-queries'
+export { listPersons, listSourceAccounts } from './account-queries'
+export type {
+  PersonListParams,
+  SourceAccountListParams,
+} from './account-queries'

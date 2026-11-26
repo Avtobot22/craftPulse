@@ -4,7 +4,7 @@ import { MetricValue } from '@/entities/metric'
 import type { TimelineEvent } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import type { TaskDetail } from '../model/task-evidence'
-import { atEvidenceTime, isStatusChange } from '../model/task-evidence'
+import { blockStartEvent } from '../model/task-evidence'
 
 function Duration({
   seconds,
@@ -130,12 +130,7 @@ export function TaskBlocks({
           {intervals.map(({ from, to }, index) => {
             const elapsed =
               ((to ? Date.parse(to) : receivedAt) - Date.parse(from)) / 1000
-            const changes = events.filter(
-              (event) =>
-                atEvidenceTime(event, { kind: 'task', id: task.id }, from) &&
-                isStatusChange(event),
-            )
-            const start = changes.length === 1 ? changes[0] : undefined
+            const start = blockStartEvent(task.id, from, events)
             return (
               <li key={`${from}-${String(index)}`}>
                 <p>

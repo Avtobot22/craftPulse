@@ -20,6 +20,7 @@ import {
   routePaths,
 } from '@/shared/config'
 import { ErrorState, LoadingState } from '@/shared/ui'
+import { adminDetailRoutes, adminNavigation } from '../model/admin-navigation'
 import {
   changeScope,
   projectParam,
@@ -76,7 +77,10 @@ const settings = [
     action: 'process.manage',
     label: 'Целевые сроки',
   },
+  ...adminNavigation,
 ]
+
+const settingRoutes = [...settings, ...adminDetailRoutes]
 
 const views = [
   { value: 'overview', label: 'Обзор', action: 'report.read' },
@@ -133,7 +137,7 @@ export function HomePage({
     restore,
     analysisSection || isFindingsList ? current.areas.projects : undefined,
   )
-  const active = settings.find(
+  const active = settingRoutes.find(
     ({ path }) =>
       matchPath(path, location.pathname) ??
       (path === routePaths.users &&
@@ -147,12 +151,11 @@ export function HomePage({
       ({ role, team_id }) =>
         role === 'process_owner' && team_id === selectedTeamId,
     )
-  const allowed = settings.filter(
-    ({ action }) =>
-      current.actions.includes(action) &&
-      (action !== 'process.manage' || ownsProcess),
-  )
-  const currentSetting = active && allowed.includes(active) ? active : undefined
+  const canOpenSetting = ({ action }: { action: string }) =>
+    current.actions.includes(action) &&
+    (action !== 'process.manage' || ownsProcess)
+  const allowed = settings.filter(canOpenSetting)
+  const currentSetting = active && canOpenSetting(active) ? active : undefined
   const isProcessSetting = active?.action === 'process.manage'
   const isReport = reportPaths.some((path) =>
     matchPath(path, location.pathname),
