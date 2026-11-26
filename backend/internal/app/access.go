@@ -60,7 +60,7 @@ func newAccessMetrics(reg prometheus.Registerer) (accessMetrics, error) {
 		}, []string{"result"}),
 		failed: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "craftpulse_access_check_failures_total",
-			Help: "Checks of source access that gave no answer in time, by connection (NFR-011).",
+			Help: "Source access checks that failed or returned an unknown decision, by connection (NFR-011).",
 		}, []string{"connection_id"}),
 	}
 	for _, c := range []prometheus.Collector{m.lookups, m.failed} {

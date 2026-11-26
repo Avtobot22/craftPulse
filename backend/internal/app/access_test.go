@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"net/http"
 	"slices"
 	"testing"
@@ -207,22 +208,23 @@ func TestAccess_AreaThatCannotBeCheckedIsClosed(t *testing.T) {
 	e.link(t, _otherSub, "demo-person-02")
 	unavailable := []accessNoteBody{{Code: "access_check_unavailable", ConnectionID: &e.conn}}
 	cases := []struct {
-		name  string
-		setup func(t *testing.T)
-		want  []accessNoteBody
+		name         string
+		setup        func(t *testing.T)
+		want         []accessNoteBody
+		wantFailures int
 	}{
-		{name: "unknown", want: unavailable, setup: func(t *testing.T) {
+		{name: "unknown", wantFailures: 1, want: unavailable, setup: func(t *testing.T) {
 			e.rights(t, testadapter.Access{Rules: []testadapter.AccessRule{{UserID: e.memberID.String(), Decision: "unknown"}}})
 		}},
-		{name: "answer longer than 2 s", want: unavailable, setup: func(t *testing.T) {
+		{name: "answer longer than 2 s", wantFailures: 2, want: unavailable, setup: func(t *testing.T) {
 			e.rights(t, testadapter.Access{Default: "allowed", DelayMS: 2300})
 		}},
-		{name: "rate limit pause", want: unavailable, setup: func(t *testing.T) {
+		{name: "rate limit pause", wantFailures: 3, want: unavailable, setup: func(t *testing.T) {
 			e.rights(t, testadapter.Access{Default: "allowed"})
 			_, err := e.owner.Exec(t.Context(), "UPDATE connect.connection SET paused_until = $1 WHERE id = $2", e.clock.Now().Add(10*time.Minute), e.conn)
 			require.NoError(t, err)
 		}},
-		{name: "access lost", want: []accessNoteBody{{Code: "source_access_lost", ConnectionID: &e.conn}}, setup: func(t *testing.T) {
+		{name: "access lost", wantFailures: 3, want: []accessNoteBody{{Code: "source_access_lost", ConnectionID: &e.conn}}, setup: func(t *testing.T) {
 			_, err := e.owner.Exec(t.Context(), `UPDATE connect.connection SET paused_until = NULL, status = 'access_lost', access_lost_at = $1
 				WHERE id = $2`, e.clock.Now(), e.conn)
 			require.NoError(t, err)
@@ -240,12 +242,12 @@ func TestAccess_AreaThatCannotBeCheckedIsClosed(t *testing.T) {
 			assert.Empty(t, page.Data)
 			assert.True(t, page.AccessLimited)
 			assert.Equal(t, tt.want, page.AccessNotes)
+			metric := fmt.Sprintf("craftpulse_access_check_failures_total{connection_id=%q} %d\n", e.conn.String(), tt.wantFailures)
+			assert.True(t, e.metric(t, metric), "the failure count is exported by connection")
 		})
 	}
 	assert.Empty(t, decode[areaPageBody](t, e.do(t, e.admin, http.MethodGet, "/api/v1/areas", nil)).Data,
 		"listAreas gives only areas of active connections")
-	assert.True(t, e.metric(t, `craftpulse_access_check_failures_total{connection_id="`+e.conn.String()+`"}`),
-		"failed checks are counted by connection")
 }
 
 func TestAccess_TaskWithItsOwnRestriction(t *testing.T) {
