@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import importlib.util
 import io
 import json
@@ -14,6 +15,16 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("gitlab_manage", ROOT / "deploy/gitlab/manage.py")
 manage = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(manage)
+
+
+@contextmanager
+def private_fixture_directory():
+    # Keep the fake journal outside the simulated checkout even when TMPDIR
+    # for the test runner is inside the real checkout.
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory).resolve()
+        with patch.object(manage, "ROOT", root / "checkout"):
+            yield root
 
 
 class FakeGitLab:
@@ -105,7 +116,7 @@ class GitLabDeployTests(unittest.TestCase):
         return api, provision
 
     def test_bootstrap_limits_accounts_projects_oidc_and_runner(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with private_fixture_directory() as directory:
             api, provision = self.provision(directory)
             self.assertEqual(8, len(api.tables["users"]))
             for user in api.tables["users"].values():
@@ -130,7 +141,7 @@ class GitLabDeployTests(unittest.TestCase):
                 self.assertEqual(scopes, provision.state["credentials"][role + "-token"]["scopes"])
 
     def test_resume_does_not_reissue_credentials_or_create_duplicates(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with private_fixture_directory() as directory:
             api, provision = self.provision(directory)
             original_state = json.dumps(provision.state)
             api.calls.clear()
@@ -139,7 +150,7 @@ class GitLabDeployTests(unittest.TestCase):
             self.assertEqual(original_state, json.dumps(json.loads(provision.path.read_text())))
 
     def test_inspect_matches_real_oidc_response_and_does_not_claim_live_acceptance(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with private_fixture_directory() as directory:
             api, provision = self.provision(directory)
             result = manage.inspect(api, provision.state)
             self.assertEqual('passed', result['configuration_check'])
@@ -147,7 +158,7 @@ class GitLabDeployTests(unittest.TestCase):
             self.assertNotIn('test-token', json.dumps(result))
 
     def test_inspect_rejects_widened_collector_scope(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with private_fixture_directory() as directory:
             api, provision = self.provision(directory)
             token_id = provision.state['credentials']['collector-token']['id']
             api.tables['personal_access_tokens'][token_id]['scopes'] = ['api']
@@ -155,7 +166,7 @@ class GitLabDeployTests(unittest.TestCase):
                 manage.inspect(api, provision.state)
 
     def test_inspect_rejects_runner_attached_to_another_project(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with private_fixture_directory() as directory:
             api, provision = self.provision(directory)
             runner = next(iter(api.tables['runners'].values()))
             runner['projects'].append({'id': 99999})
@@ -163,14 +174,14 @@ class GitLabDeployTests(unittest.TestCase):
                 manage.inspect(api, provision.state)
 
     def test_state_cannot_be_reused_for_another_origin(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with private_fixture_directory() as directory:
             api, _ = self.provision(directory)
             with self.assertRaisesRegex(ValueError, "another instance"):
                 manage.Provision(api, Path(directory) / "state.json", "https://other.example.test",
                                  ["org-a", "org-b"], "example.test")
 
     def test_unmanaged_existing_user_is_not_adopted(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with private_fixture_directory() as directory:
             api = FakeGitLab()
             api.tables["users"][999] = {"username": "cp87-collector"}
             with self.assertRaisesRegex(RuntimeError, "without this journal"):
@@ -178,7 +189,7 @@ class GitLabDeployTests(unittest.TestCase):
             self.assertFalse(any(method == "POST" for method, _, _ in api.calls))
 
     def test_wrong_version_prevents_remote_mutations(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with private_fixture_directory() as directory:
             api = FakeGitLab()
             api.request = Mock(return_value={"version": "18.0.0", "enterprise": False})
             with self.assertRaisesRegex(RuntimeError, "pinned GitLab"):
@@ -186,7 +197,7 @@ class GitLabDeployTests(unittest.TestCase):
             api.request.assert_called_once_with("GET", "metadata")
 
     def test_generated_runner_config_is_valid_and_separates_host_socket(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with private_fixture_directory() as directory:
             _, provision = self.provision(directory)
             config = tomllib.loads(manage.runner_config(provision.state, "/etc/cp-ca"))
             self.assertEqual(1, config["concurrent"])
@@ -203,7 +214,7 @@ class GitLabDeployTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "POSIX file modes are checked on Linux")
     def test_secret_files_are_owner_only_and_public_directory_is_rejected(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with private_fixture_directory() as directory:
             path = Path(directory) / "state.json"
             manage.save_private(path, "private")
             self.assertEqual(0o600, path.stat().st_mode & 0o777)
