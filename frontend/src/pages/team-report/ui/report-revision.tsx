@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import type { ApiClient } from '@/shared/api'
 import { ErrorState } from '@/shared/ui'
 import { refreshReport } from '../api/report-api'
-import type { RevisionMetadata, TeamReport } from '../api/report-api'
+import type { RevisionMetadata, TeamReport } from '@/shared/api'
 import { formatTime } from '../model/metrics'
 
 const irreproducible: Readonly<Record<string, string>> = {

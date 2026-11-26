@@ -1,9 +1,5 @@
 import type { ReportPointFocus } from '@/shared/config'
-import type {
-  ReportSeries,
-  RevisionMetadata,
-  TeamReport,
-} from '../api/report-api'
+import type { ReportSeries, RevisionMetadata, TeamReport } from '@/shared/api'
 
 const titles: Readonly<Record<string, string>> = {
   T04: 'Начатые задачи',

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { ErrorState, LoadingState } from '@/shared/ui'
-import type { ReportSeries } from '../api/report-api'
+import type { ReportSeries } from '@/shared/api'
 import { formatTime } from '../model/metrics'
 import type { ReportBlockProps } from '../model/metrics'
 

@@ -19,17 +19,13 @@ import {
   loadReport,
   loadRevisionMetadata,
   RevisionNotPublished,
-} from '../api/report-api'
-import type { TeamReport } from '../api/report-api'
+} from '@/shared/api'
+import type { TeamReport } from '@/shared/api'
 import { seriesKey } from '../model/metrics'
 import type { ReportBlockProps } from '../model/metrics'
-import {
-  periodError,
-  readReportParams,
-  reportQuery,
-  writeReportParams,
-} from '../model/report-params'
-import type { ReportParams } from '../model/report-params'
+import { periodError, readReportParams, reportQuery } from '@/shared/config'
+import type { ReportParams } from '@/shared/config'
+import { writeReportParams } from '../model/report-params'
 import { CompletenessBlock } from './completeness-block'
 import { CycleTimeBlock } from './cycle-time-block'
 import { WorkAgeBlock } from './work-age-block'

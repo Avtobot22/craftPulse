@@ -2,8 +2,9 @@ import { Button, Label, SegmentedRadioGroup } from '@gravity-ui/uikit'
 import { useId, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import type { TeamReportScope } from '@/shared/config'
-import { isDateTime, periodError } from '../model/report-params'
-import type { ReportParams } from '../model/report-params'
+import { isDateTime } from '@/shared/api'
+import { periodError } from '@/shared/config'
+import type { ReportParams } from '@/shared/config'
 
 type Project = TeamReportScope['projects'][number]
 

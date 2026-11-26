@@ -1118,40 +1118,107 @@ describe('UI-20: длительности, возраст, целевые сро
     ['T10', 'Соблюдение целевых сроков'],
     ['T23', 'Переоткрытия workflow'],
   ])(
-    'opens the %s passport and restores the older point of the same revision',
+    'shows the selected %s value and its basis and restores focus on return',
     async (metricId, title) => {
       const read = vi.fn((url: URL) => {
-        const series = { ...reopening, metric_id: metricId }
+        const series = {
+          ...reopening,
+          metric_id: metricId,
+          group: { size_label: 'S' },
+        }
+        const otherGroup = { ...series, group: { size_label: 'M' } }
         const [point] = reopening.points
         if (!point) throw new Error('Expected a point fixture')
-        const older = { ...point, point_start: period.from }
+        const older = {
+          point_start: period.from,
+          value: {
+            ...point.value,
+            value: 0.25,
+            numerator: 1,
+            denominator: 4,
+          },
+        }
         return jsonResponse({
-          ...detailReport({ ...series, points: [...series.points, older] }),
+          ...detailReport(otherGroup, {
+            ...series,
+            points: [...series.points, older],
+          }),
           revision: {
             ...report().revision,
             id: url.searchParams.get('revision_id') ?? revisionId,
           },
         })
       })
-      const { router, currentSearch } = mount({ read })
+      const { router, currentSearch } = mount({
+        read,
+        path:
+          reportUrl +
+          '&task_type=Story&group_by=size_label&report_project_id=' +
+          project.id,
+        readRevision: (id) => ({
+          ...revision(id),
+          inputs: [
+            { input_kind: 'mapping', input_id: teamId, version: '1' },
+            { input_kind: 'target', input_id: 'Story/S', version: '7' },
+          ],
+          definitions: [
+            {
+              metric_id: 'T23',
+              definition_version: 1,
+              name: 'Reopened',
+              unit: 'ratio',
+              catalog_ref: '#t23',
+              parameters: { follow_up_days: 45 },
+            },
+          ],
+        }),
+      })
       const region = await screen.findByRole('region', { name: title })
-      const selected = within(region).getAllByRole('button', {
-        name: /2 из 4/,
-      })[1]
-      if (!selected) throw new Error('Expected two outcome points')
+      const selected = within(region).getByRole('button', { name: /1 из 4/ })
       fireEvent.click(selected)
       await screen.findByRole('heading', { name: 'Паспорт показателя' })
       expect(router.state.location.pathname).toBe(
-        `/reports/revisions/${revisionId}/metrics/${metricId}`,
+        '/reports/revisions/' + revisionId + '/metrics/' + metricId,
       )
       expect(currentSearch().get('point_start')).toBe(period.from)
+
+      const passport = await screen.findByRole('heading', { name: title })
+      const section = passport.closest('section')
+      if (!section) throw new Error('Expected passport section')
+      const details = within(section)
+      expect(details.getByText(/^25\s*%$/u)).toBeVisible()
+      expect(
+        details.getByText('Числитель').nextElementSibling,
+      ).toHaveTextContent(/^1$/u)
+      expect(
+        details.getByText('Знаменатель').nextElementSibling,
+      ).toHaveTextContent(/^4$/u)
+      if (metricId === 'T23') {
+        expect(
+          details.getByText('45 дн. после первого завершения'),
+        ).toBeVisible()
+        expect(
+          details.getByText('Незрелые задачи').nextElementSibling,
+        ).toHaveTextContent(/^3$/u)
+      } else {
+        expect(
+          details.getByText('Целевой срок · Story/S · Версия 7'),
+        ).toBeVisible()
+      }
+      const pinnedRead = read.mock.calls.at(-1)?.[0].searchParams
+      expect(pinnedRead?.get('revision_id')).toBe(revisionId)
+      expect(pinnedRead?.get('task_type')).toBe('Story')
+      expect(pinnedRead?.get('group_by')).toBe('size_label')
+      expect(currentSearch().get('group_value')).toBe('S')
+      expect(pinnedRead?.getAll('project_id')).toEqual([project.id])
+
       fireEvent.click(
         screen.getByRole('button', { name: 'Вернуться к отчёту' }),
       )
       const restored = await screen.findByRole('region', { name: title })
       await waitFor(() => {
         expect(
-          within(restored).getAllByRole('button', { name: /2 из 4/ })[1],
+          within(restored).getByRole('button', { name: /1 из 4/ }),
         ).toHaveFocus()
       })
       expect(read.mock.calls.at(-1)?.[0].searchParams.get('revision_id')).toBe(
@@ -1159,6 +1226,31 @@ describe('UI-20: длительности, возраст, целевые сро
       )
     },
   )
+
+  it('opens the uncalculated T10 point without inventing a percentage', async () => {
+    mount({
+      read: () =>
+        jsonResponse(
+          detailReport(
+            metric('T10', 0, { value: { ...unknownTarget, unit: 'ratio' } }),
+          ),
+        ),
+    })
+    const outcome = await screen.findByRole('region', {
+      name: 'Соблюдение целевых сроков',
+    })
+    fireEvent.click(
+      within(outcome).getByRole('button', { name: /Целевой срок не задан/u }),
+    )
+    expect(
+      await screen.findByText('Не рассчитано', { exact: true }),
+    ).toBeVisible()
+    expect(screen.getByText('Целевой срок не задан')).toBeVisible()
+    expect(
+      screen.getByText('Знаменатель отсутствует или равен нулю'),
+    ).toBeVisible()
+    expect(screen.queryByText(/^\d+\s*%$/u)).toBeNull()
+  })
 
   it('shows the latest target version of each group with its basis n', async () => {
     const target = {
