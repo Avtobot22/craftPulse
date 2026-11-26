@@ -169,6 +169,9 @@ describe('application routes', () => {
   })
 
   it('opens a CI receipt at its historical MR head and links to the pipeline', async () => {
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => {
+      // jsdom does not implement viewport scrolling.
+    })
     const head = 'a'.repeat(40)
     const mr = '0193a5b0-b0b0-7000-8000-000000000001'
     const pipeline = '0193a5b0-c0c0-7000-8000-000000000001'
@@ -269,11 +272,28 @@ describe('application routes', () => {
       if (input === '/api/v1/pipelines/' + pipeline) {
         return Promise.resolve(
           jsonResponse({
+            id: pipeline,
             ref_name: 'feature',
             sha: head,
+            merge_request_id: mr,
             outcome: 'success',
+            native_status: 'success',
+            started_at: null,
+            finished_at: null,
+            attempts_total: 1,
+            retried_jobs: 0,
+            allowed_failures: 0,
+            attempt_history: 'complete',
             reports: [],
-          }),
+            tests: {
+              state: 'NOT_EVALUATED',
+              passed: null,
+              failed: null,
+              error: null,
+              skipped: null,
+            },
+            source_url: null,
+          } satisfies components['schemas']['Pipeline']),
         )
       }
       return baseApi(input, init)
@@ -290,7 +310,7 @@ describe('application routes', () => {
     expect(screen.getByTitle('b'.repeat(40))).toBeInTheDocument()
     expect(screen.getByText('Историческая сводка')).toBeInTheDocument()
     expect(
-      screen.getByText('У бота нет права записи в MR.'),
+      screen.getByText('Нет права записи, сводка доступна только на сайте.'),
     ).toBeInTheDocument()
     expect(screen.getByText('Есть закрытые результаты.')).toBeInTheDocument()
 
@@ -314,11 +334,18 @@ describe('application routes', () => {
     ).toHaveTextContent('1')
     expect(screen.getByText('Анализ завершился с ошибкой')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('link', { name: 'Открыть pipeline' }))
+    const pipelineLink = screen.getByRole('link', { name: 'Открыть pipeline' })
+    pipelineLink.focus()
+    fireEvent.click(pipelineLink, { detail: 0 })
     expect(
       await screen.findByRole('heading', { name: 'Pipeline', level: 1 }),
     ).toBeInTheDocument()
     expect(await screen.findByText('Исход: success')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Назад' }))
+    const restored = await screen.findByRole('link', { name: 'Открыть pipeline' })
+    await waitFor(() => {
+      expect(restored).toHaveFocus()
+    })
   })
 
   it('never requests private data on a public route', async () => {
@@ -964,7 +991,7 @@ describe('task analysis routes', () => {
 const summaryMr = '0193a5b0-b0b0-7000-8000-000000000001'
 const summaryURL = `/merge-requests/${summaryMr}/summary?revision_no=3`
 const summaryFixture = {
-  id: 'summary-3',
+  id: '0193a5b0-d0d0-7000-8000-000000000003',
   merge_request_id: summaryMr,
   revision_no: 3,
   head_sha: 'a'.repeat(40),
@@ -1000,7 +1027,7 @@ const summaryFixture = {
     {
       item_no: 1,
       item_kind: 'accepted',
-      finding_id: 'finding-1',
+      finding_id: '0193a5b0-e2e2-7000-8000-000000000002',
       rule_id: 'rule-1',
       severity: 'high',
       location: null,
@@ -1103,10 +1130,12 @@ describe('technical screen routes', () => {
     expect(
       await screen.findByRole('heading', { name: 'Сводка MR, ревизия 3' }),
     ).toBeVisible()
-    expect(screen.getByText('У бота нет права записи в MR.')).toBeVisible()
+    expect(
+      screen.getByText('Нет права записи, сводка доступна только на сайте.'),
+    ).toBeVisible()
     expect(screen.getByText('Есть закрытые результаты.')).toBeVisible()
     expect(screen.getByText('Принята', { exact: false })).toBeVisible()
-    expect(screen.getByText('не проверено')).toBeVisible()
+    expect(screen.getByText(/не измерено/u)).toBeVisible()
   })
 
   it('rejects a different head when the requested revision is already cached', async () => {
@@ -1296,5 +1325,492 @@ describe('administration routes', () => {
         name: 'Объект или область недоступны',
       }),
     ).toBeVisible()
+  })
+})
+
+describe('MR summary and technical comparison', () => {
+  type Schema = components['schemas']
+  const mrPath = '/merge-requests/' + summaryMr
+  const summaryPath = mrPath + '/summary'
+  const head = 'a'.repeat(40)
+  const base = 'b'.repeat(40)
+  const findingId = '0193a5b0-e2e2-7000-8000-000000000001'
+  const componentId = '0193a5b0-7777-7000-8000-000000000001'
+  const source = 'https://gitlab.example/core/-/merge_requests/42'
+  const finding = {
+    id: findingId,
+    finding_kind: 'code',
+    rule_id: 'empty-handler',
+    state: 'open',
+    severity: { native: 'high', mapped: 'high', mapping_version: 1 },
+    confidence: null,
+    location: { path: 'src/handler.ts', line_start: 7, line_end: 7 },
+    package: null,
+    component_id: componentId,
+    first_seen_at: '2026-11-08T12:00:00Z',
+    report: {
+      id: '0193a5b0-d4d4-7000-8000-000000000003',
+      producer: 'example',
+      producer_version: '1.0',
+      rules_version: null,
+      db_version: null,
+      sha: head,
+      completeness: 'complete',
+    },
+    evidence: {},
+    external_triage: [],
+    exceptions: [],
+    actions: [],
+    redactions: [],
+  } satisfies Schema['FindingDetail']
+  const row = {
+    item_no: 1,
+    item_kind: 'new',
+    analysis_kind: 'code',
+    mode: 'import',
+    finding_id: findingId,
+    rule_id: finding.rule_id,
+    severity: 'high',
+    location: finding.location,
+    rank: 1,
+  } satisfies Schema['SummaryItem']
+  const readySummary: Schema['MergeRequestSummary'] = {
+    ...summaryFixture,
+    id: '0193a5b0-d0d0-7000-8000-000000000003',
+    base_sha: base,
+    head_sha: head,
+    status: 'ready',
+    pipeline_state: 'complete',
+    built_at: '2026-11-08T12:01:00Z',
+    items: [row],
+    access_limited: false,
+    access_notes: [],
+    redactions: [],
+  }
+  const mr = {
+    id: summaryMr,
+    iid: 42,
+    title: 'Валидация отчётов',
+    state: 'open',
+    draft: false,
+    area: {
+      id: project.id,
+      kind: 'repository',
+      display_name: 'core',
+      connection_id: null,
+    },
+    author: { account_id: null, kind: 'human', display_name: null },
+    head_sha: head,
+    base_sha: base,
+    opened_at: '2026-11-08T10:00:00Z',
+    ready_at: null,
+    review_wait: null,
+    source_url: source,
+  } satisfies Schema['MergeRequest']
+  const comparison = {
+    comparable: true,
+    incomparable_reasons: [],
+    base: { sha: base, report_id: '0193a5b0-d4d4-7000-8000-000000000001' },
+    head: { sha: head, report_id: finding.report.id },
+    factors: [
+      {
+        factor: 'code_changed',
+        new_count: 1,
+        resolved_count: 0,
+        finding_ids: [findingId],
+      },
+      {
+        factor: 'db_changed',
+        new_count: 0,
+        resolved_count: 1,
+        finding_ids: [],
+      },
+    ],
+    access_limited: false,
+    access_notes: [],
+  } satisfies Schema['TechnicalComparison']
+
+  function technicalApi(
+    summary = readySummary,
+    result: Schema['TechnicalComparison'] = comparison,
+    additional?: (url: URL) => Response | undefined,
+  ) {
+    const fallback = mockApi({
+      ...currentUser,
+      actions: ['session.read', 'mr.read', 'ci.read', 'findings.read'],
+    })
+    return vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (typeof input !== 'string') throw new Error('Expected a request URL')
+      const url = new URL(input, 'https://craftpulse.test')
+      const response = additional?.(url)
+      if (response) return Promise.resolve(response)
+      switch (url.pathname) {
+        case '/api/v1' + summaryPath:
+          return Promise.resolve(jsonResponse(summary))
+        case '/api/v1' + mrPath:
+          return Promise.resolve(jsonResponse(mr))
+        case '/api/v1/findings/' + findingId:
+          return Promise.resolve(jsonResponse(finding))
+        case '/api/v1/technical-comparisons':
+          expect(url.searchParams.get('base_sha')).toBe(base)
+          expect(url.searchParams.get('head_sha')).toBe(head)
+          expect(url.searchParams.get('component_id')).toBe(componentId)
+          expect(url.searchParams.get('analysis_kind')).toBe('code')
+          return Promise.resolve(jsonResponse(result))
+        default:
+          return fallback(input, init)
+      }
+    })
+  }
+
+  it.each(['с базой', 'без базы'])(
+    'переходит из сводки %s к находке и причинам, восстанавливая фокус и прокрутку',
+    async (mode) => {
+      const hasBase = mode === 'с базой'
+      const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {
+        // jsdom does not implement viewport scrolling.
+      })
+      vi.spyOn(window, 'scrollY', 'get').mockReturnValue(430)
+      const { router } = mount(
+        summaryPath + '?revision_no=3&org_slug=example',
+        technicalApi({
+          ...readySummary,
+          base_sha: hasBase ? base : null,
+          items: hasBase
+            ? [row]
+            : [{ ...row, item_kind: 'newly_observed', rank: null }],
+        }),
+      )
+      const link = await screen.findByRole('link', { name: finding.rule_id })
+      if (hasBase) {
+        expect(
+          screen.getByRole('heading', { name: 'Приоритетные находки' }),
+        ).toBeVisible()
+      } else {
+        expect(screen.getByText('Сопоставимой базы нет')).toBeVisible()
+        expect(
+          screen.getByRole('heading', { name: 'Впервые наблюдено' }),
+        ).toBeVisible()
+        expect(
+          screen.queryByRole('heading', { name: 'Новые находки' }),
+        ).toBeNull()
+        expect(
+          screen.queryByRole('heading', { name: 'Устранённые находки' }),
+        ).toBeNull()
+      }
+      link.focus()
+      expect(link).toHaveFocus()
+      fireEvent.click(link, { detail: 0 })
+      expect(
+        await screen.findByText('Исходная серьёзность: high'),
+      ).toBeVisible()
+      fireEvent.click(screen.getByRole('button', { name: 'Назад' }), {
+        detail: 0,
+      })
+      const restored = await screen.findByRole('link', {
+        name: finding.rule_id,
+      })
+      await waitFor(() => {
+        expect(restored).toHaveFocus()
+      })
+      expect(scrollTo).toHaveBeenCalledWith({ top: 430 })
+      expect(router.state.location.search).toBe(
+        '?revision_no=3&org_slug=example',
+      )
+
+      const comparisonLink = screen.getByRole('link', {
+        name: 'Причины изменения результата',
+      })
+      comparisonLink.focus()
+      expect(comparisonLink).toHaveFocus()
+      fireEvent.click(comparisonLink, { detail: 0 })
+      if (!hasBase) {
+        const baseField = await screen.findByRole('textbox', {
+          name: 'SHA базы',
+        })
+        expect(baseField).toHaveValue('')
+        expect(
+          screen.queryByRole('heading', { name: 'Факторы изменения' }),
+        ).toBeNull()
+        fireEvent.change(baseField, { target: { value: base } })
+        fireEvent.click(screen.getByRole('button', { name: 'Сравнить' }), {
+          detail: 0,
+        })
+      }
+      expect(
+        await screen.findByRole('heading', {
+          name: 'Изменилась база уязвимостей',
+        }),
+      ).toBeVisible()
+      const factorLink = screen.getByRole('link', {
+        name: 'Находка ' + findingId,
+      })
+      factorLink.focus()
+      expect(factorLink).toHaveFocus()
+      fireEvent.click(factorLink, { detail: 0 })
+      expect(
+        await screen.findByText('Исходная серьёзность: high'),
+      ).toBeVisible()
+      await act(() => router.navigate(-1))
+      const restoredFactor = await screen.findByRole('link', {
+        name: 'Находка ' + findingId,
+      })
+      await waitFor(() => {
+        expect(restoredFactor).toHaveFocus()
+      })
+    },
+  )
+
+  it('выделяет пять новых находок по rank и сохраняет наблюдения из несопоставимых областей', async () => {
+    const ranks = [5, 1, 4, 2, 3, null]
+    mount(
+      summaryPath,
+      technicalApi({
+        ...readySummary,
+        items: [
+          ...ranks.map((rank, index) => ({
+            ...row,
+            item_no: index + 1,
+            finding_id: '0193a5b0-e2e2-7000-8000-00000000001' + String(index),
+            rule_id: 'rule-' + String(index + 1),
+            rank,
+          })),
+          {
+            ...row,
+            item_no: 7,
+            item_kind: 'newly_observed',
+            rule_id: 'first-seen',
+            rank: null,
+          },
+        ],
+      }),
+    )
+    const priority = await screen.findByRole('list', {
+      name: 'Приоритетные находки',
+    })
+    const links = within(priority).getAllByRole('link', { name: /^rule-/u })
+    expect(links.map(({ textContent }) => textContent)).toEqual([
+      'rule-2',
+      'rule-4',
+      'rule-5',
+      'rule-3',
+      'rule-1',
+    ])
+    expect(screen.getByRole('link', { name: 'rule-6' })).toBeVisible()
+    expect(
+      screen.getByRole('heading', { name: 'Впервые наблюдено' }),
+    ).toBeVisible()
+    expect(screen.getByRole('link', { name: 'first-seen' })).toBeVisible()
+  })
+
+  it('переходит с устаревшей ревизии на актуальный head, сохраняя последний хороший результат отдельно', async () => {
+    const previousHead = 'c'.repeat(40)
+    const lastGoodDate = '2026-11-08T11:45:00Z'
+    const stale: Schema['MergeRequestSummary'] = {
+      ...readySummary,
+      status: 'stale',
+      stale_reason: 'new_head',
+      head_sha: previousHead,
+      last_good: { revision_no: 2, head_sha: base, built_at: lastGoodDate },
+    }
+    const fetcher = technicalApi(stale, comparison, (url) => {
+      if (url.pathname !== '/api/v1' + summaryPath) return undefined
+      if (url.searchParams.get('head_sha') === head)
+        return jsonResponse({ ...readySummary, revision_no: 4 })
+      if (url.searchParams.get('revision_no') === '2')
+        return jsonResponse({ ...readySummary, revision_no: 2, head_sha: base })
+      return undefined
+    })
+    mount(summaryPath + '?revision_no=3', fetcher)
+    expect(await screen.findByText('Историческая сводка')).toBeVisible()
+    expect(screen.getByTitle(previousHead)).toBeVisible()
+    expect(screen.getByText(lastGoodDate)).toHaveAttribute(
+      'datetime',
+      lastGoodDate,
+    )
+    expect(
+      await screen.findByRole('link', { name: 'Открыть MR в GitLab' }),
+    ).toHaveAttribute('href', source)
+    const fresh = screen.getByRole('link', {
+      name: 'Открыть актуальную сводку',
+    })
+    expect(fresh).toHaveAttribute('href', summaryPath + '?head_sha=' + head)
+    fireEvent.click(fresh)
+    expect(
+      await screen.findByRole('heading', { name: 'Сводка MR, ревизия 4' }),
+    ).toBeVisible()
+    const revision = screen.getByRole('textbox', { name: 'Номер ревизии' })
+    fireEvent.change(revision, { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть ревизию' }))
+    expect(
+      await screen.findByRole('heading', { name: 'Сводка MR, ревизия 2' }),
+    ).toBeVisible()
+    expect(screen.getAllByTitle(base)).toHaveLength(2)
+  })
+
+  it('различает недостающие отчёты, причину непроверенной области и отказ в публикации', async () => {
+    mount(
+      summaryPath,
+      technicalApi({
+        ...readySummary,
+        pipeline_state: 'reports_missing',
+        not_evaluated: [
+          { analysis_kind: 'coverage', reason_code: 'report_missing' },
+        ],
+      }),
+    )
+    expect(await screen.findByText('Отчёты не получены')).toBeVisible()
+    expect(screen.getByText('Отчёт отсутствует')).toBeVisible()
+    expect(screen.getByText('Данные о тестах недоступны.')).toBeVisible()
+    expect(screen.getByText(/не измерено/u)).toBeVisible()
+    expect(
+      screen.getByText('Нет права записи, сводка доступна только на сайте.'),
+    ).toBeVisible()
+  })
+
+  it.each(['NOT_APPLICABLE', 'ASSESSED'] as const)(
+    'не показывает процент покрытия без знаменателя при %s',
+    async (state) => {
+      mount(
+        summaryPath,
+        technicalApi({
+          ...readySummary,
+          coverage_changed_lines: {
+            ...readySummary.coverage_changed_lines,
+            state,
+            value: state === 'ASSESSED' ? 0.9 : null,
+            reason_code:
+              state === 'NOT_APPLICABLE' ? 'no_executable_units' : null,
+          },
+        }),
+      )
+      const heading = await screen.findByRole('heading', {
+        name: 'Покрытие изменённых строк',
+      })
+      expect(heading.nextElementSibling).not.toHaveTextContent('%')
+      expect(heading.nextElementSibling).toHaveTextContent(
+        state === 'NOT_APPLICABLE'
+          ? 'неприменимо'
+          : 'Знаменатель отсутствует или равен нулю',
+      )
+    },
+  )
+
+  it('показывает ограничение доступа к данным безопасности без пустых ссылок и количества закрытых строк', async () => {
+    mount(
+      summaryPath,
+      technicalApi({
+        ...readySummary,
+        access_limited: true,
+        access_notes: [{ code: 'restricted_by_access' }],
+        redactions: ['items', 'not_evaluated'],
+        items: [],
+      }),
+    )
+    expect(await screen.findByText('Есть закрытые результаты.')).toBeVisible()
+    expect(
+      screen.getByText('Часть непроверенных областей скрыта.'),
+    ).toBeVisible()
+    expect(screen.queryByRole('link', { name: /Находка/u })).toBeNull()
+    expect(
+      screen.queryByRole('heading', { name: 'Приоритетные находки' }),
+    ).toBeNull()
+  })
+
+  it('подтверждает смену исхода по попыткам одного задания и конфигурации', async () => {
+    const pipelineId = '0193a5b0-c0c0-7000-8000-000000000001'
+    const failed = {
+      id: '0193a5b0-c1c1-7000-8000-000000000001',
+      job_key: 'test',
+      config_fingerprint: 'a'.repeat(64),
+      attempt_no: 1,
+      outcome: 'failed',
+      native_status: 'failed',
+      allow_failure: false,
+      failure_kind: null,
+      runner_class: null,
+      started_at: null,
+      finished_at: null,
+      duration_seconds: null,
+      source_url: null,
+    } satisfies Schema['Attempt']
+    const success = {
+      ...failed,
+      id: '0193a5b0-c1c1-7000-8000-000000000002',
+      attempt_no: 2,
+      outcome: 'success',
+      native_status: 'success',
+    } satisfies Schema['Attempt']
+    const attempts = '/api/v1/pipelines/' + pipelineId + '/attempts'
+    const fetcher = technicalApi(
+      {
+        ...readySummary,
+        ci: {
+          pipeline_id: pipelineId,
+          outcome: 'success',
+          attempts: 3,
+          retried_jobs: 1,
+        },
+      },
+      comparison,
+      (url) => {
+        if (url.pathname !== attempts) return undefined
+        const next = url.searchParams.has('cursor')
+        return jsonResponse({
+          // UUID pagination can put a successful attempt before its failed predecessor.
+          data: next
+            ? [failed]
+            : [{ ...success, config_fingerprint: 'b'.repeat(64) }, success],
+          next_cursor: next ? null : 'next',
+          usage_seconds: {
+            ...readySummary.coverage_changed_lines,
+            unit: 'seconds',
+          },
+        } satisfies Schema['AttemptPage'])
+      },
+    )
+    mount(summaryPath, fetcher)
+    const load = await screen.findByRole('button', {
+      name: 'Загрузить ещё попытки',
+    })
+    expect(screen.queryByText(/попытка 2 прошла/u)).toBeNull()
+    fireEvent.click(load)
+    expect(
+      await screen.findByText(
+        /Попытка 1 завершилась ошибкой → попытка 2 прошла/u,
+      ),
+    ).toBeVisible()
+    expect(screen.queryByText(/flaky/iu)).toBeNull()
+  })
+
+  it('показывает причины и стороны несопоставимого сравнения без числовой дельты', async () => {
+    mount(
+      `/components/${componentId}/comparison?base_sha=${base}&head_sha=${head}&analysis_kind=code`,
+      technicalApi(readySummary, {
+        ...comparison,
+        comparable: false,
+        base: { ...comparison.base, report_id: null },
+        incomparable_reasons: ['base_scan_missing', 'rules_changed'],
+        factors: [
+          {
+            factor: 'code_changed',
+            finding_ids: [findingId],
+            new_count: null,
+            resolved_count: null,
+          },
+        ],
+      }),
+    )
+    expect(
+      await screen.findByRole('heading', { name: 'Результаты несопоставимы' }),
+    ).toBeVisible()
+    expect(screen.getByText('Отсутствует отчёт для базового SHA')).toBeVisible()
+    expect(
+      screen.getByText('Изменились правила или база уязвимостей'),
+    ).toBeVisible()
+    expect(screen.getByTitle(base)).toBeVisible()
+    expect(screen.getByText(finding.report.id)).toBeVisible()
+    expect(screen.queryByText('Новые')).toBeNull()
+    expect(screen.queryByText('Устранённые')).toBeNull()
   })
 })

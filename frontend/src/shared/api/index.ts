@@ -54,7 +54,11 @@ export type {
   MergeRequestListParams,
   ReviewWait,
 } from './merge-request-queries'
-export { getPipeline, listPipelineAttempts } from './pipeline-queries'
+export {
+  getPipeline,
+  listPipelineAttempts,
+  pipelineAttemptPages,
+} from './pipeline-queries'
 export type { PipelineAttemptsParams } from './pipeline-queries'
 
 export type { OpenCodes } from './read-fields'

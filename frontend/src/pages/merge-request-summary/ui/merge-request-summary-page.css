@@ -1,0 +1,39 @@
+.cp-mr-summary {
+  overflow-wrap: anywhere;
+}
+
+.cp-summary-header dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--g-spacing-2) var(--g-spacing-4);
+}
+
+.cp-summary-header dd,
+.cp-summary-columns dd {
+  margin-inline-start: 0;
+}
+
+.cp-summary-revision {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--g-spacing-2);
+  margin-block: var(--g-spacing-4);
+}
+
+.cp-summary-revision input {
+  width: 8rem;
+}
+
+.cp-summary-notice,
+.cp-summary-priority {
+  border-inline-start: 3px solid var(--g-color-line-warning);
+  padding-inline-start: var(--g-spacing-5);
+}
+
+@media (min-width: 1280px) {
+  .cp-summary-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--g-spacing-7);
+  }
+}

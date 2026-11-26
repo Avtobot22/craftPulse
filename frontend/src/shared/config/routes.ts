@@ -17,6 +17,7 @@ export const routePaths = Object.freeze({
   baselines: '/checks/baselines/:projectId',
   pipeline: '/pipelines/:pipelineId',
   pipelineJob: '/pipelines/:pipelineId/jobs/:jobKey',
+  technicalComparisonSetup: '/technical-comparisons',
   technicalComparison: '/components/:componentId/comparison',
   documentationRoots: '/documentation/roots/:serviceId',
   serviceDocuments: '/documentation/services/:serviceId?',

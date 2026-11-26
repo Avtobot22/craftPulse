@@ -94,7 +94,7 @@ export function HomePage({
   const current = useOutletContext<CurrentUser>()
   const location = useLocation()
   const navigate = useNavigate()
-  const outlet = useOutlet()
+  const outlet = useOutlet(current)
   const content = useRef<HTMLElement>(null)
   const navButton = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)

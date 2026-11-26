@@ -23,9 +23,9 @@ export const technicalLabels = {
     superseded: 'Заменена новой ревизией',
   } satisfies Record<Summary['status'], string>,
   pipelineState: {
-    running: 'Выполняется',
-    complete: 'Завершён',
-    reports_missing: 'Отчёты отсутствуют',
+    running: 'Pipeline идёт',
+    complete: 'Получены все отчёты',
+    reports_missing: 'Отчёты не получены',
   } satisfies Record<Summary['pipeline_state'], string>,
   publicationStatus: {
     not_requested: 'Публикация не запрошена',
@@ -37,7 +37,8 @@ export const technicalLabels = {
   } satisfies Record<Summary['publication']['status'], string>,
   // These codes are documented in OpenAPI as an open string.
   publicationError: {
-    write_permission_missing: 'У бота нет права записи в MR.',
+    write_permission_missing:
+      'Нет права записи, сводка доступна только на сайте.',
     head_changed: 'В MR появился новый коммит.',
     provider_error: 'Ошибка Git-хостинга.',
   },
