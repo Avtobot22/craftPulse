@@ -334,8 +334,8 @@ UPDATE normalize.ci_run_version SET superseded_seq = sqlc.arg(known_seq)::bigint
 WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(ids)::uuid[]) AND superseded_seq IS NULL;
 
 -- name: InsertCIRunVersions :batchexec
-INSERT INTO normalize.ci_run_version (organization_id, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at, allow_failure_semantics)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21);
+INSERT INTO normalize.ci_run_version (organization_id, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at, allow_failure_semantics, observed_via, start_offset_s, finish_offset_s)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24);
 
 -- name: CurrentCIAttemptVersions :many
 SELECT * FROM normalize.ci_attempt_version WHERE organization_id = sqlc.arg(organization_id) AND attempt_id = ANY (sqlc.arg(object_ids)::uuid[]) AND superseded_seq IS NULL;
@@ -349,8 +349,8 @@ UPDATE normalize.ci_attempt_version SET superseded_seq = sqlc.arg(known_seq)::bi
 WHERE organization_id = sqlc.arg(organization_id) AND id = ANY (sqlc.arg(ids)::uuid[]) AND superseded_seq IS NULL;
 
 -- name: InsertCIAttemptVersions :batchexec
-INSERT INTO normalize.ci_attempt_version (organization_id, attempt_id, run_id, job_key, config_fingerprint, attempt_no, native_status, outcome, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_s, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);
+INSERT INTO normalize.ci_attempt_version (organization_id, attempt_id, run_id, job_key, config_fingerprint, attempt_no, native_status, outcome, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_s, known_seq, receipt_id, record_no, source_revision, content_hash, observed_at, observed_via, start_offset_s, finish_offset_s)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23);
 
 -- name: MatchRunMRs :many
 SELECT i::integer AS ord, o.id FROM generate_subscripts(sqlc.arg(mr_native_ids)::text[], 1) AS i
@@ -447,7 +447,9 @@ WITH input AS (
     SELECT (doc.value->>'document_id')::uuid AS document_id, doc.value->>'path' AS path,
         doc.value->>'version_ref' AS version_ref, doc.value->>'format' AS format, doc.value->>'title' AS title,
         doc.value->>'owner' AS owner, doc.value->>'acl_state' AS acl_state, (doc.value->>'spec_valid')::boolean AS spec_valid,
-        decode(doc.value->>'content_hash', 'base64') AS hash
+        decode(doc.value->>'content_hash', 'base64') AS hash,
+        (doc.value->>'event_time')::timestamptz AS event_time,
+        COALESCE((doc.value->>'event_offset_s')::integer, 0) AS event_offset_s
     FROM jsonb_array_elements(sqlc.arg(documents)::jsonb) AS doc(value)
 ), inserted AS (
     INSERT INTO normalize.document_version
@@ -465,8 +467,8 @@ WITH input AS (
         AND i.hash = v.content_hash AND i.format = v.doc_format
     WHERE v.organization_id = sqlc.arg(organization_id) AND v.area_id = sqlc.arg(area_id)
 )
-INSERT INTO normalize.docs_report_document (organization_id, report_id, document_version_id, spec_valid)
-SELECT sqlc.arg(organization_id), sqlc.arg(report_id), v.id, i.spec_valid
+INSERT INTO normalize.docs_report_document (organization_id, report_id, document_version_id, spec_valid, event_time, event_offset_s)
+SELECT sqlc.arg(organization_id), sqlc.arg(report_id), v.id, i.spec_valid, i.event_time, i.event_offset_s
 FROM versions v JOIN input i USING (document_id);
 
 -- name: DocumentsAt :many

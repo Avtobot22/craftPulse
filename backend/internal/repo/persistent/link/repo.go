@@ -166,6 +166,15 @@ func toEdge(row *LinkEdge) entity.LinkEdge {
 		Method: entity.LinkMethod(row.Method), Status: entity.LinkStatus(row.Status), Knowledge: entity.Knowledge{KnownSeq: row.KnownSeq},
 		Evidence: row.Evidence, ActorUserID: id(row.ActorUserID), ConfirmationID: id(row.ConfirmationID),
 	}
+	if row.Valid.Valid {
+		out.Validity = &entity.LinkValidity{FromExclusive: row.Valid.LowerType == pgtype.Exclusive, ToInclusive: row.Valid.UpperType == pgtype.Inclusive, Empty: row.Valid.LowerType == pgtype.Empty}
+		if row.Valid.Lower.Valid {
+			out.Validity.From = &row.Valid.Lower.Time
+		}
+		if row.Valid.Upper.Valid {
+			out.Validity.To = &row.Valid.Upper.Time
+		}
+	}
 	if row.SupersededSeq.Valid {
 		seq, at := row.SupersededSeq.Int64, row.SupersededAt.Time
 		out.SupersededSeq, out.SupersededAt = &seq, &at

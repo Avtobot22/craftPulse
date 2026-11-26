@@ -478,6 +478,7 @@ type TargetBaselines struct {
 // completeness of a calculation (T39, T40, T42). Completeness is complete only after a reconciliation without
 // differences (BR-022).
 type AreaCollection struct {
+	InstanceID          ID
 	AreaID              ID
 	ConnectionID        ID
 	DataKind            string

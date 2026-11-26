@@ -117,7 +117,7 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 		}
 		base := baseFact{
 			ref: entity.RecordRef{ReceiptID: rc.ID, RecordNo: r.No}, revision: entity.Revision{Source: r.SourceRevision, Hash: r.ContentHash},
-			observed: rc.ReceivedAt,
+			observed: rc.ReceivedAt, via: via,
 		}
 		switch kind := rec.RecordKind; {
 		case kind == "repository":
@@ -229,6 +229,7 @@ type baseFact struct {
 	ref      entity.RecordRef
 	revision entity.Revision
 	observed time.Time
+	via      entity.ObservedVia
 }
 
 // keep puts a candidate in the list, or in the place of an earlier one of the same key when wins says so.

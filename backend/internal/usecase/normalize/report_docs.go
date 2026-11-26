@@ -97,7 +97,7 @@ func docsEntry(entry *envelope.DocsEntry, in parseInput, prefix string) (entity.
 			Path: p, VersionRef: doc.VersionRef, Format: string(doc.DocFormat), Title: docsText(deref(doc.Title), _maxDescription),
 			ContentHash: hash, Owner: docsText(strings.TrimSpace(deref(entry.Owner)), _maxDescription), ACLState: string(doc.AclState),
 		},
-		SpecValid: entry.SpecValid,
+		SpecValid: entry.SpecValid, EventTime: doc.UpdatedAt, EventOffsetS: sourceTimeOffset(doc.UpdatedAt),
 	}, nil
 }
 
