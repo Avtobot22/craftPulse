@@ -65,7 +65,7 @@ func (h *codeDetails) GetPipeline(ctx context.Context, req openapi.GetPipelineRe
 		Id: uuid.UUID(run.RunID), MergeRequestId: uuidPtr(run.MRID), Sha: run.SHA, RefName: run.RefName,
 		NativeStatus: run.NativeStatus, Outcome: openapi.PipelineOutcome(run.Outcome), StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
 		AttemptHistory: openapi.PipelineAttemptHistory(detail.Run.History), AttemptsTotal: summary.AttemptsTotal,
-		RetriedJobs: summary.RetriedJobs, AllowedFailures: summary.AllowedFailures,
+		RetriedJobs: summary.RetriedJobs, AllowedFailures: summary.AllowedFailures, SourceUrl: detail.SourceURL,
 		Coverage: &openapi.PipelineCoverage{
 			Line:   metricValue("ratio", &detail.Metrics.LineCoverage.Point),
 			Branch: metricValue("ratio", &detail.Metrics.BranchCoverage.Point),
@@ -183,6 +183,7 @@ func (h *codeDetails) ListPipelineAttempts(ctx context.Context, req openapi.List
 			Id: uuid.UUID(a.AttemptID), JobKey: a.JobKey, ConfigFingerprint: hex.EncodeToString(a.ConfigFingerprint), AttemptNo: a.AttemptNo,
 			Outcome: openapi.AttemptOutcome(a.Outcome), NativeStatus: a.NativeStatus, AllowFailure: a.AllowFailure,
 			FailureKind: optional(a.FailureKind), RunnerClass: optional(a.RunnerClass), StartedAt: a.StartedAt, FinishedAt: a.FinishedAt, DurationSeconds: duration,
+			SourceUrl: optional(page.SourceURLs[a.AttemptID]),
 		}
 	}
 	if page.Next != nil {

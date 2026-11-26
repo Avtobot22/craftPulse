@@ -40,3 +40,4 @@ export {
   useInspectionReturn,
 } from './inspection-link'
 export { TaskDetailLink, TaskReturnLink } from './task-detail-link'
+export { DialogFrame } from './settings-dialogs/dialog-frame'

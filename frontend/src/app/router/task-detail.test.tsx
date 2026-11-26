@@ -19,6 +19,7 @@ import {
   problemResponse,
   teams,
 } from '../../../test/fixtures'
+import { mergeRequest } from '../../../test/task-changes-fixtures'
 import {
   mrReference,
   pipelineReference,
@@ -81,6 +82,8 @@ function mount({
         return Promise.resolve(jsonResponse(taskPage))
       case `/api/v1/tasks/${taskId}`:
         return Promise.resolve(loadTask())
+      case `/api/v1/merge-requests/${mrReference.id}`:
+        return Promise.resolve(jsonResponse(mergeRequest))
       case `/api/v1/tasks/${taskId}/events`:
         return Promise.resolve(loadHistory(url))
       default:

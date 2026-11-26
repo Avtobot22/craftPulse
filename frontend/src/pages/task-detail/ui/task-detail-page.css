@@ -5,7 +5,7 @@
   overflow-wrap: anywhere;
 }
 
-.cp-task-detail :is(h1, h2, h3, p, dl, dd) {
+.cp-task-detail :is(h1, h2, h3, h4, h5, p, dl, dd) {
   margin: 0;
 }
 
@@ -53,4 +53,10 @@
   font: inherit;
   min-height: 2.25rem;
   padding-inline: var(--g-spacing-2);
+}
+
+.cp-task-detail__jobs {
+  display: grid;
+  gap: var(--g-spacing-3);
+  padding-inline-start: var(--g-spacing-5);
 }
