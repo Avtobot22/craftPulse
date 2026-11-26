@@ -186,6 +186,9 @@ func (u *UseCase) Authorize(ctx context.Context, s entity.Subject, r entity.Acce
 		}
 		return scope(p), nil
 	}
+	if r.Optional {
+		return entity.Scope{}, denial
+	}
 	err = u.auditor.RecordSeparately(ctx, entity.AuditEvent{
 		OrganizationID: s.OrganizationID,
 		ActorKind:      entity.ActorUser,

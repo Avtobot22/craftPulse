@@ -94,13 +94,14 @@ type Deps struct {
 	Analysis     AnalysisReports
 	Settings     Settings
 	// Collection is nil where no source is collected; then only the history of the facts tells completeness.
-	Collection Collection
-	Activity   ActivityCollection
-	Code       CodeReports
-	Docs       Documentation
-	DocReports DocumentationReports
-	Decisions  FindingDecisions
-	Rights     Rights
+	Collection  Collection
+	Activity    ActivityCollection
+	Code        CodeReports
+	CodeSources CodeSources
+	Docs        Documentation
+	DocReports  DocumentationReports
+	Decisions   FindingDecisions
+	Rights      Rights
 	// Links is nil where the coverage of links is not computed; its series then get no links.
 	Links   Links
 	Repo    repo.CalcRepo

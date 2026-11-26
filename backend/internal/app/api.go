@@ -24,6 +24,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/docs"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/install"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/org"
+	"github.com/Avtobot22/craftPulse/backend/internal/usecase/view"
 	"github.com/Avtobot22/craftPulse/backend/pkg/clock"
 	"github.com/Avtobot22/craftPulse/backend/pkg/crypto"
 )
@@ -45,8 +46,12 @@ type apiModules struct {
 	targets            usecase.Targets
 	documentationAreas docs.Areas
 	links              usecase.Links
-	findingReports     change.Reports
-	decisions          *decisionuc.UseCase
+	findingReports     interface {
+		change.Reports
+		view.FindingRepositories
+	}
+	componentCalculator view.ComponentCalculator
+	decisions           *decisionuc.UseCase
 	// catalog is the catalog of check profiles of the release.
 	catalog entity.CheckCatalog
 }
@@ -78,10 +83,13 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 		Repo: changerepo.NewRepo(pool), Reports: m.findingReports, Tenants: platform.NewRepo(pool), Tx: tx, Components: orgs, Roots: documentation,
 		Auditor: auditor, Catalog: m.catalog, Clock: c, NewID: newID, Decisions: m.decisions, FindingRights: decisions,
 	})
+	findingViews := view.New(view.Deps{Clock: c, Tx: tx, Findings: view.FindingDeps{
+		Reader: checks, Rights: decisions, Structure: orgs, Repositories: m.findingReports, Calculator: m.componentCalculator,
+	}})
 	return v1.Deps{
 		Handler: handler.New(handler.Deps{
 			SourceLinks: decisions, SiteURL: siteURL, Webhooks: m.webhooks, Documentation: documentation, Checks: checks,
-			Links: m.links, Exceptions: m.decisions, ExceptionDrafts: checks, Comparisons: checks, Findings: checks,
+			Links: m.links, Exceptions: m.decisions, ExceptionDrafts: checks, Comparisons: checks, Findings: findingViews,
 			UploadTokens: logins, Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
 			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg, Connections: m.connections,
 			Intake: withReceiptResults(m.intake, pool, tx),

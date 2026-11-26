@@ -277,6 +277,8 @@ type ExceptionDrafts interface {
 
 // Findings reads a canonical finding in the caller's source and security scope.
 type Findings interface {
+	ListFindings(context.Context, entity.Subject, entity.Scope, entity.FindingQuery) (entity.FindingPage, error)
+	ComponentOverview(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.ComponentOverview, error)
 	GetFinding(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.FindingDetail, error)
 }
 

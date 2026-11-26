@@ -186,6 +186,8 @@ WHERE r.organization_id = $1
   AND r.sha = $4 AND r.report_format = $5
   AND r.producer IS NOT DISTINCT FROM $6::text AND r.profile_id IS NOT DISTINCT FROM $7::text
   AND r.known_seq <= $8
+  AND ($9::text IS NULL OR (r.mode = $9::text
+      AND r.language IS NOT DISTINCT FROM $10::text))
   AND r.exit_class NOT IN ('timeout', 'failed')
   AND r.report_format IN ('lizard_csv', 'jscpd_json')
 ORDER BY r.known_seq DESC, r.record_no DESC, r.id DESC
@@ -201,6 +203,8 @@ type CodeReportAtParams struct {
 	Producer       pgtype.Text
 	ProfileID      pgtype.Text
 	KnownSeq       int64
+	Mode           pgtype.Text
+	Language       pgtype.Text
 }
 
 type CodeReportAtRow struct {
@@ -221,6 +225,8 @@ func (q *Queries) CodeReportAt(ctx context.Context, arg CodeReportAtParams) (Cod
 		arg.Producer,
 		arg.ProfileID,
 		arg.KnownSeq,
+		arg.Mode,
+		arg.Language,
 	)
 	var i CodeReportAtRow
 	err := row.Scan(
@@ -3696,11 +3702,11 @@ func (q *Queries) ReceiptAnalysisScopes(ctx context.Context, arg ReceiptAnalysis
 }
 
 const receiptCodeScopes = `-- name: ReceiptCodeScopes :many
-SELECT DISTINCT r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id
+SELECT DISTINCT r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id, r.mode, r.language
 FROM normalize.report r
 JOIN normalize.code_report_fact f ON f.organization_id = r.organization_id AND f.report_id = r.id
 WHERE r.organization_id = $1 AND r.receipt_id = $2 AND r.sha IS NOT NULL
-ORDER BY r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id
+ORDER BY r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id, r.mode, r.language
 `
 
 type ReceiptCodeScopesParams struct {
@@ -3715,6 +3721,8 @@ type ReceiptCodeScopesRow struct {
 	ReportFormat string
 	Producer     pgtype.Text
 	ProfileID    pgtype.Text
+	Mode         string
+	Language     pgtype.Text
 }
 
 func (q *Queries) ReceiptCodeScopes(ctx context.Context, arg ReceiptCodeScopesParams) ([]ReceiptCodeScopesRow, error) {
@@ -3733,6 +3741,8 @@ func (q *Queries) ReceiptCodeScopes(ctx context.Context, arg ReceiptCodeScopesPa
 			&i.ReportFormat,
 			&i.Producer,
 			&i.ProfileID,
+			&i.Mode,
+			&i.Language,
 		); err != nil {
 			return nil, err
 		}

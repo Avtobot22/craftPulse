@@ -158,7 +158,7 @@ func SensitiveSummaryAnalysis(kind string) bool {
 	}
 }
 
-func severityOrder(s string) int {
+func SeverityOrder(s string) int {
 	switch s {
 	case "critical":
 		return 0
@@ -177,7 +177,7 @@ func severityOrder(s string) int {
 
 // CompareSummarySignals orders findings by severity and stable identity.
 func CompareSummarySignals(a, b *SummaryItem) int {
-	return cmp.Or(cmp.Compare(severityOrder(a.Severity), severityOrder(b.Severity)),
+	return cmp.Or(cmp.Compare(SeverityOrder(a.Severity), SeverityOrder(b.Severity)),
 		cmp.Compare(b.RequiredRight, a.RequiredRight), cmp.Compare(a.AnalysisKind, b.AnalysisKind),
 		bytes.Compare(a.FindingID[:], b.FindingID[:]), bytes.Compare(a.OccurrenceID[:], b.OccurrenceID[:]))
 }
