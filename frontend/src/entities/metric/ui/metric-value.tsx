@@ -1,4 +1,5 @@
 import { Flex, Text } from '@gravity-ui/uikit'
+import type { ReactNode } from 'react'
 import type { components, OpenCodes } from '@/shared/api'
 import { DataStateBadge } from '@/shared/ui'
 import type { DataState } from '@/shared/ui'
@@ -7,6 +8,7 @@ type Value = OpenCodes<components['schemas']['MetricValue']>
 
 export interface MetricValueProps {
   value: Value
+  renderValue?: (display: string) => ReactNode
 }
 
 const number = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
@@ -54,7 +56,7 @@ function normalizeState(state: unknown): DataState {
   }
 }
 
-function formatValue(
+export function formatValue(
   value: number,
   unit: string,
   boundKind?: 'lower' | 'upper',
@@ -100,7 +102,15 @@ function formatValue(
   return unit !== 'ratio' && label ? `${display} ${label}` : display
 }
 
-export function MetricValue({ value }: MetricValueProps) {
+export function metricReason(code: string | null) {
+  return code
+    ? Object.hasOwn(reasons, code)
+      ? reasons[code]
+      : 'Описание причины недоступно'
+    : undefined
+}
+
+export function MetricValue({ value, renderValue }: MetricValueProps) {
   const { unit, numerator, denominator, n, bound, low_sample, reason_code } =
     value
   const state = normalizeState(value.state)
@@ -125,14 +135,11 @@ export function MetricValue({ value }: MetricValueProps) {
     }
   }
 
-  const reason = reason_code
-    ? Object.hasOwn(reasons, reason_code)
-      ? reasons[reason_code]
-      : 'Описание причины недоступно'
-    : undefined
+  const reason = metricReason(reason_code)
+  const label = display ?? 'Не рассчитано'
   return (
     <Flex direction="column" alignItems="flex-start" gap="spacing-2">
-      <Text variant="header-1">{display ?? 'Не рассчитано'}</Text>
+      <Text variant="header-1">{renderValue ? renderValue(label) : label}</Text>
       <DataStateBadge state={state} {...(reason ? { reason } : {})} />
       {missingDenominator && (
         <Text>Знаменатель отсутствует или равен нулю</Text>

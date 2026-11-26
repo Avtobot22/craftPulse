@@ -71,7 +71,7 @@ func (u *UseCase) ListTasks(ctx context.Context, s entity.Subject, scope entity.
 }
 
 func (u *UseCase) hiddenTaskLinks(ctx context.Context, s entity.Subject, scope entity.Scope, ids []entity.ID, seq int64) (bool, error) {
-	links, err := u.taskMRs(ctx, s, scope, _listTasks, ids, seq)
+	links, err := u.taskMRs(ctx, s, scope, _listTasks, ids, seq, false)
 	if err != nil || links.hidden || len(links.confirmed) == 0 {
 		return links.hidden, err
 	}

@@ -81,7 +81,7 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 	return v1.Deps{
 		Handler: handler.New(handler.Deps{
 			SourceLinks: decisions, SiteURL: siteURL, Webhooks: m.webhooks, Documentation: documentation, Checks: checks,
-			Links: m.links, Exceptions: m.decisions, ExceptionDrafts: checks, Comparisons: checks,
+			Links: m.links, Exceptions: m.decisions, ExceptionDrafts: checks, Comparisons: checks, Findings: checks,
 			UploadTokens: logins, Logins: logins, Access: decisions, Structure: orgs, Users: orgs, Audit: auditor,
 			Protocols: install.New(install.Deps{Repo: installrepo.NewRepo(pool)}), Registerer: reg, Connections: m.connections,
 			Intake: withReceiptResults(m.intake, pool, tx),

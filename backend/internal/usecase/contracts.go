@@ -255,6 +255,7 @@ type SourceLinks interface {
 type TaskViews interface {
 	ListTasks(context.Context, entity.Subject, entity.Scope, entity.TaskViewQuery) (entity.TaskViewPage, error)
 	GetTask(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.TaskDetail, error)
+	ListTaskEvents(context.Context, entity.Subject, entity.Scope, entity.ID, entity.TaskEventQuery) (entity.TaskEventPage, error)
 }
 
 // CodeDetails serves MR, pipelines and their attempts after source access checks.
@@ -270,6 +271,11 @@ type CodeDetails interface {
 // ExceptionDrafts resolves and stores drafts of finding exceptions.
 type ExceptionDrafts interface {
 	CreateException(ctx context.Context, s entity.Subject, scope entity.Scope, cmd entity.ExceptionWrite) (entity.ExceptionView, error)
+}
+
+// Findings reads a canonical finding in the caller's source and security scope.
+type Findings interface {
+	GetFinding(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.FindingDetail, error)
 }
 
 type TechnicalComparisons interface {

@@ -40,6 +40,12 @@ func TestTaskViews_CardAndCandidateDecision(t *testing.T) {
 	assert.Nil(t, initial.BlockedIntervals[0].To)
 	assert.Nil(t, initial.Target)
 	assert.Nil(t, initial.OverTarget)
+	historyPath := detailPath + "/events"
+	history := decode[openapi.TimelinePage](t, codeRead(t, e.loginEnv, e.admin, historyPath, "TimelinePage"))
+	require.NotEmpty(t, history.Data)
+	for _, event := range history.Data {
+		assert.Equal(t, task, event.Object.Id)
+	}
 
 	e.grantManager(t)
 	res := e.json(t, e.admin, http.MethodPost, "/api/v1/links/"+initial.Links[0].Id.String()+"/decisions",
@@ -58,6 +64,27 @@ func TestTaskViews_CardAndCandidateDecision(t *testing.T) {
 			o.Action == openapi.AssignReviewer && len(o.Basis) == 1 && o.Basis[0].Id == mr
 	}))
 	assert.Equal(t, http.StatusOK, e.do(t, e.admin, http.MethodGet, "/api/v1/pipelines/"+pipeline.String(), nil).Code)
+	history = decode[openapi.TimelinePage](t, codeRead(t, e.loginEnv, e.admin, historyPath, "TimelinePage"))
+	assert.True(t, slices.ContainsFunc(history.Data, func(event openapi.TimelineEvent) bool {
+		return event.Object.Id == task && event.EventKind == "field_change" && event.Field != nil &&
+			*event.Field == "customfield_10020" && event.Object.SourceUrl != nil
+	}))
+	assert.True(t, slices.ContainsFunc(history.Data, func(event openapi.TimelineEvent) bool {
+		return event.Object.Id == mr && event.EventKind == "ready" && event.Object.SourceUrl != nil &&
+			strings.HasSuffix(*event.Object.SourceUrl, "/-/merge_requests/7#note_51")
+	}))
+	assert.True(t, slices.ContainsFunc(history.Data, func(event openapi.TimelineEvent) bool {
+		return event.Object.Id == pipeline && event.EventKind == "pipeline_started" && event.Object.SourceUrl != nil &&
+			strings.HasSuffix(*event.Object.SourceUrl, "/-/pipelines/5001")
+	}))
+	first := decode[openapi.TimelinePage](t, codeRead(t, e.loginEnv, e.admin, historyPath+"?limit=1", "TimelinePage"))
+	require.Len(t, first.Data, 1)
+	require.NotNil(t, first.NextCursor)
+	query := url.Values{"limit": {"1"}, "cursor": {*first.NextCursor}}
+	second := decode[openapi.TimelinePage](t, codeRead(t, e.loginEnv, e.admin, historyPath+"?"+query.Encode(), "TimelinePage"))
+	require.Len(t, second.Data, 1)
+	require.GreaterOrEqual(t, len(history.Data), 2)
+	assert.Equal(t, history.Data[:2], append(first.Data, second.Data...))
 
 	// Move the repository under a different project. The developer can still read the tracker task.
 	e.link(t, _otherSub, "demo-person-02")
@@ -76,6 +103,12 @@ func TestTaskViews_CardAndCandidateDecision(t *testing.T) {
 	for _, marker := range []string{mr.String(), pipeline.String(), "Private ready MR", "!7", "#5001", "awaiting_reviewer"} {
 		assert.NotContains(t, limited.Body.String(), marker)
 	}
+	maskedHistory := decode[openapi.TimelinePage](t, codeRead(t, e.loginEnv, e.member, historyPath, "TimelinePage"))
+	assert.True(t, maskedHistory.AccessLimited)
+	require.NotEmpty(t, maskedHistory.Data)
+	for _, event := range maskedHistory.Data {
+		assert.Equal(t, task, event.Object.Id)
+	}
 	page := taskPage(t, e.loginEnv, e.member, url.Values{"project_id": {e.project.String()}})
 	assert.True(t, page.AccessLimited)
 	assert.Contains(t, taskPageIDs(page), task)
@@ -85,6 +118,9 @@ func TestTaskViews_CardAndCandidateDecision(t *testing.T) {
 	denied := e.do(t, e.member, http.MethodGet, detailPath, nil)
 	assert.Equal(t, http.StatusNotFound, denied.Code)
 	assert.NotContains(t, denied.Body.String(), "Payment retry")
+	deniedHistory := e.do(t, e.member, http.MethodGet, historyPath, nil)
+	assert.Equal(t, http.StatusNotFound, deniedHistory.Code)
+	assert.NotContains(t, deniedHistory.Body.String(), "Payment retry")
 	assert.NotContains(t, taskPageIDs(taskPage(t, e.loginEnv, e.member, nil)), task)
 }
 
@@ -119,7 +155,8 @@ func seedTaskCard(t *testing.T, e *reportEnv) (task, mr, run, previousRun, area 
 		SourceBranch: "feature/PA-4-retry", TargetBranch: "main", HeadSha: _headB,
 		OpenedAt: ready.Add(-time.Hour), ReadyAt: &ready, UpdatedAt: &ready,
 		ReviewerField: ptr(true), ReviewerAccountNativeIds: ptr([]string{}),
-	}), mrRevision(t, "9001", "previous-head", "previous-head", _headA))
+	}), mrRevision(t, "9001", "previous-head", "previous-head", _headA),
+		mrEvent(t, "9001", "note/51", "ready-note", "ready", ready, true))
 	e.codeImporter(t, admin)(ciManifest("42"),
 		ciRun(t, runSpec{id: "5001", project: "42", sha: _headB, status: "success", revision: "p1", updated: ready, mr: "9001"}),
 		ciRun(t, runSpec{id: "5002", project: "42", sha: _headA, status: "failed", revision: "p1", updated: ready, mr: "9001"}))

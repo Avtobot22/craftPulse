@@ -2,6 +2,7 @@ import { generatePath } from 'react-router'
 import type { components, OpenCodes } from '@/shared/api'
 import { contractLabel, routePaths, technicalLabels } from '@/shared/config'
 import { InspectionLink } from '@/shared/ui'
+import { summaryComparisonLink } from '../model/comparison-link'
 
 type Item = OpenCodes<components['schemas']['SummaryItem']>
 
@@ -107,9 +108,6 @@ function SignalItem({
     generatePath(routePaths.findingDetail, {
       findingId: encodeURIComponent(finding_id),
     })
-  const comparison = new URLSearchParams(comparisonSearch)
-  if (finding_id) comparison.set('finding_id', finding_id)
-  if (analysis_kind) comparison.set('analysis_kind', analysis_kind)
   const rule = rule_id ? <code>{rule_id}</code> : 'Находка'
 
   return (
@@ -147,10 +145,7 @@ function SignalItem({
         <div>
           <InspectionLink
             id={`summary-comparison-${String(item_no)}`}
-            to={{
-              pathname: routePaths.technicalComparisonSetup,
-              search: comparison.toString(),
-            }}
+            to={summaryComparisonLink(comparisonSearch, item)}
           >
             Причины изменения · {rule}
           </InspectionLink>

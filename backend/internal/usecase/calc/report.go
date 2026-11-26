@@ -126,11 +126,15 @@ func (u *UseCase) VisibleCohort(ctx context.Context, s entity.Subject, scope ent
 	}
 	var page entity.CohortPage
 	hidden := false
+	filter := entity.ReportFilter{Projects: q.Projects}
 	rows := c.rows[key]
 	for i := range rows {
 		row := &rows[i]
 		if !c.visible(&v, row) {
 			hidden = true
+			continue
+		}
+		if !selected(row, &filter, nil) {
 			continue
 		}
 		contribution := row.Contribution

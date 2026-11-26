@@ -10,9 +10,16 @@ import {
   useOutlet,
   useOutletContext,
 } from 'react-router'
-import type { ApiClient } from '@/shared/api'
+import type { ApiClient, Team } from '@/shared/api'
 import type { CurrentUser, SessionController } from '@/shared/auth'
-import { contentGridProps, layoutSizes, routePaths } from '@/shared/config'
+import {
+  contentGridProps,
+  layoutSizes,
+  readTaskOrigin,
+  readTaskReturnFocus,
+  routePaths,
+} from '@/shared/config'
+import type { ReportPointFocus, TeamReportScope } from '@/shared/config'
 import { ErrorState, LoadingState } from '@/shared/ui'
 import { adminDetailRoutes, adminNavigation } from '../model/admin-navigation'
 import {
@@ -94,7 +101,7 @@ export function HomePage({
   const current = useOutletContext<CurrentUser>()
   const location = useLocation()
   const navigate = useNavigate()
-  const outlet = useOutlet(current)
+  const [reportFocus, setReportFocus] = useState<ReportPointFocus>()
   const content = useRef<HTMLElement>(null)
   const navButton = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -114,6 +121,8 @@ export function HomePage({
     !location.hash &&
     hasAreas &&
     !skipScopeRestore
+  const isTaskDetail =
+    matchPath(routePaths.taskDetail, location.pathname) !== null
   const analysisSection = taskAnalysisSection(location.pathname)
   const technicalAction = technicalRouteAction(location.pathname)
   const isFindingsList = location.pathname === routePaths.findings
@@ -147,6 +156,16 @@ export function HomePage({
     current.actions.includes(action) &&
     (action !== 'process.manage' || ownsProcess)
   const allowed = settings.filter(canOpenSetting)
+  const outlet = useOutlet({
+    ...current,
+    teams: scope.teams.data,
+    ...(scope.team ? { team: scope.team } : {}),
+    ...(scope.project ? { project: scope.project } : {}),
+    projects: scope.projectChoices ?? [],
+    canManageProcess: allowed.some(({ action }) => action === 'process.manage'),
+    focus: reportFocus?.locationKey === location.key ? reportFocus : undefined,
+    rememberPoint: setReportFocus,
+  } satisfies CurrentUser & TeamReportScope & { teams: Team[] | undefined })
   const currentSetting = active && canOpenSetting(active) ? active : undefined
   const isProcessSetting = active?.action === 'process.manage'
   const isReport = reportPaths.some((path) =>
@@ -213,18 +232,17 @@ export function HomePage({
     !hasAreas &&
     current.actions.includes('org.manage')
 
+  const focusId = readTaskReturnFocus(state)
   useEffect(() => {
     const main = content.current
     const heading = main?.querySelector('h1')
     if (heading) heading.tabIndex = -1
-    const target = heading ?? main
+    const opener = focusId ? document.getElementById(focusId) : null
+    const target = opener && main?.contains(opener) ? opener : (heading ?? main)
     target?.focus()
-  }, [location.pathname, missing, noArea, restoring, checkingScope])
+  }, [location.pathname, focusId, missing, noArea, restoring, checkingScope])
 
   function updateArea(team: string, project?: string) {
-    const isTaskDetail = Boolean(
-      matchPath(routePaths.taskDetail, location.pathname),
-    )
     const nextPath = analysisSection
       ? isTaskDetail
         ? routePaths.taskList
@@ -599,7 +617,13 @@ export function HomePage({
                   </ol>
                 </nav>
               )}
-              {checkingScope ? (
+              {isTaskDetail && (missing || noArea) ? (
+                <Navigate
+                  to={routePaths.unavailable}
+                  replace
+                  state={{ taskOrigin: readTaskOrigin(state) }}
+                />
+              ) : checkingScope ? (
                 teamError || projectError ? null : (
                   <LoadingState />
                 )

@@ -7662,8 +7662,11 @@ type SprintPage struct {
 // SummaryItem defines model for SummaryItem.
 type SummaryItem struct {
 	// AnalysisKind Вид анализа строки; отсутствует у строк попыток CI.
-	AnalysisKind *AnalysisKind       `json:"analysis_kind,omitempty"`
-	FindingId    *openapi_types.UUID `json:"finding_id"`
+	AnalysisKind *AnalysisKind `json:"analysis_kind,omitempty"`
+
+	// ComponentId Компонент проверки для перехода к сравнению результатов.
+	ComponentId *openapi_types.UUID `json:"component_id,omitempty"`
+	FindingId   *openapi_types.UUID `json:"finding_id"`
 
 	// ItemKind `accepted` - находка с действующим исключением: она остаётся в сводке отдельно и не считается исправленной.
 	ItemKind SummaryItemItemKind `json:"item_kind"`
@@ -9034,6 +9037,9 @@ type ListRevisionCohortParams struct {
 	// Estimator Оценка точки показателя с несколькими рядами, как `MetricSeries.estimator`; без параметра - первая оценка показателя.
 	Estimator *string                       `form:"estimator,omitempty" json:"estimator,omitempty"`
 	Role      *ListRevisionCohortParamsRole `form:"role,omitempty" json:"role,omitempty"`
+
+	// ProjectId Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport.
+	ProjectId *[]openapi_types.UUID `form:"project_id,omitempty" json:"project_id,omitempty"`
 
 	// Limit Размер страницы.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
@@ -13690,6 +13696,14 @@ func (siw *ServerInterfaceWrapper) ListRevisionCohort(c *gin.Context) {
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "role", c.Request.URL.Query(), &params.Role, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
 	if err != nil {
 		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter role: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "project_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project_id", c.Request.URL.Query(), &params.ProjectId, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter project_id: %w", err), http.StatusBadRequest)
 		return
 	}
 

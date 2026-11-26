@@ -7,7 +7,7 @@ import {
   within,
 } from '@testing-library/react'
 import { useQuery, focusManager } from '@tanstack/react-query'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createBrowserRouter, createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { listTeams, listServices } from '@/shared/api'
@@ -20,10 +20,22 @@ import {
   jsonResponse,
   problemResponse,
 } from '../../../test/fixtures'
+import {
+  taskId,
+  taskDetail,
+  taskHistory,
+  taskTitle,
+  taskPage,
+} from '../../../test/task-fixtures'
 import { AppProviders } from '../initialization/app-providers'
 import { createAppRuntime } from '../initialization/runtime'
 import type { AppRuntime } from '../initialization/runtime'
 import { createAppRoutes } from './routes'
+
+beforeAll(async () => {
+  // Keep the first transform of the lazy route outside DOM assertion timeouts.
+  await import('@/pages/team-report')
+})
 
 const cleanups: (() => void)[] = []
 const [team] = teams.data
@@ -96,6 +108,12 @@ function mockApi(
               : { ...projects, data: [] },
           ),
         )
+      case '/api/v1/tasks':
+        return Promise.resolve(jsonResponse(taskPage))
+      case `/api/v1/tasks/${taskId}`:
+        return Promise.resolve(jsonResponse(taskDetail))
+      case `/api/v1/tasks/${taskId}/events`:
+        return Promise.resolve(jsonResponse(taskHistory))
       case '/api/v1/session/logout':
         return Promise.resolve(new Response(null, { status: 204 }))
       default:
@@ -870,11 +888,7 @@ describe('task analysis routes', () => {
       'Задачи',
       taskReader,
     ],
-    [
-      taskAnalysisLinks.taskDetail('task-1', scope),
-      'Карточка задачи',
-      taskReader,
-    ],
+    [taskAnalysisLinks.taskDetail(taskId, scope), taskTitle, taskReader],
     [
       taskAnalysisLinks.projectTimeline({
         ...scope,
@@ -1370,6 +1384,7 @@ describe('MR summary and technical comparison', () => {
     item_kind: 'new',
     analysis_kind: 'code',
     mode: 'import',
+    component_id: componentId,
     finding_id: findingId,
     rule_id: finding.rule_id,
     severity: 'high',
@@ -1464,6 +1479,48 @@ describe('MR summary and technical comparison', () => {
       }
     })
   }
+
+  it.each([
+    'Причины изменения результата',
+    'Причины изменения · ' + finding.rule_id,
+  ])(
+    'открывает сравнение по ссылке «%s» без запроса карточки находки',
+    async (name) => {
+      const fetcher = technicalApi()
+      const { router } = mount(summaryPath, fetcher)
+      fireEvent.click(await screen.findByRole('link', { name }), { detail: 0 })
+      expect(
+        await screen.findByRole('heading', { name: 'Факторы изменения' }),
+      ).toBeVisible()
+      expect(router.state.location.pathname).toBe(
+        '/components/' + componentId + '/comparison',
+      )
+      expect(
+        fetcher.mock.calls.some(
+          ([input]) =>
+            typeof input === 'string' && input.includes('/api/v1/findings/'),
+        ),
+      ).toBe(false)
+    },
+  )
+
+  it('подставляет компонент из карточки для старой сводки без component_id', async () => {
+    const legacyRow: Schema['SummaryItem'] = { ...row }
+    delete legacyRow.component_id
+    const fetcher = technicalApi({ ...readySummary, items: [legacyRow] })
+    mount(summaryPath, fetcher)
+    fireEvent.click(
+      await screen.findByRole('link', { name: 'Причины изменения результата' }),
+      { detail: 0 },
+    )
+    expect(
+      await screen.findByRole('heading', { name: 'Факторы изменения' }),
+    ).toBeVisible()
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1/findings/' + findingId,
+      expect.anything(),
+    )
+  })
 
   it.each(['с базой', 'без базы'])(
     'переходит из сводки %s к находке и причинам, восстанавливая фокус и прокрутку',

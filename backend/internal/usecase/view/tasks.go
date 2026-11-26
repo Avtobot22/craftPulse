@@ -20,6 +20,7 @@ const (
 type TaskFacts interface {
 	VisibleAreaFacts(context.Context, entity.Scope, entity.ID, entity.ID, int64) (entity.AreaFacts, error)
 	VisibleTaskFacts(context.Context, entity.Scope, entity.ID, entity.LinkEnd, int64) (entity.AreaFacts, error)
+	TaskActorKinds(context.Context, entity.ID, int64, []entity.TaskEvent) (map[entity.ID]entity.PersonKind, error)
 	Dictionaries(context.Context, entity.ID, []entity.ID) ([]entity.AreaDictionary, error)
 	TaskMRFacts(context.Context, entity.Scope, entity.ID, entity.LinkEnd, int64) (entity.ReviewFacts, error)
 }
@@ -36,6 +37,7 @@ type TaskSettings interface {
 type TaskCollection interface {
 	AreaCollection(context.Context, entity.ID, []entity.ID) ([]entity.AreaCollection, error)
 	MRCollection(context.Context, entity.ID, []entity.ID) ([]entity.AreaCollection, error)
+	CICollection(context.Context, entity.ID, []entity.ID) ([]entity.AreaCollection, error)
 }
 
 type TaskCalculator interface {
@@ -212,11 +214,16 @@ func (r *taskRead) summary(ctx context.Context, task *entity.TaskVersion, instan
 		if err != nil {
 			return entity.TaskSummary{}, nil, err
 		}
-		if src.Provider == entity.ProviderJiraCloud {
-			out.SourceURL = sourceURL(src.BaseURL, "/browse/"+url.PathEscape(task.TaskKey))
-		}
+		out.SourceURL = trackerTaskURL(src, task.TaskKey)
 	}
 	return out, f, nil
+}
+
+func trackerTaskURL(src entity.SourceInstance, key string) *string {
+	if src.Provider != entity.ProviderJiraCloud || key == "" {
+		return nil
+	}
+	return sourceURL(src.BaseURL, "/browse/"+url.PathEscape(key))
 }
 
 func (r *taskRead) instance(ctx context.Context, id entity.ID) (entity.SourceInstance, error) {

@@ -4,7 +4,7 @@ import { RestrictedResults } from '@/entities/result-access'
 import { ApiError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
-import { contractLabel, routePaths, technicalLabels } from '@/shared/config'
+import { contractLabel, technicalLabels } from '@/shared/config'
 import {
   DataStateBadge,
   ErrorState,
@@ -13,6 +13,7 @@ import {
   useInspectionReturn,
 } from '@/shared/ui'
 import { getSummaryQuery } from '../model/summary'
+import { summaryComparisonLink } from '../model/comparison-link'
 import { SummaryAttempts } from './summary-attempts'
 import { SummaryHeader } from './summary-header'
 import { SummaryMetrics, SummaryCoverage } from './summary-metrics'
@@ -98,8 +99,7 @@ function SummaryContent({
   comparisonSearch.set('head_sha', s.head_sha)
   if (s.base_sha) comparisonSearch.set('base_sha', s.base_sha)
 
-  const comparison = new URLSearchParams(comparisonSearch)
-  const firstSignal = s.items.find(
+  const signals = s.items.filter(
     ({ finding_id, analysis_kind, item_kind }) =>
       finding_id !== null &&
       analysis_kind !== undefined &&
@@ -109,10 +109,16 @@ function SummaryContent({
         (s.base_sha !== null &&
           (item_kind === 'new' || item_kind === 'resolved'))),
   )
-  if (firstSignal?.finding_id && firstSignal.analysis_kind) {
-    comparison.set('finding_id', firstSignal.finding_id)
-    comparison.set('analysis_kind', firstSignal.analysis_kind)
-  }
+  const comparisonItem =
+    signals.find(({ component_id }) => component_id !== undefined) ??
+    signals[0] ??
+    s.items.find(
+      ({ component_id, analysis_kind, item_kind }) =>
+        item_kind === 'not_evaluated' &&
+        component_id !== undefined &&
+        analysis_kind !== undefined &&
+        Object.hasOwn(technicalLabels.analysisKind, analysis_kind),
+    )
 
   return (
     <article className="cp-mr-summary">
@@ -132,10 +138,7 @@ function SummaryContent({
           {canReadFindings && (
             <InspectionLink
               id="summary-comparison"
-              to={{
-                pathname: routePaths.technicalComparisonSetup,
-                search: comparison.toString(),
-              }}
+              to={summaryComparisonLink(comparisonSearch, comparisonItem)}
             >
               Причины изменения результата
             </InspectionLink>

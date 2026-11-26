@@ -2390,6 +2390,7 @@ paths:
         - { name: point_start, in: query, required: true, schema: { type: string, format: date-time } }
         - { name: estimator, in: query, description: 'Оценка точки показателя с несколькими рядами, как `MetricSeries.estimator`; без параметра - первая оценка показателя.', schema: { type: string, maxLength: 32 } }
         - { name: role, in: query, schema: { type: string, enum: [ numerator, denominator, excluded, missing ] } }
+        - { name: project_id, in: query, description: 'Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport.', schema: { type: array, maxItems: 50, items: { type: string, format: uuid } } }
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
       responses:
@@ -7222,6 +7223,7 @@ components:
         item_kind: {type: string, enum: [new, resolved, newly_observed, unchanged, accepted, not_evaluated, ci_attempts, coverage, tests], description: '`accepted` - находка с действующим исключением: она остаётся в сводке отдельно и не считается исправленной.'}
         analysis_kind: {$ref: '#/components/schemas/AnalysisKind', description: Вид анализа строки; отсутствует у строк попыток CI.}
         mode: {type: string, enum: [import, builtin], description: Отчёт клиента или штатный профиль; передаётся для строк находок и непроверенных областей.}
+        component_id: {type: string, format: uuid, description: Компонент проверки для перехода к сравнению результатов.}
         finding_id: {type: [string, 'null'], format: uuid}
         rule_id: {type: [string, 'null']}
         severity: {type: [string, 'null'], description: Сопоставленная серьёзность; исходная - в карточке находки.}

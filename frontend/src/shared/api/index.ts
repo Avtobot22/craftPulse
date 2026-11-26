@@ -43,7 +43,11 @@ export type { components, operations, paths } from './generated/schema'
 
 export { getTask, listTasks } from './task-queries'
 export type { TaskListParams } from './task-queries'
-export { listProjectTimeline, listTaskEvents } from './timeline-queries'
+export {
+  listProjectTimeline,
+  listTaskEvents,
+  taskEventPages,
+} from './timeline-queries'
 export type {
   ProjectTimelineParams,
   TaskEventsParams,

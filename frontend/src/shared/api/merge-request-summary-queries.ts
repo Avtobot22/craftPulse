@@ -33,6 +33,9 @@ function readSummaryItem(value: unknown): OpenCodes<Schema['SummaryItem']> {
       ? {}
       : { analysis_kind: readString(item.analysis_kind) }),
     ...(item.mode === undefined ? {} : { mode: readString(item.mode) }),
+    ...(item.component_id === undefined
+      ? {}
+      : { component_id: readString(item.component_id) }),
     finding_id: readNullableString(item.finding_id),
     rule_id: readNullableString(item.rule_id),
     severity: readNullableString(item.severity),
