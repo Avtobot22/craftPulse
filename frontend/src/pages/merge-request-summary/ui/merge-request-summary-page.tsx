@@ -116,7 +116,11 @@ function SummaryContent({
 
   return (
     <article className="cp-mr-summary">
-      <SummaryHeader api={api} summary={s} refresh={() => void query.refetch()} />
+      <SummaryHeader
+        api={api}
+        summary={s}
+        refresh={() => void query.refetch()}
+      />
       <div className="cp-summary-columns">
         <section>
           <h2>Находки</h2>

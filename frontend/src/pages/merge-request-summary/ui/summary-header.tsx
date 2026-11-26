@@ -178,15 +178,15 @@ export function SummaryHeader({
             name="revision_no"
             required
             inputMode="numeric"
-          pattern="[1-9][0-9]{0,9}"
-          onChange={(event) => {
-            const input = event.currentTarget
-            input.setCustomValidity(
-              Number(input.value) > 2147483647
-                ? 'Номер ревизии выходит за допустимый диапазон.'
-                : '',
-            )
-          }}
+            pattern="[1-9][0-9]{0,9}"
+            onChange={(event) => {
+              const input = event.currentTarget
+              input.setCustomValidity(
+                Number(input.value) > 2147483647
+                  ? 'Номер ревизии выходит за допустимый диапазон.'
+                  : '',
+              )
+            }}
             defaultValue={summary.revision_no}
           />
         </label>

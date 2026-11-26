@@ -342,7 +342,9 @@ describe('application routes', () => {
     ).toBeInTheDocument()
     expect(await screen.findByText('Исход: success')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    const restored = await screen.findByRole('link', { name: 'Открыть pipeline' })
+    const restored = await screen.findByRole('link', {
+      name: 'Открыть pipeline',
+    })
     await waitFor(() => {
       expect(restored).toHaveFocus()
     })
