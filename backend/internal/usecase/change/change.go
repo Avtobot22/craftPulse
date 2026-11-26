@@ -36,6 +36,7 @@ type Auditor interface {
 
 type Deps struct {
 	Summary       SummaryDeps
+	TaskSummaries TaskSummaries
 	Repo          repo.ChangeRepo
 	Reports       Reports
 	Decisions     Decisions

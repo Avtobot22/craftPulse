@@ -166,6 +166,9 @@ func (u *UseCase) placeAreas(ctx context.Context, org entity.ID, in *input, obje
 	for _, k := range in.keys() {
 		o := objects[k]
 		switch k.Kind {
+		case entity.ObjectFinding:
+			// A finding reference in a task observation does not define a source area.
+			continue
 		case entity.ObjectTask, entity.ObjectCIAttempt, entity.ObjectCIJob,
 			entity.ObjectCodeFile, entity.ObjectCodeFunction, entity.ObjectCloneGroup, entity.ObjectCodeReport,
 			entity.ObjectSecurityFinding, entity.ObjectAffectedPackage, entity.ObjectSecurityAdvisory,

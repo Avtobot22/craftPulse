@@ -12,10 +12,11 @@ import (
 
 type links struct{ uc usecase.Links }
 
-// _refKinds are the objects of normalize a link may end at, by the kinds of ObjectRef.
+// _refKinds maps domain objects to the kinds of ObjectRef.
 var _refKinds = map[entity.ObjectKind]openapi.ObjectRefKind{
 	entity.ObjectTask: openapi.ObjectRefKindTask, "merge_request": openapi.ObjectRefKindMergeRequest,
-	"ci_run": openapi.ObjectRefKindPipeline, "ci_attempt": openapi.ObjectRefKindAttempt, "document": openapi.ObjectRefKindDocument,
+	entity.ObjectFinding: openapi.ObjectRefKindFinding,
+	"ci_run":             openapi.ObjectRefKindPipeline, "ci_attempt": openapi.ObjectRefKindAttempt, "document": openapi.ObjectRefKindDocument,
 	"deployment": openapi.ObjectRefKindDeployment, "artifact": openapi.ObjectRefKindArtifact, "incident": openapi.ObjectRefKindIncident,
 }
 
