@@ -319,7 +319,8 @@ class GitHubAppRegistrationTests(unittest.TestCase):
         import tempfile
         import os
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "app-private.json"
+            # TMPDIR may live inside the checkout, where credentials must be Git-ignored.
+            path = Path(directory) / ".env.github-app-test"
             self.registration.save_config(path, {"pem": "fixture-private-key"})
             self.assertEqual({"pem": "fixture-private-key"}, json.loads(path.read_text()))
             with self.assertRaises(ValueError):
