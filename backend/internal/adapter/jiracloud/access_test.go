@@ -58,6 +58,7 @@ func TestAccessReadRechecksJira(t *testing.T) {
 		{http.StatusForbidden, adaptersdk.AccessDecisionDecisionDenied, "jira_read_denied"},
 		{http.StatusUnauthorized, adaptersdk.AccessDecisionDecisionUnknown, "token_expired"},
 		{http.StatusTooManyRequests, adaptersdk.AccessDecisionDecisionUnknown, "jira_read_unverified"},
+		{http.StatusServiceUnavailable, adaptersdk.AccessDecisionDecisionUnknown, "jira_read_unverified"},
 	} {
 		status.Store(tc.status)
 		got := user.check(t.Context(), item)

@@ -77,9 +77,9 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 		more.HasHistory = hasHistory
 		next = &more
 	}
-	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+	return u.withPageIntake(ctx, org, func(ctx context.Context, record pageRecorder) error {
 		if page != nil {
-			rc, err := u.d.Ingest.RecordPage(ctx, page)
+			rc, err := record(page)
 			if err != nil {
 				return err
 			}

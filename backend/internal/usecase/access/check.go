@@ -111,6 +111,9 @@ func (c *checks) check(ctx context.Context, key checkKey, t target) string {
 		return entity.SourceUnknown
 	}
 	decision := res.Decisions[0].Decision
+	if decision == entity.SourceUnknown {
+		c.metrics.CheckFailed(t.source.ConnectionID)
+	}
 	if t.source.UserToken && res.Mode != entity.AccessUserToken {
 		return entity.SourceUnknown
 	}

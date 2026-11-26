@@ -59,9 +59,9 @@ func (u *UseCase) RunDirty(ctx context.Context, job entity.SyncDirtyJob, holder 
 	for i := range keys {
 		hashes[i] = keys[i].Hash
 	}
-	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+	return u.withPageIntake(ctx, org, func(ctx context.Context, record pageRecorder) error {
 		for _, p := range pages {
-			if _, err := u.d.Ingest.RecordPage(ctx, p); err != nil {
+			if _, err := record(p); err != nil {
 				return err
 			}
 		}

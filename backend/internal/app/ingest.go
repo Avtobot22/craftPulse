@@ -30,12 +30,16 @@ func newObjectStore(cfg config.ObjectStore) *objstore.Store {
 
 type ingestMetrics struct {
 	rejected *prometheus.CounterVec
+	resolved *prometheus.CounterVec
 	ci       *prometheus.CounterVec
 	redacted *prometheus.CounterVec
 }
 
-func (m ingestMetrics) PackageRejected(channel entity.ReceiptChannel, reason string) {
-	m.rejected.WithLabelValues(string(channel), reason).Inc()
+func (m ingestMetrics) PackageResolved(channel entity.ReceiptChannel, status entity.ReceiptStatus, reason string) {
+	m.resolved.WithLabelValues(string(channel), string(status)).Inc()
+	if status == entity.ReceiptRejected {
+		m.rejected.WithLabelValues(string(channel), reason).Inc()
+	}
 }
 
 func (m ingestMetrics) CIPackage(outcome, reason string) {
@@ -58,6 +62,18 @@ func newIngest(pool *pgxpool.Pool, store repo.ObjectStore, connect ingest.Connec
 	if err := reg.Register(rejected); err != nil {
 		return nil, fmt.Errorf("app: register ingest metric: %w", err)
 	}
+	resolved := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "craftpulse_ingest_resolved_packages_total",
+		Help: "Packages with a terminal intake outcome by channel and status.",
+	}, []string{"channel", "status"})
+	for _, channel := range []entity.ReceiptChannel{entity.ChannelSync, entity.ChannelCI, entity.ChannelImport} {
+		for _, status := range []entity.ReceiptStatus{entity.ReceiptAccepted, entity.ReceiptPartial, entity.ReceiptRejected, entity.ReceiptDuplicate} {
+			resolved.WithLabelValues(string(channel), string(status))
+		}
+	}
+	if err := reg.Register(resolved); err != nil {
+		return nil, fmt.Errorf("app: register terminal ingest metric: %w", err)
+	}
 	ci := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "craftpulse_ingest_ci_packages_total", Help: "CI packages by outcome and reason."}, []string{"outcome", "reason"})
 	if err := reg.Register(ci); err != nil {
 		return nil, fmt.Errorf("app: register CI ingest metric: %w", err)
@@ -72,7 +88,7 @@ func newIngest(pool *pgxpool.Pool, store repo.ObjectStore, connect ingest.Connec
 	}
 	return ingest.New(ingest.Deps{
 		Repo: ingestrepo.NewRepo(pool), Objects: store, Queue: queue.New(jobs), Tx: persistent.NewTransactor(pool),
-		Connect: connect, Access: rights, Projects: projects, Metrics: ingestMetrics{rejected: rejected, ci: ci, redacted: redacted}, Clock: c, NewID: newID,
+		Connect: connect, Access: rights, Projects: projects, Metrics: ingestMetrics{rejected: rejected, resolved: resolved, ci: ci, redacted: redacted}, Clock: c, NewID: newID,
 		Auditor: audit.New(auditrepo.NewRepo(pool), persistent.NewTransactor(pool), c),
 	}), nil
 }

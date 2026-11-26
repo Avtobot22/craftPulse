@@ -334,12 +334,23 @@ func TestSync_AuthStopsCollection(t *testing.T) {
 	t.Parallel()
 	e := newSyncEnv(t, testadapter.Config{Faults: []testadapter.Fault{{Operation: testadapter.OpFetch, Kind: testadapter.FaultAuth}}})
 	conn := e.connection(t, "10000")
+	start := time.Now()
 	require.NoError(t, e.run(t, e.next(t, conn), false))
 	st := e.state(t, conn)
 	assert.Equal(t, entity.SyncStopped, st.Phase)
 	assert.Equal(t, "auth", st.LastErrorCode)
 	assert.Nil(t, e.next(t, conn), "no repeat after 401")
 	assert.Equal(t, int64(1), e.adapter.hits.Load())
+	families, err := e.reg.Gather() // first scrape, after the error
+	require.NoError(t, err)
+	for _, f := range families {
+		if f.GetName() == "craftpulse_sync_last_auth_error_timestamp_seconds" {
+			require.Len(t, f.GetMetric(), 1)
+			assert.GreaterOrEqual(t, f.GetMetric()[0].GetGauge().GetValue(), float64(start.Unix()))
+			return
+		}
+	}
+	t.Fatal("collection authentication failure timestamp was not exported")
 }
 
 func TestSync_UnavailableSourceIsRepeatedWithBackoff(t *testing.T) {

@@ -28,6 +28,11 @@ type Auditor interface {
 	Record(ctx context.Context, e entity.AuditEvent) error
 }
 
+// Adapters reports the installed contract versions after checking the release and store readiness.
+type Adapters interface {
+	CheckBuiltins(ctx context.Context, releaseSHA string) (string, error)
+}
+
 type Deps struct {
 	Tx            repo.Transactor
 	Repo          repo.InstallRepo
@@ -37,6 +42,7 @@ type Deps struct {
 	Site          repo.SiteProbe
 	Identity      repo.IdentityProviderProbe
 	ObjectStore   repo.ObjectStoreProbe
+	Adapters      Adapters
 	Clock         clock.Clock
 	NewID         func() (entity.ID, error)
 }
@@ -106,13 +112,14 @@ func (u *UseCase) Check(ctx context.Context, params entity.InstallParams) (entit
 		return p, errors.Join(err, factsErr)
 	}
 
+	adapter, adapterStore := u.checkAdapters(ctx, params.ReleaseSHA)
 	p.Checks = []entity.CheckResult{
 		u.checkSite(ctx, params.SiteURL),
 		u.checkIdentityProviders(ctx, params.Organizations),
 		checkDatabase(facts, factsErr),
 		u.checkObjectStore(ctx),
-		skipped(entity.CheckAdapter, "no built-in adapters are configured"),
-		skipped(entity.CheckAdapterStore, "no adapter credential stores are configured"),
+		adapter,
+		adapterStore,
 		skipped(entity.CheckUpdateSource, "no update source of vulnerability databases and rules is configured"),
 		checkRunnerNetwork(params.RunnerNetwork),
 	}
@@ -127,6 +134,24 @@ func (u *UseCase) Check(ctx context.Context, params entity.InstallParams) (entit
 	}
 	p.FinishedAt = u.d.Clock.Now()
 	return p, u.d.Repo.FinishProtocol(ctx, p.ID, p.FinishedAt, p.Outcome)
+}
+
+func (u *UseCase) checkAdapters(ctx context.Context, sha string) (adapter, store entity.CheckResult) {
+	adapter = skipped(entity.CheckAdapter, "no built-in adapters are configured")
+	store = skipped(entity.CheckAdapterStore, "no adapter credential stores are configured")
+	if u.d.Adapters == nil {
+		return adapter, store
+	}
+	detail, err := u.d.Adapters.CheckBuiltins(ctx, sha)
+	if err != nil {
+		return fromProbe(entity.CheckAdapter, "", err),
+			skipped(entity.CheckAdapterStore, "adapter readiness could not be confirmed")
+	}
+	if detail != "" {
+		adapter = entity.CheckResult{Kind: entity.CheckAdapter, Outcome: entity.CheckPassed, Detail: detail}
+		store = entity.CheckResult{Kind: entity.CheckAdapterStore, Outcome: entity.CheckPassed, Detail: "adapter stores reported ready"}
+	}
+	return adapter, store
 }
 
 func (u *UseCase) checkSite(ctx context.Context, url string) entity.CheckResult {

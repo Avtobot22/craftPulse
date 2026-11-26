@@ -53,10 +53,10 @@ func (u *UseCase) RunMR(ctx context.Context, job entity.SyncMRJob, holder string
 			next.ScopeID, next.SchemaID, next.Cursor, next.Retry, more = job.ScopeIDs[atScope+1], "merge_requests", nil, 0, true
 		}
 	}
-	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+	return u.withPageIntake(ctx, org, func(ctx context.Context, record pageRecorder) error {
 		if page != nil {
 			page.ObservedVia = entity.ViaWebhook
-			if _, err := u.d.Ingest.RecordPage(ctx, page); err != nil {
+			if _, err := record(page); err != nil {
 				return err
 			}
 		}

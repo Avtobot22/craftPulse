@@ -40,6 +40,11 @@ func (u *UseCase) RecordPage(ctx context.Context, p *entity.PreparedPackage) (en
 	return u.record(ctx, p)
 }
 
+// PageCommitted reports the intake outcome once the transaction of sync has committed.
+func (u *UseCase) PageCommitted(rc entity.Receipt) {
+	u.d.Metrics.PackageResolved(rc.Channel, rc.Status, rc.ReasonCode)
+}
+
 func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, r io.Reader) (*entity.PreparedPackage, error) {
 	var cleaned bytes.Buffer
 	res, err := u.clean(ctx, rc.Channel, r, &cleaned)
@@ -193,7 +198,6 @@ func (u *UseCase) record(ctx context.Context, p *entity.PreparedPackage) (entity
 		if err := u.d.Repo.SaveReceipt(ctx, rc); err != nil {
 			return entity.Receipt{}, err
 		}
-		u.d.Metrics.PackageRejected(rc.Channel, rc.ReasonCode)
 		u.d.Metrics.SecretsRedacted(rc.Channel, rc.RedactionCount)
 		return rc, nil
 	}

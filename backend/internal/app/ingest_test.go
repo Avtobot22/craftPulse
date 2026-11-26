@@ -300,12 +300,14 @@ func TestIngest_RefusesUnsafePackagesAtOnce(t *testing.T) {
 	assert.Empty(t, e.keys(t, "quarantine/"), "no quarantine object is left")
 	assert.Empty(t, e.keys(t, "packages/"), "nothing refused is stored")
 	assert.InDelta(t, 3, gathered(t, e.reg, "craftpulse_ingest_rejected_packages_total", "limit_exceeded"), 0, "rejected packages are counted by reason")
+	assert.InDelta(t, len(cases), gathered(t, e.reg, "craftpulse_ingest_resolved_packages_total", "rejected"), 0)
 }
 
 func gathered(t *testing.T, reg *prometheus.Registry, name, label string) float64 {
 	t.Helper()
 	families, err := reg.Gather()
 	require.NoError(t, err)
+	var total float64
 	for _, f := range families {
 		if f.GetName() != name {
 			continue
@@ -313,12 +315,13 @@ func gathered(t *testing.T, reg *prometheus.Registry, name, label string) float6
 		for _, m := range f.GetMetric() {
 			for _, l := range m.GetLabel() {
 				if l.GetValue() == label {
-					return m.GetCounter().GetValue()
+					total += m.GetCounter().GetValue()
+					break
 				}
 			}
 		}
 	}
-	return 0
+	return total
 }
 
 func TestIngest_JournalOfImports(t *testing.T) {
@@ -375,6 +378,7 @@ func TestIngest_JournalOfImports(t *testing.T) {
 	recs = e.records(t, refused.ID)
 	require.Len(t, recs, 1)
 	assert.Equal(t, entity.RecordOutsideScope, recs[0].ReasonCode, "a user without the right to import")
+	assert.InDelta(t, 3, gathered(t, e.reg, "craftpulse_ingest_resolved_packages_total", "duplicate"), 0)
 }
 
 // page writes a page of sync in its own transaction, as sync does with its checkpoint.
@@ -387,6 +391,7 @@ func (e *ingestEnv) page(t *testing.T, conn, scope entity.ID, data []byte) entit
 		rc, err = e.uc.RecordPage(ctx, p)
 		return err
 	}))
+	e.uc.PageCommitted(rc)
 	return rc
 }
 
@@ -432,6 +437,9 @@ func TestIngest_PagesOfSync(t *testing.T) {
 	outside := e.page(t, conn, scope, pack(t, other, task(t, "J-3", "C", "")))
 	assert.Equal(t, entity.ReceiptPartial, outside.Status)
 	assert.Equal(t, entity.RecordOutsideScope, e.records(t, outside.ID)[0].ReasonCode, "a page of a scope the connection does not collect")
+	for _, status := range []string{"accepted", "rejected", "partial"} {
+		assert.InDelta(t, 1, gathered(t, e.reg, "craftpulse_ingest_resolved_packages_total", status), 0)
+	}
 }
 
 func TestIngest_NewPayloadSchemaIsNoConflict(t *testing.T) {
@@ -510,7 +518,10 @@ func TestIngest_InterruptedJobGivesTheSameJournal(t *testing.T) {
 	require.NoError(t, err)
 	uc := ingest.New(ingest.Deps{
 		Repo: ingestrepo.NewRepo(e.app), Objects: e.store, Queue: q, Tx: persistent.NewTransactor(e.app),
-		Connect: e.connect, Access: rights, Metrics: ingestMetrics{rejected: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "x"}, []string{"channel", "reason"})},
+		Connect: e.connect, Access: rights, Metrics: ingestMetrics{
+			rejected: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "rejected"}, []string{"channel", "reason"}),
+			resolved: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "resolved"}, []string{"channel", "status"}),
+		},
 		Clock: e.clock, NewID: newID, Auditor: audit.New(auditrepo.NewRepo(e.app), persistent.NewTransactor(e.app), e.clock),
 	})
 	data := pack(t, importManifest("1"), task(t, "IMP-1", "A", ""), task(t, "", "B", ""), task(t, "IMP-2", "C", ""))

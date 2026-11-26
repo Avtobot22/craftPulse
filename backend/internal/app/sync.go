@@ -24,6 +24,7 @@ import (
 
 type syncMetrics struct {
 	failed       *prometheus.CounterVec
+	lastAuth     prometheus.Gauge
 	rejected     *prometheus.CounterVec
 	sinceSuccess *prometheus.GaugeVec
 	lag          *prometheus.GaugeVec
@@ -36,6 +37,10 @@ func newSyncMetrics(reg prometheus.Registerer) (syncMetrics, error) {
 			Name: "craftpulse_sync_errors_total",
 			Help: "Failed pages of collection by class of the failure.",
 		}, []string{"class"}),
+		lastAuth: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "craftpulse_sync_last_auth_error_timestamp_seconds",
+			Help: "Unix timestamp of the most recent collection authentication or authorization failure.",
+		}),
 		sinceSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "craftpulse_sync_seconds_since_success",
 			Help: "Seconds since the last reconciled collection of a data kind of a connection.",
@@ -45,7 +50,7 @@ func newSyncMetrics(reg prometheus.Registerer) (syncMetrics, error) {
 			Help: "Seconds between now and the watermark of a data kind of a connection.",
 		}, []string{"connection_id", "data_kind"}),
 	}
-	for _, c := range []prometheus.Collector{m.failed, m.rejected, m.sinceSuccess, m.lag} {
+	for _, c := range []prometheus.Collector{m.failed, m.lastAuth, m.rejected, m.sinceSuccess, m.lag} {
 		if err := reg.Register(c); err != nil {
 			return syncMetrics{}, err
 		}
@@ -53,7 +58,12 @@ func newSyncMetrics(reg prometheus.Registerer) (syncMetrics, error) {
 	return m, nil
 }
 
-func (m syncMetrics) CollectionFailed(class string) { m.failed.WithLabelValues(class).Inc() }
+func (m syncMetrics) CollectionFailed(class string) {
+	m.failed.WithLabelValues(class).Inc()
+	if class == "auth" {
+		m.lastAuth.SetToCurrentTime()
+	}
+}
 
 func (m syncMetrics) Freshness(connectionID, dataKind string, sinceSuccess, lag *time.Duration) {
 	set(m.sinceSuccess, sinceSuccess, connectionID, dataKind)

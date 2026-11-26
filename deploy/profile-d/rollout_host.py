@@ -14,12 +14,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from rollout import (ADAPTER, ADAPTER_FILES, CORE_FILES, HERE, SHA, SLUG, RolloutError,
+from rollout import (ADAPTER, ADAPTER_FILES, CORE_FILES, HERE, PREVIOUS_SERVICE_KEY, SHA, SLUG, RolloutError,
                      require, run, validate_manifest)
 
 
 INFRASTRUCTURE = ("postgres", "seaweedfs")
 OBSERVABILITY = ("victoriametrics", "victorialogs", "grafana", "cadvisor")
+OBSERVABILITY_CONFIG = {
+    "victoriametrics": {"scrape.yaml": "/etc/victoriametrics/scrape.yaml"},
+    "grafana": {
+        "grafana-alerts.yaml": "/etc/grafana/provisioning/alerting/craftpulse.yaml",
+        "grafana-collection.json": "/etc/grafana/craftpulse-dashboards/collection.json",
+    },
+}
 PROVIDERS = {"jiracloud": "jira_cloud", "confluencecloud": "confluence_cloud"}
 PROBE_TIMEOUT = 90
 
@@ -48,6 +55,10 @@ def decode_files(encoded, adapters):
     require(isinstance(encoded, dict), "invalid process files")
     owners = dict(CORE_FILES)
     owners.update({f"adapters/{name}/{file}": 65532 for name in adapters for file in ADAPTER_FILES})
+    for adapter in adapters:
+        previous = f"adapters/{adapter}/{PREVIOUS_SERVICE_KEY}"
+        if previous in encoded:
+            owners[previous] = 65532
     if adapters:
         owners["adapter-ca.pem"] = 0
     for name in encoded:
@@ -55,6 +66,13 @@ def decode_files(encoded, adapters):
             owners[name] = 65532
     require(owners.keys() == encoded.keys(), "unexpected or missing process files")
     return {name: (uid, base64.b64decode(encoded[name], validate=True)) for name, uid in owners.items()}
+
+
+def previous_service_key(directory):
+    try:
+        return (directory / PREVIOUS_SERVICE_KEY).read_bytes()
+    except FileNotFoundError:
+        return None
 
 
 def materialize_files(root, files):
@@ -116,7 +134,7 @@ def overrides(settings, adapters, manifest, secret_dir):
             "GOMEMLIMIT": "96MiB" if name == "git" else "36MiB",
             "DATABASE_URL": f"postgres://{database}@postgres:5432/{database}?sslmode=disable",
             "DATABASE_PASSWORD_FILE": "/run/secrets/db-password",
-            "ADAPTER_MASTER_KEY_VERSION": "1",
+            "ADAPTER_MASTER_KEY_VERSION": str(settings.get("adapter_master_key_versions", {}).get(name, 1)),
             "ADAPTER_MASTER_KEY_FILE": "/run/secrets/master-key",
         }
         def volume(file, target):
@@ -140,15 +158,34 @@ def overrides(settings, adapters, manifest, secret_dir):
             "volumes": [volume("app-password", "db-password")] + [volume(file, file) for file in
                         ("master-key", "service-key", "tls-cert.pem", "tls-key.pem")],
         }
+        if (Path(secret_dir) / "adapters" / name / PREVIOUS_SERVICE_KEY).is_file():
+            services[service]["environment"]["ADAPTER_PREVIOUS_SERVICE_KEY_FILE"] = f"/run/secrets/{PREVIOUS_SERVICE_KEY}"
+            services[service]["volumes"].append(volume(PREVIOUS_SERVICE_KEY, PREVIOUS_SERVICE_KEY))
         if name == "git":
             services[service]["cpus"] = 1.0
+        if name == "jiracloud":
+            services[service]["environment"].update(ADAPTER_METRICS_ADDR=":9090", SOURCE_PRIVATE_NETWORKS="")
+            services[service]["healthcheck"] = {
+                "test": ["CMD", "/usr/local/bin/adapter", "healthcheck"],
+                "interval": "10s", "timeout": "3s", "retries": 5,
+            }
         services[f"{service}-migrate"] = {
             **common, "profiles": ["migration"], "networks": ["data"], "command": ["migrate"],
             "environment": {**common_env, "DATABASE_URL":
                             f"postgres://{database}_owner@postgres:5432/{database}?sslmode=disable"},
             "volumes": [volume("owner-password", "db-password"), volume("master-key", "master-key")],
         }
-    return {"services": services}
+    override = {"services": services}
+    data_volumes = settings.get("stand_data_volumes")
+    if data_volumes is not None:
+        require(isinstance(data_volumes, dict) and data_volumes.keys() == {"postgres", "objects"} and
+                all(isinstance(name, str) and name for name in data_volumes.values()) and
+                len(set(data_volumes.values())) == 2,
+                "stand_data_volumes must name distinct existing postgres and objects volumes")
+        override["volumes"] = {
+            role: {"name": name, "external": True} for role, name in data_volumes.items()
+        }
+    return override
 
 
 def probe_http(ip, dns, port, path, tls):
@@ -196,6 +233,14 @@ class Stand:
         path = self.path(release)
         path.mkdir(parents=True)
         settings = json.loads((self.config_dir / "rollout.json").read_bytes())
+        required = settings.get("required_adapters", [])
+        require(isinstance(required, list) and all(isinstance(name, str) and name in release["adapters"]
+                                                  for name in required),
+                "a required stand adapter is missing from the release or SOPS bundle")
+        versions = settings.get("adapter_master_key_versions", {})
+        require(isinstance(versions, dict) and all(
+            type(v) is int and 0 < v < 2**31 for v in versions.values()
+        ), "adapter master key versions must be positive PostgreSQL integers")
         release["install"] = install_config(settings, files)
         tls_dir, catalog = Path(settings["tls_dir"]), Path(settings["check_profiles"])
         require(tls_dir.is_absolute() and all((tls_dir / name).is_file() for name in ("tls-cert.pem", "tls-key.pem")),
@@ -213,13 +258,26 @@ class Stand:
                 stable.extend(f"adapters/{adapter}/{name}" for name in ("owner-password", "app-password", "master-key"))
             require(all((old / name).read_bytes() == files[name][1] for name in stable),
                     "database, storage or master keys differ from the active release; rotate separately")
+            require(all(self.adapter_key_version(current, name) == str(versions.get(name, 1))
+                        for name in set(current["adapters"]) & set(release["adapters"])),
+                    "adapter master key versions differ from the active release; rotate separately")
         secret_dir = path / "secrets"
         materialize_files(secret_dir, files)
         catalog_snapshot = path / "check-profiles.yaml"
         catalog_snapshot.write_bytes(catalog.read_bytes())
         catalog_snapshot.chmod(0o444)
+        override = overrides(settings, release["adapters"], release, secret_dir)
+        # New bind sources make Compose reload scrape targets and provision Grafana on deploy.
+        for service, mounts in OBSERVABILITY_CONFIG.items():
+            volumes = []
+            for name, target in mounts.items():
+                snapshot = path / name
+                snapshot.write_bytes((self.config_dir / "observability" / name).read_bytes())
+                snapshot.chmod(0o444)
+                volumes.append(f"{snapshot}:{target}:ro")
+            override["services"][service] = {"volumes": volumes}
         override_file = path / "override.json"
-        write_json(override_file, overrides(settings, release["adapters"], release, secret_dir))
+        write_json(override_file, override)
 
         env_file = path / "release.env"
         env_file.write_text("\n".join((
@@ -234,7 +292,21 @@ class Stand:
             "-f", str(override_file),
             "--profile", "migration", "config", "--format", "json",
         ])
-        write_json(path / "compose.json", json.loads(rendered))
+        compose = json.loads(rendered)
+        if current:
+            previous = json.loads((self.path(current) / "compose.json").read_bytes())
+            require(all(previous["volumes"][name]["name"] == compose["volumes"][name]["name"]
+                        for name in ("postgres", "objects")),
+                    "stand data volumes differ from the active release")
+        for volume in override.get("volumes", {}).values():
+            name = volume["name"]
+            containers = run("check existing stand data volume", [
+                "docker", "ps", "--filter", f"volume={name}", "--format",
+                '{{.ID}} {{.Label "com.docker.compose.project"}}',
+            ]).decode().splitlines()
+            require(all(row.split()[1:] == [compose["name"]] for row in containers),
+                    f"stand data volume {name} is in use outside the rollout project")
+        write_json(path / "compose.json", compose)
         override_file.unlink()
         env_file.unlink()
 
@@ -242,6 +314,22 @@ class Stand:
         names = ["craftpulse-server", "craftpulse-frontend", *(ADAPTER + name for name in release["adapters"])]
         for name in names:
             run(f"pull {name} by digest", ["docker", "pull", release["images"][name]], timeout=900)
+
+    def adapter_key_version(self, release, name):
+        compose = json.loads((self.path(release) / "compose.json").read_bytes())
+        return compose["services"][f"adapter-{name}"]["environment"]["ADAPTER_MASTER_KEY_VERSION"]
+
+    def check_rollback_keys(self, release, current):
+        for name in set(release["adapters"]) & set(current["adapters"]):
+            previous_keys = self.path(release) / "secrets/adapters" / name
+            active_keys = self.path(current) / "secrets/adapters" / name
+            require(self.adapter_key_version(release, name) == self.adapter_key_version(current, name)
+                    and (previous_keys / "master-key").read_bytes() == (active_keys / "master-key").read_bytes(),
+                    f"adapter {name} master key was rotated; deploy the older SHA with the active bundle")
+            require((previous_keys / "service-key").read_bytes() == (active_keys / "service-key").read_bytes(),
+                    f"adapter {name} service key was rotated; deploy the older SHA with the active bundle")
+            require(previous_service_key(previous_keys) in (None, previous_service_key(active_keys)),
+                    f"adapter {name} would accept a retired service key; deploy the older SHA with the active bundle")
 
     def database(self, release, name, sql):
         return self.compose(release, "query PostgreSQL", "exec", "-T", "postgres", "psql",
@@ -281,8 +369,6 @@ class Stand:
     def migrate(self, release):
         self.compose(release, "start infrastructure", "up", "-d", "--no-recreate", "--wait", "--wait-timeout", "180",
                      *INFRASTRUCTURE, timeout=210)
-        self.compose(release, "apply observability configuration", "up", "-d", "--no-deps", "--wait",
-                     "--wait-timeout", "180", *OBSERVABILITY, timeout=210)
         targets = [("craftpulse", "migrate", release["core_schema_version"])]
         for name in release["adapters"]:
             database = f"adapter_{name}"
@@ -378,6 +464,8 @@ class Stand:
                      "--wait-timeout", str(PROBE_TIMEOUT), "nginx")
         for core in ("worker", "api"):
             self.verify(release, core)
+        self.compose(release, "apply observability configuration", "up", "-d", "--no-deps", "--wait",
+                     "--wait-timeout", "180", *OBSERVABILITY, timeout=210)
 
     def adapter_changed(self, release, previous, name):
         if not previous or name not in previous["adapters"]:
@@ -388,6 +476,8 @@ class Stand:
         before, after = self.path(previous), self.path(release)
         if any((before / relative / file).read_bytes() != (after / relative / file).read_bytes()
                for file in ("master-key", "app-password", "service-key", "tls-cert.pem", "tls-key.pem")):
+            return True
+        if previous_service_key(before / relative) != previous_service_key(after / relative):
             return True
         if (before / "secrets/adapter-ca.pem").read_bytes() != (after / "secrets/adapter-ca.pem").read_bytes():
             return True
@@ -421,6 +511,8 @@ class Stand:
         if rollback:
             release = self.state["releases"].get(sha)
             require(release is not None, "rollback requires a previously successful release on this stand")
+            if self.state["current"]:
+                self.check_rollback_keys(release, self.state["current"])
         else:
             release = validate_manifest(request["manifest"], sha)
             adapters = request["adapters"]
