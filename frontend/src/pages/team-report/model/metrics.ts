@@ -9,6 +9,12 @@ const titles: Readonly<Record<string, string>> = {
   T04: 'Начатые задачи',
   T05: 'Впервые завершённые задачи',
   T07: 'Отмены и дубликаты',
+  T08: 'Длительность цикла',
+  T10: 'Соблюдение целевых сроков',
+  T11: 'Превышения целевых сроков',
+  T14: 'Возраст текущего эпизода',
+  T15: 'Время блокировок',
+  T23: 'Переоткрытия workflow',
   T12: 'Задачи в работе (WIP)',
   T13: 'Заблокированные задачи внутри WIP',
   T18: 'Баланс потока',
@@ -83,6 +89,7 @@ export interface ReportBlockProps {
     pointStart: string,
     targetId: string,
     chartSeries?: string,
+    cohort?: { taskType: string | null | undefined; size: string | null },
   ) => void
 }
 

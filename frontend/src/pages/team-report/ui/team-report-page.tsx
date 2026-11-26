@@ -31,6 +31,9 @@ import {
 } from '../model/report-params'
 import type { ReportParams } from '../model/report-params'
 import { CompletenessBlock } from './completeness-block'
+import { CycleTimeBlock } from './cycle-time-block'
+import { WorkAgeBlock } from './work-age-block'
+import { ReopeningsBlock, TargetComplianceBlock } from './outcome-metrics-block'
 import { FlowBalanceBlock } from './flow-balance-block'
 import { ReportControls } from './report-controls'
 import { ReportRevision } from './report-revision'
@@ -115,6 +118,7 @@ export function TeamReportPage({ api }: { api: ApiClient }) {
   const scope = useOutletContext<TeamReportScope>()
   const [search] = useSearchParams()
   const params = readReportParams(search)
+  params.revision ||= scope.focus?.revisionId ?? ''
   const needsDefaults =
     !search.has('from') ||
     !search.has('to') ||
@@ -207,15 +211,34 @@ function TeamReportContent({
   useEffect(() => {
     if (!visible || !focusedPoint || restoredFocus.current === location.key)
       return
-    const frame = requestAnimationFrame(() => {
+    const fallback = document.getElementById('team-report-results')
+    function restore(immediate: boolean) {
+      if (!focusedPoint) return false
       const target = document.getElementById(focusedPoint)
-      const fallback = document.getElementById('team-report-results')
-      const element = target ?? fallback
-      element?.focus()
+      if (!target) return false
+      if (
+        immediate ||
+        document.activeElement === fallback ||
+        document.activeElement === document.body
+      )
+        target.focus()
       restoredFocus.current = location.key
+      return true
+    }
+    const observer = new MutationObserver(() => {
+      if (restore(false)) observer.disconnect()
+    })
+    const frame = requestAnimationFrame(() => {
+      if (restore(true) || !fallback) return
+      fallback.focus()
+      observer.observe(fallback.parentElement ?? fallback, {
+        childList: true,
+        subtree: true,
+      })
     })
     return () => {
       cancelAnimationFrame(frame)
+      observer.disconnect()
     }
   }, [focusedPoint, location.key, visible])
 
@@ -313,12 +336,13 @@ function TeamReportContent({
     projectIds: query.project_id,
     taskType: query.task_type,
     size: query.size_label,
-    selectPoint: (series, pointStart, targetId, chartSeries) => {
+    selectPoint: (series, pointStart, targetId, chartSeries, cohort) => {
       scope.rememberPoint({
         locationKey: location.key,
         targetId,
         seriesId: seriesKey(series),
         pointStart,
+        revisionId: snapshot.revision.id,
         ...(chartSeries ? { chartSeries } : {}),
       })
       const details = new URLSearchParams(search)
@@ -328,6 +352,19 @@ function TeamReportContent({
       if (series.estimator) details.set('estimator', series.estimator)
       if (series.group && params.groupBy)
         details.set('group_value', series.group[params.groupBy] ?? '')
+      if (cohort) {
+        details.set('size_label', cohort.size ?? 'unknown')
+        if (cohort.taskType === null) {
+          details.delete('task_type')
+          details.set('group_by', 'task_type')
+          details.set('group_value', '')
+        } else {
+          if (cohort.taskType !== undefined)
+            details.set('task_type', cohort.taskType)
+          details.delete('group_by')
+          details.delete('group_value')
+        }
+      }
       void navigate(
         {
           pathname: generatePath(routePaths.metricPassport, {
@@ -355,6 +392,7 @@ function TeamReportContent({
           isHistorical={Boolean(params.revision)}
           isReading={report.isFetching}
           onLatest={() => {
+            scope.rememberPoint(undefined)
             apply({ ...params, revision: '' })
           }}
           onRead={() => {
@@ -407,7 +445,15 @@ function TeamReportContent({
       {snapshot.metrics.length > 0 && (
         <div className="cp-team-report__blocks" key={snapshot.revision.id}>
           <ThroughputBlock block={block} api={api} />
+          <CycleTimeBlock block={block} api={api} />
           <FlowBalanceBlock block={block} />
+          <WorkAgeBlock block={block} api={api} />
+          <TargetComplianceBlock
+            block={block}
+            api={api}
+            canReadVersions={scope.canManageProcess}
+          />
+          <ReopeningsBlock block={block} />
           <CompletenessBlock block={block} />
         </div>
       )}

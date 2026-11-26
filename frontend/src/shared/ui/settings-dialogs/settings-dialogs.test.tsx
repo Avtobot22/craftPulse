@@ -390,7 +390,9 @@ describe('UI-17', () => {
     fireEvent.click(button(open(), 'Подтвердить'))
 
     const summary = await screen.findByRole('alert')
-    expect(summary).toHaveFocus()
+    await waitFor(() => {
+      expect(summary).toHaveFocus()
+    })
     expect(within(summary).getByRole('link')).toHaveAttribute(
       'href',
       '#team-name',

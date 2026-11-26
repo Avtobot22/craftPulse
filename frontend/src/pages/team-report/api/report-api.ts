@@ -15,13 +15,13 @@ type Schemas = components['schemas']
 export type ReportSeries = Schemas['MetricSeries']
 type MetricValue = Schemas['MetricValue']
 
-function readNumber(raw: unknown): number {
+export function readNumber(raw: unknown): number {
   if (typeof raw !== 'number' || !Number.isFinite(raw))
     throw new InvalidResponse()
   return raw
 }
 
-function nullableNumber(raw: unknown) {
+export function nullableNumber(raw: unknown) {
   return raw === null ? null : readNumber(raw)
 }
 
@@ -137,6 +137,20 @@ function readRevisionMetadata(value: unknown) {
   return {
     id: readString(raw.id),
     timeZone,
+    reopenWindows: Object.fromEntries(
+      readArray(raw.definitions, (item) => {
+        const definition = readRecord(item)
+        if (
+          definition.metric_id !== 'T23' ||
+          definition.parameters === undefined
+        )
+          return []
+        const days = readRecord(definition.parameters).follow_up_days
+        return typeof days === 'number' && Number.isInteger(days) && days > 0
+          ? [[readNumber(definition.definition_version), days] as const]
+          : []
+      }).flat(),
+    ),
     hasMapping: readArray(raw.inputs, (item) =>
       readString(readRecord(item).input_kind),
     ).includes('mapping'),

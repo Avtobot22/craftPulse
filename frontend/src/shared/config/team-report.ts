@@ -3,6 +3,7 @@ export interface ReportPointFocus {
   targetId: string
   seriesId: string
   pointStart: string
+  revisionId: string
   chartSeries?: string
 }
 
@@ -12,7 +13,7 @@ export interface TeamReportScope {
   projects: readonly { id: string; name: string }[]
   canManageProcess: boolean
   focus: ReportPointFocus | undefined
-  rememberPoint: (point: ReportPointFocus) => void
+  rememberPoint: (point: ReportPointFocus | undefined) => void
 }
 
 export const teamReportReturnState = { fromTeamReport: true }
