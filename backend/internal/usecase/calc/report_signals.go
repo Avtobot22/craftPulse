@@ -12,13 +12,15 @@ import (
 )
 
 type reportSignals struct {
-	review  reviewInput
-	facts   entity.TaskObservationFacts
-	taskMRs map[entity.ID][]entity.ID
-	mrTasks map[entity.ID][]entity.ID
-	linked  map[entity.ID]bool
-	runs    map[entity.ID]entity.ID
-	events  map[string][]activity
+	technical map[int64]map[entity.ID]entity.TechnicalCross
+	edges     map[entity.ID][]entity.LinkEdge
+	review    reviewInput
+	facts     entity.TaskObservationFacts
+	taskMRs   map[entity.ID][]entity.ID
+	mrTasks   map[entity.ID][]entity.ID
+	linked    map[entity.ID]bool
+	runs      map[entity.ID]entity.ID
+	events    map[string][]activity
 }
 
 func (u *UseCase) reportSignals(ctx context.Context, org entity.ID, scope seriesScope, seq int64, in *input) (*reportSignals, error) {
@@ -130,7 +132,7 @@ func (u *UseCase) reportLinks(ctx context.Context, org entity.ID, seq int64, mrI
 func (x *reportSignals) hash(base []byte, from, to time.Time) []byte {
 	d := newDigest()
 	d.bytes(base)
-	for _, ds := range [][]Definition{_reviewDefinitions, _eventDefinitions, _crossDefinitions} {
+	for _, ds := range [][]Definition{_reviewDefinitions, _eventDefinitions, _crossDefinitions, _technicalCrossDefinitions} {
 		for i := range ds {
 			d.text(ds[i].ID)
 			d.int(int64(ds[i].Version))
@@ -156,6 +158,18 @@ func (x *reportSignals) hash(base []byte, from, to time.Time) []byte {
 		}
 	}
 	x.hashCI(d, to)
+	for _, at := range slices.Sorted(maps.Keys(x.technical)) {
+		d.int(at)
+		raw, _ := json.Marshal(x.technical[at])
+		d.bytes(raw)
+	}
+	for _, id := range sortedIDs(slices.Collect(maps.Keys(x.edges))) {
+		d.id(id)
+		edges := x.edges[id]
+		for _, edgeID := range sortedIDs(linkEdgeIDs(edges)) {
+			d.id(edgeID)
+		}
+	}
 	for _, key := range slices.Sorted(maps.Keys(x.events)) {
 		d.text(key)
 		for _, a := range x.events[key] {
@@ -213,6 +227,7 @@ func (x *reportSignals) points(part *entity.StoredPart, pr *prepared, periods []
 	}
 	for _, p := range periods {
 		part.Points = append(part.Points, x.crossPoints(pr, p)...)
+		part.Points = append(part.Points, x.technicalPoints(pr, p)...)
 	}
 }
 
@@ -254,4 +269,12 @@ func activityCount(t *tally) entity.Point {
 	n := len(t.contributions)
 	pt.State, pt.Value, pt.N, pt.LowSample = entity.StateAssessed, num(float64(n)), &n, n < _lowSample
 	return pt
+}
+
+func linkEdgeIDs(edges []entity.LinkEdge) []entity.ID {
+	ids := make([]entity.ID, len(edges))
+	for i := range edges {
+		ids[i] = edges[i].ID
+	}
+	return ids
 }

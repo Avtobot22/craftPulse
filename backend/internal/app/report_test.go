@@ -52,6 +52,7 @@ type reportBody struct {
 		MetricID  string  `json:"metric_id"`
 		Estimator *string `json:"estimator"`
 		Group     *struct {
+			Signal    *string `json:"signal"`
 			TaskType  *string `json:"task_type"`
 			SizeLabel *string `json:"size_label"`
 		} `json:"group"`
@@ -91,7 +92,7 @@ type cohortItemBody struct {
 func (r reportBody) value(t *testing.T, metric, estimator string, start time.Time) reportValueBody {
 	t.Helper()
 	for _, m := range r.Metrics {
-		if m.MetricID != metric || (m.Estimator == nil) != (estimator == "") || (m.Estimator != nil && *m.Estimator != estimator) || m.Group != nil {
+		if m.MetricID != metric || (m.Estimator == nil) != (estimator == "") || (m.Estimator != nil && *m.Estimator != estimator) || m.Group != nil && (m.Group.TaskType != nil || m.Group.SizeLabel != nil || m.Group.Signal == nil) {
 			continue
 		}
 		for _, p := range m.Points {

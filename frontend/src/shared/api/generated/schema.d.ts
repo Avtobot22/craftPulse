@@ -1201,11 +1201,15 @@ export interface paths {
          *     соответствуют фильтру (AC-18). Когорта ограничена правами:
          *     значения строятся по разрешённой части, `access_limited` без числа скрытых (FR-001).
          *
-         *     A05, A06, A07, A10, история событий A22 и показатели X01/X02 входят в ту же ревизию.
+         *     A05, A06, A07, A10, история событий A22 и показатели X01-X06 входят в ту же ревизию.
          *     Шаг `day` даёт дневные точки. Для A22 группа содержит вид события и участника.
          *     В X01/X02 `n` содержит размер доступного WIP, `denominator` - размер оценённой части,
          *     `excluded_count` учитывает пробелы связи и неприменимые задачи, `missing_count` - неизвестные.
          *     Задача с совпавшим признаком учитывается в числителе и знаменателе, в когорте имеет роль `numerator`.
+         *
+         *     Для технических срезов `group.signal` содержит признак, а `estimator` выбирает его когорту.
+         *     `min_task_age_seconds` и `over_target` ограничивают X03. X04 считает уникальные pipeline,
+         *     X05 использует когорту типов с обязательной связью, X06 считает находки по виду проверки.
          *
          *     UC-15 использует этот отчёт и listRevisionCohort: T23 - переоткрытия в M0; T24 и T25
          *     выдаются отдельно с M1, только при заданном этапе приёмки и подтверждённом production origin.
@@ -4168,11 +4172,13 @@ export interface components {
             unit: string;
             /** @description Оценка показателя с несколькими рядами: `p50` и `p85` у T08 и T14, поле у T38 (`size`, `type`, `team`, `start`), вид у T40 (`lag`, `last_success_age`), T41 (`tasks`, `transitions`) и T42 (`missing`, `changed`). X01 использует `no_reviewer` и `no_first_response`, X02 - `failed`, `passed_after_retry` и `missing_report`. У A22 ключ `actor_kind:event_kind` выбирает когорту группы. Отсутствует у показателя с одним рядом. */
             estimator?: string;
-            /** @description Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для отчёта команды - тип или размер задачи. */
+            /** @description Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для технических кросс-показателей - признак, для отчёта команды - также тип или размер задачи. */
             group?: {
                 task_type?: string | null;
                 /** @description `null` - группа «без размера». */
                 size_label?: string | null;
+                /** @description Признак технического кросс-показателя. */
+                signal?: string;
                 event_kind?: string;
                 actor_kind?: components["schemas"]["ActorKind"];
             };
@@ -4302,14 +4308,16 @@ export interface components {
             };
             /** @description Возраст текущего эпизода задачи на as_of; передаётся в срезах ожидания ревью и оговорок CI рядом с ожиданием MR в `value`. */
             task_age_seconds?: number | null;
+            /** @description Превышает ли возраст задачи установленный срок. Передаётся при известном сроке. */
+            over_target?: boolean;
             /**
              * Format: uuid
              * @description Для attempt-оснований I18 передаётся ID доступного pipeline для UI-55/UI-56; закрытый pipeline и его вклад не выдаются.
              */
             pipeline_id?: string;
-            /** @description Доступные MR и текущие pipelines, проверенные для вклада задачи в X01 или X02. */
+            /** @description Доступные связанные задачи, MR и pipeline, на которых основан вклад в X01-X06. */
             basis?: components["schemas"]["ObjectRef"][];
-            /** @description Признаки ожидания ревью и состояния CI, найденные среди доступных оснований X01 или X02. */
+            /** @description Совпавшие признаки кросс-показателя среди доступных оснований. */
             signals?: string[];
         };
         CohortPage: {
@@ -9629,6 +9637,10 @@ export interface operations {
                 size_label?: string;
                 /** @description Разбить ряды по типу или размеру: каждая группа - отдельный элемент `metrics` с заполненным `group`. */
                 group_by?: "task_type" | "size_label";
+                /** @description Минимальный возраст текущего эпизода задачи в X03. */
+                min_task_age_seconds?: number;
+                /** @description Фильтр X03 по превышению срока. Задачи без известного срока исключаются при заданном фильтре. */
+                over_target?: boolean;
             };
             header?: never;
             path: {
@@ -10011,6 +10023,14 @@ export interface operations {
                 role?: "numerator" | "denominator" | "excluded" | "missing";
                 /** @description Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport. */
                 project_id?: string[];
+                /** @description Тип задачи по сопоставлению. */
+                task_type?: string;
+                /** @description Размер задачи; `unknown` - группа «без размера». */
+                size_label?: string;
+                /** @description Минимальный возраст текущего эпизода задачи в X03. */
+                min_task_age_seconds?: number;
+                /** @description Фильтр X03 по превышению срока. Задачи без известного срока исключаются при заданном фильтре. */
+                over_target?: boolean;
                 /** @description Размер страницы. */
                 limit?: components["parameters"]["Limit"];
                 /** @description Непрозрачный курсор из `next_cursor` предыдущей страницы. Содержимое курсора не разбирается клиентом; курсор действует 24 ч. */

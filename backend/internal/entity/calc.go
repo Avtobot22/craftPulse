@@ -116,6 +116,7 @@ type Point struct {
 
 // SeriesGroup is the group of a split series; a nil label is the group of tasks without it.
 type SeriesGroup struct {
+	Signal    string
 	TaskType  *string
 	SizeLabel *string
 	EventKind string

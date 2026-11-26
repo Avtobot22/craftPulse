@@ -292,6 +292,11 @@ func (u *UseCase) part(ctx context.Context, job entity.CalcSliceJob, complete Co
 	if job.PartNo <= len(chunks) {
 		c := chunks[job.PartNo-1]
 		from, to := c[0].start, c[len(c)-1].end
+		if flow, ok := src.(*flowSource); ok && u.d.ReportEvidence != nil {
+			if err := u.loadTechnicalCross(ctx, org, &rev, flow, c); err != nil {
+				return err
+			}
+		}
 		hash := src.hash(from, to)
 		err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
 			var err error

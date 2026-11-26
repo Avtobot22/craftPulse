@@ -69,7 +69,7 @@ func (r *Repo) SummaryMR(ctx context.Context, org, mr entity.ID, lock bool) (ent
 		return out, err
 	}
 	err := conn.QueryRow(ctx, `SELECT m.id, m.mr_id, m.area_id, m.head_sha, COALESCE(m.base_sha,''),
-		COALESCE(m.merge_base_sha,''), m.observed_at, m.state, o.instance_id, o.native_ns, o.native_id,
+		COALESCE(m.merge_base_sha,''), m.observed_at, m.source_updated_at, m.state, o.instance_id, o.native_ns, o.native_id,
 		GREATEST(m.known_seq, (
 			SELECT max(f.known_seq)
 			FROM (
@@ -102,7 +102,7 @@ func (r *Repo) SummaryMR(ctx context.Context, org, mr entity.ID, lock bool) (ent
 		FROM normalize.mr_version m JOIN normalize.source_object o
 			ON (o.organization_id, o.id) = (m.organization_id, m.mr_id)
 		WHERE m.organization_id = $1 AND m.mr_id = $2 AND m.superseded_seq IS NULL AND o.deleted_at IS NULL`, uuid.UUID(org), uuid.UUID(mr)).
-		Scan(&versionID, &mrID, &areaID, &out.HeadSHA, &out.BaseSHA, &out.MergeBaseSHA, &out.ObservedAt,
+		Scan(&versionID, &mrID, &areaID, &out.HeadSHA, &out.BaseSHA, &out.MergeBaseSHA, &out.ObservedAt, &out.SourceUpdatedAt,
 			&out.State, &instanceID, &out.Source.NativeNS, &out.Source.NativeID, &out.FactsSeq)
 	out.ID, out.MRID, out.AreaID, out.InstanceID = entity.ID(versionID), entity.ID(mrID), entity.ID(areaID), entity.ID(instanceID)
 	out.Source.ObjectKind = "merge_request"
@@ -172,7 +172,7 @@ func (r *Repo) SummaryReports(ctx context.Context, org entity.ID, mr entity.Summ
 				AND r.sha = ANY($8::text[]) AND r.known_seq <= $9
 		)
 		SELECT id, sha, format, language, producer, producer_version, rules_hash, config_hash, scope_hash, db_version,
-			completeness, exit_class, interrupted, rejected, delta, delta_base
+			completeness, exit_class, interrupted, rejected, delta, delta_base, observed_at
 		FROM observations ORDER BY observed_at DESC, known_seq DESC, record_no DESC, id DESC`,
 		uuid.UUID(org), uuid.UUID(mr.AreaID), uuid.UUID(e.ComponentID), e.AnalysisKind, e.Language, e.ProfileID, e.Mode,
 		[]string{mr.HeadSHA, mr.BaseSHA}, mr.KnowledgeSeq, e.RulesHash)
@@ -183,7 +183,7 @@ func (r *Repo) SummaryReports(ctx context.Context, org entity.ID, mr entity.Summ
 		v := entity.TechnicalReport{ProfileID: e.ProfileID, Mode: e.Mode}
 		var id uuid.UUID
 		err := row.Scan(&id, &v.SHA, &v.Format, &v.Language, &v.Producer, &v.ProducerVersion, &v.RulesHash, &v.ConfigHash, &v.ScopeHash,
-			&v.DBVersion, &v.Completeness, &v.ExitClass, &v.Interrupted, &v.Rejected, &v.DependencyDelta, &v.DependencyBaseSHA)
+			&v.DBVersion, &v.Completeness, &v.ExitClass, &v.Interrupted, &v.Rejected, &v.DependencyDelta, &v.DependencyBaseSHA, &v.EventAt)
 		v.ID = entity.ID(id)
 		return v, err
 	})

@@ -67,6 +67,7 @@ type SummaryCodePair struct {
 
 // SummaryRevision is the persisted lifecycle and content of one MR summary.
 type SummaryRevision struct {
+	Technical             TechnicalSummary
 	ComparableBase        bool
 	ExpectedReports       []ExpectedReport
 	CompleteReports       []SummaryReportEvidence

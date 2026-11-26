@@ -3,20 +3,33 @@ package calc
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
 
 type crossKey struct {
-	start int64
-	task  entity.ID
+	metric string
+	start  int64
+	task   entity.ID
 }
 
-func isCrossMetric(metric string) bool { return metric == "X01" || metric == "X02" }
+func isCrossMetric(metric string) bool {
+	return metric == "X01" || metric == "X02" || isTechnicalCross(metric, "")
+}
 
-func (c *cohort) crossBasis(row *entity.CohortRow, v *visibility) (crossEvidence, bool) {
-	origin := c.cross[crossKey{start: row.PointStart.UnixNano(), task: row.ObjectID}]
-	b := crossEvidence{Age: origin.Age}
+func crossBasisKey(row *entity.CohortRow) crossKey {
+	metric := ""
+	if isTechnicalCross(row.MetricID, row.Estimator) {
+		metric = row.MetricID
+	}
+	return crossKey{metric: metric, start: row.PointStart.UnixNano(), task: row.ObjectID}
+}
+
+func (c *cohort) crossBasis(row *entity.CohortRow, v *visibility, f *entity.ReportFilter, g *entity.SeriesGroup) (crossEvidence, bool) {
+	origin := c.cross[crossBasisKey(row)]
+	b := origin
+	b.MRs = nil
 	hidden := false
 	for i := range origin.MRs {
 		m := origin.MRs[i]
@@ -24,28 +37,115 @@ func (c *cohort) crossBasis(row *entity.CohortRow, v *visibility) (crossEvidence
 			hidden = true
 			continue
 		}
+		if len(m.Tasks) > 0 {
+			m.Tasks = nil
+			for _, id := range origin.MRs[i].Tasks {
+				task, ok := c.tasks[id]
+				if !ok || !c.visible(v, &task) {
+					hidden = true
+					continue
+				}
+				if selected(&task, f, g) {
+					m.Tasks = append(m.Tasks, id)
+				}
+			}
+			if len(m.Tasks) == 0 {
+				continue
+			}
+		}
 		if m.PipelineID != nil && !c.objectVisible(v, *m.PipelineID) {
-			m.PipelineID, m.CIClass, m.Retry, m.RetryKnown = nil, "", false, false
 			hidden = true
+			if row.ObjectKind == entity.ObjectCIRun {
+				continue
+			}
+			m.PipelineID, m.CIClass, m.Retry, m.RetryKnown = nil, "", false, false
+			m.FailToPass, m.AllowedFailure = nil, nil
+			if m.Technical != nil {
+				tech := *m.Technical
+				tech.MissingChecks, tech.PublicMissingChecks = false, false
+				m.Technical = &tech
+			}
+		}
+		if tech := m.Technical; tech != nil && !v.securityAllowed(c.objects[m.ID].AreaID, tech.ProjectID) {
+			public := *tech
+			public.Scopes = slices.DeleteFunc(slices.Clone(tech.Scopes), func(s entity.TechnicalScope) bool {
+				return entity.SensitiveSummaryAnalysis(s.Kind)
+			})
+			public.MissingChecks = public.PublicMissingChecks
+			hidden = hidden || len(public.Scopes) != len(tech.Scopes) || public.MissingChecks != tech.MissingChecks
+			if securityEstimator(row.Estimator) {
+				continue
+			}
+			m.Technical = &public
 		}
 		b.MRs = append(b.MRs, m)
 	}
 	return b, hidden
 }
 
-func (c *cohort) crossItem(it *entity.CohortItem, b *crossEvidence) {
+func (v *visibility) securityAllowed(area, project entity.ID) bool {
+	return slices.Contains(v.security, project) && slices.Contains(v.areaProjects[area], project)
+}
+
+func (c *cohort) crossItem(it *entity.CohortItem, row *entity.CohortRow, b *crossEvidence) {
 	it.TaskAgeSeconds = b.Age
+	it.OverTarget = b.OverTarget
+	addRef := func(id entity.ID, kind entity.ObjectKind) {
+		if id != it.ObjectID && !slices.ContainsFunc(it.Basis, func(ref entity.ObjectRef) bool { return ref.ID == id }) {
+			it.Basis = append(it.Basis, c.reportRef(id, kind))
+		}
+	}
+	addSignal := func(s entity.ObservationKind) {
+		if s != "" && !slices.Contains(it.Signals, s) {
+			it.Signals = append(it.Signals, s)
+		}
+	}
 	for i := range b.MRs {
 		m := &b.MRs[i]
-		it.Basis = append(it.Basis, c.reportRef(m.ID, entity.ObjectMergeRequest))
+		addRef(m.ID, entity.ObjectMergeRequest)
 		if m.PipelineID != nil {
-			it.Basis = append(it.Basis, c.reportRef(*m.PipelineID, entity.ObjectCIRun))
+			addRef(*m.PipelineID, entity.ObjectCIRun)
 		}
-		for _, signal := range []entity.ObservationKind{m.ReviewSignal, m.ciSignal()} {
-			if signal != "" && !slices.Contains(it.Signals, signal) {
-				it.Signals = append(it.Signals, signal)
+		for _, id := range m.Tasks {
+			addRef(id, entity.ObjectTask)
+		}
+		addSignal(m.ReviewSignal)
+		addSignal(m.ciSignal())
+		if isTechnicalCross(row.MetricID, row.Estimator) {
+			estimators := definition(row.MetricID).Estimators
+			if row.MetricID == "X02" {
+				estimators = []string{_ciMissingReport}
+			}
+			for _, est := range estimators {
+				if n, _, _ := technicalSignal(m, row.MetricID, est); n > 0 {
+					addSignal(entity.ObservationKind(est))
+				}
 			}
 		}
+	}
+}
+
+func securityEstimator(est string) bool {
+	kind, _, _ := strings.Cut(est, ":")
+	return entity.SensitiveSummaryAnalysis(kind) || kind == "new_security" || kind == "security_exception" || kind == "checked_security"
+}
+
+func crossSelected(metric, est string, b *crossEvidence, f *entity.ReportFilter) bool {
+	if isTechnicalCross(metric, est) && securityEstimator(est) && len(b.MRs) == 0 {
+		return false
+	}
+	if metric != "X03" {
+		return true
+	}
+	return (f.MinTaskAgeSeconds == nil || b.Age != nil && *b.Age >= *f.MinTaskAgeSeconds) &&
+		(f.OverTarget == nil || b.OverTarget != nil && *b.OverTarget == *f.OverTarget)
+}
+
+func scoreCrossRow(c *entity.Contribution, row *entity.CohortRow, b *crossEvidence) {
+	if isTechnicalCross(row.MetricID, row.Estimator) {
+		scoreTechnical(c, row.MetricID, row.Estimator, b)
+	} else {
+		crossScore(c, row.Estimator, b)
 	}
 }
 

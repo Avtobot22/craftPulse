@@ -19,7 +19,7 @@ import (
 // SummaryStore persists the immutable inputs and history of each MR summary.
 type SummaryStore interface {
 	LastGoodSummary(context.Context, entity.ID, entity.ID) (entity.SummaryRevision, error)
-	SummaryProfileAt(context.Context, entity.ID, entity.ID, time.Time) (entity.CheckProfileVersion, error)
+	SummaryProfileAt(context.Context, entity.ID, entity.ID, time.Time, int64) (entity.CheckProfileVersion, error)
 	StaleSummaries(context.Context, entity.ID, entity.ID, string) error
 	SaveSummary(context.Context, entity.ID, *entity.SummaryRevision) (bool, error)
 }
@@ -151,6 +151,9 @@ func (u *UseCase) finishSummary(ctx context.Context, job entity.ChangeSummaryJob
 		if err != nil || !saved {
 			return err
 		}
+		if err := d.Queue.Enqueue(ctx, entity.CalcRecountJob{OrganizationID: org, AreaID: current.AreaID}, entity.QueueBulk); err != nil {
+			return err
+		}
 		if v.PipelineState != "running" {
 			if err := d.Queue.Enqueue(ctx, entity.OutboundPublishJob{OrganizationID: org, MRID: mr, SummaryRevisionID: v.ID}, entity.QueueInteractive); err != nil {
 				return err
@@ -252,6 +255,15 @@ func (u *UseCase) buildSummary(ctx context.Context, org entity.ID, mr entity.Sum
 		MRID: mr.MRID, HeadSHA: mr.HeadSHA, BaseSHA: mr.BaseSHA,
 		ProfileVersionID: profile, KnowledgeSeq: mr.KnowledgeSeq, PipelineState: "complete",
 	}
+	v.Technical.EffectiveAt = mr.ObservedAt
+	if mr.SourceUpdatedAt != nil {
+		v.Technical.EffectiveAt = *mr.SourceUpdatedAt
+	}
+	for _, stamp := range []*time.Time{run.Run.StartedAt, run.Run.FinishedAt, run.Run.SourceUpdatedAt} {
+		if stamp != nil && stamp.After(v.Technical.EffectiveAt) {
+			v.Technical.EffectiveAt = *stamp
+		}
+	}
 	if !entity.ValidGitSHA(v.BaseSHA) {
 		v.BaseSHA, mr.BaseSHA = "", ""
 	}
@@ -282,9 +294,19 @@ func (u *UseCase) buildSummary(ctx context.Context, org entity.ID, mr entity.Sum
 }
 
 func (u *UseCase) summaryProfile(ctx context.Context, org, area entity.ID, at time.Time) (entity.ID, []entity.ProfileEntry, error) {
+	profile, entries, err := u.profileAtArea(ctx, org, area, 0, at)
+	return profile.ID, entries, err
+}
+
+func (u *UseCase) reportProfile(ctx context.Context, org, area entity.ID, seq int64, at time.Time) (entity.ID, []entity.ProfileEntry, error) {
+	profile, entries, err := u.profileAtArea(ctx, org, area, seq, at)
+	return profile.ProjectID, entries, err
+}
+
+func (u *UseCase) profileAtArea(ctx context.Context, org, area entity.ID, seq int64, at time.Time) (entity.CheckProfileVersion, []entity.ProfileEntry, error) {
 	links, err := u.d.Components.ProjectAreas(ctx, org, at)
 	if err != nil {
-		return entity.ID{}, nil, err
+		return entity.CheckProfileVersion{}, nil, err
 	}
 	var projects []entity.ID
 	for _, link := range links {
@@ -294,25 +316,25 @@ func (u *UseCase) summaryProfile(ctx context.Context, org, area entity.ID, at ti
 	}
 	slices.SortFunc(projects, compareIDs)
 	for _, id := range projects {
-		profile, err := u.d.Summary.Store.SummaryProfileAt(ctx, org, id, at)
+		profile, err := u.d.Summary.Store.SummaryProfileAt(ctx, org, id, at, seq)
 		if errors.Is(err, entity.ErrNotFound) {
 			continue
 		}
 		if err != nil {
-			return entity.ID{}, nil, err
+			return entity.CheckProfileVersion{}, nil, err
 		}
 		components, err := u.d.Components.ProjectComponents(ctx, org, id, at)
 		if err != nil {
-			return entity.ID{}, nil, err
+			return entity.CheckProfileVersion{}, nil, err
 		}
 		entries := slices.DeleteFunc(profile.Entries, func(e entity.ProfileEntry) bool {
 			return !slices.ContainsFunc(components, func(c entity.Component) bool { return c.ID == e.ComponentID && c.RepositoryAreaID == area })
 		})
 		if len(entries) > 0 {
-			return profile.ID, entries, nil
+			return profile, entries, nil
 		}
 	}
-	return entity.ID{}, nil, nil
+	return entity.CheckProfileVersion{}, nil, nil
 }
 
 func hashSummary(v *entity.SummaryRevision) error {
@@ -327,7 +349,8 @@ func hashSummary(v *entity.SummaryRevision) error {
 		Items                []entity.SummaryItem
 		Definitions          []entity.RevisionInput
 		Findings             []entity.SummaryFindingValues
-	}{v.HeadSHA, v.BaseSHA, v.PipelineState, v.ProfileVersionID, v.Inputs, v.Items, v.Definitions, v.FindingValues})
+		Technical            entity.TechnicalSummary
+	}{v.HeadSHA, v.BaseSHA, v.PipelineState, v.ProfileVersionID, v.Inputs, v.Items, v.Definitions, v.FindingValues, v.Technical})
 	if err != nil {
 		return err
 	}
