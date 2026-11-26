@@ -116,6 +116,7 @@ type TimelineFact struct {
 	ID, ObjectID, AreaID, InstanceID, RunID                  ID
 	ObjectKind                                               ObjectKind
 	Kind, NativeID, ParentNativeID, DisplayKey, Title, Value string
+	ProjectPath                                              string
 	EventTime, ObservedAt                                    time.Time
 	EventOffsetS                                             int
 	ObservedVia                                              ObservedVia

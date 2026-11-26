@@ -168,6 +168,39 @@ func TestProjectTimeline_RevisionActorsAndHistory(t *testing.T) {
 		"/api/v1/projects/"+uuid.NewString()+"/timeline?"+q.Encode(), nil).Code)
 }
 
+func TestProjectTimeline_GitLabCIBeforeRepositoryMetadata(t *testing.T) {
+	t.Parallel()
+	e := newReportEnv(t, true)
+	e.grantManager(t)
+	admin := entity.Subject{OrganizationID: e.orgID, UserID: entity.ID(e.adminID)}
+	manifest := ciManifest("42")
+	manifest.Area.Key = new("team/subgroup/ci-only")
+	start, finish := _linkMerged, _linkMerged.Add(time.Minute)
+	rc := e.codeImporter(t, admin)(manifest, timelineRun(t, "finish", start, &finish),
+		timelineAttempt(t, "7701", "success", 1, start, finish))
+	area, err := e.runner.norm.AreaOf(t.Context(), e.orgID, *rc.SourceInstanceID, entity.ObjectRepository, "42")
+	require.NoError(t, err)
+	var repositories int
+	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT count(*) FROM normalize.repository_version WHERE repository_id = $1", uuid.UUID(area)).Scan(&repositories))
+	require.Zero(t, repositories)
+	_, err = e.owner.Exec(t.Context(), "INSERT INTO org.project_area (organization_id,project_id,area_id,valid,known_seq) VALUES ($1,$2,$3,tstzrange($4,NULL,'[)'),1)",
+		uuid.UUID(e.orgID), e.project, uuid.UUID(area), e.clock.Now())
+	require.NoError(t, err)
+
+	q := url.Values{"from": {start.Format(time.RFC3339)}, "to": {finish.Add(time.Minute).Format(time.RFC3339)}, "object_kind": {"pipeline"}}
+	path := "/api/v1/projects/" + e.project.String() + "/timeline?" + q.Encode()
+	page := decode[openapi.TimelinePage](t, codeRead(t, e.loginEnv, e.admin, path, "TimelinePage"))
+	require.Len(t, page.Data, 4)
+	attempt := uuid.UUID(e.objectID(t, "ci_attempt", "7701"))
+	for _, event := range page.Data {
+		route := "/-/pipelines/5701"
+		if event.Object.Id == attempt {
+			route = "/-/jobs/7701"
+		}
+		assert.Equal(t, new(_gitlabInstance+"/team/subgroup/ci-only"+route), event.Object.SourceUrl, event.EventKind)
+	}
+}
+
 func timelineRun(t *testing.T, revision string, start time.Time, finish *time.Time) *envelope.Record {
 	t.Helper()
 	status := "running"

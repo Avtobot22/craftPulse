@@ -50,7 +50,9 @@ func TestCalcDocumentation_ProfileReceiptsPublishCommitRevisions(t *testing.T) {
 				updateDocFixture(t, checkout, "guide.md", "# Guide\n", "# Guide\n\n## Absent\n")
 			}
 			e.clock.Advance(24 * time.Hour)
-			data := docsProfilePackage(t, profile, e.clock.Now().Add(-time.Hour), scope, checkout, i)
+			scanAt := e.clock.Now().Add(-time.Hour)
+			versionAt := scanAt.Add(-6 * time.Hour).In(time.FixedZone("source", 3*60*60))
+			data := docsProfilePackage(t, profile, scanAt, versionAt, scope, checkout, i)
 			rc := e.imported(t, e.admin, data)
 			require.Equal(t, entity.ReceiptAccepted, rc.Status)
 			e.drain(t)
@@ -74,18 +76,27 @@ func TestCalcDocumentation_ProfileReceiptsPublishCommitRevisions(t *testing.T) {
 				at := *e.report(t, rc.ID, "docs").FinishedAt
 				earliestVersion = float64(at.Unix())
 				visible := e.areaScope(t, e.admin, e.area)
-				events, err := e.norm.TimelineFacts(t.Context(), visible, e.orgID, []entity.ID{e.area}, entity.TimelineFactQuery{
-					Kind: entity.ObjectDocument, Knowledge: rev.KnowledgeSeq, From: at.Add(-time.Minute), To: at.Add(time.Minute),
-				})
-				require.NoError(t, err)
-				require.Len(t, events, 7)
-				for j := range events {
-					event := &events[j]
-					assert.Equal(t, "version_created", event.Kind)
-					assert.Equal(t, scope.SHA, event.Value)
-					assert.Equal(t, entity.ViaImport, event.ObservedVia)
-					assert.True(t, event.ObservedAt.After(event.EventTime))
+				read := func(from, to time.Time, knowledge int64) []entity.TimelineFact {
+					t.Helper()
+					events, err := e.norm.TimelineFacts(t.Context(), visible, e.orgID, []entity.ID{e.area}, entity.TimelineFactQuery{
+						Kind: entity.ObjectDocument, Knowledge: knowledge, From: from, To: to,
+					})
+					require.NoError(t, err)
+					return events
 				}
+				assert.Empty(t, read(at.Add(-time.Minute), e.clock.Now().Add(time.Minute), rev.KnowledgeSeq))
+				events := read(versionAt, versionAt.Add(time.Minute), rev.KnowledgeSeq)
+				require.Len(t, events, 1)
+				event := events[0]
+				assert.Equal(t, "version_created", event.Kind)
+				assert.Equal(t, "docs/README.md", event.DisplayKey)
+				assert.Equal(t, scope.SHA, event.Value)
+				assert.Equal(t, entity.ViaImport, event.ObservedVia)
+				assert.True(t, versionAt.Equal(event.EventTime))
+				assert.Equal(t, 10800, event.EventOffsetS)
+				assert.WithinDuration(t, rc.ReceivedAt, event.ObservedAt, time.Microsecond)
+				assert.Empty(t, read(versionAt.Add(-time.Minute), versionAt, rev.KnowledgeSeq))
+				assert.Empty(t, read(versionAt, versionAt.Add(time.Minute), rev.KnowledgeSeq-1))
 			}
 			codeValue(t, e, analysisRev, "D27", "", 1, entity.StateAssessed)
 			codeValue(t, e, analysisRev, "D27", "earliest_version", earliestVersion, entity.StateAssessed)
@@ -211,13 +222,14 @@ func updateDocFixture(t *testing.T, root, file, old, updated string) {
 	require.NoError(t, os.WriteFile(name, []byte(strings.Replace(string(data), old, updated, 1)), 0o600))
 }
 
-func docsProfilePackage(t *testing.T, profile *ci.DocsProfile, at time.Time, scope entity.DocumentationScope, root string, index int) []byte {
+func docsProfilePackage(t *testing.T, profile *ci.DocsProfile, at, versionAt time.Time, scope entity.DocumentationScope, root string, index int) []byte {
 	t.Helper()
 	job := &ci.Job{
 		InstanceKey: _gitlabInstance, ProjectID: "42", ProjectPath: "demo/docs",
 		JobID: strconv.Itoa(8100 + index), PipelineID: strconv.Itoa(8000 + index), SHA: scope.SHA, RefName: "main",
 	}
-	store := ci.NewStore(t.TempDir())
+	storeDir := t.TempDir()
+	store := ci.NewStore(storeDir)
 	now := func() time.Time { return at }
 	runner := &ci.DocsRunner{
 		Runner: &ci.Runner{Job: job, Store: store, Stdout: io.Discard, Stderr: io.Discard, Now: now}, Docs: profile, Root: root,
@@ -236,11 +248,39 @@ func docsProfilePackage(t *testing.T, profile *ci.DocsProfile, at time.Time, sco
 	require.Len(t, runs, 2)
 	for i := range runs {
 		require.Len(t, runs[i].Reports, 2)
+		if index == 0 {
+			setDocumentVersionTime(t, storeDir, &runs[i], versionAt)
+		}
 	}
 	pack := &ci.Packer{Job: job, Store: store, Version: "test", Now: now}
 	pkg, err := pack.Build(envelope.DefaultLimits)
 	require.NoError(t, err)
 	return pkg.Data
+}
+
+func setDocumentVersionTime(t *testing.T, storeDir string, run *envelope.ScanToolRun, at time.Time) {
+	t.Helper()
+	for _, report := range run.Reports {
+		if report.ReportFormat != envelope.ScanReportReportFormatDocsJson {
+			continue
+		}
+		path := filepath.Join(storeDir, filepath.FromSlash(report.File.Path))
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		var inventory envelope.DocsInventory
+		require.NoError(t, json.Unmarshal(raw, &inventory))
+		for i := range inventory.Documents {
+			doc := &inventory.Documents[i].Document
+			if *doc.Path == "docs/README.md" {
+				doc.UpdatedAt = &at
+			}
+		}
+		raw, err = json.Marshal(inventory)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(path, raw, 0o600))
+		return
+	}
+	t.Fatal("docs inventory is missing")
 }
 
 func checkDocsMetrics(t *testing.T, e *reviewEnv, rev entity.CalcRevision, stage int) {

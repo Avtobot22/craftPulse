@@ -132,14 +132,14 @@ func (r *taskRead) projectedEvent(ctx context.Context, scope entity.Scope, f *en
 	case string(entity.ObjectCIRun):
 		switch string(src.Provider) {
 		case string(entity.ProviderGitLab):
-			ref.SourceURL = sourceURL(repo.WebURL, "/-/pipelines/"+url.PathEscape(f.NativeID))
+			ref.SourceURL = gitLabCIURL(src, repo, f.ProjectPath, "/-/pipelines/"+url.PathEscape(f.NativeID))
 		case string(entity.ProviderGitHub):
 			ref.SourceURL = sourceURL(repo.WebURL, "/actions/runs/"+url.PathEscape(f.NativeID))
 		}
 	case string(entity.ObjectCIAttempt):
 		switch string(src.Provider) {
 		case string(entity.ProviderGitLab):
-			ref.SourceURL = sourceURL(repo.WebURL, "/-/jobs/"+url.PathEscape(f.NativeID))
+			ref.SourceURL = gitLabCIURL(src, repo, f.ProjectPath, "/-/jobs/"+url.PathEscape(f.NativeID))
 		case string(entity.ProviderGitHub):
 			ref.SourceURL = sourceURL(repo.WebURL, "/actions/runs/"+url.PathEscape(f.ParentNativeID)+"/job/"+url.PathEscape(f.NativeID))
 		}
@@ -161,4 +161,22 @@ func (r *taskRead) projectedEvent(ctx context.Context, scope entity.Scope, f *en
 		Object: ref, ID: f.ID, AreaID: f.AreaID, Kind: f.Kind, After: taskKey(f.Value), ActorKind: actor,
 		EventTime: f.EventTime, ObservedAt: f.ObservedAt, EventOffsetS: f.EventOffsetS, ObservedVia: f.ObservedVia,
 	}, nil
+}
+
+func gitLabCIURL(src entity.SourceInstance, repo entity.RepositoryVersion, manifestPath, route string) *string {
+	if link := sourceURL(repo.WebURL, route); link != nil {
+		return link
+	}
+	// CI can discover a project before the MR collector has stored its repository metadata.
+	parts := strings.Split(cmp.Or(repo.Path, manifestPath), "/")
+	if len(parts) < 2 {
+		return nil
+	}
+	for i, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return nil
+		}
+		parts[i] = url.PathEscape(part)
+	}
+	return sourceURL(cmp.Or(src.BaseURL, src.InstanceKey), "/"+strings.Join(parts, "/")+route)
 }

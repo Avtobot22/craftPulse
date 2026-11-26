@@ -51,7 +51,9 @@ type DocsLinkCounts struct {
 
 type DocsReportDocument struct {
 	DocumentVersion
-	SpecValid *bool `json:"spec_valid,omitempty"`
+	SpecValid    *bool      `json:"spec_valid,omitempty"`
+	EventTime    *time.Time `json:"event_time,omitempty"`
+	EventOffsetS int32      `json:"event_offset_s,omitempty"`
 }
 
 // DocsReportFacts keeps what one check observed, separately from immutable document versions.

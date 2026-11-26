@@ -109,7 +109,7 @@ func (in *input) ciRun(rec *envelope.Record, b baseFact, areaKind entity.ObjectK
 			Record: b.ref, Revision: b.revision, ObservedAt: b.observed, ObservedVia: b.via, SourceUpdatedAt: p.UpdatedAt,
 			RefName: p.RefName, SHA: p.Sha, DefinitionVersion: deref(p.DefinitionVersion), NativeStatus: p.NativeStatus,
 			Outcome: in.outcome(p.NativeStatus, entity.CIOutcome(p.Outcome)), StartedAt: p.StartedAt, FinishedAt: p.FinishedAt,
-			StartOffsetS: ciTimeOffset(p.StartedAt), FinishOffsetS: ciTimeOffset(p.FinishedAt),
+			StartOffsetS: sourceTimeOffset(p.StartedAt), FinishOffsetS: sourceTimeOffset(p.FinishedAt),
 			AttemptHistory: history, AllowFailureSemantics: in.provider == _providerGitLab,
 		},
 	}
@@ -143,7 +143,7 @@ func (in *input) ciAttempt(rec *envelope.Record, b baseFact) (*ciAttemptCandidat
 			AttemptNo: p.AttemptNo, NativeStatus: p.NativeStatus, Outcome: in.outcome(p.NativeStatus, entity.CIOutcome(p.Outcome)),
 			AllowFailure: p.AllowFailure, FailureKind: failure, RunnerClass: deref(p.RunnerClass),
 			StartedAt: p.StartedAt, FinishedAt: p.FinishedAt,
-			StartOffsetS: ciTimeOffset(p.StartedAt), FinishOffsetS: ciTimeOffset(p.FinishedAt), DurationS: duration(p.DurationS),
+			StartOffsetS: sourceTimeOffset(p.StartedAt), FinishOffsetS: sourceTimeOffset(p.FinishedAt), DurationS: duration(p.DurationS),
 		},
 	}, nil
 }
@@ -185,7 +185,7 @@ func changedAt(started, finished *time.Time) *time.Time {
 	return finished
 }
 
-func ciTimeOffset(at *time.Time) int32 {
+func sourceTimeOffset(at *time.Time) int32 {
 	if at == nil {
 		return 0
 	}

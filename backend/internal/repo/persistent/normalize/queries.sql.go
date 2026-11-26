@@ -1650,7 +1650,9 @@ WITH input AS (
     SELECT (doc.value->>'document_id')::uuid AS document_id, doc.value->>'path' AS path,
         doc.value->>'version_ref' AS version_ref, doc.value->>'format' AS format, doc.value->>'title' AS title,
         doc.value->>'owner' AS owner, doc.value->>'acl_state' AS acl_state, (doc.value->>'spec_valid')::boolean AS spec_valid,
-        decode(doc.value->>'content_hash', 'base64') AS hash
+        decode(doc.value->>'content_hash', 'base64') AS hash,
+        (doc.value->>'event_time')::timestamptz AS event_time,
+        COALESCE((doc.value->>'event_offset_s')::integer, 0) AS event_offset_s
     FROM jsonb_array_elements($3::jsonb) AS doc(value)
 ), inserted AS (
     INSERT INTO normalize.document_version
@@ -1668,8 +1670,8 @@ WITH input AS (
         AND i.hash = v.content_hash AND i.format = v.doc_format
     WHERE v.organization_id = $1 AND v.area_id = $4
 )
-INSERT INTO normalize.docs_report_document (organization_id, report_id, document_version_id, spec_valid)
-SELECT $1, $2, v.id, i.spec_valid
+INSERT INTO normalize.docs_report_document (organization_id, report_id, document_version_id, spec_valid, event_time, event_offset_s)
+SELECT $1, $2, v.id, i.spec_valid, i.event_time, i.event_offset_s
 FROM versions v JOIN input i USING (document_id)
 `
 

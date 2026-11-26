@@ -15,9 +15,10 @@ import (
 // use the first version that carried it, so a later snapshot cannot change when the start was learned.
 const _ciTimeline = `
 WITH runs AS MATERIALIZED (
-	SELECT v.*, o.current_area_id, o.instance_id, o.native_id
+	SELECT v.*, o.current_area_id, o.instance_id, o.native_id, area.native_id AS project_native_id
 	FROM normalize.ci_run_version v
 	JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
+	JOIN normalize.source_object area ON area.organization_id = o.organization_id AND area.id = o.current_area_id
 	WHERE v.organization_id = $1 AND o.current_area_id = ANY($2::uuid[]) AND o.deleted_at IS NULL
 	  AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
 	  AND v.known_seq <= $4 AND (v.superseded_seq IS NULL OR v.superseded_seq > $4)
@@ -25,11 +26,11 @@ WITH runs AS MATERIALIZED (
 ), versions AS (
 	SELECT v.run_id AS object_id, v.run_id, v.current_area_id, v.instance_id, v.native_id,
 	       '' AS parent_native_id, '#' || v.native_id AS display_key, 'ci_run' AS object_kind,
-	       v.started_at, v.finished_at, v.outcome
+	       v.started_at, v.finished_at, v.outcome, v.project_native_id
 	FROM runs v
 	UNION ALL
 	SELECT a.attempt_id, v.run_id, v.current_area_id, v.instance_id, o.native_id, v.native_id,
-	       a.job_key, 'ci_attempt', a.started_at, a.finished_at, a.outcome
+	       a.job_key, 'ci_attempt', a.started_at, a.finished_at, a.outcome, v.project_native_id
 	FROM runs v
 	JOIN normalize.ci_attempt_version a ON a.organization_id = v.organization_id AND a.run_id = v.run_id
 	JOIN normalize.source_object o ON o.organization_id = a.organization_id AND o.id = a.attempt_id
@@ -39,7 +40,9 @@ WITH runs AS MATERIALIZED (
 )
 SELECT v.object_id, v.run_id, v.current_area_id, v.instance_id, v.native_id, v.parent_native_id,
        v.display_key, v.object_kind, e.kind, e.at, e.outcome, first.observed_at, first.offset_s,
-       COALESCE(first.observed_via, CASE WHEN rec.channel = 'import' THEN 'import' ELSE 'incremental' END)
+       COALESCE(first.observed_via, CASE WHEN rec.channel = 'import' THEN 'import' ELSE 'incremental' END),
+       COALESCE(CASE WHEN rec.manifest #>> '{area,native_id}' = v.project_native_id
+                     THEN rec.manifest #>> '{area,key}' END, '')
 FROM versions v
 CROSS JOIN LATERAL (VALUES
 	(v.started_at, '', CASE WHEN v.object_kind = 'ci_run' THEN 'pipeline_started' ELSE 'attempt_started' END, true),
@@ -65,19 +68,20 @@ CROSS JOIN LATERAL (
 LEFT JOIN ingest.receipt rec ON rec.organization_id = $1 AND rec.id = first.receipt_id
 WHERE e.at >= $5 AND e.at < $6`
 
-// Git inventories do not carry the commit timestamp. The scan time, when present, dates the
-// creation of the inventoried version; its receipt supplies the separate time of observation.
+// The first report carrying a source timestamp dates the version. Undated inventories
+// establish the existence of a version but cannot place its creation on the timeline.
 const _documentTimeline = `
 SELECT d.id, d.document_id, o.current_area_id, o.instance_id, d.path, COALESCE(d.title, ''), d.version_ref,
-       f.event_time, f.received_at, CASE WHEN f.channel = 'import' THEN 'import' ELSE 'incremental' END
+       f.event_time, f.received_at, f.event_offset_s, CASE WHEN f.channel = 'import' THEN 'import' ELSE 'incremental' END
 FROM normalize.document_version d
 JOIN normalize.source_object o ON o.organization_id = d.organization_id AND o.id = d.document_id
 CROSS JOIN LATERAL (
-	SELECT COALESCE(r.finished_at, r.started_at, i.received_at) AS event_time, i.received_at, i.channel
+	SELECT l.event_time, l.event_offset_s, i.received_at, i.channel
 	FROM normalize.docs_report_document l
 	JOIN normalize.report r ON r.organization_id = l.organization_id AND r.id = l.report_id
 	JOIN ingest.receipt i ON i.organization_id = r.organization_id AND i.id = r.receipt_id
 	WHERE l.organization_id = d.organization_id AND l.document_version_id = d.id AND r.known_seq <= $4
+	  AND l.event_time IS NOT NULL
 	ORDER BY r.known_seq, r.id LIMIT 1
 ) f
 WHERE d.organization_id = $1 AND o.current_area_id = ANY($2::uuid[]) AND o.deleted_at IS NULL
@@ -111,7 +115,7 @@ func scanCITimeline(row pgx.CollectableRow) (entity.TimelineFact, error) {
 	var f entity.TimelineFact
 	var object, run, area, instance uuid.UUID
 	err := row.Scan(&object, &run, &area, &instance, &f.NativeID, &f.ParentNativeID, &f.DisplayKey,
-		&f.ObjectKind, &f.Kind, &f.EventTime, &f.Value, &f.ObservedAt, &f.EventOffsetS, &f.ObservedVia)
+		&f.ObjectKind, &f.Kind, &f.EventTime, &f.Value, &f.ObservedAt, &f.EventOffsetS, &f.ObservedVia, &f.ProjectPath)
 	f.ObjectID, f.RunID, f.AreaID, f.InstanceID = entity.ID(object), entity.ID(run), entity.ID(area), entity.ID(instance)
 	f.ID = entity.ID(uuid.NewSHA1(object, []byte(f.Kind)))
 	return f, err
@@ -120,7 +124,7 @@ func scanCITimeline(row pgx.CollectableRow) (entity.TimelineFact, error) {
 func scanDocumentTimeline(row pgx.CollectableRow) (entity.TimelineFact, error) {
 	f := entity.TimelineFact{Kind: "version_created", ObjectKind: entity.ObjectDocument}
 	var id, object, area, instance uuid.UUID
-	err := row.Scan(&id, &object, &area, &instance, &f.DisplayKey, &f.Title, &f.Value, &f.EventTime, &f.ObservedAt, &f.ObservedVia)
+	err := row.Scan(&id, &object, &area, &instance, &f.DisplayKey, &f.Title, &f.Value, &f.EventTime, &f.ObservedAt, &f.EventOffsetS, &f.ObservedVia)
 	f.ID, f.ObjectID, f.AreaID, f.InstanceID = entity.ID(id), entity.ID(object), entity.ID(area), entity.ID(instance)
 	return f, err
 }
