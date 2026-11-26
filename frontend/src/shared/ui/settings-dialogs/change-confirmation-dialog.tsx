@@ -20,7 +20,12 @@ export function ChangeConfirmationDialog<Draft, Result>(
     useChangeConfirmation(props)
   const unchanged = status.kind === 'preview' && proposal.changes.length === 0
   const missingVersion = !isStrongETag(proposal.etag)
-  const canSubmit = status.kind === 'preview' && !missingVersion && !unchanged
+  const retryable = status.kind === 'retryable'
+  const canSubmit =
+    retryable || (status.kind === 'preview' && !missingVersion && !unchanged)
+  let confirmLabel = 'Подтвердить'
+  if (status.kind === 'saving') confirmLabel = 'Сохранение'
+  if (retryable) confirmLabel = 'Повторить сохранение'
   let progressMessage = ''
   if (status.kind === 'saving') progressMessage = 'Сохранение'
   if (status.kind === 'checking') {
@@ -64,7 +69,7 @@ export function ChangeConfirmationDialog<Draft, Result>(
                 disabled={!canSubmit}
                 onClick={confirm}
               >
-                {status.kind === 'saving' ? 'Сохранение' : 'Подтвердить'}
+                {confirmLabel}
               </Button>
             )}
           </>
@@ -84,6 +89,15 @@ export function ChangeConfirmationDialog<Draft, Result>(
                 : 'Не удалось загрузить актуальную версию'
             }
             message="Перечитайте ресурс перед повторным подтверждением."
+          />
+        </div>
+      )}
+      {retryable && (
+        <div role="alert">
+          <Alert
+            theme="warning"
+            title="Версия пока не изменилась"
+            message="Исход сохранения неизвестен. Повторите запрос или вернитесь к черновику."
           />
         </div>
       )}

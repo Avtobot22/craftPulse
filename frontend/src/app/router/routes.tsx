@@ -71,7 +71,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 { path: routePaths.users, element: <UsersPage /> },
                 { path: routePaths.users + '/:userId', element: <UsersPage /> },
                 {
-                  path: '/pipelines/:pipelineId',
+                  path: routePaths.pipeline,
                   element: <PipelinePage api={runtime.api} />,
                 },
                 {
@@ -120,7 +120,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                   element: <MergeRequestQueuePage />,
                 },
                 ...adminRoutes,
-                ...technicalRoutes,
+                ...technicalRoutes(runtime.api),
                 { path: '*', element: <UnavailablePage /> },
               ],
             },

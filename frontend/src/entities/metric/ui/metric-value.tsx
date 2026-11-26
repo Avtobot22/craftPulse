@@ -26,6 +26,8 @@ const reasons: Readonly<Record<string, string>> = {
   reconcile_unfinished: 'Нет результата завершённой сверки с источником',
   scan_missing: 'Отчёт проверки отсутствует',
   report_missing: 'Отчёт проверки отсутствует',
+  incomparable_base: 'Нет сопоставимой базы',
+  mr_diff_missing: 'Нет данных об изменённых строках',
   target_missing: 'Целевой срок не задан',
   type_unknown: 'Тип задачи неизвестен',
   size_unknown: 'Размер задачи неизвестен',

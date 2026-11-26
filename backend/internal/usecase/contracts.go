@@ -273,6 +273,11 @@ type ExceptionDrafts interface {
 	CreateException(ctx context.Context, s entity.Subject, scope entity.Scope, cmd entity.ExceptionWrite) (entity.ExceptionView, error)
 }
 
+// Findings reads a canonical finding in the caller's source and security scope.
+type Findings interface {
+	GetFinding(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.FindingDetail, error)
+}
+
 type TechnicalComparisons interface {
 	CompareTechnicalResults(context.Context, entity.Subject, entity.Scope, entity.TechnicalComparisonQuery) (entity.TechnicalComparison, error)
 }

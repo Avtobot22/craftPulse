@@ -1,20 +1,24 @@
 import { useQuery } from '@tanstack/react-query'
-import { generatePath, Link, useParams, useSearchParams } from 'react-router'
-import { CommitSha, LastGoodResult } from '@/entities/check-report'
-import { MetricValue } from '@/entities/metric'
+import { useOutletContext, useParams, useSearchParams } from 'react-router'
 import { RestrictedResults } from '@/entities/result-access'
 import { ApiError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
+import type { CurrentUser } from '@/shared/auth'
+import { contractLabel, technicalLabels } from '@/shared/config'
 import {
-  contractLabel,
-  contractLabels,
-  routePaths,
-  technicalLabels,
-} from '@/shared/config'
-import { DataStateBadge, ErrorState, LoadingState } from '@/shared/ui'
+  DataStateBadge,
+  ErrorState,
+  InspectionLink,
+  LoadingState,
+  useInspectionReturn,
+} from '@/shared/ui'
 import { getSummaryQuery } from '../model/summary'
-import { SummaryMetrics } from './summary-metrics'
+import { summaryComparisonLink } from '../model/comparison-link'
+import { SummaryAttempts } from './summary-attempts'
+import { SummaryHeader } from './summary-header'
+import { SummaryMetrics, SummaryCoverage } from './summary-metrics'
 import { SummarySignals } from './summary-signals'
+import './merge-request-summary-page.css'
 
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu
 const gitSha = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u
@@ -34,7 +38,8 @@ export function MergeRequestSummaryPage({ api }: { api: ApiClient }) {
   if (
     !uuid.test(mr) ||
     (head !== undefined && !gitSha.test(head)) ||
-    (raw !== null && (!/^[1-9][0-9]*$/u.test(raw) || Number(raw) > 2147483647))
+    (raw !== null && !/^[1-9][0-9]{0,9}$/u.test(raw)) ||
+    (revision !== undefined && revision > 2147483647)
   ) {
     return <p role="alert">Некорректная ссылка на сводку MR</p>
   }
@@ -60,18 +65,22 @@ function SummaryContent({
   head: string | undefined
 }) {
   const query = useQuery(getSummaryQuery(api, mr, revision, head))
+  const user = useOutletContext<CurrentUser | undefined>()
+  const [params] = useSearchParams()
+  useInspectionReturn(query.isSuccess)
   if (query.isPending) return <LoadingState />
   if (query.isError) {
-    const unavailable =
-      query.error instanceof ApiError &&
-      ['not-found', 'forbidden'].includes(query.error.kind)
+    const kind = query.error instanceof ApiError ? query.error.kind : null
+    let reason = 'Не удалось загрузить сводку MR'
+    if (kind === 'not-found' || kind === 'forbidden') {
+      reason =
+        kind === 'not-found' && head && revision === undefined
+          ? 'Для выбранного head пока нет сводки'
+          : 'Ревизия сводки недоступна'
+    }
     return (
       <ErrorState
-        reason={
-          unavailable
-            ? 'Ревизия сводки недоступна'
-            : 'Не удалось загрузить сводку MR'
-        }
+        reason={reason}
         retrying={query.isFetching}
         onRetry={() => {
           void query.refetch()
@@ -80,103 +89,99 @@ function SummaryContent({
     )
   }
   const s = query.data
-  const publication = s.publication
+  const canReadFindings = user?.actions.includes('findings.read') ?? false
+  const canReadCI = user?.actions.includes('ci.read') ?? false
+  const comparisonSearch = new URLSearchParams()
+  for (const key of ['org_slug', 'team_id', 'project_id']) {
+    const value = params.get(key)
+    if (value) comparisonSearch.set(key, value)
+  }
+  comparisonSearch.set('head_sha', s.head_sha)
+  if (s.base_sha) comparisonSearch.set('base_sha', s.base_sha)
+
+  const signals = s.items.filter(
+    ({ finding_id, analysis_kind, item_kind }) =>
+      finding_id !== null &&
+      analysis_kind !== undefined &&
+      Object.hasOwn(technicalLabels.analysisKind, analysis_kind) &&
+      (item_kind === 'accepted' ||
+        item_kind === 'newly_observed' ||
+        (s.base_sha !== null &&
+          (item_kind === 'new' || item_kind === 'resolved'))),
+  )
+  const comparisonItem =
+    signals.find(({ component_id }) => component_id !== undefined) ??
+    signals[0] ??
+    s.items.find(
+      ({ component_id, analysis_kind, item_kind }) =>
+        item_kind === 'not_evaluated' &&
+        component_id !== undefined &&
+        analysis_kind !== undefined &&
+        Object.hasOwn(technicalLabels.analysisKind, analysis_kind),
+    )
+
   return (
-    <article>
-      <h1>Сводка MR, ревизия {s.revision_no}</h1>
-      <p>
-        Head <CommitSha sha={s.head_sha} />
-      </p>
-      {s.base_sha && (
-        <p>
-          База <CommitSha sha={s.base_sha} />
-        </p>
-      )}
-      {s.last_good && <LastGoodResult result={s.last_good} />}
-      <p>
-        Состояние сводки{' '}
-        {contractLabel(technicalLabels.summaryStatus, s.status)}
-        {s.stale_reason && ` (${s.stale_reason})`}
-      </p>
-      {(s.status === 'stale' || s.status === 'superseded') && (
-        <p>Историческая сводка</p>
-      )}
-      {s.built_at && (
-        <p>
-          Собрана <time dateTime={s.built_at}>{s.built_at}</time>
-        </p>
-      )}
-      <h2>Комментарий в MR</h2>
-      <p>
-        {contractLabel(technicalLabels.publicationStatus, publication.status)}
-      </p>
-      {publication.error_code && (
-        <p>
-          {contractLabel(
-            technicalLabels.publicationError,
-            publication.error_code,
-          )}
-        </p>
-      )}
-      {publication.published_at && (
-        <p>
-          Опубликован{' '}
-          <time dateTime={publication.published_at}>
-            {publication.published_at}
-          </time>
-        </p>
-      )}
-      {publication.external_id && (
-        <p>
-          ID комментария <code>{publication.external_id}</code>
-        </p>
-      )}
-      <h2>Проверки</h2>
-      <p>
-        Состояние pipeline{' '}
-        {contractLabel(technicalLabels.pipelineState, s.pipeline_state)}
-      </p>
-      {s.ci && (
-        <>
-          <p>
-            Исход CI {contractLabel(contractLabels.ciOutcome, s.ci.outcome)}.
-            Попыток {s.ci.attempts}, заданий с повтором {s.ci.retried_jobs}
-          </p>
-          <Link
-            to={generatePath(routePaths.pipeline, {
-              pipelineId: s.ci.pipeline_id,
-            })}
-          >
-            Открыть pipeline
-          </Link>
-        </>
-      )}
-      <h3>Покрытие изменённых строк</h3>
-      <MetricValue value={s.coverage_changed_lines} />
-      <SummaryMetrics tests={s.tests} change={s.change} expected={s.expected} />
-      {s.not_evaluated.length > 0 && (
-        <section>
-          <h2>Непроверенные области</h2>
-          <ul>
-            {s.not_evaluated.map(({ analysis_kind, reason_code }, i) => (
-              <li key={i}>
-                {contractLabel(technicalLabels.analysisKind, analysis_kind)}{' '}
-                <DataStateBadge
-                  state="NOT_EVALUATED"
-                  reason={contractLabel(notEvaluatedReasons, reason_code)}
-                />
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      <h2>Находки</h2>
-      <RestrictedResults
-        access_limited={s.access_limited}
-        access_notes={s.access_notes}
-        redactions={s.redactions}
+    <article className="cp-mr-summary">
+      <SummaryHeader
+        api={api}
+        summary={s}
+        refresh={() => void query.refetch()}
       />
-      <SummarySignals items={s.items} />
+      <div className="cp-summary-columns">
+        <section>
+          <h2>Находки</h2>
+          <RestrictedResults
+            access_limited={s.access_limited}
+            access_notes={s.access_notes}
+            redactions={s.redactions}
+          />
+          {canReadFindings && (
+            <InspectionLink
+              id="summary-comparison"
+              to={summaryComparisonLink(comparisonSearch, comparisonItem)}
+            >
+              Причины изменения результата
+            </InspectionLink>
+          )}
+          <SummarySignals
+            items={s.items}
+            hasBase={s.base_sha !== null}
+            canReadFindings={canReadFindings}
+            comparisonSearch={comparisonSearch}
+          />
+          {(s.not_evaluated.length > 0 ||
+            s.redactions.includes('not_evaluated')) && (
+            <section>
+              <h2>Непроверенные области</h2>
+              {s.redactions.includes('not_evaluated') && (
+                <p>Часть непроверенных областей скрыта.</p>
+              )}
+              <ul>
+                {s.not_evaluated.map(({ analysis_kind, reason_code }, i) => (
+                  <li key={`${analysis_kind}-${reason_code}-${String(i)}`}>
+                    {contractLabel(technicalLabels.analysisKind, analysis_kind)}{' '}
+                    <DataStateBadge
+                      state="NOT_EVALUATED"
+                      reason={contractLabel(notEvaluatedReasons, reason_code)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </section>
+        <section>
+          <h2>Проверки и структура изменения</h2>
+          <SummaryAttempts api={api} ci={s.ci} canReadCI={canReadCI} />
+          <h3>Покрытие изменённых строк</h3>
+          <SummaryCoverage value={s.coverage_changed_lines} />
+          <SummaryMetrics
+            tests={s.tests}
+            change={s.change}
+            expected={s.expected}
+          />
+        </section>
+      </div>
     </article>
   )
 }

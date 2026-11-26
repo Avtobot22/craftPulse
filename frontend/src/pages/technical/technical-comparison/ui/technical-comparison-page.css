@@ -1,0 +1,18 @@
+.cp-comparison-form,
+.cp-comparison-reports {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--g-spacing-4);
+  margin-block: var(--g-spacing-4);
+  overflow-wrap: anywhere;
+}
+
+.cp-comparison-form label {
+  display: grid;
+  gap: var(--g-spacing-1);
+}
+
+.cp-comparison-form input,
+.cp-comparison-form select {
+  min-width: 0;
+}

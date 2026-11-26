@@ -5,6 +5,7 @@ import type { ApiResponse } from '@/shared/api'
 import type {
   ChangeAttempt,
   ChangePreview,
+  ChangeRecheck,
   ChangeValidation,
   RecheckReason,
 } from '@/shared/ui'
@@ -102,26 +103,31 @@ export function useVersionedDraft<D, V extends Version>({
     attempt: ChangeAttempt<D>,
     reason: RecheckReason,
     signal: AbortSignal,
-  ) {
+  ): Promise<ChangeRecheck<D, ApiResponse<V>>> {
     const latest = await api.list(signal)
     signal.throwIfAborted()
+    if (!isStrongETag(latest.etag)) return { kind: 'unknown' }
+    if (latest.etag === attempt.etag) {
+      // These version endpoints support replay with the original key.
+      return reason === 'uncertain'
+        ? { kind: 'retryable' }
+        : { kind: 'unknown' }
+    }
     const version = latest.data.data[0]
     const fresh = compare(version && fromVersion(version), attempt.draft)
     // A lost response can be reconciled by the observed effect. A 412 always
     // presents the newly loaded baseline and requires an explicit decision.
-    if (!isStrongETag(latest.etag) || latest.etag === attempt.etag)
-      return { kind: 'unknown' } as const
     setSnapshot(latest)
     if (reason === 'uncertain' && version && !fresh.length) {
       return {
         kind: 'applied',
         result: { data: version, etag: latest.etag },
-      } as const
+      }
     }
     return {
       kind: 'not-applied',
       proposal: { etag: latest.etag, changes: fresh, draft: attempt.draft },
-    } as const
+    }
   }
 
   function accept({ data, etag }: ApiResponse<V>) {

@@ -36,6 +36,7 @@ export const technicalNavigation = [
 
 const technicalDetails = [
   { pattern: routePaths.findingDetail, action: 'findings.read' },
+  { pattern: routePaths.technicalComparisonSetup, action: 'findings.read' },
   { pattern: routePaths.technicalComparison, action: 'findings.read' },
   { pattern: routePaths.exceptions, action: 'findings.read' },
   { pattern: routePaths.exceptionCreate, action: 'exceptions.manage' },

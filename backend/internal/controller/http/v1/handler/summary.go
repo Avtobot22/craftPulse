@@ -93,6 +93,7 @@ func summaryItemBody(i *entity.SummaryItem, no int) openapi.SummaryItem {
 	out := openapi.SummaryItem{
 		ItemNo: no, ItemKind: openapi.SummaryItemItemKind(i.Kind), FindingId: uuidPtr(i.FindingID),
 		RuleId: optional(i.RuleID), Severity: optional(i.Severity), Rank: i.Rank,
+		ComponentId: uuidPtr(i.ComponentID),
 	}
 	if kind := openapi.AnalysisKind(i.AnalysisKind); kind.Valid() {
 		out.AnalysisKind = &kind

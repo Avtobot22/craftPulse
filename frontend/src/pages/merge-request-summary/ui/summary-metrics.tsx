@@ -23,11 +23,6 @@ const expectedLabels = {
   missing_reports: 'Отсутствующие отчёты',
 } satisfies Record<keyof NonNullable<Summary['expected']>, string>
 
-const changeReasons = new Map([
-  ['incomparable_base', 'Нет сопоставимой базы'],
-  ['mr_diff_missing', 'Нет данных об изменённых строках'],
-])
-
 function MetricGroup<K extends string>({
   title,
   values,
@@ -41,20 +36,14 @@ function MetricGroup<K extends string>({
     <section>
       <h3>{title}</h3>
       <dl>
-        {(Object.keys(labels) as K[]).map((key) => {
-          const value = values[key]
-          const reason =
-            value.reason_code && changeReasons.get(value.reason_code)
-          return (
-            <div key={key}>
-              <dt>{labels[key]}</dt>
-              <dd>
-                <MetricValue value={value} />
-                {reason && <p>{reason}</p>}
-              </dd>
-            </div>
-          )
-        })}
+        {(Object.keys(labels) as K[]).map((key) => (
+          <div key={key}>
+            <dt>{labels[key]}</dt>
+            <dd>
+              <MetricValue value={values[key]} />
+            </dd>
+          </div>
+        ))}
       </dl>
     </section>
   )
@@ -71,11 +60,21 @@ export function SummaryMetrics({
 }) {
   return (
     <>
-      {tests && (
+      {tests ? (
         <MetricGroup title="Тесты" values={tests} labels={testLabels} />
+      ) : (
+        <section>
+          <h3>Тесты</h3>
+          <p>Данные о тестах недоступны.</p>
+        </section>
       )}
-      {change && (
+      {change ? (
         <MetricGroup title="Изменения" values={change} labels={changeLabels} />
+      ) : (
+        <section>
+          <h3>Изменения</h3>
+          <p>Данные о структуре изменения недоступны.</p>
+        </section>
       )}
       {expected && (
         <MetricGroup
@@ -85,5 +84,43 @@ export function SummaryMetrics({
         />
       )}
     </>
+  )
+}
+
+export function SummaryCoverage({
+  value,
+}: {
+  value: Summary['coverage_changed_lines']
+}) {
+  if (value.state === 'NOT_APPLICABLE')
+    return (
+      <p>
+        неприменимо
+        {value.reason_code === 'no_executable_units' &&
+          ' · Нет изменённых исполняемых строк'}
+      </p>
+    )
+  if (value.state === 'NOT_EVALUATED')
+    return (
+      <p>
+        не измерено
+        {value.reason_code === 'report_missing' &&
+          ' · Отчёт о покрытии отсутствует'}
+      </p>
+    )
+
+  const { numerator, denominator } = value
+  return (
+    <div>
+      <MetricValue value={value} />
+      {value.state === 'ASSESSED' &&
+        numerator !== null &&
+        denominator !== null &&
+        denominator > 0 && (
+          <p>
+            Покрыто строк: {numerator} из {denominator}
+          </p>
+        )}
+    </div>
   )
 }

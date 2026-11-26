@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { useParams } from 'react-router'
 import { ApiError, readArray, readRecord, readString } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
-import { ErrorState, LoadingState } from '@/shared/ui'
+import { ErrorState, InspectionBack, LoadingState } from '@/shared/ui'
 
 function ResultPage({
   title,
@@ -28,6 +28,7 @@ function ResultPage({
       <Text as="h1" variant="header-1">
         {title}
       </Text>
+      <InspectionBack />
       {pending && <LoadingState />}
       {unavailable && <p>Результат недоступен или ещё не готов.</p>}
       {error && !unavailable && (

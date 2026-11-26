@@ -158,16 +158,29 @@ afterEach(() => {
   })
 })
 
+function emptyCalendarVersions() {
+  return jsonResponse(
+    {
+      data: [],
+      next_cursor: null,
+    } satisfies Schemas['CalendarVersionPage'],
+    200,
+    { ETag: '"0"' },
+  )
+}
+
 function mount({
   initial,
   user = owner,
   readCatalog = () => jsonResponse(catalog),
+  readCalendarVersions = emptyCalendarVersions,
   createMapping,
   createCalendar,
 }: {
   initial?: Schemas['MappingVersion']
   user?: Schemas['CurrentUser']
   readCatalog?: () => Response
+  readCalendarVersions?: () => Response
   createMapping?: (match: string | null) => Response
   createCalendar?: (match: string | null) => Response
 } = {}) {
@@ -225,14 +238,7 @@ function mount({
             problemResponse('validation_failed', 422)
           )
         }
-        return jsonResponse(
-          {
-            data: [],
-            next_cursor: null,
-          } satisfies Schemas['CalendarVersionPage'],
-          200,
-          { ETag: '"0"' },
-        )
+        return readCalendarVersions()
       default:
         throw new Error(`Unexpected URL ${url.pathname}`)
     }
@@ -410,6 +416,78 @@ it('requires a second confirmation before writing against a refreshed ETag', asy
   expect(attempts[1]?.[1].get('Idempotency-Key')).not.toBe(
     attempts[0]?.[1].get('Idempotency-Key'),
   )
+})
+
+it('retries a mapping POST with the original key after rereading the same version', async () => {
+  const createMapping = vi
+    .fn<() => Response>()
+    .mockImplementationOnce(() => {
+      throw new TypeError('Network error before sending POST')
+    })
+    .mockReturnValueOnce(
+      jsonResponse(version(2, 'intake'), 201, { ETag: '"2"' }),
+    )
+  const { request } = mount({
+    initial: version(1, 'active'),
+    createMapping,
+  })
+  fireEvent.change(await intake(), { target: { value: 'intake' } })
+  await runPreview()
+  const dialog = openConfirmation()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
+  const retry = await within(dialog).findByRole('button', {
+    name: 'Повторить сохранение',
+  })
+  expect(createMapping).toHaveBeenCalledOnce()
+
+  fireEvent.click(retry)
+  await screen.findByText('Действующая версия 2')
+  const attempts = request.mock.calls.filter(([name]) => name === 'mapping')
+  expect(attempts).toHaveLength(2)
+  const headers = attempts.map(([, value]) => value)
+  expect(headers.map((value) => value.get('If-Match'))).toEqual(['"1"', '"1"'])
+  const key = headers[0]?.get('Idempotency-Key')
+  expect(key).toBeTruthy()
+  expect(headers[1]?.get('Idempotency-Key')).toBe(key)
+  expect(attempts[1]?.[2]).toEqual(attempts[0]?.[2])
+})
+
+it('returns to the calendar draft after a manual reread recovers the same version', async () => {
+  const readCalendarVersions = vi
+    .fn(emptyCalendarVersions)
+    .mockImplementationOnce(emptyCalendarVersions)
+    .mockImplementationOnce(() => {
+      throw new TypeError('Network error while rereading versions')
+    })
+  const createCalendar = vi.fn<() => Response>(() => {
+    throw new TypeError('Network error before sending POST')
+  })
+  mount({ readCalendarVersions, createCalendar })
+  const timezone = await screen.findByRole('textbox', {
+    name: 'Часовой пояс календаря (IANA)',
+  })
+  fireEvent.change(timezone, { target: { value: 'Europe/Moscow' } })
+  const opener = screen.getByRole('button', { name: 'Подтвердить календарь' })
+  opener.focus()
+  fireEvent.click(opener)
+  const dialog = screen.getByRole('dialog')
+  const cancel = within(dialog).getByRole('button', { name: 'Отмена' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
+  const reread = await within(dialog).findByRole('button', {
+    name: 'Перечитать ресурс',
+  })
+  expect(cancel).toBeDisabled()
+
+  fireEvent.click(reread)
+  await within(dialog).findByRole('button', { name: 'Повторить сохранение' })
+  expect(cancel).toBeEnabled()
+  fireEvent.click(cancel)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(timezone).toHaveValue('Europe/Moscow')
+  await waitFor(() => {
+    expect(opener).toHaveFocus()
+  })
+  expect(createCalendar).toHaveBeenCalledOnce()
 })
 
 it('versions the calendar separately and uses the selected version in the preview', async () => {

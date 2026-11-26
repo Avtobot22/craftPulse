@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 import type { ApiClient } from './client'
 import type { components, operations } from './generated/schema'
 import type { OpenCodes } from './read-fields'
@@ -117,14 +117,45 @@ export function listPipelineAttempts(
 ) {
   return queryOptions({
     queryKey: ['pipelines', 'attempts', pipelineId, params],
-    queryFn: async ({ signal }) =>
-      (
-        await api.read('/pipelines/{pipeline_id}/attempts', readAttemptPage, {
-          pathParams: { pipeline_id: pipelineId },
-          query: params,
-          signal,
-        })
-      ).data,
+    queryFn: ({ signal }) =>
+      readPipelineAttempts(api, pipelineId, params, signal),
+  })
+}
+
+async function readPipelineAttempts(
+  api: ApiClient,
+  pipelineId: string,
+  params: PipelineAttemptsParams,
+  signal: AbortSignal,
+) {
+  const { data } = await api.read(
+    '/pipelines/{pipeline_id}/attempts',
+    readAttemptPage,
+    {
+      pathParams: { pipeline_id: pipelineId },
+      query: params,
+      signal,
+    },
+  )
+  return data
+}
+
+export function pipelineAttemptPages(api: ApiClient, pipelineId: string) {
+  return infiniteQueryOptions({
+    queryKey: ['pipelines', 'attempt-pages', pipelineId],
+    initialPageParam: null as string | null,
+    queryFn: ({ signal, pageParam }) =>
+      readPipelineAttempts(
+        api,
+        pipelineId,
+        {
+          limit: 100,
+          ...(pageParam === null ? {} : { cursor: pageParam }),
+        },
+        signal,
+      ),
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    retry: false,
   })
 }
 

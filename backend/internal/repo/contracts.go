@@ -530,6 +530,7 @@ type ChangeRepo interface {
 	AssignedOccurrences(ctx context.Context, orgID entity.ID, occurrences []entity.ID) ([]entity.ID, error)
 	InsertOccurrenceIdentities(ctx context.Context, orgID entity.ID, list []entity.OccurrenceIdentity, at time.Time, seq int64) error
 	FindingIdentity(ctx context.Context, orgID, id entity.ID) (entity.FindingIdentity, error)
+	FindingObservation(ctx context.Context, orgID, id entity.ID) (entity.FindingDetail, error)
 	FindingKindsForException(ctx context.Context, org entity.ID, s entity.ExceptionScope) ([]string, error)
 	LockExceptionProjection(ctx context.Context, org, area entity.ID) error
 	ProjectExceptions(ctx context.Context, org, area entity.ID, seq int64, at time.Time, versions []entity.ID) error
