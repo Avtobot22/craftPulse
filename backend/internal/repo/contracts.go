@@ -359,6 +359,7 @@ type NormalizeRepo interface {
 	ReadCIRunVersions(ctx context.Context, orgID entity.ID, areas, allowed, runs []entity.ID, seq int64) ([]entity.CIRunVersion, error)
 	FindCIRunIDs(ctx context.Context, orgID entity.ID, areas, allowed []entity.ID, q entity.RunsQuery, seq int64) ([]entity.ID, error)
 	ReadCIAttemptVersions(ctx context.Context, orgID entity.ID, areas, allowed, runs []entity.ID, seq int64) ([]entity.CIAttemptVersion, error)
+	GitLabCISources(ctx context.Context, orgID entity.ID, areas, allowed, versions []entity.ID) ([]entity.GitLabCISource, error)
 
 	// ReportedRecords are the records of a receipt among nos that already gave a report.
 	ReportedRecords(ctx context.Context, orgID, receiptID entity.ID, nos []int) ([]int, error)

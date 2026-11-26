@@ -63,7 +63,8 @@ func TestTaskViews_CardAndCandidateDecision(t *testing.T) {
 		return o.Kind == openapi.TaskDetailObservationsKindAwaitingReviewer &&
 			o.Action == openapi.AssignReviewer && len(o.Basis) == 1 && o.Basis[0].Id == mr
 	}))
-	assert.Equal(t, http.StatusOK, e.do(t, e.admin, http.MethodGet, "/api/v1/pipelines/"+pipeline.String(), nil).Code)
+	run := decode[openapi.Pipeline](t, codeRead(t, e.loginEnv, e.admin, "/api/v1/pipelines/"+pipeline.String(), "Pipeline"))
+	assert.Equal(t, new(_gitlabInstance+"/team/task-card/-/pipelines/5001"), run.SourceUrl)
 	history = decode[openapi.TimelinePage](t, codeRead(t, e.loginEnv, e.admin, historyPath, "TimelinePage"))
 	assert.True(t, slices.ContainsFunc(history.Data, func(event openapi.TimelineEvent) bool {
 		return event.Object.Id == task && event.EventKind == "field_change" && event.Field != nil &&

@@ -452,9 +452,10 @@ it('shows paginated attempts by configuration, fail-to-pass, missing reports and
   const ci = within(
     await screen.findByRole('region', { name: 'CI текущего head' }),
   )
-  expect(
-    await ci.findByRole('link', { name: 'Pipeline #8841' }),
-  ).toHaveAttribute('href', pipeline.source_url)
+  const pipelineLink = await ci.findByRole('link', { name: 'Pipeline #8841' })
+  expect(pipelineLink).toHaveAttribute('href', pipeline.source_url)
+  pipelineLink.focus()
+  expect(pipelineLink).toHaveFocus()
   expect(ci.getByText('Неполная')).toBeVisible()
   expect(ci.getByText(/Не получен/)).toBeVisible()
   expect(await ci.findByText(/Не менее/)).toBeVisible()

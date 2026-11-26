@@ -56,12 +56,15 @@ func codeRead(t *testing.T, e *loginEnv, b *browser, path, schema string) *httpt
 func TestCodeAPI_V28PaginationAndTruncatedHistory(t *testing.T) {
 	t.Parallel()
 	e, b := codeEnv(t)
-	data := pack(t, ciManifest("42"), v28(t)...)
+	manifest := ciManifest("42")
+	manifest.Area.Key = new("team/subgroup/core")
+	data := pack(t, manifest, v28(t)...)
 	e.imported(t, e.admin, data)
 	e.drain(t)
 	id := runID(t, e, "5001")
 	path := "/api/v1/pipelines/" + id.String()
 	pipeline := decode[openapi.Pipeline](t, codeRead(t, e.loginEnv, b, path, "Pipeline"))
+	assert.Equal(t, new(_gitlabInstance+"/team/subgroup/core/-/pipelines/5001"), pipeline.SourceUrl)
 	assert.Equal(t, 3, pipeline.AttemptsTotal)
 	assert.Equal(t, 1, pipeline.RetriedJobs)
 	assert.Equal(t, openapi.PipelineOutcome("success"), pipeline.Outcome)
@@ -74,6 +77,7 @@ func TestCodeAPI_V28PaginationAndTruncatedHistory(t *testing.T) {
 	assert.Equal(t, float32(130), *first.UsageSeconds.Value)
 	seen := map[uuid.UUID]bool{}
 	configs := map[string]bool{}
+	urls := []string{}
 	failed := false
 	page := first
 	for {
@@ -82,6 +86,9 @@ func TestCodeAPI_V28PaginationAndTruncatedHistory(t *testing.T) {
 		require.False(t, seen[a.Id])
 		seen[a.Id] = true
 		configs[a.ConfigFingerprint] = true
+		if assert.NotNil(t, a.SourceUrl) {
+			urls = append(urls, *a.SourceUrl)
+		}
 		failed = failed || a.Outcome == openapi.AttemptOutcome("failed")
 		if a.Outcome == openapi.AttemptOutcome("success") {
 			assert.Nil(t, a.FailureKind)
@@ -95,6 +102,11 @@ func TestCodeAPI_V28PaginationAndTruncatedHistory(t *testing.T) {
 	}
 	assert.Len(t, seen, 3)
 	assert.Len(t, configs, 2)
+	assert.ElementsMatch(t, []string{
+		_gitlabInstance + "/team/subgroup/core/-/jobs/7001",
+		_gitlabInstance + "/team/subgroup/core/-/jobs/7002",
+		_gitlabInstance + "/team/subgroup/core/-/jobs/7003",
+	}, urls)
 	assert.True(t, failed)
 	filtered := decode[openapi.AttemptPage](t, codeRead(t, e.loginEnv, b, path+"/attempts?outcome=failed", "AttemptPage"))
 	require.Len(t, filtered.Data, 1)
@@ -106,6 +118,7 @@ func TestCodeAPI_V28PaginationAndTruncatedHistory(t *testing.T) {
 	e.drain(t)
 	truncated := decode[openapi.Pipeline](t, codeRead(t, e.loginEnv, b, path, "Pipeline"))
 	assert.Equal(t, openapi.PipelineAttemptHistory("truncated"), truncated.AttemptHistory)
+	assert.Nil(t, truncated.SourceUrl, "without a repository URL or a project path in this version")
 	bounded := decode[openapi.AttemptPage](t, codeRead(t, e.loginEnv, b, path+"/attempts", "AttemptPage"))
 	assert.Equal(t, openapi.DataState(entity.StateBounded), bounded.UsageSeconds.State)
 	assert.Nil(t, bounded.UsageSeconds.Value)

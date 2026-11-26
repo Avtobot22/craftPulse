@@ -126,3 +126,16 @@ func (u *UseCase) SummaryPipeline(ctx context.Context, org entity.ID, mr entity.
 	})
 	return out, err
 }
+
+func (u *UseCase) GitLabCISources(ctx context.Context, scope entity.Scope, org entity.ID, versions []entity.ID) ([]entity.GitLabCISource, error) {
+	if len(versions) == 0 {
+		return nil, nil
+	}
+	var sources []entity.GitLabCISource
+	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		sources, err = u.d.Repo.GitLabCISources(ctx, org, scope.Areas(), scope.Objects(), versions)
+		return err
+	})
+	return sources, err
+}
