@@ -166,7 +166,7 @@ python3 scripts/github_periodic_review.py --apply
 - `.github/main-ruleset.json` - правила `main` без обхода для администраторов.
 - `.github/labels.json` - управляемые метки. Остальные метки скрипт сохраняет.
 - `.github/CODEOWNERS` - запрос ревью владельцу по умолчанию.
-- `.github/workflows/repository.yml` - `repository-check` на каждом PR и после merge в `main`, проверки затронутого backend и общий гейт `ci`.
+- `.github/workflows/repository.yml` - `repository-check` на каждом PR и после merge в `main`, проверки затронутых компонентов и общий гейт `ci`.
 - `.github/workflows/periodic-code-review.yml` и `.github/code-review.json` - автоматическая постановка ревью всего кода после 70 SP реализации.
 - `.github/dependabot.yml` - еженедельные PR обновлений GitHub Actions и Go-модулей `backend/`.
 - `.github/release.yml` - группировка изменений в GitHub Release.

@@ -26,7 +26,7 @@ git config --local core.hooksPath .githooks
 
 Нужны Go версии из `backend/go.mod`, Node.js 26.3.0 с npm и Docker с Linux-контейнерами. Для `go test -race` нужен C-компилятор: GCC на Linux или MinGW-w64 на Windows. Добавь в `PATH` каталог `bin` внутри пути, который выводит `go env GOPATH`. Команды ниже рассчитаны на Linux, как раннер CI; на Windows полный набор можно выполнять в Linux-контейнере с Go и Node.js.
 
-В корне репозитория проверь контракт теми же командами, что выполняет `repository-check`:
+Для локальной проверки контракта выполни команды job `openapi` из корня репозитория:
 
 ```sh
 npm --prefix scripts/openapi ci --ignore-scripts --no-audit --no-fund
@@ -46,8 +46,7 @@ golangci-lint fmt --diff
 go generate ./...
 git diff --exit-code
 git ls-files --others --exclude-standard
-go vet ./...
-go test -race ./...
+go test -race -vet=all ./...
 go install golang.org/x/vuln/cmd/govulncheck@latest
 govulncheck ./...
 docker build -t craftpulse-server:local -f Dockerfile .
@@ -57,9 +56,47 @@ docker build -t craftpulse-server:local -f Dockerfile .
 
 Границы слоёв проверяет depguard в `backend/.golangci.yml`. Для сценариев и репозиториев перечислены модули из раздела 10.3 ТЗ: разрешён импорт собственных подпакетов, а связи между модулями передаются через интерфейсы в `internal/app`. Новый модуль нужно добавить в эти правила; для неизвестных модулей импорты других сценариев и реализаций репозиториев запрещены по умолчанию.
 
-Workflow `Repository` запускается на каждом PR и push в `main`. `repository-check` выполняется всегда, `backend` - при изменениях `backend/`, `deploy/postgres/` или `openapi.yaml`, а `demo-dataset` - при изменениях `demo-dataset/`. Обе Go-проверки используют общий workflow `go-check.yml`: линтер, форматирование, vet, тесты с детектором гонок, проверку уязвимостей и сборку. Backend дополнительно проверяет генерацию и собирает Docker-образ без публикации.
+Workflow `Repository` запускается на PR и push в `main`. `repository-check` проверяет репозиторий, а `ci` сводит результаты выбранных jobs. В PR проверки выбираются по путям. Независимые jobs Go, OpenAPI, frontend и OCI идут параллельно. Dockerfile фронтенда проверяет тему и типы и собирает статику за один запуск `npm run build`.
 
-Изменение `repository.yml` или `go-check.yml`, как и ручной запуск, включает обе Go-проверки. Итоговый job `ci` требует успешные `detect` и `repository-check`, а пропуск Go-проверки принимает только для незатронутого модуля. Устаревшие прогоны отменяются только на PR; каждый push в `main` проверяется отдельно.
+Для выборочного запуска в GitHub Actions укажи ветку и `target`:
+
+```sh
+gh workflow run repository.yml --ref "$(git branch --show-current)" -f target=integration -f shards=2
+gh workflow run repository.yml --ref "$(git branch --show-current)" -f target=shard-benchmark
+```
+
+`all` запускает обычный полный CI. `backend`, `integration`, `dataset`, `frontend`,
+`openapi` и `oci` запускают выбранные проверки. Обычный CI использует четыре
+интеграционных шарда. Для ручного `integration` можно выбрать 1, 2 или 4.
+`shard-benchmark` сначала собирает
+длительности тестов `backend/internal/app`, затем сравнивает 1, 2 и 4 шарда на
+одинаковых раннерах. В отчёте есть время самого долгого шарда и суммарное время
+сборки и тестов по всем шардам. Актуальный профиль берётся из артефакта
+`integration-profile-1-0`. Для регулярного CI поле `tests` этого файла хранится
+в `scripts/ci-integration-timings.json`. Для обновления профиля скачай этот артефакт
+из успешного замера и замени поле `tests`. Новые тесты получают медианный вес.
+
+Локальный harness может вызвать тот же runner из `backend/`. По умолчанию Python
+использует кэши установленного Go. Чтобы выделить кэш для race-сборки, установи
+`GOCACHE` один раз перед запуском:
+
+```sh
+cd backend
+export GOCACHE="$(go env GOCACHE)/race-integration"
+python3 ../scripts/ci_shards.py run --count 2 --index 0 \
+  --profile ../scripts/ci-integration-timings.json --output /tmp/craftpulse-shard-0.json
+```
+
+В контейнерном harness подключи постоянные каталоги для `GOCACHE` и `GOMODCACHE`
+и используй тот же builder Docker для повторных сборок.
+
+На GitHub кэши Go разделены по модулю, версии, платформе и типу сборки. Обычная
+сборка, race-тесты и генераторы OpenAPI используют отдельные кэши. Golangci-lint
+использует собственный кэш. BuildKit хранит слои по имени образа, а Go-зависимости сохраняются в слое сборочного образа. PR читают кэши
+`main`, а ручные запуски записывают кэши своей ветки. Push в `main` актуализирует
+кэши выбранных jobs, а еженедельный запуск освежает полный набор.
+
+Устаревшие прогоны отменяются только на PR. Каждый push в `main` проверяется отдельно.
 
 ## Frontend
 
