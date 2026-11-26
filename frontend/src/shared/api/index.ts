@@ -46,10 +46,12 @@ export type { TaskListParams } from './task-queries'
 export {
   listProjectTimeline,
   listTaskEvents,
+  projectTimelinePages,
   taskEventPages,
 } from './timeline-queries'
 export type {
   ProjectTimelineParams,
+  ProjectTimelinePageData,
   TaskEventsParams,
   TimelineEvent,
 } from './timeline-queries'

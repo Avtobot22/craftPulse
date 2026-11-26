@@ -41,6 +41,7 @@ const cleanups: (() => void)[] = []
 const [team] = teams.data
 const [project] = projects.data
 if (!team || !project) throw new Error('Expected one team and project fixture')
+const timelineApiPath = `/api/v1/projects/${project.id}/timeline`
 const processOwnerRole = {
   role: 'process_owner',
   team_id: team.id,
@@ -108,6 +109,9 @@ function mockApi(
               : { ...projects, data: [] },
           ),
         )
+      case timelineApiPath:
+      case '/api/v1/projects/second-project/timeline':
+        return Promise.resolve(jsonResponse({ ...taskHistory, data: [] }))
       case '/api/v1/tasks':
         return Promise.resolve(jsonResponse(taskPage))
       case `/api/v1/tasks/${taskId}`:
@@ -993,9 +997,11 @@ describe('task analysis routes', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Проект' }), {
       target: { value: second.id },
     })
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Несовместимые параметры сброшены при смене области',
-    )
+    expect(
+      await screen.findByText(
+        'Несовместимые параметры сброшены при смене области.',
+      ),
+    ).toBeVisible()
     expect(router.state.location.pathname).toBe('/timeline')
     expect([...new URLSearchParams(router.state.location.search)]).toEqual([
       ['date', '2026-10-02'],
