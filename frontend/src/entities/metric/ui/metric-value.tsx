@@ -8,6 +8,7 @@ type Value = OpenCodes<components['schemas']['MetricValue']>
 
 export interface MetricValueProps {
   value: Value
+  showCompleteness?: boolean
   renderValue?: (display: string) => ReactNode
 }
 
@@ -110,11 +111,16 @@ export function metricReason(code: string | null) {
     : undefined
 }
 
-export function MetricValue({ value, renderValue }: MetricValueProps) {
+export function MetricValue({
+  value,
+  renderValue,
+  showCompleteness = false,
+}: MetricValueProps) {
   const { unit, numerator, denominator, n, bound, low_sample, reason_code } =
     value
   const state = normalizeState(value.state)
-  const showCoverage = state === 'PROVISIONAL' || state === 'BOUNDED'
+  const showCoverage =
+    showCompleteness || state === 'PROVISIONAL' || state === 'BOUNDED'
   const hasDenominator = denominator !== null && denominator > 0
   const missingDenominator =
     (unit === 'ratio' || unit === 'percent' || unit === '%') && !hasDenominator
