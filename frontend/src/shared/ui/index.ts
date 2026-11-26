@@ -41,3 +41,4 @@ export type { UnsavedChangesDialogProps } from './settings-dialogs/unsaved-chang
 export { ContractReason } from './contract-reason'
 export { StatusLabel } from './status-label'
 export { StatusTime } from './status-time'
+export { TaskDetailLink } from './task-detail-link'

@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 import type { ApiClient } from './client'
 import type { components, operations } from './generated/schema'
 import type { OpenCodes } from './read-fields'
@@ -64,6 +64,21 @@ function readTimeline(value: unknown): OpenCodes<Schema['TimelinePage']> {
   }
 }
 
+function readTaskEvents(
+  api: ApiClient,
+  taskId: string,
+  params: TaskEventsParams,
+  signal: AbortSignal,
+) {
+  return api
+    .read('/tasks/{task_id}/events', readTimeline, {
+      pathParams: { task_id: taskId },
+      query: params,
+      signal,
+    })
+    .then(({ data }) => data)
+}
+
 export function listTaskEvents(
   api: ApiClient,
   taskId: operations['listTaskEvents']['parameters']['path']['task_id'],
@@ -71,14 +86,25 @@ export function listTaskEvents(
 ) {
   return queryOptions({
     queryKey: ['tasks', 'events', taskId, params],
-    queryFn: async ({ signal }) =>
-      (
-        await api.read('/tasks/{task_id}/events', readTimeline, {
-          pathParams: { task_id: taskId },
-          query: params,
-          signal,
-        })
-      ).data,
+    queryFn: ({ signal }) => readTaskEvents(api, taskId, params, signal),
+  })
+}
+
+export function taskEventPages(api: ApiClient, taskId: string) {
+  return infiniteQueryOptions({
+    queryKey: ['tasks', 'event-pages', taskId],
+    initialPageParam: '',
+    queryFn: ({ signal, pageParam }) =>
+      readTaskEvents(
+        api,
+        taskId,
+        pageParam ? { cursor: pageParam } : {},
+        signal,
+      ),
+    getNextPageParam: ({ next_cursor }, _pages, _param, pageParams) =>
+      next_cursor && !pageParams.includes(next_cursor)
+        ? next_cursor
+        : undefined,
   })
 }
 
