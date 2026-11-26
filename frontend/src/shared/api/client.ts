@@ -1,5 +1,6 @@
-import type { paths } from './generated/schema'
+import type { operations, paths } from './generated/schema'
 import { ApiError, classifyProblem, readProblem } from './problem'
+import { readLink } from './read-fields'
 import { InvalidResponse } from './response'
 
 export type ApiPath = Exclude<keyof paths, `/o/${string}`>
@@ -92,6 +93,22 @@ export class ApiClient {
     return this.request(method, path, body, decode, options, true)
   }
 
+  decideLink(
+    linkId: operations['decideLink']['parameters']['path']['link_id'],
+    body: operations['decideLink']['requestBody']['content']['application/json'],
+    idempotencyKey: operations['decideLink']['parameters']['header']['Idempotency-Key'],
+    signal: AbortSignal,
+  ) {
+    return this.request(
+      'POST',
+      '/links/{link_id}/decisions',
+      body,
+      readLink,
+      { pathParams: { link_id: linkId }, idempotencyKey, signal },
+      false,
+    )
+  }
+
   previewMapping<T>(
     teamId: string,
     body: NonNullable<
@@ -175,10 +192,10 @@ export class ApiClient {
       const etag = options.ifMatch ?? this.versions.get(url)
       if (!isStrongETag(etag)) throw new ApiError('missing-version')
       headers.set('If-Match', etag)
-      if (options.idempotencyKey !== undefined)
-        headers.set('Idempotency-Key', options.idempotencyKey)
       this.versions.delete(url)
     }
+    if (options.idempotencyKey !== undefined)
+      headers.set('Idempotency-Key', options.idempotencyKey)
     let response: Response
     try {
       response = await this.fetcher(url, {
