@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { MetricValue, formatValue, metricReason } from '@/entities/metric'
 import { SeriesChart } from '@/shared/ui/series-chart'
 import type { ChartPointSelection } from '@/shared/ui/series-chart'
-import type { ReportSeries } from '../api/report-api'
+import type { ReportSeries } from '@/shared/api'
 import {
   formatTime,
   latestPoint,
