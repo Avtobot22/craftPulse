@@ -89,25 +89,34 @@ func TestDocumentationAPI_CheckStateAndRecheck(t *testing.T) {
 	var pending *openapi.BackgroundOperation
 	var anchorID uuid.UUID
 	var firstSeen time.Time
-	for i, shaDigit := range []string{"1", "2", "3", "4"} {
+	for i, shaDigit := range []string{"1", "2", "3", "4", "5", "6"} {
 		switch i {
 		case 1:
 			updateDocFixture(t, checkout, "README.md", "# Service documentation", "---\nupdated: 2026-11-20\n---\n# Service documentation")
-		case 2:
+		case 2, 5:
 			updateDocFixture(t, checkout, "guide.md", "# Guide\n", "# Guide\n\n## Absent\n")
+		case 3:
+			updateDocFixture(t, checkout, "guide.md", "\n## Absent\n", "")
 		}
 		e.clock.Advance(time.Minute)
 		scope.SHA = strings.Repeat(shaDigit, 40)
 		at := e.clock.Now().Add(-time.Second)
-		rc := normalized.submit(t, docsProfilePackage(t, profile, at, at, scope, checkout, i))
+		rc := e.imported(t, e.admin, docsProfilePackage(t, profile, at, at, scope, checkout, i))
+		require.Equal(t, entity.ReceiptAccepted, rc.Status, rc.ReasonCode)
+		e.drain(t)
 		wantState := openapi.DataState("ASSESSED")
-		if i == 2 {
+		switch i {
+		case 2:
 			// Model an upload whose docs check skipped input, even though it saw the fixed anchor.
 			_, err := e.owner.Exec(t.Context(), `UPDATE normalize.report SET completeness='partial'
 				WHERE organization_id=$1 AND receipt_id=$2 AND report_kind='docs'`, uuid.UUID(e.orgID), uuid.UUID(rc.ID))
 			require.NoError(t, err)
 			wantState = "PROVISIONAL"
+		case 3, 4:
+			// Model a full check that omits the still-broken anchor after rules or configuration changes.
+			omitAnchorWithChangedProfile(t, e, rc.ID, i == 3)
 		}
+		normalized.drain(t)
 		page := documentPage(t, api, owner, scope.ServiceID, "")
 		require.Equal(t, wantState, page.DocumentationState)
 		doc := readmeDocument(t, page)
@@ -118,7 +127,7 @@ func TestDocumentationAPI_CheckStateAndRecheck(t *testing.T) {
 		require.NotNil(t, doc.SourceUrl)
 		assert.Equal(t, _gitlabInstance+"/demo/docs/-/blob/"+scope.SHA+"/docs/README.md", *doc.SourceUrl)
 		require.NotNil(t, doc.OpenViolations)
-		if i < 3 {
+		if i < 5 {
 			assert.Equal(t, 1, *doc.OpenViolations)
 			var id uuid.UUID
 			var since time.Time
@@ -166,6 +175,22 @@ func TestDocumentationAPI_CheckStateAndRecheck(t *testing.T) {
 	for _, doc := range documentPage(t, api, owner, scope.ServiceID, "").Data {
 		assert.NotEqual(t, readme.Id, doc.Id)
 	}
+}
+
+func omitAnchorWithChangedProfile(t *testing.T, e *reviewEnv, receipt entity.ID, rulesChanged bool) {
+	t.Helper()
+	result, err := e.owner.Exec(t.Context(), `WITH changed AS (
+		UPDATE normalize.report SET
+			rules_hash = CASE WHEN $3 THEN decode(repeat('ab', 32), 'hex') ELSE rules_hash END,
+			config_hash = CASE WHEN $3 THEN config_hash ELSE decode(repeat('cd', 32), 'hex') END
+		WHERE organization_id=$1 AND receipt_id=$2 AND report_kind='docs'
+		RETURNING id
+	)
+	DELETE FROM normalize.finding_occurrence
+	WHERE organization_id=$1 AND report_id IN (SELECT id FROM changed)
+		AND path='docs/README.md' AND rule_id='missing-anchor'`, uuid.UUID(e.orgID), uuid.UUID(receipt), rulesChanged)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.RowsAffected())
 }
 
 func TestDocumentationAPI_ConcurrentRequestsReuseOperation(t *testing.T) {

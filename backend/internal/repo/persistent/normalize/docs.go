@@ -175,8 +175,8 @@ func (r *Repo) ReceiptDocumentationRoots(ctx context.Context, org, receipt entit
 	return out, nil
 }
 
-// LatestDocumentationChecks selects the latest observation and the last completed
-// check of each kind in one root/profile/branch. Partial checks cannot resolve findings.
+// LatestDocumentationChecks selects the latest observation of each kind and
+// retains reports until a comparable check completes in the same root/profile/branch.
 func (r *Repo) LatestDocumentationChecks(ctx context.Context, org entity.ID, root entity.DocumentationRoot, through, after int64) ([]entity.DocumentationCheck, error) {
 	rows, err := postgres.Conn(ctx, r.pool).Query(ctx, _latestDocumentationChecks, uuid.UUID(org), uuid.UUID(root.AreaID),
 		root.ProfileID, root.PathPrefix, uuid.UUID(root.ID), through, after)
@@ -193,7 +193,7 @@ func (r *Repo) LatestDocumentationChecks(ctx context.Context, org entity.ID, roo
 const _documentationChecks = `
 WITH scoped AS (
     SELECT r.id, r.report_kind, r.sha, COALESCE(r.ref_name, '')::text AS ref_name,
-        r.known_seq, d.checks, r.run_id, r.receipt_id,
+        r.known_seq, d.checks, r.run_id, r.receipt_id, r.rules_hash, r.config_hash,
         COALESCE(rv.web_url, '') AS repository_url,
         COALESCE(rc.manifest #>> '{source,instance_key}', '') AS instance_key,
         COALESCE(rc.manifest #>> '{area,key}', '') AS project_path,
@@ -231,28 +231,22 @@ WITH scoped AS (
 const _latestDocumentationChecks = _documentationChecks + `, stream AS (
     SELECT * FROM scoped
     WHERE ref_name = (SELECT ref_name FROM scoped ORDER BY observed_at DESC, known_seq DESC, id DESC LIMIT 1)
-), latest AS (
-    SELECT DISTINCT ON (report_kind) *, true AS latest
-    FROM stream ORDER BY report_kind, observed_at DESC, known_seq DESC, id DESC
-), finished AS (
-    SELECT DISTINCT ON (report_kind) *, false AS latest
-    FROM stream WHERE complete
-    ORDER BY report_kind, observed_at DESC, known_seq DESC, id DESC
-), retained AS (
-    SELECT s.*, false AS latest
-    FROM stream s
-    JOIN latest l USING (report_kind)
-    LEFT JOIN finished f USING (report_kind)
-    WHERE s.id <> l.id AND (
-        f.id IS NULL OR (s.observed_at, s.known_seq, s.id) >= (f.observed_at, f.known_seq, f.id)
-    )
+), ranked AS (
+    SELECT *,
+        row_number() OVER (PARTITION BY report_kind ORDER BY observed_at DESC, known_seq DESC, id DESC) AS kind_rank,
+        -- Missing provenance cannot establish comparability, even against another report with missing hashes.
+        count(*) FILTER (WHERE complete AND rules_hash IS NOT NULL AND config_hash IS NOT NULL) OVER (
+            PARTITION BY report_kind, rules_hash, config_hash
+            ORDER BY observed_at DESC, known_seq DESC, id DESC
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        ) AS newer_comparable_checks
+    FROM stream
 )
-SELECT sha, report_kind, checks, observed_at, sarif_id, complete, latest, repository_url, instance_key, project_path, provider
-FROM (
-    SELECT * FROM latest
-    UNION ALL SELECT * FROM retained
-) selected
-ORDER BY observed_at DESC, known_seq DESC, id DESC, latest DESC;
+SELECT sha, report_kind, checks, observed_at, sarif_id, complete, kind_rank = 1 AS latest,
+    repository_url, instance_key, project_path, provider
+FROM ranked
+WHERE newer_comparable_checks = 0
+ORDER BY observed_at DESC, known_seq DESC, id DESC;
 `
 
 // DocumentationCheckCompleted finds a new pipeline that finished every check in the requested scope.
