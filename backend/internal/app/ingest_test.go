@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -41,9 +40,10 @@ import (
 )
 
 var (
-	_seaweedOnce sync.Once
-	_seaweedCfg  objstore.Config
-	_seaweedErr  error
+	_seaweedOnce      sync.Once
+	_seaweedContainer testcontainers.Container
+	_seaweedStore     *objstore.Store
+	_seaweedErr       error
 )
 
 // sharedStore is one SeaweedFS for the package; keys carry the organization, so tests do not meet.
@@ -54,8 +54,9 @@ func sharedStore(t *testing.T) *objstore.Store {
 		c, err := testcontainers.Run(ctx, "chrislusf/seaweedfs:4.53",
 			testcontainers.WithCmd("server", "-s3", "-dir=/data"),
 			testcontainers.WithExposedPorts("8333/tcp"),
-			testcontainers.WithWaitStrategy(wait.ForListeningPort("8333/tcp").WithStartupTimeout(time.Minute)),
+			testcontainers.WithWaitStrategy(wait.ForListeningPort("8333/tcp").SkipInternalCheck().WithStartupTimeout(time.Minute)),
 		)
+		_seaweedContainer = c
 		if err != nil {
 			_seaweedErr = err
 			return
@@ -65,36 +66,47 @@ func sharedStore(t *testing.T) *objstore.Store {
 			_seaweedErr = err
 			return
 		}
-		_seaweedCfg = objstore.Config{Endpoint: endpoint, Region: "us-east-1", Bucket: "packages", AccessKeyID: "test", SecretAccessKey: "test"}
+		cfg := objstore.Config{Endpoint: endpoint, Region: "us-east-1", Bucket: "packages", AccessKeyID: "test", SecretAccessKey: "test"}
 		admin := s3.New(s3.Options{
-			BaseEndpoint: aws.String(endpoint), Region: _seaweedCfg.Region, UsePathStyle: true,
-			Credentials: credentials.NewStaticCredentialsProvider("test", "test", ""),
+			BaseEndpoint: aws.String(endpoint), Region: cfg.Region, UsePathStyle: true,
+			Credentials: credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+			Retryer:     aws.NopRetryer{},
 		})
-		deadline := time.Now().Add(30 * time.Second)
-		for {
-			if _, err = admin.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(_seaweedCfg.Bucket)}); err == nil || time.Now().After(deadline) {
-				break
-			}
-			time.Sleep(500 * time.Millisecond)
+		if err := retryS3Readiness(ctx, 30*time.Second, func(ctx context.Context) error {
+			_, err := admin.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(cfg.Bucket)})
+			return err
+		}); err != nil {
+			_seaweedErr = err
+			return
 		}
-		if err == nil {
-			err = waitWritable(ctx, admin, _seaweedCfg.Bucket, time.Now().Add(time.Minute))
+		// The S3 lock ring can take writes only after it has formed, even if the bucket already exists.
+		_seaweedErr = retryS3Readiness(ctx, time.Minute, func(ctx context.Context) error {
+			_, err := admin.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(cfg.Bucket), Key: aws.String("ready"), Body: strings.NewReader("ready")})
+			return err
+		})
+		if _seaweedErr == nil {
+			_seaweedStore = objstore.New(cfg)
 		}
-		_seaweedErr = err
 	})
 	require.NoError(t, _seaweedErr)
-	return objstore.New(_seaweedCfg)
+	return _seaweedStore
 }
 
-// waitWritable puts one object until it succeeds. SeaweedFS takes writes only once its lock ring forms,
-// seconds after the bucket; until then a put waits and may fail with 500, which parallel tests would meet.
-func waitWritable(ctx context.Context, client *s3.Client, bucket string, deadline time.Time) error {
+func retryS3Readiness(ctx context.Context, timeout time.Duration, check func(context.Context) error) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
 	for {
-		_, err := client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucket), Key: aws.String("ready"), Body: strings.NewReader("ready")})
-		if err == nil || time.Now().After(deadline) {
-			return err
+		err := check(ctx)
+		if err == nil {
+			return nil
 		}
-		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return err
+		case <-tick.C:
+		}
 	}
 }
 
@@ -252,13 +264,15 @@ func raw(t *testing.T, entries ...rawEntry) []byte {
 			h.Size = 0
 		}
 		require.NoError(t, tw.WriteHeader(h))
-		switch {
-		case en.size > 0:
-			_, err = tw.Write(make([]byte, en.size))
-		case h.Typeflag == tar.TypeReg:
-			_, err = tw.Write(en.content)
+		if en.size > 0 {
+			// The size limit must reject the entry from its header, before reading its body.
+			require.NoError(t, gz.Close())
+			return buf.Bytes()
 		}
-		require.NoError(t, err)
+		if h.Typeflag == tar.TypeReg {
+			_, err = tw.Write(en.content)
+			require.NoError(t, err)
+		}
 	}
 	require.NoError(t, tw.Close())
 	require.NoError(t, gz.Close())
@@ -269,8 +283,6 @@ func TestIngest_RefusesUnsafePackagesAtOnce(t *testing.T) {
 	t.Parallel()
 	e := newIngestEnv(t)
 	large := make([]byte, envelope.DefaultLimits.MaxPackageBytes+1)
-	_, err := rand.Read(large)
-	require.NoError(t, err)
 	many := make([]rawEntry, 1000)
 	for i := range many {
 		many[i] = rawEntry{name: "files/" + uuid.NewString()}

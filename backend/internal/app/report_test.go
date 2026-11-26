@@ -26,11 +26,9 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 )
 
-var (
-	_contractOnce sync.Once
-	_contractDoc  *openapi3.T
-	_contractErr  error
-)
+var _loadAPIContract = sync.OnceValues(func() (*openapi3.T, error) {
+	return openapi3.NewLoader().LoadFromFile("../../../docs/technical-specification/openapi.yaml")
+})
 
 type reportValueBody struct {
 	State         string   `json:"state"`
@@ -231,10 +229,6 @@ func (e *reportEnv) publish(t *testing.T) reportBody {
 func (e *reportEnv) checked(t *testing.T, b *browser, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := e.do(t, b, http.MethodGet, target, nil)
-	_contractOnce.Do(func() {
-		_contractDoc, _contractErr = openapi3.NewLoader().LoadFromFile("../../../docs/technical-specification/openapi.yaml")
-	})
-	require.NoError(t, _contractErr)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, http.NoBody)
 	input := &openapi3filter.ResponseValidationInput{
 		RequestValidationInput: &openapi3filter.RequestValidationInput{Request: req, Route: reportRoute(t, req.URL.Path)},
@@ -246,6 +240,8 @@ func (e *reportEnv) checked(t *testing.T, b *browser, target string) *httptest.R
 
 func reportRoute(t *testing.T, path string) *routers.Route {
 	t.Helper()
+	contract, err := _loadAPIContract()
+	require.NoError(t, err)
 	pattern := "/teams/{team_id}/report"
 	switch {
 	case path == "/api/v1/metric-definitions":
@@ -255,9 +251,9 @@ func reportRoute(t *testing.T, path string) *routers.Route {
 	case strings.HasPrefix(path, "/api/v1/revisions/"):
 		pattern = "/revisions/{revision_id}"
 	}
-	item := _contractDoc.Paths.Value(pattern)
+	item := contract.Paths.Value(pattern)
 	require.NotNil(t, item, pattern)
-	return &routers.Route{Spec: _contractDoc, Path: pattern, PathItem: item, Method: http.MethodGet, Operation: item.Get}
+	return &routers.Route{Spec: contract, Path: pattern, PathItem: item, Method: http.MethodGet, Operation: item.Get}
 }
 
 func TestReport_V03ValuesCohortFiltersAndPassport(t *testing.T) {

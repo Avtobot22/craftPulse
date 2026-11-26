@@ -22,17 +22,27 @@ import (
 func newNormalize(pool *pgxpool.Pool, store repo.ObjectStore, intake normalize.Ingest, projects *org.UseCase, rights normalize.Rights,
 	c clock.Clock,
 ) (*normalize.UseCase, error) {
-	jobs, err := riverInsertClient(pool)
+	deps, err := normalizeDeps(pool, store, intake, projects, rights, c)
 	if err != nil {
 		return nil, err
+	}
+	return normalize.New(deps), nil
+}
+
+func normalizeDeps(pool *pgxpool.Pool, store repo.ObjectStore, intake normalize.Ingest, projects *org.UseCase, rights normalize.Rights,
+	c clock.Clock,
+) (normalize.Deps, error) {
+	jobs, err := riverInsertClient(pool)
+	if err != nil {
+		return normalize.Deps{}, err
 	}
 	tx := persistent.NewTransactor(pool)
 	links := linkuc.New(linkuc.Deps{
 		Repo: linkrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx, Auditor: audit.New(auditrepo.NewRepo(pool), tx, c), Clock: c, NewID: newID,
 	})
 	facts := normalizerepo.NewRepo(pool)
-	return normalize.New(normalize.Deps{
+	return normalize.Deps{
 		Repo: facts, SummaryTargets: facts, Tenants: platform.NewRepo(pool), Ingest: intake, Accounts: projects, ReportAreas: projects, Links: links, Rights: rights,
 		Objects: store, Queue: queue.New(jobs), Tx: tx, Clock: c,
-	}), nil
+	}, nil
 }

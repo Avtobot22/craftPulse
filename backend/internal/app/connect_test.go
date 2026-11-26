@@ -148,7 +148,7 @@ func serveTLSAdapter(t *testing.T, cfg *tls.Config, h http.Handler) *adapterServ
 }
 
 // testAdapter is the test adapter with its own database behind TLS, accepting the given service key.
-func testAdapter(t *testing.T, tlsCfg *tls.Config, scenario testadapter.Config, key string) *adapterServer {
+func testAdapter(t *testing.T, tlsCfg *tls.Config, scenario testadapter.Config, key string, wrap ...func(http.Handler) http.Handler) *adapterServer {
 	t.Helper()
 	db := newAdapterDB(t, true)
 	src, err := testadapter.New(scenario)
@@ -159,6 +159,9 @@ func testAdapter(t *testing.T, tlsCfg *tls.Config, scenario testadapter.Config, 
 		Log: zerolog.New(journal), Probes: health.Probes{Ready: &health.Readiness{}}, SpoolDir: t.TempDir(),
 	})
 	require.NoError(t, err)
+	for _, middleware := range wrap {
+		h = middleware(h)
+	}
 	srv := serveTLSAdapter(t, tlsCfg, h)
 	srv.db, srv.src, srv.journal = db, src, journal
 	return srv

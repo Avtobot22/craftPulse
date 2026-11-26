@@ -97,15 +97,14 @@ func buildCalcJobs(t *testing.T, owner *pgxpool.Pool, clk *clock.Manual, calcula
 			id   int64
 			kind string
 			raw  []byte
+			at   time.Time
 		)
-		err := owner.QueryRow(t.Context(), "SELECT id, kind, args FROM river_job WHERE kind IN ($1, $2) AND state IN ('available', 'scheduled') ORDER BY scheduled_at, id LIMIT 1",
-			entity.KindCalcSlice, entity.KindCalcRecount).Scan(&id, &kind, &raw)
+		err := owner.QueryRow(t.Context(), "SELECT id, kind, args, scheduled_at FROM river_job WHERE kind IN ($1, $2) AND state IN ('available', 'scheduled') ORDER BY scheduled_at, id LIMIT 1",
+			entity.KindCalcSlice, entity.KindCalcRecount).Scan(&id, &kind, &raw, &at)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return
 		}
 		require.NoError(t, err)
-		var at time.Time
-		require.NoError(t, owner.QueryRow(t.Context(), "SELECT scheduled_at FROM river_job WHERE id = $1", id).Scan(&at))
 		if d := at.Sub(clk.Now()); d > 0 {
 			clk.Advance(d)
 		}

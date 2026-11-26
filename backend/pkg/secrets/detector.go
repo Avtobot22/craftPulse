@@ -13,6 +13,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
@@ -24,6 +25,7 @@ import (
 const (
 	ProfileID       = "gitleaks-default"
 	GitleaksVersion = "8.30.1"
+	_minFragmentLen = 8
 )
 
 var (
@@ -48,12 +50,24 @@ type Detector struct {
 	Scrubber *Scrubber
 }
 
+var _detectorConfig = sync.OnceValues(loadDetectorConfig)
+
 func New(ctx context.Context) (*Detector, error) {
+	cfg, err := _detectorConfig()
+	if err != nil {
+		return nil, err
+	}
+	d := detect.NewDetectorContext(ctx, cfg)
+	d.IgnoreGitleaksAllow = true
+	return &Detector{detector: d, Scrubber: NewScrubber(_minFragmentLen)}, nil
+}
+
+func loadDetectorConfig() (config.Config, error) {
 	var policy struct {
 		MinFragmentLength int `json:"min_fragment_length"`
 	}
-	if json.Unmarshal(_profile, &policy) != nil || policy.MinFragmentLength != 8 {
-		return nil, errors.New("invalid secrets policy")
+	if json.Unmarshal(_profile, &policy) != nil || policy.MinFragmentLength != _minFragmentLen {
+		return config.Config{}, errors.New("invalid secrets policy")
 	}
 	sum := sha256.Sum256([]byte("craftpulse fixture marker, not a credential"))
 	marker := base64.RawURLEncoding.EncodeToString(sum[:])[:32]
@@ -61,19 +75,17 @@ func New(ctx context.Context) (*Detector, error) {
 	v := viper.New()
 	v.SetConfigType("toml")
 	if v.ReadConfig(strings.NewReader(config.DefaultConfig+"\n"+rules)) != nil {
-		return nil, errors.New("invalid secrets rules")
+		return config.Config{}, errors.New("invalid secrets rules")
 	}
 	var vc config.ViperConfig
 	if v.Unmarshal(&vc) != nil {
-		return nil, errors.New("invalid secrets rules")
+		return config.Config{}, errors.New("invalid secrets rules")
 	}
 	cfg, err := vc.Translate()
 	if err != nil {
-		return nil, errors.New("invalid secrets rules")
+		return config.Config{}, errors.New("invalid secrets rules")
 	}
-	d := detect.NewDetectorContext(ctx, cfg)
-	d.IgnoreGitleaksAllow = true
-	return &Detector{detector: d, Scrubber: NewScrubber(policy.MinFragmentLength)}, nil
+	return cfg, nil
 }
 
 func RulesHash() string {

@@ -56,10 +56,9 @@ func newCIEnv(t *testing.T) *ciEnv { return newCIEnvWithStore(t, nil) }
 
 func newCIEnvWithStore(t *testing.T, store repo.ObjectStore) *ciEnv {
 	t.Helper()
-	e := &ciEnv{ingestEnv: newIngestEnv(t)}
-	var loadErr error
-	e.contract, loadErr = openapi3.NewLoader().LoadFromFile("../../../docs/technical-specification/openapi.yaml")
-	require.NoError(t, loadErr)
+	contract, err := _loadAPIContract()
+	require.NoError(t, err)
+	e := &ciEnv{contract: contract, ingestEnv: newIngestEnv(t)}
 	orgs, _, err := newOrgAccess(e.app, e.clock, e.connect, nil)
 	require.NoError(t, err)
 	if store != nil {

@@ -2,14 +2,17 @@ package app
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -28,9 +31,12 @@ var _passwords = map[string]string{
 
 var _adapterPasswords = map[string]string{"owner": "adapter-owner-secret", "app": "adapter-app-secret"}
 
+const _postgresPassword = "postgres-test-secret"
+
 var (
 	_container *postgres.PostgresContainer
 	_hostPort  string
+	_dbAdmin   *pgxpool.Pool
 	_dbSeq     atomic.Int64
 )
 
@@ -39,6 +45,7 @@ func TestMain(m *testing.M) {
 	if flag.Lookup("test.list").Value.String() != "" {
 		os.Exit(m.Run())
 	}
+	gin.SetMode(gin.TestMode)
 	os.Exit(runWithPostgres(m))
 }
 
@@ -60,6 +67,7 @@ func runWithPostgres(m *testing.M) int {
 		env[strings.ToUpper(role)+"_PASSWORD_FILE"] = path
 	}
 	c, err := postgres.Run(ctx, "postgres:18-alpine",
+		postgres.WithPassword(_postgresPassword),
 		postgres.WithInitScripts("../../../deploy/postgres/init.sh"),
 		testcontainers.WithFiles(files...),
 		testcontainers.WithEnv(env),
@@ -68,25 +76,37 @@ func runWithPostgres(m *testing.M) int {
 		testcontainers.WithCmdArgs("-c", "max_connections=500", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"),
 		postgres.BasicWaitStrategies(),
 	)
+	if c != nil {
+		defer func() { _ = testcontainers.TerminateContainer(c, testcontainers.StopTimeout(0)) }()
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "start postgres:", err)
 		return 1
 	}
-	defer func() { _ = testcontainers.TerminateContainer(c) }()
 	_container = c
 	host, err := c.Host(ctx)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "get postgres host:", err)
 		return 1
 	}
 	port, err := c.MappedPort(ctx, "5432/tcp")
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "get postgres port:", err)
 		return 1
 	}
-	_hostPort = host + ":" + port.Port()
+	_hostPort = net.JoinHostPort(host, port.Port())
+	admin, err := pg.New(ctx, testDB{name: "postgres"}.url("postgres"), _postgresPassword, pg.MaxConns(8))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "create postgres admin pool:", err)
+		return 1
+	}
+	defer admin.Close()
+	_dbAdmin = admin
 	if err := migrateTemplate(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "migrate template:", err)
 		return 1
 	}
+	defer func() { _ = testcontainers.TerminateContainer(_seaweedContainer, testcontainers.StopTimeout(0)) }()
 	return m.Run()
 }
 
@@ -94,7 +114,7 @@ func runWithPostgres(m *testing.M) int {
 const _migratedTemplate = "craftpulse_migrated"
 
 func migrateTemplate(ctx context.Context) error {
-	if err := psqlRun(ctx, "postgres", fmt.Sprintf("CREATE DATABASE %s TEMPLATE craftpulse OWNER craftpulse_owner", _migratedTemplate)); err != nil {
+	if err := createDB(ctx, _migratedTemplate, "craftpulse"); err != nil {
 		return err
 	}
 	pool, err := pg.New(ctx, testDB{name: _migratedTemplate}.url("craftpulse_owner"), _passwords["craftpulse_owner"], pg.RuntimeParam("lock_timeout", "3s"))
@@ -107,10 +127,22 @@ func migrateTemplate(ctx context.Context) error {
 		return err
 	}
 	// A database with a session cannot be a template: the closed pool must not leave one behind.
-	if err := psqlRun(ctx, "postgres", fmt.Sprintf("ALTER DATABASE %s ALLOW_CONNECTIONS false", _migratedTemplate)); err != nil {
+	if _, err := _dbAdmin.Exec(ctx, "ALTER DATABASE "+pgx.Identifier{_migratedTemplate}.Sanitize()+" ALLOW_CONNECTIONS false"); err != nil {
 		return err
 	}
-	return psqlRun(ctx, "postgres", fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s'", _migratedTemplate))
+	if _, err := _dbAdmin.Exec(ctx, `SELECT pg_terminate_backend(pid, 5000)
+		FROM pg_stat_activity WHERE datname = $1`, _migratedTemplate); err != nil {
+		return err
+	}
+	var active bool
+	err = _dbAdmin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = $1)`, _migratedTemplate).Scan(&active)
+	if err != nil {
+		return err
+	}
+	if active {
+		return errors.New("could not stop all sessions on template " + _migratedTemplate)
+	}
+	return nil
 }
 
 type testDB struct {
@@ -132,9 +164,16 @@ func newMigratedDB(t *testing.T) testDB {
 func cloneDB(t *testing.T, template string) testDB {
 	t.Helper()
 	name := fmt.Sprintf("craftpulse_t%d", _dbSeq.Add(1))
-	psql(t, "postgres", fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s OWNER craftpulse_owner", name, template))
-	psql(t, "postgres", fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO craftpulse_app, craftpulse_backup", name))
+	require.NoError(t, createDB(t.Context(), name, template))
+	_, err := _dbAdmin.Exec(t.Context(), "GRANT CONNECT ON DATABASE "+pgx.Identifier{name}.Sanitize()+" TO craftpulse_app, craftpulse_backup")
+	require.NoError(t, err)
 	return testDB{name: name}
+}
+
+func createDB(ctx context.Context, name, template string) error {
+	_, err := _dbAdmin.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s OWNER craftpulse_owner",
+		pgx.Identifier{name}.Sanitize(), pgx.Identifier{template}.Sanitize()))
+	return err
 }
 
 func (d testDB) url(role string) string {
@@ -153,28 +192,6 @@ func (d testDB) migrate(t *testing.T) {
 	t.Helper()
 	_, err := migrate(t.Context(), d.pool(t, "craftpulse_owner", pg.RuntimeParam("lock_timeout", "3s")))
 	require.NoError(t, err)
-}
-
-func psql(t *testing.T, db, sql string) {
-	t.Helper()
-	code, out := exec(t, []string{"psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db, "-c", sql})
-	require.Zero(t, code, out)
-}
-
-// psqlRun is psql outside a test, for TestMain.
-func psqlRun(ctx context.Context, db, sql string) error {
-	code, r, err := _container.Exec(ctx, []string{"psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db, "-c", sql}, tcexec.Multiplexed())
-	if err != nil {
-		return err
-	}
-	out, err := io.ReadAll(r)
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return fmt.Errorf("psql exited with %d: %s", code, out)
-	}
-	return nil
 }
 
 func exec(t *testing.T, cmd []string, opts ...tcexec.ProcessOption) (exitCode int, output string) {

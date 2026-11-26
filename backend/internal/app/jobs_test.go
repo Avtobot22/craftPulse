@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,8 +21,7 @@ import (
 )
 
 type testArgs struct {
-	Name string        `json:"name"`
-	Hold time.Duration `json:"hold"`
+	Name string `json:"name"`
 }
 
 func (testArgs) Kind() string { return "test" }
@@ -33,29 +33,35 @@ type done struct {
 
 type testWorker struct {
 	river.WorkerDefaults[testArgs]
-	done chan done
+	started chan string
+	done    chan done
+	hold    map[string]<-chan struct{}
 }
 
 func (w *testWorker) Work(ctx context.Context, job *river.Job[testArgs]) error {
-	select {
-	case <-time.After(job.Args.Hold):
-		w.done <- done{name: job.Args.Name, queue: job.Queue}
-		return nil
-	case <-ctx.Done():
-		w.done <- done{name: job.Args.Name, queue: job.Queue, err: ctx.Err()}
-		return ctx.Err()
+	w.started <- job.Args.Name
+	if release, held := w.hold[job.Args.Name]; held {
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
 	}
+	err := ctx.Err()
+	w.done <- done{name: job.Args.Name, queue: job.Queue, err: err}
+	return err
 }
 
 type jobsFixture struct {
-	pool   *pgxpool.Pool
-	queue  *queue.Queue
-	done   chan done
-	cancel context.CancelFunc
-	result chan error
+	pool    *pgxpool.Pool
+	queue   *queue.Queue
+	started chan string
+	done    chan done
+	cancel  context.CancelFunc
+	stopped chan struct{}
+	err     error
 }
 
-func startJobs(t *testing.T, wd *watchdog, traced bool, stopTimeout time.Duration) jobsFixture {
+func startJobs(t *testing.T, wd *watchdog, traced bool, stopTimeout time.Duration, hold map[string]<-chan struct{}) *jobsFixture {
 	t.Helper()
 	db := newMigratedDB(t)
 	var opts []pg.Option
@@ -66,14 +72,20 @@ func startJobs(t *testing.T, wd *watchdog, traced bool, stopTimeout time.Duratio
 	insertOnly, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
 	require.NoError(t, err)
 
-	f := jobsFixture{pool: pool, queue: queue.New(insertOnly), done: make(chan done, 8), result: make(chan error, 1)}
+	ctx, cancel := context.WithCancel(t.Context())
+	f := &jobsFixture{
+		pool: pool, queue: queue.New(insertOnly), started: make(chan string, 8), done: make(chan done, 8),
+		cancel: cancel, stopped: make(chan struct{}),
+	}
 	workers := river.NewWorkers()
-	river.AddWorker(workers, &testWorker{done: f.done})
-	ctx, cancel := context.WithCancel(context.Background())
-	f.cancel = cancel
-	t.Cleanup(cancel)
+	river.AddWorker(workers, &testWorker{started: f.started, done: f.done, hold: hold})
+	t.Cleanup(func() {
+		cancel()
+		f.wait(t)
+	})
 	go func() {
-		f.result <- runJobs(ctx, jobsConfig{
+		defer close(f.stopped)
+		f.err = runJobs(ctx, jobsConfig{
 			log: zerolog.Nop(), pool: pool, workers: workers,
 			ready: databaseProbes(pool).Ready, watchdog: wd, stopTimeout: stopTimeout,
 		})
@@ -81,7 +93,18 @@ func startJobs(t *testing.T, wd *watchdog, traced bool, stopTimeout time.Duratio
 	return f
 }
 
-func (f jobsFixture) enqueue(t *testing.T, job testArgs, queueName string, commit bool) {
+func (f *jobsFixture) wait(t *testing.T) error {
+	t.Helper()
+	select {
+	case <-f.stopped:
+		return f.err
+	case <-time.After(15 * time.Second):
+		t.Fatal("worker did not stop")
+		return nil
+	}
+}
+
+func (f *jobsFixture) enqueue(t *testing.T, job testArgs, queueName string, commit bool) {
 	t.Helper()
 	errRollback := errors.New("rollback")
 	err := pg.InTx(t.Context(), f.pool, func(ctx context.Context) error {
@@ -95,11 +118,14 @@ func (f jobsFixture) enqueue(t *testing.T, job testArgs, queueName string, commi
 	})
 	if commit {
 		require.NoError(t, err)
+	} else {
+		require.ErrorIs(t, err, errRollback)
 	}
 }
 
 func TestJobs_OnlyCommittedJobRunsInItsQueue(t *testing.T) {
-	f := startJobs(t, newWatchdog(time.Minute), true, time.Second)
+	t.Parallel()
+	f := startJobs(t, newWatchdog(time.Minute), true, time.Second, nil)
 
 	f.enqueue(t, testArgs{Name: "rolled back"}, entity.QueueInteractive, false)
 	f.enqueue(t, testArgs{Name: "committed"}, entity.QueueBulk, true)
@@ -110,72 +136,110 @@ func TestJobs_OnlyCommittedJobRunsInItsQueue(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("committed job did not run")
 	}
+	f.cancel()
+	require.NoError(t, f.wait(t))
+	assert.Zero(t, count(t, t.Context(), f.pool, `SELECT count(*) FROM river_job WHERE kind = 'test' AND args->>'name' = 'rolled back'`))
 	select {
 	case d := <-f.done:
 		t.Fatalf("unexpected job %q", d.name)
-	case <-time.After(2 * time.Second):
+	default:
 	}
 }
 
 func TestQueue_RequiresTransaction(t *testing.T) {
-	f := startJobs(t, newWatchdog(time.Minute), true, time.Second)
-	assert.Error(t, f.queue.Enqueue(t.Context(), testArgs{}, entity.QueueBulk))
+	t.Parallel()
+	assert.ErrorContains(t, queue.New(nil).Enqueue(t.Context(), testArgs{}, entity.QueueBulk), "transaction")
 }
 
 func TestJobs_StopFinishesCurrentJobThenCancelsOverdue(t *testing.T) {
-	f := startJobs(t, newWatchdog(time.Minute), true, 2*time.Second)
-	f.enqueue(t, testArgs{Name: "short", Hold: 500 * time.Millisecond}, entity.QueueInteractive, true)
-	f.enqueue(t, testArgs{Name: "long", Hold: time.Minute}, entity.QueueBulk, true)
-	time.Sleep(300 * time.Millisecond)
+	t.Parallel()
+	const stopTimeout = time.Second
+	wd := newWatchdog(time.Minute)
+	finish := make(chan struct{})
+	f := startJobs(t, wd, true, stopTimeout, map[string]<-chan struct{}{"short": finish, "long": nil})
+	f.enqueue(t, testArgs{Name: "short"}, entity.QueueInteractive, true)
+	f.enqueue(t, testArgs{Name: "long"}, entity.QueueBulk, true)
+	var started []string
+	deadline := time.After(10 * time.Second)
+	for range 2 {
+		select {
+		case name := <-f.started:
+			started = append(started, name)
+		case <-deadline:
+			t.Fatal("both jobs did not start")
+		}
+	}
+	require.ElementsMatch(t, []string{"short", "long"}, started)
 
 	start := time.Now()
 	f.cancel()
-	select {
-	case err := <-f.result:
-		require.NoError(t, err)
-	case <-time.After(15 * time.Second):
-		t.Fatal("worker did not stop")
-	}
-	assert.Less(t, time.Since(start), 2*time.Second+_cancelTimeout)
+	require.Eventually(t, func() bool { return !wd.armed.Load() }, stopTimeout, 10*time.Millisecond, "the worker begins graceful shutdown")
+	close(finish)
+	require.NoError(t, f.wait(t))
+	assert.Less(t, time.Since(start), stopTimeout+_cancelTimeout)
 
 	got := map[string]error{}
 	for range 2 {
-		d := <-f.done
-		got[d.name] = d.err
+		select {
+		case d := <-f.done:
+			got[d.name] = d.err
+		default:
+			t.Fatal("worker stopped before both jobs finished")
+		}
 	}
+	assert.Contains(t, got, "short")
 	assert.NoError(t, got["short"], "the current job finishes")
 	assert.ErrorIs(t, got["long"], context.Canceled, "a job over the stop timeout is cancelled")
 }
 
 func TestJobs_WatchdogSeesRiverFetchLoop(t *testing.T) {
+	t.Parallel()
 	wd := newWatchdog(1500 * time.Millisecond)
-	f := startJobs(t, wd, true, time.Second)
+	f := startJobs(t, wd, true, time.Second, nil)
 
+	require.Eventually(t, wd.armed.Load, 10*time.Second, 10*time.Millisecond)
+	first := wd.last.Load()
+	require.Eventually(t, func() bool {
+		return time.Duration(wd.last.Load()-first) > wd.timeout
+	}, 10*time.Second, 10*time.Millisecond, "fetches continue to refresh the watchdog beyond its timeout")
 	select {
-	case err := <-f.result:
-		t.Fatalf("worker stopped: %v", err)
-	case <-time.After(4 * time.Second):
+	case <-f.stopped:
+		t.Fatalf("worker stopped: %v", f.err)
+	default:
 	}
 	assert.NoError(t, wd.Check(t.Context()))
 }
 
 func TestJobs_WatchdogStopsStalledFetchLoop(t *testing.T) {
-	wd := newWatchdog(1500 * time.Millisecond)
-	f := startJobs(t, wd, false, time.Second)
+	t.Parallel()
+	wd := newWatchdog(250 * time.Millisecond)
+	f := startJobs(t, wd, false, time.Second, nil)
 
-	select {
-	case err := <-f.result:
-		assert.ErrorIs(t, err, errStalled)
-		assert.ErrorIs(t, wd.Check(t.Context()), errStalled, "/livez reports the stall")
-	case <-time.After(10 * time.Second):
-		t.Fatal("stalled loop was not detected")
-	}
+	assert.ErrorIs(t, f.wait(t), errStalled)
+	assert.ErrorIs(t, wd.Check(t.Context()), errStalled, "/livez reports the stall")
 }
 
 func TestWaitReady_DoesNotStartWhileUnready(t *testing.T) {
-	ready := &health.Readiness{}
-	ready.Register(func(context.Context) error { return errors.New("schema is behind") })
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-	assert.False(t, waitReady(ctx, ready))
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ready := &health.Readiness{}
+		ready.Register(func(context.Context) error { return errors.New("schema is behind") })
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+		assert.False(t, waitReady(ctx, ready))
+		require.NoError(t, runJobs(ctx, jobsConfig{ready: ready}))
+	})
+}
+
+type failingJobStopper struct{ err error }
+
+func (failingJobStopper) Stop(context.Context) error { return context.DeadlineExceeded }
+
+func (f failingJobStopper) StopAndCancel(context.Context) error { return f.err }
+
+func TestStopJobs_ReportsCancellationError(t *testing.T) {
+	t.Parallel()
+	stopErr := errors.New("river could not cancel running jobs")
+	err := stopJobs(t.Context(), jobsConfig{log: zerolog.Nop(), stopTimeout: time.Second}, failingJobStopper{err: stopErr})
+	require.ErrorIs(t, err, stopErr)
 }

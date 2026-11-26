@@ -3,6 +3,8 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -396,7 +398,8 @@ func TestLogin_OnlyDeclaredAccountBecomesAdministrator(t *testing.T) {
 
 func TestLogin_RejectsForgedResponse(t *testing.T) {
 	t.Parallel()
-	other := newTestIDP(t, nil)
+	otherKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
 	tests := []struct {
 		name      string
 		giveGrant func(*grant)
@@ -411,7 +414,7 @@ func TestLogin_RejectsForgedResponse(t *testing.T) {
 		{name: "token aud", giveGrant: func(g *grant) { g.claims["aud"] = "other-client" }, wantError: "invalid_response"},
 		{name: "token nonce", giveGrant: func(g *grant) { g.claims["nonce"] = "forged" }, wantError: "invalid_response"},
 		{name: "token expired", giveGrant: func(g *grant) { g.claims["exp"] = time.Now().Add(-time.Minute).Unix() }, wantError: "invalid_response"},
-		{name: "token signature", giveGrant: func(g *grant) { g.key = other.key }, wantError: "invalid_response"},
+		{name: "token signature", giveGrant: func(g *grant) { g.key = otherKey }, wantError: "invalid_response"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

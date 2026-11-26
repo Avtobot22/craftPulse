@@ -30,6 +30,7 @@ func safe(t *testing.T, data []byte) {
 }
 
 func TestDiscover_StandaloneAndEscapedValues(t *testing.T) {
+	t.Parallel()
 	var encoded, entities strings.Builder
 	for _, c := range marker() {
 		fmt.Fprintf(&encoded, "\\u%04x", c)
@@ -39,6 +40,7 @@ func TestDiscover_StandaloneAndEscapedValues(t *testing.T) {
 		{"plain", marker()}, {"json", `{"evidence":"` + encoded.String() + `"}`}, {"xml", `<failure>` + entities.String() + `</failure>`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			detector, err := secrets.New(t.Context())
 			require.NoError(t, err)
 			// Untrusted report names cannot opt out through Gitleaks' filename allowlists.
@@ -56,6 +58,23 @@ func TestDiscover_StandaloneAndEscapedValues(t *testing.T) {
 			assert.Positive(t, detector.Scrubber.Replacements())
 		})
 	}
+}
+
+func TestDetectors_KeepScrubbersSeparate(t *testing.T) {
+	t.Parallel()
+	first, err := secrets.New(t.Context())
+	require.NoError(t, err)
+	second, err := secrets.New(t.Context())
+	require.NoError(t, err)
+	content := []byte(marker())
+	require.NoError(t, first.Discover(t.Context(), "input.txt", content))
+	cleaned, err := first.Scrubber.Redact(content)
+	require.NoError(t, err)
+	safe(t, cleaned)
+	untouched, err := second.Scrubber.Redact(content)
+	require.NoError(t, err)
+	assert.Equal(t, content, untouched)
+	assert.Zero(t, second.Scrubber.Replacements())
 }
 
 func TestScrubber_RedactedObjectKeysStayDeterministic(t *testing.T) {

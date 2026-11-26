@@ -42,9 +42,13 @@ type approval struct {
 	nonce string
 }
 
+var _testIDPKey = sync.OnceValues(func() (*rsa.PrivateKey, error) {
+	return rsa.GenerateKey(rand.Reader, 2048)
+})
+
 func newTestIDP(t *testing.T, clients map[string]string) *testIDP {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := _testIDPKey()
 	require.NoError(t, err)
 	p := &testIDP{key: key, grants: map[string]grant{}, client: clients}
 	mux := http.NewServeMux()
