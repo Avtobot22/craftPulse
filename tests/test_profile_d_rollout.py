@@ -274,6 +274,37 @@ class RolloutTest(unittest.TestCase):
             self.assertIn("/run/test/adapters/jiracloud/service-key:/run/secrets/adapter-keys/jira_cloud:ro",
                           services[name]["volumes"])
 
+    def test_gitlab_compose_uses_required_release_and_tls_endpoints(self):
+        settings = json.loads((PROFILE / "rollout.example.json").read_bytes())
+        self.assertIn("gitlab", settings["required_adapters"])
+        release = manifest(FIRST, 1, adapter=True, adapter_name="gitlab")
+        services = rollout_host.overrides(settings, ["gitlab"], release, "/run/test")["services"]
+        adapter = services["adapter-gitlab"]
+        migration = services["adapter-gitlab-migrate"]
+        self.assertEqual(adapter["image"], release["images"]["craftpulse-adapter-gitlab"])
+        self.assertEqual(migration["image"], adapter["image"])
+        self.assertEqual((adapter["mem_limit"], adapter["memswap_limit"]), ("48m", "48m"))
+        self.assertEqual(adapter["restart"], "unless-stopped")
+        self.assertEqual(adapter["healthcheck"]["test"], ["CMD", "/usr/local/bin/adapter", "healthcheck"])
+        self.assertNotIn("ports", adapter)
+        self.assertEqual(adapter["networks"], ["data", "edge"])
+        env = adapter["environment"]
+        self.assertEqual(env["ADAPTER_METRICS_ADDR"], ":9090")
+        self.assertEqual(env["GOMEMLIMIT"], "36MiB")
+        self.assertEqual(env["SOURCE_PRIVATE_NETWORKS"], "")
+        self.assertEqual(env["INSTALLATION_NETWORKS"], "172.31.84.0/27")
+        self.assertEqual(env["DATABASE_URL"], "postgres://adapter_gitlab@postgres:5432/adapter_gitlab?sslmode=disable")
+        self.assertEqual(migration["command"], ["migrate"])
+        self.assertEqual(migration["networks"], ["data"])
+        self.assertEqual(migration["environment"]["DATABASE_URL"],
+                         "postgres://adapter_gitlab_owner@postgres:5432/adapter_gitlab?sslmode=disable")
+        for service, password in ((adapter, "app-password"), (migration, "owner-password")):
+            self.assertIn(f"/run/test/adapters/gitlab/{password}:/run/secrets/db-password:ro", service["volumes"])
+        for service in ("api", "worker"):
+            self.assertEqual(services[service]["environment"]["BUILTIN_ADAPTERS"], "gitlab=https://adapter-gitlab:8443")
+            self.assertIn("/run/test/adapters/gitlab/service-key:/run/secrets/adapter-keys/gitlab:ro",
+                          services[service]["volumes"])
+
     def test_required_jira_cloud_cannot_be_omitted_from_bundle(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -368,22 +399,29 @@ class RolloutTest(unittest.TestCase):
                 with self.assertRaisesRegex(rollout.RolloutError, "volumes differ from the active release"):
                     stand.prepare(candidate, files)
 
-    def test_jira_cloud_db_migrates_before_switch_and_rollback_uses_previous_digest(self):
+    def test_adapter_db_migrates_before_switch_and_rollback_uses_previous_digest(self):
+        for name in ("jiracloud", "gitlab"):
+            with self.subTest(adapter=name):
+                self.assert_adapter_migrate_and_rollback(name)
+
+    def assert_adapter_migrate_and_rollback(self, name):
+        database, service = f"adapter_{name}", f"adapter-{name}"
+        image = rollout.ADAPTER + name
         with tempfile.TemporaryDirectory() as directory:
             stand = rollout_host.Stand(Path(directory))
-            releases = [{**manifest(sha, 1, adapter=True, adapter_name="jiracloud"),
-                         "adapters": ["jiracloud"], "snapshot": sha} for sha in (FIRST, SECOND)]
-            schema = {"craftpulse": 1, "adapter_jiracloud": 0}
+            releases = [{**manifest(sha, 1, adapter=True, adapter_name=name),
+                         "adapters": [name], "snapshot": sha} for sha in (FIRST, SECOND)]
+            schema = {"craftpulse": 1, database: 0}
             calls = []
             observability = []
 
             def compose(release, label, *args, **kwargs):
-                if label == "migrate adapter_jiracloud":
-                    schema["adapter_jiracloud"] = 3
+                if label == f"migrate {database}":
+                    schema[database] = 3
                 if label == "apply observability configuration":
                     observability.append(release["snapshot"])
-                if label == "restart adapter-jiracloud":
-                    calls.append(release["images"]["craftpulse-adapter-jiracloud"])
+                if label == f"restart {service}":
+                    calls.append(release["images"][image])
                 else:
                     calls.append(label)
                 return b""
@@ -392,15 +430,15 @@ class RolloutTest(unittest.TestCase):
                  patch.object(stand, "schema", side_effect=lambda _, db: schema[db]), \
                  patch.object(stand, "backup"), patch.object(stand, "verify") as verify:
                 stand.migrate(releases[0])
-                self.assertLess(calls.index("prepare database for jiracloud"), calls.index("migrate adapter_jiracloud"))
+                self.assertLess(calls.index(f"prepare database for {name}"), calls.index(f"migrate {database}"))
                 stand.switch(releases[0], None)
                 stand.switch(releases[1], releases[0])
                 stand.switch(releases[0], releases[1])
             self.assertEqual([value for value in calls if "@sha256:" in value],
-                             [release["images"]["craftpulse-adapter-jiracloud"]
+                             [release["images"][image]
                               for release in (releases[0], releases[1], releases[0])])
             self.assertEqual([args[0]["commit_sha"] for args, _ in verify.call_args_list
-                              if args[1] == "adapter-jiracloud"], [FIRST, SECOND, FIRST])
+                              if args[1] == service], [FIRST, SECOND, FIRST])
             self.assertEqual(observability, [FIRST, SECOND, FIRST])
 
     def test_jira_cloud_rollback_rejects_old_keys_before_switching(self):
