@@ -153,6 +153,7 @@ type Operations interface {
 type TeamReports interface {
 	SavedViews
 	TeamReport(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.ReportQuery) (entity.TeamReport, error)
+	SeriesData(ctx context.Context, s entity.Subject, seriesID entity.ID, revisionID *entity.ID, metrics []string) (entity.TeamReport, error)
 	Revision(ctx context.Context, s entity.Subject, revisionID entity.ID) (entity.RevisionPassport, error)
 	Cohort(ctx context.Context, s entity.Subject, revisionID entity.ID, q entity.CohortQuery) (entity.CohortPage, []string, error)
 	MetricDefinitions() []entity.MetricDefinition

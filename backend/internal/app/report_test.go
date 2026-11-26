@@ -43,8 +43,10 @@ type reportValueBody struct {
 }
 
 type reportBody struct {
+	SeriesID uuid.UUID `json:"series_id"`
 	Revision struct {
-		ID uuid.UUID `json:"id"`
+		ID       uuid.UUID `json:"id"`
+		SeriesID uuid.UUID `json:"series_id"`
 	} `json:"revision"`
 	Metrics []struct {
 		MetricID  string  `json:"metric_id"`
@@ -248,6 +250,8 @@ func reportRoute(t *testing.T, path string) *routers.Route {
 	t.Helper()
 	pattern := "/teams/{team_id}/report"
 	switch {
+	case strings.HasPrefix(path, "/api/v1/series/") && strings.HasSuffix(path, "/data"):
+		pattern = "/series/{series_id}/data"
 	case path == "/api/v1/metric-definitions":
 		pattern = "/metric-definitions"
 	case strings.HasPrefix(path, "/api/v1/revisions/") && strings.HasSuffix(path, "/cohort"):
@@ -263,7 +267,10 @@ func reportRoute(t *testing.T, path string) *routers.Route {
 func TestReport_V03ValuesCohortFiltersAndPassport(t *testing.T) {
 	t.Parallel()
 	e := newReportEnv(t, true)
+	day := url.Values{"step": {"day"}}
+	require.Equal(t, http.StatusNotFound, e.report(t, e.admin, day).Code)
 	r := e.publish(t)
+	daily := e.readReport(t, e.admin, day)
 
 	t05 := r.value(t, "T05", "", e.week)
 	assert.Equal(t, "ASSESSED", t05.State)
@@ -341,6 +348,30 @@ func TestReport_V03ValuesCohortFiltersAndPassport(t *testing.T) {
 	old := e.readReport(t, e.admin, url.Values{"revision_id": {r.Revision.ID.String()}})
 	assert.Equal(t, r.Revision.ID, old.Revision.ID)
 	assert.Equal(t, 1.0, *old.value(t, "T05", "", e.week).Value)
+	// A direct inspection link has no team or report parameters. The series identifies the team.
+	seriesPath := "/api/v1/series/" + r.Revision.SeriesID.String() + "/data"
+	oldData := e.checked(t, e.admin, seriesPath+"?metric_id=T05,T08&revision_id="+r.Revision.ID.String())
+	require.Equal(t, http.StatusOK, oldData.Code, oldData.Body.String())
+	oldSeries := decode[reportBody](t, oldData)
+	assert.Equal(t, r.Revision.SeriesID, oldSeries.SeriesID)
+	assert.Equal(t, r.Revision.ID, oldSeries.Revision.ID)
+	assert.Equal(t, t05, oldSeries.value(t, "T05", "", e.week))
+	assert.Equal(t, r.value(t, "T08", "p50", e.week), oldSeries.value(t, "T08", "p50", e.week))
+	for _, metric := range oldSeries.Metrics {
+		assert.Contains(t, []string{"T05", "T08"}, metric.MetricID)
+	}
+
+	// Omitting the revision resolves the current publication without changing the old one.
+	latest := e.checked(t, e.admin, seriesPath+"?metric_id=T05")
+	require.Equal(t, http.StatusOK, latest.Code, latest.Body.String())
+	latestSeries := decode[reportBody](t, latest)
+	assert.Equal(t, current.Revision.ID, latestSeries.Revision.ID)
+	assert.Equal(t, current.value(t, "T05", "", e.week), latestSeries.value(t, "T05", "", e.week))
+
+	// A revision from another series must not be returned under this series ID.
+	wrong := e.checked(t, e.admin, seriesPath+"?revision_id="+daily.Revision.ID.String())
+	assert.Equal(t, http.StatusNotFound, wrong.Code, wrong.Body.String())
+
 	var first, second struct {
 		KnowledgeSeq int64 `json:"knowledge_seq"`
 	}
@@ -404,6 +435,12 @@ func TestReport_AccessNarrowsAggregateAndCohort(t *testing.T) {
 	assert.True(t, member.AccessLimited)
 	require.Len(t, member.AccessNotes, 1)
 	assert.Equal(t, "restricted_by_access", member.AccessNotes[0].Code)
+	seriesRec := e.checked(t, e.member, "/api/v1/series/"+r.Revision.SeriesID.String()+"/data?metric_id=T05")
+	require.Equal(t, http.StatusOK, seriesRec.Code, seriesRec.Body.String())
+	series := decode[reportBody](t, seriesRec)
+	assert.True(t, series.AccessLimited)
+	assert.Equal(t, member.AccessNotes, series.AccessNotes)
+	assert.Equal(t, member.value(t, "T05", "", e.week), series.value(t, "T05", "", e.week))
 	start := url.Values{"metric_id": {"T05"}, "point_start": {e.week.Format(time.RFC3339)}}
 	hidden := e.cohort(t, e.member, r.Revision.ID, start)
 	assert.Equal(t, []string{"R-A:numerator"}, hidden.keys())

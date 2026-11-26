@@ -1309,8 +1309,14 @@ function definition(metricId: 'T05' | 'T08'): Schemas['MetricDefinition'] {
   }
 }
 
-function inspectionPath(metricId: string, id: string, isCohort = false) {
+function inspectionPath(
+  metricId: string,
+  id: string,
+  isCohort = false,
+  withTeam = true,
+) {
   const search = new URL(reportUrl, 'https://craftpulse.test').searchParams
+  if (!withTeam) search.delete('team_id')
   if (!isCohort) search.set('point_start', pointStart)
   const suffix = isCohort ? '/points/' + encodeURIComponent(pointStart) : ''
   return (
@@ -1440,55 +1446,72 @@ describe('Раскрытие точки отчёта', () => {
     })
   })
 
-  it('открывает старый T08 по прямой ссылке и показывает отметку об актуальной ревизии', async () => {
-    mount({
-      path: inspectionPath('T08', oldRevisionId) + '&estimator=p85',
-      read: (url) => {
-        expect(url.searchParams.get('revision_id')).toBe(oldRevisionId)
-        return jsonResponse(flowReport(oldRevisionId))
-      },
-      readRevision: (id) => ({
-        ...revision(id),
-        definitions: [definition('T08')],
-        status: 'superseded',
-        loading: true,
-        superseded_at: period.to,
-        irreproducible_reason: 'basis_deleted',
-        knowledge_seq: 17,
-      }),
-      extraRead: (url) =>
-        url.pathname === '/api/v1/series/' + seriesId + '/data'
-          ? jsonResponse({
-              series_id: seriesId,
-              revision: report().revision,
-              metrics: [cycle],
-              access_limited: false,
-              access_notes: [],
-            } satisfies Schemas['SeriesData'])
-          : undefined,
-    })
-    expect(await screen.findByText(/Ревизия 30/u)).toBeInTheDocument()
-    expect(screen.getByText('17')).toBeInTheDocument()
-    expect(screen.getByText(/Ревизия ещё загружается/u)).toBeInTheDocument()
-    expect(
-      screen.getByText(/Ревизию нельзя воспроизвести.*Основание удалено/u),
-    ).toBeInTheDocument()
-    expect(await screen.findByText('Малая выборка')).toBeInTheDocument()
-    expect(screen.getByText('3 д 0 ч')).toBeInTheDocument()
-    const latest = await screen.findByRole('link', {
-      name: 'Открыть актуальную ревизию',
-    })
-    expect(latest).toHaveAttribute(
-      'href',
-      expect.stringContaining('/' + revisionId + '/metrics/T08'),
-    )
-    const next = new URL(
-      latest.getAttribute('href') ?? '',
-      'https://craftpulse.test',
-    )
-    expect(next.searchParams.get('point_start')).toBe(pointStart)
-    expect(next.searchParams.get('estimator')).toBe('p85')
-  })
+  it.each([
+    { withTeam: true, context: 'с командой в ссылке' },
+    { withTeam: false, context: 'без команды в ссылке' },
+  ])(
+    'открывает старый T08 и даёт ссылку на актуальный $context',
+    async ({ withTeam }) => {
+      mount({
+        path:
+          inspectionPath('T08', oldRevisionId, false, withTeam) +
+          '&estimator=p85',
+        read: (url) => {
+          expect(withTeam).toBe(true)
+          expect(url.searchParams.get('revision_id')).toBe(oldRevisionId)
+          return jsonResponse(flowReport(oldRevisionId))
+        },
+        readRevision: (id) => ({
+          ...revision(id),
+          definitions: [definition('T08')],
+          status: 'superseded',
+          loading: true,
+          superseded_at: period.to,
+          irreproducible_reason: 'basis_deleted',
+          knowledge_seq: 17,
+        }),
+        extraRead: (url) => {
+          if (url.pathname !== '/api/v1/series/' + seriesId + '/data')
+            return undefined
+          expect(url.searchParams.get('metric_id')).toBe('T08')
+          const id = url.searchParams.get('revision_id')
+          if (id !== null) {
+            expect(withTeam).toBe(false)
+            expect(id).toBe(oldRevisionId)
+          }
+          return jsonResponse({
+            series_id: seriesId,
+            revision: report(id ?? revisionId).revision,
+            metrics: [cycle],
+            access_limited: false,
+            access_notes: [],
+          } satisfies Schemas['SeriesData'])
+        },
+      })
+      expect(await screen.findByText(/Ревизия 30/u)).toBeInTheDocument()
+      expect(screen.getByText('17')).toBeInTheDocument()
+      expect(screen.getByText(/Ревизия ещё загружается/u)).toBeInTheDocument()
+      expect(
+        screen.getByText(/Ревизию нельзя воспроизвести.*Основание удалено/u),
+      ).toBeInTheDocument()
+      expect(await screen.findByText('Малая выборка')).toBeInTheDocument()
+      expect(screen.getByText('3 д 0 ч')).toBeInTheDocument()
+      const latest = await screen.findByRole('link', {
+        name: 'Открыть актуальную ревизию',
+      })
+      expect(latest).toHaveAttribute(
+        'href',
+        expect.stringContaining('/' + revisionId + '/metrics/T08'),
+      )
+      const next = new URL(
+        latest.getAttribute('href') ?? '',
+        'https://craftpulse.test',
+      )
+      expect(next.searchParams.get('point_start')).toBe(pointStart)
+      expect(next.searchParams.get('estimator')).toBe('p85')
+      expect(next.searchParams.get('team_id')).toBe(withTeam ? teamId : null)
+    },
+  )
 
   it('открывает роль по прямой ссылке и листает четыре роли курсором', async () => {
     const readCohort = vi.fn((url: URL): Schemas['CohortPage'] => {
@@ -1514,7 +1537,20 @@ describe('Раскрытие точки отчёта', () => {
       }
     })
     const { router } = mount({
-      path: inspectionPath('T05', revisionId, true) + '&role=excluded',
+      path: inspectionPath('T05', revisionId, true, false) + '&role=excluded',
+      extraRead: (url) => {
+        if (url.pathname !== '/api/v1/series/' + seriesId + '/data')
+          return undefined
+        expect(url.searchParams.get('revision_id')).toBe(revisionId)
+        expect(url.searchParams.get('metric_id')).toBe('T05')
+        return jsonResponse({
+          series_id: seriesId,
+          revision: report().revision,
+          metrics: [completion],
+          access_limited: false,
+          access_notes: [],
+        } satisfies Schemas['SeriesData'])
+      },
       readRevision: (id) => ({
         ...revision(id),
         definitions: [definition('T05')],
@@ -1525,6 +1561,7 @@ describe('Раскрытие точки отчёта', () => {
       await screen.findByRole('row', { name: /Задача B/u }),
     ).toBeInTheDocument()
     expect(screen.queryByText('Задача A')).not.toBeInTheDocument()
+    expect(await screen.findByText(/Числитель: 1/u)).toBeInTheDocument()
     const filter = screen.getByRole('combobox', { name: 'Роль в формуле' })
     expect(filter).toHaveValue('excluded')
     fireEvent.change(filter, { target: { value: '' } })
