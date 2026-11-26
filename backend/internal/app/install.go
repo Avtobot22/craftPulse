@@ -41,7 +41,7 @@ var _releaseSHA = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
 // RunInstall is `api install`: it creates the organizations of the parameters and writes the
 // installation protocol (UC-01, FR-011). A failed check makes the command fail.
-func RunInstall(cfg config.Config, in config.Install, log zerolog.Logger) error {
+func RunInstall(cfg config.Config, in config.Install, adapters config.Adapters, log zerolog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	ctx = logger.WithCorrelation(ctx, log)
@@ -64,8 +64,12 @@ func RunInstall(cfg config.Config, in config.Install, log zerolog.Logger) error 
 	}
 	defer pool.Close()
 
+	caller, err := newAdapterCaller(adapters, nil)
+	if err != nil {
+		return err
+	}
 	httpClient := &http.Client{Timeout: _probeTimeout}
-	uc := newInstallation(pool, keyring, newObjectStore(cfg.ObjectStore), probe.New(httpClient), clock.System{})
+	uc := newInstallation(pool, keyring, newObjectStore(cfg.ObjectStore), probe.New(httpClient), clock.System{}, caller)
 	return cli.Install(ctx, uc, installParams(in, sha), log)
 }
 
@@ -74,7 +78,7 @@ type installProbes interface {
 	repo.IdentityProviderProbe
 }
 
-func newInstallation(pool *pgxpool.Pool, keyring *crypto.Keyring, store repo.ObjectStoreProbe, probes installProbes, c clock.Clock) *install.UseCase {
+func newInstallation(pool *pgxpool.Pool, keyring *crypto.Keyring, store repo.ObjectStoreProbe, probes installProbes, c clock.Clock, adapters install.Adapters) *install.UseCase {
 	tx := persistent.NewTransactor(pool)
 	return install.New(install.Deps{
 		Tx:            tx,
@@ -85,6 +89,7 @@ func newInstallation(pool *pgxpool.Pool, keyring *crypto.Keyring, store repo.Obj
 		Site:          probes,
 		Identity:      probes,
 		ObjectStore:   store,
+		Adapters:      adapters,
 		Clock:         c,
 		NewID:         newID,
 	})

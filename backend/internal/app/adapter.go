@@ -32,13 +32,19 @@ const _adapterShutdownTimeout = 35 * time.Second
 // NewSource builds the source of an adapter around the only client it may use to reach it.
 type NewSource func(client *adaptersdk.SourceClient) (adaptersdk.Source, error)
 
-// AdapterMain is the main of an adapter binary: `migrate` applies the adapter schema and rewraps data
-// keys under the owner role, anything else serves the contract.
+// AdapterMain runs the adapter, its local liveness check or the owner-role migration.
 func AdapterMain(service string, newSource NewSource) {
 	boot := logger.Default(service)
 	command := ""
 	if len(os.Args) > 1 {
 		command = os.Args[1]
+	}
+	if command == "healthcheck" {
+		addr := os.Getenv("ADAPTER_METRICS_ADDR")
+		if addr == "" || !health.CheckLocalLiveness(addr) {
+			os.Exit(1)
+		}
+		return
 	}
 	environ := env.ToMap(os.Environ())
 	cfg, err := config.LoadAdapter(environ)
@@ -122,8 +128,13 @@ func serveAdapter(ctx context.Context, cfg config.Adapter, srv config.AdapterSer
 		return fmt.Errorf("app: %w", err)
 	}
 
+	notAfter := serverTLS.Certificates[0].Leaf.NotAfter
+	endpoints := []endpoint{{addr: srv.HTTPAddr, handler: adapterBeforeExpiry(handler, notAfter), tls: serverTLS}}
+	if srv.MetricsAddr != "" {
+		endpoints = append(endpoints, endpoint{addr: srv.MetricsAddr, handler: adapterMetrics(notAfter)})
+	}
 	log.Info().Str("commit_sha", health.CommitSHA()).Str("contract_version", adaptersdk.CurrentContractVersion).Msg("adapter started")
-	return serveEndpoints(ctx, log, probes.Ready, shutdown, []endpoint{{addr: srv.HTTPAddr, handler: handler, tls: serverTLS}})
+	return serveEndpoints(ctx, log, probes.Ready, shutdown, endpoints)
 }
 
 // adapterProbes: ready while its own database has the schema and the master key is loaded (TZ 14.6).
@@ -141,6 +152,13 @@ func adapterTLS(srv config.AdapterServer) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(srv.TLSCertFile, srv.TLSKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("app: load adapter certificate: %w", err)
+	}
+	// LoadX509KeyPair may leave Leaf unset with GODEBUG=x509keypairleaf=0.
+	if cert.Leaf == nil {
+		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
+		if err != nil {
+			return nil, fmt.Errorf("app: parse adapter certificate: %w", err)
+		}
 	}
 	return &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}}, nil
 }

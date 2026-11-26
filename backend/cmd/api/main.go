@@ -36,9 +36,10 @@ func main() {
 	)
 	switch command {
 	case "install":
-		var inErr error
+		var inErr, adaptersErr error
 		in, inErr = config.LoadInstall(environ)
-		err = errors.Join(err, inErr)
+		adapters, adaptersErr = config.LoadAdapters(environ)
+		err = errors.Join(err, inErr, adaptersErr)
 	case "migrate":
 	default:
 		var siteErr, adaptersErr, checksErr error
@@ -59,7 +60,7 @@ func main() {
 	case "migrate":
 		err = app.RunMigrate(cfg, log)
 	case "install":
-		err = app.RunInstall(cfg, in, log)
+		err = app.RunInstall(cfg, in, adapters, log)
 	default:
 		err = app.RunAPI(cfg, site, adapters, checks, log)
 	}

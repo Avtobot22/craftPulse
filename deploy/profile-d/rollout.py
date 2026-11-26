@@ -27,6 +27,7 @@ CORE_FILES = {
     "core-master-key": 65532, "object-key": 65532, "grafana-password": 472, "seaweedfs.json": 1000,
 }
 ADAPTER_FILES = ("owner-password", "app-password", "master-key", "service-key", "tls-cert.pem", "tls-key.pem")
+PREVIOUS_SERVICE_KEY = "previous-service-key"
 
 
 class RolloutError(Exception):
@@ -142,6 +143,11 @@ def process_files(bundle, manifest, openssl):
             require(isinstance(values, dict), "invalid adapter secret fields")
             for field in ("owner_password", "app_password", "master_key", "service_key"):
                 files[f"adapters/{name}/{field.replace('_', '-')}"] = secret(values, field)
+            if "previous_service_key" in values:
+                previous = secret(values, "previous_service_key")
+                require(previous != files[f"adapters/{name}/service-key"],
+                        "previous adapter service key must differ from the current key")
+                files[f"adapters/{name}/{PREVIOUS_SERVICE_KEY}"] = previous
             require(len(base64.b64decode(values["master_key"], validate=True)) == 32,
                     "adapter master key must encode 32 bytes")
         ca_cert, ca_key = bundle.get("adapter_ca_cert"), bundle.get("adapter_ca_key")

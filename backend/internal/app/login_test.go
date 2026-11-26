@@ -69,7 +69,7 @@ func newLoginEnv(t *testing.T) *loginEnv {
 		clock: clock.NewManual(_now),
 		logs:  &bytes.Buffer{},
 	}
-	applied, err := newInstallation(e.app, keyring, storeProbe{}, probe.New(e.idp.srv.Client()), e.clock).Apply(t.Context(), entity.InstallParams{
+	applied, err := newInstallation(e.app, keyring, storeProbe{}, probe.New(e.idp.srv.Client()), e.clock, nil).Apply(t.Context(), entity.InstallParams{
 		Organizations: []entity.NewOrganization{
 			{
 				Slug: "demo", Name: "Demo",

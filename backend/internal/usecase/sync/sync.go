@@ -65,6 +65,7 @@ type Connect interface {
 type Ingest interface {
 	PreparePage(ctx context.Context, orgID, connectionID, scopeID entity.ID, page io.Reader) (*entity.PreparedPackage, error)
 	RecordPage(ctx context.Context, p *entity.PreparedPackage) (entity.Receipt, error)
+	PageCommitted(entity.Receipt)
 	AffectedMetrics(schemaID string) []string
 	ActivityReceiptConnections(ctx context.Context, orgID entity.ID, receipts []entity.ID) (map[entity.ID]entity.ID, error)
 	ActivityTruncations(ctx context.Context, orgID entity.ID, scopes []entity.ID, at time.Time) ([]entity.ActivityHistoryNotice, error)
@@ -235,8 +236,8 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 		return err
 	}
 	st.Cursor, st.CheckpointAt, st.FailedCursor, st.LastOutcome, st.LastErrorCode = string(raw), &now, "", "succeeded", ""
-	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
-		receipt, err := u.d.Ingest.RecordPage(ctx, page)
+	return u.withPageIntake(ctx, org, func(ctx context.Context, record pageRecorder) error {
+		receipt, err := record(page)
 		if err != nil {
 			return err
 		}
@@ -278,6 +279,29 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 		}
 		return u.queueReconcile(ctx, org, conn, job.DataKind, job.CorrelationID, 0, now)
 	})
+}
+
+type pageRecorder func(*entity.PreparedPackage) (entity.Receipt, error)
+
+// withPageIntake reports only the receipts of the committed attempt, even when the transactor retries.
+func (u *UseCase) withPageIntake(ctx context.Context, org entity.ID, work func(context.Context, pageRecorder) error) error {
+	var receipts []entity.Receipt
+	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		receipts = receipts[:0]
+		return work(ctx, func(page *entity.PreparedPackage) (entity.Receipt, error) {
+			rc, err := u.d.Ingest.RecordPage(ctx, page)
+			if err == nil {
+				receipts = append(receipts, rc)
+			}
+			return rc, err
+		})
+	})
+	if err == nil {
+		for i := range receipts {
+			u.d.Ingest.PageCommitted(receipts[i])
+		}
+	}
+	return err
 }
 
 // fetch calls the adapter and cleans the page before any transaction. A refused call or a page the
@@ -375,9 +399,9 @@ func (u *UseCase) fail(ctx context.Context, job entity.SyncPageJob, st entity.Sy
 	zerolog.Ctx(ctx).Warn().Str("connection_id", conn.String()).Str("operation", "fetch").Str("data_kind", job.DataKind).
 		Str("reason", f.code).Int("retry", job.Retry).Str("checkpoint", st.Cursor).Time("repeat_at", f.at).Bool("stopped", f.stop).
 		Str("correlation_id", job.CorrelationID.String()).Msg("page of collection failed")
-	return u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+	return u.withPageIntake(ctx, org, func(ctx context.Context, record pageRecorder) error {
 		if page != nil {
-			if _, err := u.d.Ingest.RecordPage(ctx, page); err != nil {
+			if _, err := record(page); err != nil {
 				return err
 			}
 		}

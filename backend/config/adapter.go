@@ -22,6 +22,7 @@ type Adapter struct {
 // installation, and then the installation networks must be listed.
 type AdapterServer struct {
 	HTTPAddr              string         `env:"HTTP_ADDR" envDefault:":8443"`
+	MetricsAddr           string         `env:"ADAPTER_METRICS_ADDR"`
 	TLSCertFile           string         `env:"TLS_CERT_FILE,required,notEmpty"`
 	TLSKeyFile            string         `env:"TLS_KEY_FILE,required,notEmpty"`
 	ServiceKey            Secret         `env:"ADAPTER_SERVICE_KEY_FILE,file,required,notEmpty"`

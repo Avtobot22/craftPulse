@@ -5,6 +5,8 @@
   "backup_recipient": "<public age recipient>",
   "installation_networks": "172.31.84.0/27",
   "source_private_networks": "",
+  "required_adapters": ["jiracloud"],
+  "adapter_master_key_versions": {"jiracloud": 1},
   "install": {
     "INSTALL_ORGANIZATIONS": "stand",
     "ORG_STAND_NAME": "Служебная организация стенда",
