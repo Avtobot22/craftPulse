@@ -130,15 +130,18 @@ export type {
   SourceAccountListParams,
 } from './account-queries'
 
+export { loadReport, RevisionNotPublished } from './report-queries'
+export type { ReportQuery, ReportSeries, TeamReport } from './report-queries'
+export { isDateTime } from '@/shared/lib/date-time'
 export {
-  isDateTime,
-  loadReport,
+  findMetricDefinition,
+  followUpDays,
+  loadMetricRevision,
   loadRevisionMetadata,
-  RevisionNotPublished,
-} from './report-queries'
+  loadRevisionSeries,
+} from './revision-queries'
 export type {
-  ReportQuery,
-  ReportSeries,
+  MetricDefinition,
+  MetricRevision,
   RevisionMetadata,
-  TeamReport,
-} from './report-queries'
+} from './revision-queries'

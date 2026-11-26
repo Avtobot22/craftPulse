@@ -23,9 +23,13 @@ import {
 import type { TeamReport } from '@/shared/api'
 import { seriesKey } from '../model/metrics'
 import type { ReportBlockProps } from '../model/metrics'
-import { periodError, readReportParams, reportQuery } from '@/shared/config'
+import {
+  periodError,
+  readReportParams,
+  reportQuery,
+  writeReportParams,
+} from '@/shared/config'
 import type { ReportParams } from '@/shared/config'
-import { writeReportParams } from '../model/report-params'
 import { CompletenessBlock } from './completeness-block'
 import { CycleTimeBlock } from './cycle-time-block'
 import { WorkAgeBlock } from './work-age-block'
@@ -197,7 +201,30 @@ function TeamReportContent({
       : undefined
   const visible =
     Boolean(snapshot) && !readingMetadata && !unsafeMetadata && !invalidPeriod
-  const focusedPoint = scope.focus?.targetId
+  const returnState: unknown = location.state
+  const focus =
+    scope.focus ??
+    (returnState &&
+    typeof returnState === 'object' &&
+    'focusTarget' in returnState &&
+    typeof returnState.focusTarget === 'string' &&
+    'pointStart' in returnState &&
+    typeof returnState.pointStart === 'string' &&
+    'seriesId' in returnState &&
+    typeof returnState.seriesId === 'string'
+      ? {
+          locationKey: location.key,
+          revisionId: params.revision,
+          targetId: returnState.focusTarget,
+          pointStart: returnState.pointStart,
+          seriesId: returnState.seriesId,
+          ...('focusSeries' in returnState &&
+          typeof returnState.focusSeries === 'string'
+            ? { chartSeries: returnState.focusSeries }
+            : {}),
+        }
+      : undefined)
+  const focusedPoint = focus?.targetId
 
   const denial = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -328,7 +355,7 @@ function TeamReportContent({
     report: snapshot,
     metadata,
     groupBy: params.groupBy,
-    focus: scope.focus,
+    focus,
     projectIds: query.project_id,
     taskType: query.task_type,
     size: query.size_label,
@@ -343,12 +370,17 @@ function TeamReportContent({
       })
       const details = new URLSearchParams(search)
       details.set('point_start', pointStart)
+      details.set('focus_target', targetId)
+      details.set('focus_card', seriesKey(series))
+      details.delete('focus_series')
+      if (chartSeries) details.set('focus_series', chartSeries)
       details.delete('estimator')
       details.delete('group_value')
       if (series.estimator) details.set('estimator', series.estimator)
       if (series.group && params.groupBy)
         details.set('group_value', series.group[params.groupBy] ?? '')
       if (cohort) {
+        details.set('report_search', search.toString())
         details.set('size_label', cohort.size ?? 'unknown')
         if (cohort.taskType === null) {
           details.delete('task_type')
