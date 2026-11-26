@@ -7662,8 +7662,11 @@ type SprintPage struct {
 // SummaryItem defines model for SummaryItem.
 type SummaryItem struct {
 	// AnalysisKind Вид анализа строки; отсутствует у строк попыток CI.
-	AnalysisKind *AnalysisKind       `json:"analysis_kind,omitempty"`
-	FindingId    *openapi_types.UUID `json:"finding_id"`
+	AnalysisKind *AnalysisKind `json:"analysis_kind,omitempty"`
+
+	// ComponentId Компонент проверки для перехода к сравнению результатов.
+	ComponentId *openapi_types.UUID `json:"component_id,omitempty"`
+	FindingId   *openapi_types.UUID `json:"finding_id"`
 
 	// ItemKind `accepted` - находка с действующим исключением: она остаётся в сводке отдельно и не считается исправленной.
 	ItemKind SummaryItemItemKind `json:"item_kind"`

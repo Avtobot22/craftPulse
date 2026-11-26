@@ -157,6 +157,7 @@ export function HomePage({
     (action !== 'process.manage' || ownsProcess)
   const allowed = settings.filter(canOpenSetting)
   const outlet = useOutlet({
+    ...current,
     teams: scope.teams.data,
     ...(scope.team ? { team: scope.team } : {}),
     ...(scope.project ? { project: scope.project } : {}),
@@ -164,7 +165,7 @@ export function HomePage({
     canManageProcess: allowed.some(({ action }) => action === 'process.manage'),
     focus: reportFocus?.locationKey === location.key ? reportFocus : undefined,
     rememberPoint: setReportFocus,
-  } satisfies TeamReportScope & { teams: Team[] | undefined })
+  } satisfies CurrentUser & TeamReportScope & { teams: Team[] | undefined })
   const currentSetting = active && canOpenSetting(active) ? active : undefined
   const isProcessSetting = active?.action === 'process.manage'
   const isReport = reportPaths.some((path) =>

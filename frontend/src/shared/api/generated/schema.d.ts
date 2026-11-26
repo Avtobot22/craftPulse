@@ -4647,6 +4647,11 @@ export interface components {
              * @enum {string}
              */
             mode?: "import" | "builtin";
+            /**
+             * Format: uuid
+             * @description Компонент проверки для перехода к сравнению результатов.
+             */
+            component_id?: string;
             /** Format: uuid */
             finding_id: string | null;
             rule_id: string | null;

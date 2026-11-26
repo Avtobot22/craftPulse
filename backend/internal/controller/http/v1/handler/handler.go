@@ -30,6 +30,7 @@ type Handler struct {
 	checks
 	exceptions
 	comparisons
+	findings
 	reports
 	codeDetails
 	tasks
@@ -71,6 +72,7 @@ type Deps struct {
 	Exceptions      usecase.Exceptions
 	ExceptionDrafts usecase.ExceptionDrafts
 	Comparisons     usecase.TechnicalComparisons
+	Findings        usecase.Findings
 	Registerer      prometheus.Registerer
 }
 
@@ -88,6 +90,7 @@ func New(d Deps) *Handler {
 		checks:         checks{uc: d.Checks},
 		exceptions:     exceptions{uc: d.Exceptions, drafts: d.ExceptionDrafts},
 		comparisons:    comparisons{uc: d.Comparisons},
+		findings:       findings{uc: d.Findings},
 		codeDetails:    codeDetails{uc: d.Code},
 		tasks:          tasks{uc: d.Tasks},
 		reports:        reports{operations: d.Operations, views: d.Reports},
