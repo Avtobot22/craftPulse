@@ -128,3 +128,14 @@ export function readStringMap(value: unknown): Record<string, string> {
     ]),
   )
 }
+
+export function readCursorPage<T>(
+  value: unknown,
+  readItem: (item: unknown) => T,
+) {
+  const raw = readRecord(value)
+  return {
+    data: readArray(raw.data, readItem),
+    next_cursor: readNullableString(raw.next_cursor),
+  }
+}

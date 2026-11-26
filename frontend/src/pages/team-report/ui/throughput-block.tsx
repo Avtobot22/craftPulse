@@ -94,6 +94,7 @@ function OutcomeCard({
     latestPoint(series)
   const group = series.group
   const filters: OutcomeFilters = {
+    projectIds: block.projectIds,
     taskType:
       group && block.groupBy === 'task_type'
         ? (group.task_type ?? null)
@@ -126,20 +127,15 @@ function OutcomeCard({
           </select>
         </label>
       )}
-      {point &&
-        outcomeCount > 0 &&
-        !series.estimator &&
-        (block.hasProjectFilter ? (
-          <p>Причины закрытия доступны без фильтра проекта.</p>
-        ) : (
-          <OutcomeReasons
-            api={api}
-            revision={block.report.revision.id}
-            point={point.point_start}
-            filters={filters}
-            expectedCount={outcomeCount}
-          />
-        ))}
+      {point && outcomeCount > 0 && !series.estimator && (
+        <OutcomeReasons
+          api={api}
+          revision={block.report.revision.id}
+          point={point.point_start}
+          filters={filters}
+          expectedCount={outcomeCount}
+        />
+      )}
     </MetricCard>
   )
 }

@@ -1,0 +1,24 @@
+import type { RouteObject } from 'react-router'
+import { ConnectionFormPage } from '@/pages/administration/connection-form'
+import { ConnectionsPage } from '@/pages/administration/connections'
+import { ImportPackagePage } from '@/pages/administration/import-package'
+import { IngestConflictsPage } from '@/pages/administration/ingest-conflicts'
+import { ReceiptPage } from '@/pages/administration/receipt'
+import { ReceiptJournalPage } from '@/pages/administration/receipt-journal'
+import { SourceAccountsPage } from '@/pages/administration/source-accounts'
+import { SyncStatusPage } from '@/pages/administration/sync-status'
+import { routePaths } from '@/shared/config'
+
+// UI-10/UI-11: connectionId. UI-13: receiptId.
+// Search parameters and link builders for screen transitions: shared/config/admin-routes.
+export const adminRoutes = [
+  { path: routePaths.connections, element: <ConnectionsPage /> },
+  { path: routePaths.connectionNew, element: <ConnectionFormPage /> },
+  { path: routePaths.connectionDetail, element: <ConnectionFormPage /> },
+  { path: routePaths.syncStatus, element: <SyncStatusPage /> },
+  { path: routePaths.ingestConflicts, element: <IngestConflictsPage /> },
+  { path: routePaths.importPackage, element: <ImportPackagePage /> },
+  { path: routePaths.receiptJournal, element: <ReceiptJournalPage /> },
+  { path: routePaths.receipt, element: <ReceiptPage /> },
+  { path: routePaths.sourceAccounts, element: <SourceAccountsPage /> },
+] satisfies RouteObject[]

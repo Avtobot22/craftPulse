@@ -75,7 +75,7 @@ export interface ReportBlockProps {
   metadata: RevisionMetadata | undefined
   groupBy: string
   focus: ReportPointFocus | undefined
-  hasProjectFilter: boolean
+  projectIds: string[] | undefined
   taskType: string | undefined
   size: string | undefined
   selectPoint: (

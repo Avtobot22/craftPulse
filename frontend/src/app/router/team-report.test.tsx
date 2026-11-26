@@ -131,7 +131,7 @@ function report(
   }
 }
 
-function revision(id: string): Schemas['Revision'] {
+function revision(id: string, hasMapping = true): Schemas['Revision'] {
   return {
     ...report(id).revision,
     status: 'published',
@@ -140,7 +140,9 @@ function revision(id: string): Schemas['Revision'] {
     window: period,
     superseded_at: null,
     definitions: [],
-    inputs: [],
+    inputs: hasMapping
+      ? [{ input_kind: 'mapping', input_id: teamId, version: '1' }]
+      : [],
     source_watermarks: [],
   }
 }
@@ -190,7 +192,7 @@ function mount({
       ),
     ),
   refresh = () => jsonResponse(queued, 202),
-  readRevision = revision,
+  readRevision = (id: string) => revision(id),
   readCohort = () => cohort,
 }: {
   path?: string
@@ -389,6 +391,64 @@ describe('UI-20', () => {
     },
   )
 
+  it.each(['task_type', 'size_label'])(
+    'keeps the missing-mapping explanation after applying %s grouping',
+    async (groupBy) => {
+      mount({
+        user: processOwner,
+        readRevision: (id) => revision(id, false),
+        read: (url) =>
+          jsonResponse({
+            ...report(),
+            metrics: url.searchParams.has('group_by')
+              ? []
+              : [
+                  metric('T41', 0, {
+                    value: {
+                      state: 'NOT_EVALUATED',
+                      value: null,
+                      reason_code: 'mapping_missing',
+                    },
+                  }),
+                ],
+          } satisfies Schemas['TeamReport']),
+      })
+      await screen.findByText(/NOT_EVALUATED.*Сопоставление статусов/)
+      fireEvent.change(screen.getByLabelText('Разбиение'), {
+        target: { value: groupBy },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Применить' }))
+      await reportReady()
+      expect(
+        screen.getByText(/NOT_EVALUATED.*Сопоставление статусов/),
+      ).toBeVisible()
+      expect(
+        screen.getByRole('link', { name: 'Настроить сопоставление' }),
+      ).toHaveAttribute('href', `/settings/process?team_id=${teamId}`)
+      expect(screen.queryByText('0 шт.')).not.toBeInTheDocument()
+    },
+  )
+
+  it('keeps the empty selection for an empty grouping with a confirmed mapping', async () => {
+    mount({
+      path: `${reportUrl}&group_by=task_type`,
+      user: processOwner,
+      read: () =>
+        jsonResponse({
+          ...report(),
+          metrics: [],
+        } satisfies Schemas['TeamReport']),
+    })
+    expect(
+      await screen.findByText(
+        'Нет задач за выбранный период в доступной области.',
+      ),
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('link', { name: 'Настроить сопоставление' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('labels permission limits and incomplete history without showing access-note identifiers', async () => {
     mount({
       read: () => {
@@ -470,6 +530,29 @@ describe('UI-20', () => {
     ).toBeVisible()
     expect(screen.getByText('Отменены: 1')).toBeVisible()
   })
+
+  it.each(['report_project_id', 'project_id'])(
+    'loads cancellation reasons from the cohort narrowed by %s',
+    async (projectParam) => {
+      const { fetcher } = mount({
+        path: `${reportUrl}&${projectParam}=${project.id}&revision_id=${oldRevisionId}`,
+      })
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Показать причины' }),
+      )
+      expect(await screen.findByText('Отменены: 1')).toBeVisible()
+      expect(screen.getByText('Признаны дубликатами: 1')).toBeVisible()
+      expect(fetcher).toHaveBeenCalledWith(
+        `/api/v1/revisions/${oldRevisionId}/cohort?${new URLSearchParams({
+          metric_id: 'T07',
+          point_start: pointStart,
+          role: 'numerator',
+          project_id: project.id,
+        }).toString()}`,
+        expect.anything(),
+      )
+    },
+  )
 
   it('shows freshness dates from the visible metrics when source watermarks are restricted', async () => {
     const response = report()

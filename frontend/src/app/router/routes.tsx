@@ -23,6 +23,7 @@ import { LoadingState } from '@/shared/ui'
 import type { AppRuntime } from '../initialization/runtime'
 import { ProtectedRoute } from './protected-route'
 import { SessionNavigation } from './session-navigation'
+import { adminRoutes } from './admin-routes'
 import { technicalRoutes } from './technical-routes'
 
 export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
@@ -112,6 +113,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                   path: routePaths.mergeRequestQueue,
                   element: <MergeRequestQueuePage />,
                 },
+                ...adminRoutes,
                 ...technicalRoutes,
                 { path: '*', element: <UnavailablePage /> },
               ],

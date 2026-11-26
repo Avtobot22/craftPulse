@@ -137,6 +137,9 @@ function readRevisionMetadata(value: unknown) {
   return {
     id: readString(raw.id),
     timeZone,
+    hasMapping: readArray(raw.inputs, (item) =>
+      readString(readRecord(item).input_kind),
+    ).includes('mapping'),
     watermarks: readArray(raw.source_watermarks, (item) =>
       nullableDate(readRecord(item).watermark),
     ),
@@ -201,6 +204,7 @@ export function refreshReport(api: ApiClient, seriesId: string) {
 }
 
 export interface OutcomeFilters {
+  projectIds: string[] | undefined
   taskType?: string | null | undefined
   size?: string | null | undefined
 }
@@ -253,6 +257,7 @@ export async function loadOutcomeReasons(
             metric_id: 'T07',
             point_start: pointStart,
             role: 'numerator',
+            project_id: filters.projectIds,
             cursor: cursor ?? undefined,
           },
           pathParams: { revision_id: revisionId },

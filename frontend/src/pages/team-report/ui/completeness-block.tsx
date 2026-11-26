@@ -11,7 +11,7 @@ export function CompletenessBlock({ block }: { block: ReportBlockProps }) {
   )
   const timeZone = metadata?.timeZone ?? 'UTC'
   const watermarks =
-    block.hasProjectFilter || report.access_limited
+    block.projectIds?.length || report.access_limited
       ? []
       : (metadata?.watermarks ?? [])
   return (

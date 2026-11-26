@@ -53,11 +53,12 @@ function metricPoints(report: TeamReport, metric: string) {
     .flatMap(({ points }) => points)
 }
 
-function availability(report: TeamReport) {
+function availability(report: TeamReport, groupedWithoutMapping: boolean) {
   const values = report.metrics.flatMap(({ points }) =>
     points.map(({ value }) => value),
   )
   if (
+    (groupedWithoutMapping && values.length === 0) ||
     values.some(
       ({ state, reason_code }) =>
         state === 'NOT_EVALUATED' && reason_code === 'mapping_missing',
@@ -309,7 +310,7 @@ function TeamReportContent({
     metadata,
     groupBy: params.groupBy,
     focus: scope.focus,
-    hasProjectFilter,
+    projectIds: query.project_id,
     taskType: query.task_type,
     size: query.size_label,
     selectPoint: (series, pointStart, targetId, chartSeries) => {
@@ -339,7 +340,10 @@ function TeamReportContent({
       )
     },
   }
-  const state = availability(snapshot)
+  const state = availability(
+    snapshot,
+    Boolean(query.group_by) && metadata?.hasMapping === false,
+  )
   const results = (
     <>
       <div id="team-report-results" tabIndex={-1}>
