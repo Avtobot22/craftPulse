@@ -253,7 +253,7 @@ func decide(p entity.Profile, r entity.AccessRequest) (string, error) {
 		return ReasonNoPermission, entity.ErrForbidden
 	}
 	if !granted(p, r.Action) {
-		if r.Operation == "getTask" && r.Action == "tasks.read" {
+		if (r.Operation == "getTask" || r.Operation == "listTaskEvents") && r.Action == "tasks.read" {
 			return ReasonOutsideScope, entity.ErrNotFound
 		}
 		return ReasonNoPermission, entity.ErrForbidden

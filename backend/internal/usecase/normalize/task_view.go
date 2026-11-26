@@ -20,6 +20,12 @@ func (u *UseCase) VisibleTaskFacts(ctx context.Context, scope entity.Scope, org 
 	return out, err
 }
 
+func (u *UseCase) TaskActorKinds(ctx context.Context, org entity.ID, seq int64, events []entity.TaskEvent) (map[entity.ID]entity.PersonKind, error) {
+	facts := entity.ReviewFacts{TaskEvents: events, ActorKinds: make(map[entity.ID]entity.PersonKind)}
+	err := u.reviewActors(ctx, org, seq, &facts, true)
+	return facts.ActorKinds, err
+}
+
 // TaskMRFacts reads the linked MR, its history and its revisions at the card's knowledge number.
 func (u *UseCase) TaskMRFacts(ctx context.Context, scope entity.Scope, org entity.ID, end entity.LinkEnd, seq int64) (entity.ReviewFacts, error) {
 	var out entity.ReviewFacts

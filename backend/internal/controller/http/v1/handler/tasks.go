@@ -100,6 +100,52 @@ func (h *tasks) GetTask(ctx context.Context, req openapi.GetTaskRequestObject) (
 	return openapi.GetTask200JSONResponse(taskDetailBody(&detail)), nil
 }
 
+func (h *tasks) ListTaskEvents(ctx context.Context, req openapi.ListTaskEventsRequestObject) (openapi.ListTaskEventsResponseObject, error) {
+	s, scope, err := subjectScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := pageLimit(req.Params.Limit)
+	if err != nil {
+		return nil, err
+	}
+	binding := strings.Join([]string{s.OrganizationID.String(), s.UserID.String(), s.APIKeyID.String(), req.TaskId.String()}, ":")
+	q := entity.TaskEventQuery{Limit: limit}
+	if req.Params.Cursor != nil {
+		c, ok := decodeCursor(*req.Params.Cursor)
+		if !ok || c.Kind != "task-events" || c.Name != binding || c.At.IsZero() || c.ID == uuid.Nil ||
+			c.Seq == nil || *c.Seq < 0 || c.OpenedAt.IsZero() || c.OpenedAt.After(c.At) {
+			return nil, errMalformedPage
+		}
+		q.After = &entity.TaskEventCursor{AsOf: c.At, Knowledge: *c.Seq, EventTime: c.OpenedAt, ID: entity.ID(c.ID)}
+	}
+	page, err := h.uc.ListTaskEvents(ctx, s, scope, entity.ID(req.TaskId), q)
+	if err != nil {
+		return nil, err
+	}
+	out := openapi.TimelinePage{
+		Data: make([]openapi.TimelineEvent, len(page.Items)), HistoryFrom: page.HistoryFrom,
+		AccessLimited: len(page.Notes) > 0, AccessNotes: accessNotes(page.Notes),
+	}
+	for i := range page.Items {
+		event := &page.Items[i]
+		out.Data[i] = openapi.TimelineEvent{
+			Id: uuid.UUID(event.ID), Object: taskObjectRef(event.Object), EventKind: event.Kind,
+			Field: event.Field, BeforeValue: event.Before, AfterValue: event.After,
+			Actor:     openapi.ActorRef{AccountId: uuidPtr(event.AccountID), Kind: openapi.ActorRefKind(event.ActorKind)},
+			EventTime: event.EventTime, EventOffsetSeconds: event.EventOffsetS, ObservedAt: event.ObservedAt,
+			ObservedVia: openapi.TimelineEventObservedVia(event.ObservedVia),
+		}
+	}
+	if n := page.Next; n != nil {
+		cursor := encodeCursor(cursorData{
+			Kind: "task-events", Name: binding, At: n.AsOf, Seq: &n.Knowledge, OpenedAt: n.EventTime, ID: uuid.UUID(n.ID),
+		})
+		out.NextCursor = &cursor
+	}
+	return openapi.ListTaskEvents200JSONResponse(out), nil
+}
+
 func taskSummaryBody(task *entity.TaskSummary) openapi.TaskSummary {
 	return openapi.TaskSummary{
 		Id: uuid.UUID(task.Version.TaskID), Key: optional(task.Version.TaskKey), Title: optional(task.Version.Title),
