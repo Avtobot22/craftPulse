@@ -49,7 +49,8 @@ type TaskCalculator interface {
 	SortTaskObservations([]entity.TaskObservation)
 }
 
-type TaskObservationProvider func(*entity.TaskObservationFacts) []entity.TaskObservation
+// TaskObservationProvider reads observations on the card's cut. The flag reports restricted evidence.
+type TaskObservationProvider func(context.Context, entity.Subject, entity.Scope, *entity.TaskObservationFacts) ([]entity.TaskObservation, bool, error)
 
 type TimelineRevisions interface {
 	TimelineRevision(context.Context, entity.ID, entity.ID, []entity.ID) (entity.CalcRevision, error)

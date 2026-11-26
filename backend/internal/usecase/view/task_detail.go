@@ -49,11 +49,30 @@ func (u *UseCase) GetTask(ctx context.Context, s entity.Subject, scope entity.Sc
 	if err := read.linkedFacts(ctx, s, scope, facts, &out); err != nil {
 		return entity.TaskDetail{}, err
 	}
+	if err := u.taskObservations(ctx, s, scope, facts, &out); err != nil {
+		return entity.TaskDetail{}, err
+	}
+	return out, nil
+}
+
+func (u *UseCase) taskObservations(ctx context.Context, s entity.Subject, scope entity.Scope, facts *entity.TaskObservationFacts, out *entity.TaskDetail) error {
 	for _, provider := range u.d.Tasks.Observations {
-		out.Observations = append(out.Observations, provider(facts)...)
+		rows, hidden, err := provider(ctx, s, scope, facts)
+		if err != nil {
+			return err
+		}
+		out.Observations = append(out.Observations, rows...)
+		if hidden && !slices.Contains(out.Redactions, "observations") {
+			out.Redactions = append(out.Redactions, "observations")
+		}
+	}
+	if len(out.Observations) > 1 {
+		out.Observations = slices.DeleteFunc(out.Observations, func(o entity.TaskObservation) bool {
+			return o.Kind == entity.ObservationUnknown && o.Question == entity.QuestionDelayReason
+		})
 	}
 	u.d.Tasks.Calculator.SortTaskObservations(out.Observations)
-	return out, nil
+	return nil
 }
 
 type taskMRLinks struct {

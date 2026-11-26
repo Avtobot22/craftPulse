@@ -2,6 +2,20 @@ package entity
 
 import "time"
 
+// ObjectFinding is the kind of a finding reference in a task observation.
+const ObjectFinding ObjectKind = "finding"
+
+// TaskSummaryRow is the part of a stored current-head summary used by the technical rules.
+type TaskSummaryRow struct {
+	MRID, ProjectID ID
+	HeadSHA         string
+	BuiltAt         time.Time
+	PipelineState   string
+	HasBase         bool
+	ComponentPath   *string
+	SummaryItem
+}
+
 // ObjectRef identifies an accessible object and carries its display values from the source.
 type ObjectRef struct {
 	Kind       ObjectKind
