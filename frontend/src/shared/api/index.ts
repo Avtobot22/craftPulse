@@ -163,7 +163,7 @@ export type {
   ReceiptListParams,
   ReceiptRecordsParams,
 } from './receipt-queries'
-export { listPersons, listSourceAccounts } from './account-queries'
+export { getPersons, listPersons, listSourceAccounts } from './account-queries'
 export type {
   PersonListParams,
   SourceAccountListParams,

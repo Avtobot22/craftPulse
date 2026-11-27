@@ -2,7 +2,6 @@ import { Button } from '@gravity-ui/uikit'
 import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
 import { useBlocker } from 'react-router'
-import type { Blocker } from 'react-router'
 import { routePaths } from '@/shared/config'
 import { DialogFrame } from './dialog-frame'
 
@@ -15,6 +14,9 @@ export interface UnsavedChangesDialogProps {
   hasSensitiveInput?: boolean
   /** Clear the local draft before allowing navigation. */
   onDiscard: () => void
+  allowSearchChanges?: boolean
+  discardRequested?: boolean
+  onKeepEditing?: () => void
 }
 
 export function UnsavedChangesDialog({
@@ -24,13 +26,17 @@ export function UnsavedChangesDialog({
   confirmationOpen = false,
   hasSensitiveInput = false,
   onDiscard,
+  allowSearchChanges = false,
+  discardRequested = false,
+  onKeepEditing,
 }: UnsavedChangesDialogProps) {
   const lastFormFocus = useRef<HTMLElement | null>(null)
-  const blocker = useBlocker(({ nextLocation }) => {
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     const path = nextLocation.pathname
     // The session and access guards are allowed to remove protected content.
     return (
       dirty &&
+      !(allowSearchChanges && currentLocation.pathname === path) &&
       path !== routePaths.sessionExpired &&
       path !== routePaths.unavailable
     )
@@ -64,27 +70,37 @@ export function UnsavedChangesDialog({
     if (!dirty && blocker.state === 'blocked') blocker.reset()
   }, [dirty, blocker])
 
-  if (!dirty || confirmationOpen || blocker.state !== 'blocked') return null
+  if (
+    !dirty ||
+    confirmationOpen ||
+    (!discardRequested && blocker.state !== 'blocked')
+  )
+    return null
 
   return (
     <UnsavedPrompt
-      blocker={blocker}
+      onKeepEditing={
+        blocker.state === 'blocked' ? blocker.reset : onKeepEditing
+      }
+      onDiscard={() => {
+        onDiscard()
+        if (blocker.state === 'blocked') blocker.proceed()
+      }}
       formName={formName}
       hasSensitiveInput={hasSensitiveInput}
       lastFormFocus={lastFormFocus}
-      onDiscard={onDiscard}
     />
   )
 }
 
 function UnsavedPrompt({
-  blocker,
+  onKeepEditing,
   formName,
   hasSensitiveInput,
   lastFormFocus,
   onDiscard,
 }: {
-  blocker: Extract<Blocker, { state: 'blocked' }>
+  onKeepEditing: (() => void) | undefined
   formName: string
   hasSensitiveInput: boolean
   lastFormFocus: RefObject<HTMLElement | null>
@@ -96,7 +112,6 @@ function UnsavedPrompt({
     if (discarding.current) return
     discarding.current = true
     onDiscard()
-    blocker.proceed()
   }
 
   return (
@@ -104,13 +119,13 @@ function UnsavedPrompt({
       title="Изменения не сохранены"
       description={`В форме «${formName}» есть несохранённые изменения.`}
       focusSafeAction
-      onCancel={blocker.reset}
+      onCancel={() => onKeepEditing?.()}
       returnFocus={(opener) =>
         discarding.current ? false : (lastFormFocus.current ?? opener)
       }
       actions={
         <>
-          <Button view="action" size="xl" onClick={blocker.reset}>
+          <Button view="action" size="xl" onClick={onKeepEditing}>
             Продолжить редактирование
           </Button>
           <Button view="outlined" size="xl" onClick={discard}>

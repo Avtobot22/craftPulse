@@ -63,6 +63,8 @@ const protocol = {
 } satisfies components['schemas']['InstallationProtocol']
 
 const structurePath = '/api/v1/organization/structure'
+const initialStructure = () =>
+  jsonResponse(unconfirmedStructure, 200, { ETag: '"0"' })
 const protocolPath = '/api/v1/installation/protocols/latest'
 const cleanups: (() => void)[] = []
 
@@ -70,7 +72,7 @@ function mount(
   path: string,
   {
     user = admin,
-    readStructure = () => jsonResponse(unconfirmedStructure),
+    readStructure = initialStructure,
     readProtocol = () => jsonResponse(protocol),
   }: {
     user?: components['schemas']['CurrentUser']
@@ -88,6 +90,9 @@ function mount(
         return jsonResponse(teams)
       case '/api/v1/projects':
         return jsonResponse(projects)
+      case '/api/v1/areas':
+      case '/api/v1/persons':
+        return jsonResponse({ data: [], next_cursor: null })
       case structurePath:
         return readStructure()
       case protocolPath:
@@ -126,7 +131,9 @@ describe('administrator start', () => {
       name: 'Результат первого входа',
     })
     expect(router.state.location.pathname).toBe(routePaths.welcome)
-    expect(heading).toHaveFocus()
+    await waitFor(() => {
+      expect(heading).toHaveFocus()
+    })
     expect(screen.getByText('Организация: Пример')).toBeVisible()
     expect(screen.getByText('Ваша роль: Администратор')).toBeVisible()
     const next = screen.getByRole('link', {
@@ -184,13 +191,17 @@ describe('administrator start', () => {
     })
     const readStructure = vi
       .fn<() => Response | Promise<Response>>()
-      .mockReturnValueOnce(jsonResponse(unconfirmedStructure))
-      .mockReturnValue(pendingStructure)
+      .mockImplementationOnce(initialStructure)
+      .mockImplementationOnce(initialStructure)
+      .mockReturnValueOnce(pendingStructure)
     const { router } = mount(routePaths.home, { readStructure })
     await screen.findByRole('heading', { name: 'Результат первого входа' })
+    expect(readStructure).toHaveBeenCalledTimes(1)
     await act(() => router.navigate(routePaths.organization))
-    await act(() => router.navigate(routePaths.welcome))
+    await screen.findByText('Сохранённая версия структуры: 0')
     expect(readStructure).toHaveBeenCalledTimes(2)
+    await act(() => router.navigate(routePaths.welcome))
+    expect(readStructure).toHaveBeenCalledTimes(3)
     expect(
       screen.queryByRole('heading', { name: 'Результат первого входа' }),
     ).not.toBeInTheDocument()

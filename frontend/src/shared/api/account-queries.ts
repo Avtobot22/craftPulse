@@ -54,20 +54,23 @@ function readSourceAccount(value: unknown): OpenCodes<Schema['SourceAccount']> {
   }
 }
 
+export async function getPersons(
+  api: ApiClient,
+  params: PersonListParams,
+  signal: AbortSignal,
+): Promise<OpenCodes<Schema['PersonPage']>> {
+  return (
+    await api.read('/persons', (value) => readCursorPage(value, readPerson), {
+      query: params,
+      signal,
+    })
+  ).data
+}
+
 export function listPersons(api: ApiClient, params: PersonListParams = {}) {
   return queryOptions({
     queryKey: ['persons', 'list', params],
-    queryFn: async ({ signal }): Promise<OpenCodes<Schema['PersonPage']>> =>
-      (
-        await api.read(
-          '/persons',
-          (value) => readCursorPage(value, readPerson),
-          {
-            query: params,
-            signal,
-          },
-        )
-      ).data,
+    queryFn: ({ signal }) => getPersons(api, params, signal),
   })
 }
 
