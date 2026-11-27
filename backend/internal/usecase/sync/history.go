@@ -37,7 +37,7 @@ func (u *UseCase) RunHistory(ctx context.Context, job entity.SyncHistoryJob, hol
 		Cursor: job.Cursor, Limit: u.d.PageSize,
 		ObjectKeys: []entity.ObjectKey{{ObjectKind: job.ObjectKind, NativeNS: job.NativeNS, NativeID: job.NativeID}},
 	}
-	page, sel, f, err := u.fetch(ctx, org, conn, job.ScopeID, in)
+	page, sel, f, err := u.fetch(ctx, org, conn, job.ScopeID, holder, in)
 	if err != nil {
 		return err
 	}

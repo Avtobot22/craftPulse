@@ -270,6 +270,79 @@ func TestSync_PagesCommitWithTheirCheckpoint(t *testing.T) {
 	assert.Positive(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM ingest.record WHERE outcome = 'replay'"), "what it reads again is a replay")
 }
 
+func TestSync_AdminPausePreservesCheckpoint(t *testing.T) {
+	t.Parallel()
+	e := newSyncEnv(t, testadapter.Config{})
+	conn := e.connection(t, "10000")
+	subject := entity.Subject{OrganizationID: e.org, UserID: entity.ID(uuid.New())}
+	connection, err := e.connect.State(t.Context(), e.org, conn)
+	require.NoError(t, err)
+	setPaused := func(paused bool) {
+		t.Helper()
+		connection, err = e.connect.Update(t.Context(), subject, conn, connection.Connection.RowVersion, entity.ConnectionPatch{SyncPaused: &paused})
+		require.NoError(t, err)
+		require.Equal(t, paused, connection.Connection.SyncPaused)
+	}
+
+	require.NoError(t, e.run(t, e.next(t, conn), false))
+	first := e.state(t, conn)
+	require.Equal(t, entity.SyncBackfill, first.Phase)
+	require.Equal(t, "partial", first.Completeness)
+	next := e.next(t, conn)
+	require.NotNil(t, next)
+	require.Len(t, e.adapter.fetched(t), 1)
+
+	setPaused(true)
+	for range 2 {
+		retry, ok := errors.AsType[*entity.RetryLaterError](e.run(t, next, false))
+		require.True(t, ok, "the queued page should wait for the administrator")
+		require.True(t, retry.At.After(e.clock.Now()))
+		e.clock.Advance(retry.At.Sub(e.clock.Now()))
+	}
+	assert.Equal(t, first, e.state(t, conn))
+	assert.Len(t, e.adapter.fetched(t), 1)
+	assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM ingest.receipt"))
+	assert.Equal(t, 2, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'sync.page'"))
+	assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'sync.reconcile'"))
+	assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM sync.lease"))
+	require.Equal(t, next, e.next(t, conn))
+
+	setPaused(false)
+	require.NoError(t, e.run(t, next, false))
+	fetches := e.adapter.fetched(t)
+	require.Len(t, fetches, 2)
+	require.NotNil(t, fetches[1].Cursor)
+	var checkpoint struct {
+		Current string
+		Cursors map[string]*entity.SourceCursor
+	}
+	require.NoError(t, json.Unmarshal([]byte(first.Cursor), &checkpoint))
+	saved := checkpoint.Cursors[checkpoint.Current]
+	require.NotNil(t, saved)
+	assert.Equal(t, saved.NativeID, fetches[1].Cursor.NativeId)
+	assert.True(t, saved.ModifiedAt.Equal(fetches[1].Cursor.ModifiedAt))
+	assert.NotEqual(t, first.Cursor, e.state(t, conn).Cursor)
+	e.drain(t, conn)
+
+	setPaused(true)
+	run := e.runner()
+	reconciles := e.runs(t, conn)
+	require.Len(t, reconciles, 1)
+	reconcile := entity.SyncReconcileJob{OrganizationID: e.org, ConnectionID: conn, DataKind: "tasks", RunID: reconciles[0].ID}
+	before := e.adapter.hits.Load()
+	err = e.uc.RunReconcile(t.Context(), reconcile, "paused-reconcile", nil)
+	require.IsType(t, &entity.RetryLaterError{}, err)
+	assert.Equal(t, before, e.adapter.hits.Load())
+	assert.Equal(t, reconciles, e.runs(t, conn))
+	assert.Nil(t, e.state(t, conn).LastSuccessAt)
+	assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM sync.lease"))
+
+	setPaused(false)
+	run.settle(t)
+	assert.Equal(t, "complete", e.state(t, conn).Completeness)
+	assert.NotNil(t, e.state(t, conn).LastSuccessAt)
+}
+
 func TestSync_InterruptedPageIsReadAgainWithoutDuplicates(t *testing.T) {
 	t.Parallel()
 	e := newSyncEnv(t, testadapter.Config{})
