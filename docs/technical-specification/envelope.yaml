@@ -634,6 +634,9 @@ components:
       additionalProperties: false
       properties:
         version: {type: string, enum: ['1']}
+        issues_state:
+          type: string
+          enum: [complete, historical, missing_revision, issue_search_window_exceeded]
         issues:
           type: array
           items: {$ref: '#/components/schemas/SonarIssue'}
@@ -643,10 +646,12 @@ components:
           additionalProperties: {type: string, maxLength: 255}
     SonarIssue:
       type: object
-      required: [key, type, rule_id, severity, status]
+      description: Исходный идентификатор SonarQube задаётся в `issue_id`. Для прежних файлов поддерживается поле `key`.
+      required: [type, rule_id, severity, status]
       additionalProperties: false
       properties:
-        key: {type: string, minLength: 1, maxLength: 255}
+        issue_id: {type: string, minLength: 1, maxLength: 255, x-go-type-skip-optional-pointer: true}
+        key: {type: string, minLength: 1, maxLength: 255, x-go-type-skip-optional-pointer: true}
         type: {type: string, enum: [VULNERABILITY, BUG, CODE_SMELL]}
         rule_id: {type: string, minLength: 1, maxLength: 255}
         path: {type: [string, 'null'], maxLength: 4096, description: Путь от корня репозитория.}
@@ -655,10 +660,20 @@ components:
         severity: {type: string, minLength: 1, maxLength: 64}
         status: {type: string, minLength: 1, maxLength: 64}
         resolution: {type: [string, 'null'], maxLength: 64}
+        rule: {$ref: '#/components/schemas/SonarRuleInfo'}
         rule_description:
           type: [string, 'null']
           maxLength: 1024
           description: Текст описания правила без примеров и фрагментов кода.
+    SonarRuleInfo:
+      type: object
+      additionalProperties: false
+      required: [key, name, language, repository]
+      properties:
+        key: {type: string, minLength: 1, maxLength: 255}
+        name: {type: string, minLength: 1, maxLength: 1024}
+        language: {type: string, maxLength: 64}
+        repository: {type: string, minLength: 1, maxLength: 255}
     ExecutionManifestFileV1:
       type: object
       description: |

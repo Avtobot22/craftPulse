@@ -338,7 +338,7 @@ func (u *UseCase) applyActivation(ctx context.Context, s entity.Subject, c entit
 func complete(checked []entity.Capability, at time.Time, provider entity.Provider) []entity.Capability {
 	names := entity.Capabilities
 	if provider == entity.ProviderSonarQube {
-		names = append(slices.Clone(names), entity.CapabilityReadMRAnalysis)
+		names = append(slices.Clone(names), entity.CapabilityReadBranchAnalysis, entity.CapabilityReadMRAnalysis)
 	}
 	out := make([]entity.Capability, 0, len(names))
 	for _, name := range names {

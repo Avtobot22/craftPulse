@@ -480,6 +480,7 @@ func (e CandidateDecisionDecision) Valid() bool {
 
 // Defines values for CapabilityCapability.
 const (
+	CapabilityCapabilityReadBranchAnalysis    CapabilityCapability = "read_branch_analysis"
 	CapabilityCapabilityReadCurrent           CapabilityCapability = "read_current"
 	CapabilityCapabilityReadDeletions         CapabilityCapability = "read_deletions"
 	CapabilityCapabilityReadFieldHistory      CapabilityCapability = "read_field_history"
@@ -497,6 +498,8 @@ const (
 // Valid indicates whether the value is a known member of the CapabilityCapability enum.
 func (e CapabilityCapability) Valid() bool {
 	switch e {
+	case CapabilityCapabilityReadBranchAnalysis:
+		return true
 	case CapabilityCapabilityReadCurrent:
 		return true
 	case CapabilityCapabilityReadDeletions:
@@ -5248,7 +5251,7 @@ type CandidateDecisionDecision string
 
 // Capability defines model for Capability.
 type Capability struct {
-	// Capability Для SonarQube read_mr_analysis показывает доступность анализа MR. При отсутствии поддержки редакции адаптер передаёт missing с причиной edition_unsupported.
+	// Capability Для SonarQube read_branch_analysis и read_mr_analysis показывают доступность анализа веток и MR. При отсутствии поддержки редакции адаптер передаёт partial с причиной.
 	Capability CapabilityCapability `json:"capability"`
 	CheckedAt  time.Time            `json:"checked_at"`
 
@@ -5257,7 +5260,7 @@ type Capability struct {
 	State      CapabilityState `json:"state"`
 }
 
-// CapabilityCapability Для SonarQube read_mr_analysis показывает доступность анализа MR. При отсутствии поддержки редакции адаптер передаёт missing с причиной edition_unsupported.
+// CapabilityCapability Для SonarQube read_branch_analysis и read_mr_analysis показывают доступность анализа веток и MR. При отсутствии поддержки редакции адаптер передаёт partial с причиной.
 type CapabilityCapability string
 
 // CapabilityState defines model for Capability.State.

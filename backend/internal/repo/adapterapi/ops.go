@@ -187,7 +187,13 @@ func (c *Caller) Manifest(ctx context.Context, t entity.AdapterTarget, in entity
 		if it.NativeId == "" || (it.Version == nil && it.UpdatedAt == nil) {
 			return entity.ManifestPage{}, c.record(t, cl.op, violation("manifest item has no ID or neither version nor update time"))
 		}
-		out.Items = append(out.Items, entity.ManifestItem{RecordKind: it.RecordKind, NativeNS: it.NativeNs, NativeID: it.NativeId, Version: deref(it.Version), UpdatedAt: it.UpdatedAt})
+		if it.IssueCount != nil && *it.IssueCount < 0 {
+			return entity.ManifestPage{}, c.record(t, cl.op, violation("manifest item has a negative issue count"))
+		}
+		out.Items = append(out.Items, entity.ManifestItem{
+			RecordKind: it.RecordKind, NativeNS: it.NativeNs, NativeID: it.NativeId, Version: deref(it.Version),
+			UpdatedAt: it.UpdatedAt, IssueCount: it.IssueCount,
+		})
 	}
 	return out, c.record(t, cl.op, nil)
 }

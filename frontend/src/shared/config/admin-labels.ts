@@ -36,6 +36,7 @@ export const adminLabels = {
     write_mr_comment: 'Публикация комментариев в MR',
     write_tracker_issue: 'Создание задач в трекере',
     webhook: 'Приём вебхуков',
+    read_branch_analysis: 'Чтение анализов веток',
     read_mr_analysis: 'Чтение анализов MR в SonarQube',
   } satisfies Record<Schema['Capability']['capability'], string>,
   capabilityState: {
@@ -72,6 +73,14 @@ export const adminLabels = {
     project_not_visible: 'Проект недоступен учётной записи сбора',
     browse_projects_missing: 'Нет разрешения на просмотр проектов',
     issues_unavailable: 'Задачи проекта недоступны',
+    no_readable_project: 'Нет доступного проекта SonarQube',
+    project_unavailable: 'Проект SonarQube недоступен учётной записи сбора',
+    edition_does_not_support_branch_analysis:
+      'Редакция SonarQube не поддерживает анализ веток',
+    edition_does_not_support_mr_analysis:
+      'Редакция SonarQube не поддерживает анализ MR',
+    edition_capability_unverified:
+      'Возможность редакции SonarQube не проверена',
     no_issue_to_verify: 'Нет задачи для проверки',
     issue_links_unavailable: 'Связи задач недоступны',
     changelog_unavailable: 'История изменений задачи недоступна',

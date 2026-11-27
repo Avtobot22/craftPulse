@@ -170,6 +170,7 @@ func (e AdapterErrorCode) Valid() bool {
 
 // Defines values for CapabilityCapability.
 const (
+	CapabilityCapabilityReadBranchAnalysis    CapabilityCapability = "read_branch_analysis"
 	CapabilityCapabilityReadCurrent           CapabilityCapability = "read_current"
 	CapabilityCapabilityReadDeletions         CapabilityCapability = "read_deletions"
 	CapabilityCapabilityReadFieldHistory      CapabilityCapability = "read_field_history"
@@ -187,6 +188,8 @@ const (
 // Valid indicates whether the value is a known member of the CapabilityCapability enum.
 func (e CapabilityCapability) Valid() bool {
 	switch e {
+	case CapabilityCapabilityReadBranchAnalysis:
+		return true
 	case CapabilityCapabilityReadCurrent:
 		return true
 	case CapabilityCapabilityReadDeletions:
@@ -394,6 +397,7 @@ const (
 	ObjectKeyObjectKindDocument     ObjectKeyObjectKind = "document"
 	ObjectKeyObjectKindFinding      ObjectKeyObjectKind = "finding"
 	ObjectKeyObjectKindMergeRequest ObjectKeyObjectKind = "merge_request"
+	ObjectKeyObjectKindReportFile   ObjectKeyObjectKind = "report_file"
 	ObjectKeyObjectKindTask         ObjectKeyObjectKind = "task"
 )
 
@@ -409,6 +413,8 @@ func (e ObjectKeyObjectKind) Valid() bool {
 	case ObjectKeyObjectKindFinding:
 		return true
 	case ObjectKeyObjectKindMergeRequest:
+		return true
+	case ObjectKeyObjectKindReportFile:
 		return true
 	case ObjectKeyObjectKindTask:
 		return true
@@ -675,7 +681,7 @@ type AuthorizeUrlResult struct {
 
 // Capability defines model for Capability.
 type Capability struct {
-	// Capability Для SonarQube read_mr_analysis показывает доступность анализа MR. При отсутствии поддержки редакции адаптер передаёт missing с причиной edition_unsupported.
+	// Capability Для SonarQube read_branch_analysis и read_mr_analysis показывают доступность анализа веток и MR. При отсутствии поддержки редакции адаптер передаёт partial с причиной.
 	Capability CapabilityCapability `json:"capability"`
 	CheckedAt  time.Time            `json:"checked_at"`
 
@@ -684,7 +690,7 @@ type Capability struct {
 	State      CapabilityState `json:"state"`
 }
 
-// CapabilityCapability Для SonarQube read_mr_analysis показывает доступность анализа MR. При отсутствии поддержки редакции адаптер передаёт missing с причиной edition_unsupported.
+// CapabilityCapability Для SonarQube read_branch_analysis и read_mr_analysis показывают доступность анализа веток и MR. При отсутствии поддержки редакции адаптер передаёт partial с причиной.
 type CapabilityCapability string
 
 // CapabilityState defines model for Capability.State.
@@ -784,6 +790,8 @@ type ManifestInputSchemaId string
 
 // ManifestItem defines model for ManifestItem.
 type ManifestItem struct {
+	// IssueCount Число issues текущего состояния проекта для последнего анализа SonarQube.
+	IssueCount *int   `json:"issue_count,omitempty"`
 	NativeId   string `json:"native_id"`
 	NativeNs   string `json:"native_ns"`
 	RecordKind string `json:"record_kind"`

@@ -13,9 +13,9 @@ import (
 
 func TestParseSonar_EvidenceAndFingerprint(t *testing.T) {
 	t.Parallel()
-	const input = `{"version":"1","issues":[{"key":"k","type":"BUG","rule_id":"go:S1","path":"main.go",
+	const input = `{"version":"1","issues_state":"complete","issues":[{"key":"k","type":"BUG","rule_id":"go:S1","path":"main.go",
 		"line_start":2,"severity":"MAJOR","status":"RESOLVED","resolution":"WONTFIX","rule_description":"Check the result.",
-		"message":"a line of source code","snippet":"more code"}],"measures":{"coverage":"10.3"}}`
+		"rule":{"key":"go:S1","name":"Check result","language":"go","repository":"go"},"message":"a line of source code","snippet":"more code"}],"measures":{"coverage":"10.3"}}`
 	parser, ok := parserOf(_sonarParserKey)
 	require.True(t, ok)
 	report, err := parser.read(strings.NewReader(input), parseInput{kind: entity.AnalysisSonar})
@@ -23,7 +23,7 @@ func TestParseSonar_EvidenceAndFingerprint(t *testing.T) {
 	require.Len(t, report.findings, 1)
 	f := report.findings[0]
 	assert.Equal(t, "MAJOR", f.NativeSeverity)
-	assert.JSONEq(t, `{"status":"RESOLVED","resolution":"WONTFIX","rule_description":"Check the result."}`, string(f.Evidence))
+	assert.JSONEq(t, `{"status":"RESOLVED","resolution":"WONTFIX","rule_description":"Check the result.","rule":{"key":"go:S1","name":"Check result","language":"go","repository":"go"}}`, string(f.Evidence))
 	assert.Equal(t, map[string]string{"coverage": "10.3"}, report.sonarMeasures)
 	assert.Empty(t, f.ContentFingerprint)
 

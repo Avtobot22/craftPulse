@@ -1,6 +1,7 @@
 package normalize
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -60,7 +61,7 @@ func (in *input) sonarReport(c *reportCandidate, rec *envelope.Record, p *envelo
 func parseSonar(r io.Reader, _ parseInput) (*parsedReport, error) {
 	dec := json.NewDecoder(r)
 	out := &parsedReport{}
-	fields := make(map[string]bool, 3)
+	fields := make(map[string]bool, 4)
 	err := object(dec, func(key string) error {
 		if fields[key] {
 			return invalidReport("sonar: repeated analysis field")
@@ -71,6 +72,15 @@ func parseSonar(r io.Reader, _ parseInput) (*parsedReport, error) {
 			return dec.Decode(&out.formatVersion)
 		case "issues":
 			return readSonarIssues(dec, out)
+		case "issues_state":
+			var state envelope.SonarAnalysisFileIssuesState
+			if err := dec.Decode(&state); err != nil {
+				return err
+			}
+			if !state.Valid() {
+				return invalidReport("sonar: invalid issues state")
+			}
+			return nil
 		case "measures":
 			return readSonarMeasures(dec, out)
 		default:
@@ -137,12 +147,16 @@ func sonarFinding(issue envelope.SonarIssue) (entity.FindingOccurrence, error) {
 	default:
 		return entity.FindingOccurrence{}, invalidReport("sonar: unknown issue type")
 	}
-	f, err := newFinding(kind, issue.RuleId, issue.Key)
+	if issue.IssueId != "" && issue.Key != "" && issue.IssueId != issue.Key {
+		return entity.FindingOccurrence{}, invalidReport("sonar: conflicting issue IDs")
+	}
+	key := cmp.Or(issue.IssueId, issue.Key)
+	f, err := newFinding(kind, issue.RuleId, key)
 	if err != nil {
 		return f, err
 	}
 	path, resolution, description := deref(issue.Path), deref(issue.Resolution), deref(issue.RuleDescription)
-	if sonarTextHasNUL(issue.Key, issue.RuleId, issue.Severity, issue.Status, path, resolution, description) {
+	if sonarTextHasNUL(key, issue.RuleId, issue.Severity, issue.Status, path, resolution, description) {
 		return f, invalidReport("sonar: invalid issue text")
 	}
 	f.Path = repoPath(path)
@@ -163,11 +177,17 @@ func sonarFinding(issue envelope.SonarIssue) (entity.FindingOccurrence, error) {
 	f.NativeSeverity = issue.Severity
 	// The source issue key survives line changes. The area of the identity is the Sonar project.
 	f.Fingerprint = fingerprint("sonar-issue/1", f.RuleID, f.NativeID)
+	if rule := issue.Rule; rule != nil &&
+		(rule.Key != issue.RuleId || bounded(rule.Name, 1024) == "" || bounded(rule.Language, 64) == "" ||
+			bounded(rule.Repository, 255) == "" || sonarTextHasNUL(rule.Key, rule.Name, rule.Language, rule.Repository)) {
+		return f, invalidReport("sonar: invalid rule metadata")
+	}
 	f.Evidence, err = json.Marshal(struct {
-		Status      string  `json:"status"`
-		Resolution  *string `json:"resolution,omitempty"`
-		Description string  `json:"rule_description,omitempty"`
-	}{issue.Status, issue.Resolution, short(description)})
+		Status      string                  `json:"status"`
+		Resolution  *string                 `json:"resolution,omitempty"`
+		Description string                  `json:"rule_description,omitempty"`
+		Rule        *envelope.SonarRuleInfo `json:"rule,omitempty"`
+	}{issue.Status, issue.Resolution, short(description), issue.Rule})
 	return f, err
 }
 
