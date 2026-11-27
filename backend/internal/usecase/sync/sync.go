@@ -189,7 +189,7 @@ func (u *UseCase) RunPage(ctx context.Context, job entity.SyncPageJob, holder st
 		SchemaID: cur.schema, Scope: entity.ScopeRef{Kind: cur.scope.Kind, NativeScopeID: cur.scope.NativeScopeID},
 		Cursor: cursor, Period: entity.Period{From: cur.scope.HistoryFrom}, Limit: u.d.PageSize,
 	}
-	page, sel, failure, err := u.fetch(ctx, org, conn, cur.scope.ID, in)
+	page, sel, failure, err := u.fetch(ctx, org, conn, cur.scope.ID, holder, in)
 	if err != nil {
 		return err
 	}
@@ -308,13 +308,13 @@ func (u *UseCase) withPageIntake(ctx context.Context, org entity.ID, work func(c
 
 // fetch calls the adapter and cleans the page before any transaction. A refused call or a page the
 // intake refuses is a failure; an error of the core is returned as such.
-func (u *UseCase) fetch(ctx context.Context, org, conn, scope entity.ID, in entity.FetchInput) (*entity.PreparedPackage, envelope.Selection, *failure, error) {
+func (u *UseCase) fetch(ctx context.Context, org, conn, scope entity.ID, holder string, in entity.FetchInput) (*entity.PreparedPackage, envelope.Selection, *failure, error) {
 	stream, err := u.d.Connect.Fetch(ctx, org, conn, in)
 	if err != nil {
 		if f, ok := u.classify(err); ok {
 			return nil, envelope.Selection{}, f, nil
 		}
-		return nil, envelope.Selection{}, nil, err
+		return nil, envelope.Selection{}, nil, u.releaseBeforeSnooze(ctx, org, conn, holder, err)
 	}
 	page, err := u.d.Ingest.PreparePage(ctx, org, conn, scope, stream)
 	_ = stream.Close()
@@ -448,6 +448,16 @@ func (u *UseCase) lease(ctx context.Context, org, conn entity.ID, holder string)
 		return &entity.RetryLaterError{At: now.Add(wait), Err: errors.New("sync: another run holds the lease of the connection")}
 	}
 	return nil
+}
+
+// releaseBeforeSnooze drops the lease while River keeps the same job and its checkpoint.
+func (u *UseCase) releaseBeforeSnooze(ctx context.Context, org, conn entity.ID, holder string, err error) error {
+	if _, snooze := errors.AsType[*entity.RetryLaterError](err); snooze {
+		if releaseErr := u.finish(ctx, org, conn, holder, nil); releaseErr != nil {
+			return releaseErr
+		}
+	}
+	return err
 }
 
 func (u *UseCase) end(ctx context.Context, org, conn entity.ID, holder string, complete Complete) error {

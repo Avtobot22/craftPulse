@@ -5646,6 +5646,8 @@ type ComponentOverviewFactsSource string
 
 // Connection defines model for Connection.
 type Connection struct {
+	// AccessLostAt Время первой подтверждённой потери доступа в текущем эпизоде. Присутствует при потере доступа.
+	AccessLostAt *time.Time            `json:"access_lost_at,omitempty"`
 	AccessMode   ConnectionAccessMode  `json:"access_mode"`
 	AdapterKind  ConnectionAdapterKind `json:"adapter_kind"`
 	Capabilities []Capability          `json:"capabilities"`

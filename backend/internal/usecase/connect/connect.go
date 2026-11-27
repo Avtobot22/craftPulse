@@ -22,8 +22,13 @@ import (
 // ContractVersions are the adapter.yaml versions the core supports, the current one first (TZ 10.3).
 var ContractVersions = []string{"1", "0"}
 
-// _defaultPause holds a connection when a rate limit answer names no time to wait.
-const _defaultPause = time.Minute
+const (
+	// _defaultPause holds a connection when a rate limit answer names no time to wait.
+	_defaultPause  = time.Minute
+	_syncPausePoll = 15 * time.Second
+)
+
+var errSyncPaused = errors.New("connect: collection paused by administrator")
 
 var ErrScopeArea = errors.New("connect: the scope is missing or already belongs to another area")
 
@@ -229,6 +234,9 @@ func (u *UseCase) call(ctx context.Context, orgID, connectionID entity.ID, op en
 // the adapter and are handled during a pause too. An adapter that refuses the version of the connection
 // is tried with the other supported versions.
 func (u *UseCase) invoke(ctx context.Context, c entity.Connection, op entity.AdapterOp, fn func(context.Context, entity.AdapterTarget) error) error {
+	if c.SyncPaused && (op == entity.OpFetch || op == entity.OpManifest) {
+		return &entity.RetryLaterError{At: u.d.Clock.Now().Add(_syncPausePoll), Err: errSyncPaused}
+	}
 	reachesSource := op != entity.OpPutCredentials && op != entity.OpDeleteCredentials && op != entity.OpParseWebhook
 	if reachesSource && c.PausedUntil != nil && u.d.Clock.Now().Before(*c.PausedUntil) {
 		return &entity.AdapterError{Class: entity.CallPaused, Code: entity.SourceRateLimited, RetryAt: c.PausedUntil}

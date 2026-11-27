@@ -91,7 +91,8 @@ func TestCalcAnalysis_ManifestReportsAndTimeoutPublishRevisions(t *testing.T) {
 	for _, id := range []string{"S05", "profile/opengrep-default"} {
 		require.NotNil(t, next[id].Value, id)
 		require.NotNil(t, points[id].Value, id)
-		assert.Equal(t, 86400.0, *next[id].Value-*points[id].Value, id)
+		// The persisted values are read as float64 seconds.
+		assert.InDelta(t, (24 * time.Hour).Seconds(), *next[id].Value-*points[id].Value, time.Microsecond.Seconds(), id)
 	}
 }
 

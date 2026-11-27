@@ -1,10 +1,11 @@
-import { queryOptions } from '@tanstack/react-query'
+import { queryOptions, skipToken } from '@tanstack/react-query'
 import type { ApiClient } from './client'
 import type { components, operations } from './generated/schema'
 import { operationPolling } from './operation-polling'
 import type { OpenCodes } from './read-fields'
 import { readCursorPage, readNullableNumber, readNumber } from './read-fields'
 import {
+  InvalidResponse,
   readArray,
   readBoolean,
   readNullableString,
@@ -95,6 +96,9 @@ export function readConnection(
     adapter_kind: readString(raw.adapter_kind),
     access_mode: readString(raw.access_mode),
     credentials_set_at: readNullableString(raw.credentials_set_at),
+    ...(raw.access_lost_at === undefined
+      ? {}
+      : { access_lost_at: readString(raw.access_lost_at) }),
     sync_paused: readBoolean(raw.sync_paused),
     paused_until: readNullableString(raw.paused_until),
     last_success_at: readNullableString(raw.last_success_at),
@@ -218,11 +222,7 @@ export function listConnections(
 export function getConnection(api: ApiClient, connectionId: ConnectionId) {
   return queryOptions({
     queryKey: ['connections', 'detail', connectionId],
-    queryFn: ({ signal }) =>
-      api.read('/connections/{connection_id}', readConnection, {
-        pathParams: { connection_id: connectionId },
-        signal,
-      }),
+    queryFn: ({ signal }) => readConnectionById(api, connectionId, signal),
   })
 }
 
@@ -287,4 +287,94 @@ export function activateConnection(
     readConnection,
     { pathParams: { connection_id: connectionId }, ifMatch, signal },
   )
+}
+
+export function readConnectionById(
+  api: ApiClient,
+  connectionId: ConnectionId,
+  signal: AbortSignal,
+) {
+  return api.read('/connections/{connection_id}', readConnection, {
+    pathParams: { connection_id: connectionId },
+    signal,
+  })
+}
+
+export function setConnectionPaused(
+  api: ApiClient,
+  connectionId: ConnectionId,
+  paused: boolean,
+  etag: string,
+  signal: AbortSignal,
+) {
+  return api.updateConnection(
+    connectionId,
+    { sync_paused: paused },
+    readConnection,
+    etag,
+    signal,
+  )
+}
+
+function readSyncOperation(value: unknown) {
+  const raw = readRecord(value)
+  const status = readString(raw.status)
+  if (
+    raw.kind !== 'sync_run' ||
+    (status !== 'queued' &&
+      status !== 'running' &&
+      status !== 'succeeded' &&
+      status !== 'failed')
+  ) {
+    throw new InvalidResponse()
+  }
+  const error = raw.error === null ? null : readRecord(raw.error)
+  return {
+    id: readString(raw.id),
+    status,
+    retry_after_seconds: readNullableNumber(raw.retry_after_seconds),
+    error: error && {
+      code: readString(error.code),
+      correlation_id: readString(error.correlation_id),
+    },
+  }
+}
+
+export type SyncOperation = ReturnType<typeof readSyncOperation>
+
+export async function requestSyncRun(
+  api: ApiClient,
+  connectionId: ConnectionId,
+  body: Schema['SyncRunRequest'],
+  signal: AbortSignal,
+) {
+  return (
+    await api.requestSyncRun(connectionId, body, readSyncOperation, signal)
+  ).data
+}
+
+export function getSyncOperation(
+  api: ApiClient,
+  initial: SyncOperation | undefined,
+) {
+  return queryOptions({
+    ...operationPolling('queued', 'running'),
+    queryKey: ['connections', 'sync-run', initial?.id],
+    ...(initial === undefined ? {} : { initialData: initial }),
+    queryFn:
+      initial === undefined
+        ? skipToken
+        : async ({ signal }) => {
+            const { data } = await api.read(
+              '/operations/{operation_id}',
+              readSyncOperation,
+              {
+                pathParams: { operation_id: initial.id },
+                signal,
+              },
+            )
+            if (data.id !== initial.id) throw new InvalidResponse()
+            return data
+          },
+  })
 }

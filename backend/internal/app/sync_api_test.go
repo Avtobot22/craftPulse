@@ -59,6 +59,7 @@ type operationBody struct {
 type lastSuccessBody struct {
 	ID            uuid.UUID  `json:"id"`
 	LastSuccessAt *time.Time `json:"last_success_at"`
+	AccessLostAt  *time.Time `json:"access_lost_at"`
 }
 
 // activeConnection connects project 10000 and lets its first load and reconciliation finish.
@@ -129,6 +130,7 @@ func TestConnections_SyncStatusAndLastSuccess(t *testing.T) {
 	assert.True(t, list.Data[0].LastSuccessAt.Equal(*kind.LastSuccessAt), "listConnections has the same last success")
 	one := decode[lastSuccessBody](t, e.do(t, e.admin, http.MethodGet, "/api/v1/connections/"+id.String(), nil))
 	require.NotNil(t, one.LastSuccessAt)
+	assert.Nil(t, one.AccessLostAt)
 	assert.True(t, one.LastSuccessAt.Equal(*kind.LastSuccessAt), "getConnection has the same last success")
 }
 
@@ -193,8 +195,14 @@ func TestConnections_SyncRunsAreBackgroundOperations(t *testing.T) {
 	code, _ = e.operation(t, e.admin, location)
 	assert.Equal(t, http.StatusNotFound, code, "an operation finished more than 24 h ago")
 
-	_, err := e.owner.Exec(t.Context(), "UPDATE connect.connection SET status = 'access_lost', access_lost_at = now() WHERE id = $1", id)
+	lostAt := time.Date(2026, time.November, 8, 12, 0, 0, 0, time.UTC)
+	_, err := e.owner.Exec(t.Context(), "UPDATE connect.connection SET status = 'access_lost', access_lost_at = $1 WHERE id = $2", lostAt, id)
 	require.NoError(t, err)
+	connection := e.do(t, e.admin, http.MethodGet, "/api/v1/connections/"+id.String(), nil)
+	require.Equal(t, http.StatusOK, connection.Code)
+	accessLostAt := decode[lastSuccessBody](t, connection).AccessLostAt
+	require.NotNil(t, accessLostAt)
+	assert.True(t, lostAt.Equal(*accessLostAt))
 	lost := e.json(t, e.admin, http.MethodPost, "/api/v1/connections/"+id.String()+"/sync-runs", nil, map[string]string{"kind": "resume", "data_kind": "tasks"})
 	require.Equal(t, http.StatusConflict, lost.Code)
 	assert.Equal(t, "state_conflict", decode[problemBody](t, lost).Code)

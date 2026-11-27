@@ -3,7 +3,7 @@ import { routePaths } from './routes'
 
 export type ReceiptJournalSearch = Pick<
   NonNullable<operations['listReceipts']['parameters']['query']>,
-  'connection_id'
+  'connection_id' | 'channel'
 >
 export interface ImportPackageSearch {
   schema_id?: NonNullable<components['schemas']['Receipt']['schema_id']>
@@ -26,8 +26,8 @@ function withSearch(path: string, params: Record<string, string | undefined>) {
 
 export const adminLinks = {
   // UI-11 → UI-13: filter the journal by the selected connection.
-  receiptJournal: ({ connection_id }: ReceiptJournalSearch = {}) =>
-    withSearch(routePaths.receiptJournal, { connection_id }),
+  receiptJournal: ({ connection_id, channel }: ReceiptJournalSearch = {}) =>
+    withSearch(routePaths.receiptJournal, { connection_id, channel }),
   // UI-13 → UI-12: prefill the schema for a repeat import.
   importPackage: ({ schema_id, schema_version }: ImportPackageSearch = {}) =>
     withSearch(routePaths.importPackage, { schema_id, schema_version }),

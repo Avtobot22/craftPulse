@@ -93,6 +93,35 @@ export class ApiClient {
     return this.request(method, path, body, decode, options, true)
   }
 
+  deleteConnection(connectionId: string, signal: AbortSignal) {
+    return this.request(
+      'DELETE',
+      '/connections/{connection_id}',
+      undefined,
+      (value) => {
+        if (value !== undefined) throw new InvalidResponse()
+      },
+      { pathParams: { connection_id: connectionId }, signal },
+      false,
+    )
+  }
+
+  requestSyncRun<T>(
+    connectionId: string,
+    body: components['schemas']['SyncRunRequest'],
+    decode: Decoder<T>,
+    signal: AbortSignal,
+  ) {
+    return this.request(
+      'POST',
+      '/connections/{connection_id}/sync-runs',
+      body,
+      decode,
+      { pathParams: { connection_id: connectionId }, signal },
+      false,
+    )
+  }
+
   replaceUserRoles<T>(
     userId: string,
     body: {

@@ -28,7 +28,7 @@ func (u *UseCase) RunMR(ctx context.Context, job entity.SyncMRJob, holder string
 		SchemaID: job.SchemaID, Scope: entity.ScopeRef{Kind: scopes[i].Kind, NativeScopeID: scopes[i].NativeScopeID},
 		Cursor: job.Cursor, Limit: u.d.PageSize, ObjectKeys: []entity.ObjectKey{{ObjectKind: "merge_request", NativeNS: job.NativeNS, NativeID: job.NativeID}},
 	}
-	page, sel, f, err := u.fetch(ctx, org, conn, job.ScopeID, in)
+	page, sel, f, err := u.fetch(ctx, org, conn, job.ScopeID, holder, in)
 	if err != nil {
 		return err
 	}

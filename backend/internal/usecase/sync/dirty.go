@@ -118,7 +118,7 @@ func (u *UseCase) readGroup(ctx context.Context, job entity.SyncDirtyJob, holder
 				if err := u.lease(ctx, org, conn, holder); err != nil {
 					return nil, nil, err
 				}
-				page, selection, f, err := u.fetch(ctx, org, conn, g.scope.ID, in)
+				page, selection, f, err := u.fetch(ctx, org, conn, g.scope.ID, holder, in)
 				if err != nil || f != nil {
 					return nil, f, err
 				}

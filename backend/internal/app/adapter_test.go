@@ -9,8 +9,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -114,9 +115,13 @@ type slowSource struct {
 	release chan struct{}
 }
 
-func (s *slowSource) Probe(context.Context, adaptersdk.Call, adaptersdk.ProbeInput) (adaptersdk.ProbeResult, error) {
+func (s *slowSource) Probe(ctx context.Context, _ adaptersdk.Call, _ adaptersdk.ProbeInput) (adaptersdk.ProbeResult, error) {
 	close(s.started)
-	<-s.release
+	select {
+	case <-s.release:
+	case <-ctx.Done():
+		return adaptersdk.ProbeResult{}, ctx.Err()
+	}
 	return adaptersdk.ProbeResult{Provider: adaptersdk.ProbeResultProviderJiraCloud, InstanceKey: "jira.example.test"}, nil
 }
 
@@ -168,19 +173,41 @@ func TestServeAdapter_FinishesCallsInFlightOnShutdown(t *testing.T) {
 	src := &slowSource{started: make(chan struct{}), release: make(chan struct{})}
 
 	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 	served := make(chan error, 1)
 	go func() {
-		served <- serveAdapter(ctx, cfg, srv, func(*adaptersdk.SourceClient) (adaptersdk.Source, error) { return src, nil }, zerolog.Nop(), 5*time.Second)
+		// Allow the server's five-second header timeout to elapse within the shutdown budget.
+		served <- serveAdapter(ctx, cfg, srv, func(*adaptersdk.SourceClient) (adaptersdk.Source, error) { return src, nil }, zerolog.Nop(), 10*time.Second)
 	}()
 
-	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}}
-	require.Eventually(t, func() bool {
-		resp, err := client.Get("https://" + addr + "/readyz") //nolint:noctx // a probe of a test server
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig:   &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
+			DisableKeepAlives: true,
+		},
+	}
+	send := func(req *http.Request) (int, error) {
+		resp, err := client.Do(req)
 		if err != nil {
-			return false
+			return 0, err
 		}
-		_ = resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
+		defer func() { _ = resp.Body.Close() }()
+		_, err = io.Copy(io.Discard, resp.Body)
+		return resp.StatusCode, err
+	}
+	probe := func(path string) (int, error) {
+		probeCtx, stop := context.WithTimeout(t.Context(), time.Second)
+		defer stop()
+		req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, "https://"+addr+path, http.NoBody)
+		if err != nil {
+			return 0, err
+		}
+		return send(req)
+	}
+	require.Eventually(t, func() bool {
+		status, err := probe("/readyz")
+		return err == nil && status == http.StatusOK
 	}, 10*time.Second, 20*time.Millisecond, "adapter becomes ready")
 
 	old := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MaxVersion: tls.VersionTLS11}}} //nolint:gosec // checks that the server refuses it
@@ -192,40 +219,39 @@ func TestServeAdapter_FinishesCallsInFlightOnShutdown(t *testing.T) {
 	}
 	assert.Error(t, err, "TLS below 1.2 is refused")
 
-	response := make(chan int, 1)
+	type probeResponse struct {
+		status int
+		err    error
+	}
+	response := make(chan probeResponse, 1)
+	req, err = http.NewRequestWithContext(t.Context(), http.MethodPost, "https://"+addr+"/v1/connections/"+uuid.NewString()+"/probe",
+		strings.NewReader(`{"base_url":"https://example.atlassian.net","scopes":[]}`))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+_adapterKey)
+	req.Header.Set("X-Craftpulse-Organization", uuid.NewString())
+	req.Header.Set("X-Craftpulse-Contract-Version", "1")
+	req.Header.Set("X-Correlation-Id", "corr-shutdown")
 	go func() {
-		req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://"+addr+"/v1/connections/"+uuid.NewString()+"/probe",
-			strings.NewReader(`{"base_url":"https://example.atlassian.net","scopes":[]}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+_adapterKey)
-		req.Header.Set("X-Craftpulse-Organization", uuid.NewString())
-		req.Header.Set("X-Craftpulse-Contract-Version", "1")
-		req.Header.Set("X-Correlation-Id", "corr-shutdown")
-		resp, err := client.Do(req)
-		if err != nil {
-			response <- 0
-			return
-		}
-		var body map[string]any
-		_ = json.NewDecoder(resp.Body).Decode(&body)
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-		response <- resp.StatusCode
+		status, err := send(req)
+		response <- probeResponse{status: status, err: err}
 	}()
-	<-src.started
+	select {
+	case <-src.started:
+	case result := <-response:
+		t.Fatalf("probe returned status %d and error %v before the source was released", result.status, result.err)
+	}
 
 	cancel()
+	// A raw TCP probe can leave the server waiting for a TLS handshake during shutdown.
 	require.Eventually(t, func() bool {
-		d := net.Dialer{Timeout: 100 * time.Millisecond}
-		conn, err := d.DialContext(t.Context(), "tcp", addr)
-		if err != nil {
-			return true
-		}
-		_ = conn.Close()
-		return false
+		_, err := probe("/livez")
+		return errors.Is(err, syscall.ECONNREFUSED)
 	}, 5*time.Second, 10*time.Millisecond, "new calls are not accepted after SIGTERM")
 
 	close(src.release)
-	assert.Equal(t, http.StatusOK, <-response, "the call in flight is finished")
+	result := <-response
+	require.NoError(t, result.err, "the full response is received")
+	assert.Equal(t, http.StatusOK, result.status, "the call in flight is finished")
 	require.NoError(t, <-served)
 }

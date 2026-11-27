@@ -85,6 +85,8 @@ function mount({
       )
     if (url.pathname === listApiPath)
       return Promise.resolve(list(url.searchParams))
+    if (url.pathname === listApiPath + '/' + connectionExample.id)
+      return Promise.resolve(jsonResponse(connectionExample))
     const connection = /^\/api\/v1\/connections\/([^/]+)\/sync-status$/u.exec(
       url.pathname,
     )?.[1]

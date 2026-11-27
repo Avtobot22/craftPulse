@@ -96,7 +96,7 @@ func (u *UseCase) RunReconcile(ctx context.Context, job entity.SyncReconcileJob,
 		}
 		f, err := u.compare(ctx, org, conn, scope, job.DataKind, schema, t)
 		if err != nil {
-			return err
+			return u.releaseBeforeSnooze(ctx, org, conn, holder, err)
 		}
 		if f != nil {
 			var failed *tally

@@ -9,3 +9,21 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+.cp-sync-data-kind__fields {
+  display: grid;
+  gap: var(--g-spacing-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 560px) {
+  .cp-sync-data-kind {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cp-sync-data-kind dd {
+    margin-block-end: var(--g-spacing-2);
+  }
+}

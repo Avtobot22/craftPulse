@@ -38,8 +38,8 @@ export const adminDetailRoutes = [
     label: 'Настройки подключения',
   },
   {
+    ...connections,
     path: routePaths.syncStatus,
-    action: 'sync.read',
     label: 'Состояние сбора',
   },
   {
