@@ -1401,7 +1401,10 @@ describe('administration routes', () => {
   it.each([
     ['/settings/connections', 'Подключения'],
     ['/settings/connections/new', 'Новое подключение'],
-    ['/settings/connections/c1', 'Настройки подключения'],
+    [
+      '/settings/connections/0193a5b0-5555-7000-8000-000000000001',
+      'Настройки подключения',
+    ],
     ['/settings/connections/c1/sync', 'Состояние сбора'],
     ['/settings/ingest-conflicts?status=resolved', 'Конфликты приёма'],
     ['/settings/import?schema_id=tasks&schema_version=1', 'Импорт'],
