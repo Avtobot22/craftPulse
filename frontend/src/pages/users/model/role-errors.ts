@@ -25,3 +25,9 @@ export function roleIssues(validation: ChangeValidation) {
   if (!issues.size) issues.set('/data', 'Сервер отклонил набор ролей.')
   return issues
 }
+
+export function roleIssueRowIndex(path: string): number | undefined {
+  const match =
+    /^\/data\/(\d+)(\/(role|team_id|project_id|service_id))?$/u.exec(path)
+  return match ? Number(match[1]) : undefined
+}

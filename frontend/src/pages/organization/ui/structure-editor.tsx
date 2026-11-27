@@ -83,7 +83,9 @@ export function StructureEditor({
     setParams(next, { preventScrollReset: true })
     const target = fieldId(nextSection, field)
     setFocusTarget(target)
-    document.getElementById(target)?.focus()
+    const control = document.getElementById(target)
+    if (control && !control.matches(':disabled')) control.focus()
+    else document.getElementById(fieldId(nextSection))?.focus()
   }
 
   function add<K extends Section>(

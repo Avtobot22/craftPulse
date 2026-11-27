@@ -539,7 +539,7 @@ describe('UI-18', () => {
     return screen.getByRole('dialog', { name: 'Изменения не сохранены' })
   }
 
-  it('возвращает фокус в поле с прежним вводом после продолжения редактирования', async () => {
+  it('возвращает фокус на ссылку и сохраняет прежний ввод после продолжения редактирования', async () => {
     const { router } = await mount(
       vi.fn<typeof fetch>().mockResolvedValueOnce(snapshot(1)),
     )
@@ -550,7 +550,9 @@ describe('UI-18', () => {
     fireEvent.click(keep)
 
     await waitFor(() => {
-      expect(input).toHaveFocus()
+      expect(
+        screen.getByRole('link', { name: 'Перейти к обзору' }),
+      ).toHaveFocus()
     })
     expect(input).toHaveValue('Инфраструктура')
     expect(router.state.location.pathname).toBe(path)

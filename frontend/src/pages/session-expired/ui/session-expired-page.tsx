@@ -8,6 +8,7 @@ import {
   Icon,
   Text,
 } from '@gravity-ui/uikit'
+import { useLayoutEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { createLoginPageUrl, safeReturnTo } from '@/shared/auth'
 import type { SessionController } from '@/shared/auth'
@@ -20,8 +21,12 @@ export function SessionExpiredPage({
 }) {
   const [params] = useSearchParams()
   const navigate = useNavigate()
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const returnTo = safeReturnTo(params.get('return_to'))
   const organization = session.getLoginOrganization()
+  useLayoutEffect(() => {
+    headingRef.current?.focus()
+  }, [])
   return (
     <Container
       as="main"
@@ -36,7 +41,13 @@ export function SessionExpiredPage({
       >
         <Card view="outlined" style={{ width: '100%', maxWidth: 560 }}>
           <Flex direction="column" padding="spacing-6" gap="spacing-4">
-            <Text as="h1" variant="header-1" style={{ margin: 0 }}>
+            <Text
+              ref={headingRef}
+              as="h1"
+              tabIndex={-1}
+              variant="header-1"
+              style={{ margin: 0 }}
+            >
               Сессия завершилась
             </Text>
             <div role="alert">

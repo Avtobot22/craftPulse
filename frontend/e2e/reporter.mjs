@@ -8,34 +8,55 @@ export default class EvidenceReporter {
   run = settings()
   records = new Map()
   failedSteps = new Map()
+  steps = new Map()
   runtimeError = false
+
+  constructor({ check = 'AC-01', count = 7 } = {}) {
+    this.check = check
+    this.ids = Array.from({ length: count }, (_, index) =>
+      String(index + 1).padStart(2, '0'),
+    )
+  }
+
+  testId(test) {
+    const id = /^\[(\d{2})\] /.exec(test.title)?.[1]
+    return this.ids.includes(id) ? id : undefined
+  }
 
   onBegin(_config, suite) {
     for (const test of suite.allTests()) {
-      const id = /^\[(0[1-7])\] /.exec(test.title)?.[1]
+      const id = this.testId(test)
       if (!id || this.records.has(id))
-        throw new Error('Unexpected AC-01 test ID')
+        throw new Error('Unexpected evidence test ID')
       this.records.set(id, { id, status: 'not-run' })
     }
   }
 
   onStepEnd(test, _result, step) {
-    if (step.category !== 'test.step' || !step.error) return
-    const id = /^\[(0[1-7])\] /.exec(test.title)?.[1]
+    if (step.category !== 'test.step') return
+    const id = this.testId(test)
     // Titles are authored static literals. Never serialize Playwright errors, API
     // calls, hook output, page content, request data or attachments from failures.
     if (!id || !/^[a-z][a-z0-9 -]{1,79}$/.test(step.title)) return
-    const rows = this.failedSteps.get(id) ?? []
-    rows.push({
+    const row = {
       step: step.title,
       started_at: step.startTime.toISOString(),
       duration_ms: step.duration,
-    })
-    this.failedSteps.set(id, rows)
+    }
+    if (this.check === 'EV-11') {
+      const rows = this.steps.get(id) ?? []
+      rows.push({ ...row, status: step.error ? 'failed' : 'passed' })
+      this.steps.set(id, rows)
+    }
+    if (step.error) {
+      const failures = this.failedSteps.get(id) ?? []
+      failures.push(row)
+      this.failedSteps.set(id, failures)
+    }
   }
 
   onTestEnd(test, result) {
-    const id = /^\[(0[1-7])\] /.exec(test.title)?.[1]
+    const id = this.testId(test)
     const record = this.records.get(id)
     if (!record) return
     record.status = result.status
@@ -86,17 +107,18 @@ export default class EvidenceReporter {
     try {
       return this.finish(result)
     } catch {
-      process.stderr.write('Could not write AC-01 evidence\n')
+      process.stderr.write(`Could not write ${this.check} evidence\n`)
       return { status: 'failed' }
     }
   }
 
   finish(result) {
-    const expected = Array.from({ length: 7 }, (_, index) => '0' + (index + 1))
-    const scenarios = expected.map(
+    const scenarios = this.ids.map(
       (id) => this.records.get(id) ?? { id, status: 'not-run' },
     )
     for (const scenario of scenarios) {
+      if (this.check === 'EV-11')
+        scenario.steps = this.steps.get(scenario.id) ?? []
       const steps = this.failedSteps.get(scenario.id)
       if (steps?.length)
         scenario.trace = this.write('trace-' + scenario.id + '.json', steps)
@@ -107,7 +129,7 @@ export default class EvidenceReporter {
       scenarios.every(({ status }) => status === 'passed')
     const profile = profiles[this.run.profile]
     const record = this.write('run.json', {
-      check: 'AC-01',
+      check: this.check,
       outcome: passed ? 'passed' : 'failed',
       started_at: result.startTime.toISOString(),
       duration_ms: result.duration,
@@ -120,7 +142,7 @@ export default class EvidenceReporter {
       scenarios,
     })
     process.stdout.write(
-      `AC-01 ${this.run.profile} ${passed ? 'passed' : 'failed'} run.json SHA-256 ${record.sha256}\n`,
+      `${this.check} ${this.run.profile} ${passed ? 'passed' : 'failed'} run.json SHA-256 ${record.sha256}\n`,
     )
     if (!passed) return { status: 'failed' }
   }

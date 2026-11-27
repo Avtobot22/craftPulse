@@ -1,4 +1,5 @@
 import { Button, TextInput } from '@gravity-ui/uikit'
+import { useRef } from 'react'
 import type { ReactNode } from 'react'
 import type { Choice } from '../api/structure'
 import { fieldLabels, statuses } from '../model/structure-draft'
@@ -162,6 +163,7 @@ export function ComponentFields({
   const section = 'components'
   const statusErrors = issues.filter(({ field }) => field === 'status')
   const statusId = fieldId(section, 'status')
+  const statusRef = useRef<HTMLDivElement>(null)
   return (
     <>
       <SelectField
@@ -199,6 +201,7 @@ export function ComponentFields({
         )}
       </Field>
       <div
+        ref={statusRef}
         id={statusId}
         tabIndex={-1}
         role="group"
@@ -219,6 +222,7 @@ export function ComponentFields({
             <Button
               disabled={Boolean(unavailable)}
               onClick={() => {
+                statusRef.current?.focus()
                 onChange({ ...row, status: 'confirmed' })
               }}
             >
@@ -228,6 +232,7 @@ export function ComponentFields({
           {row.status !== 'rejected' && row.id !== null && (
             <Button
               onClick={() => {
+                statusRef.current?.focus()
                 onChange({ ...row, status: 'rejected' })
               }}
             >

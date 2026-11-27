@@ -1,3 +1,5 @@
+import { CircleXmark } from '@gravity-ui/icons'
+import { Icon } from '@gravity-ui/uikit'
 import { useEffect, useRef } from 'react'
 import { fieldLabels, sections } from '../model/structure-draft'
 import type { Issue } from '../model/structure-errors'
@@ -23,7 +25,10 @@ export function StructureErrors({
   if (!issues.length) return null
   return (
     <div ref={summary} tabIndex={-1} role="alert" className="cp-org__error">
-      <strong>Исправьте ошибки в структуре</strong>
+      <strong>
+        <Icon data={CircleXmark} size={16} aria-hidden="true" /> Исправьте
+        ошибки в структуре
+      </strong>
       <ul>
         {issues.map((issue, index) => {
           const target =

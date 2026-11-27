@@ -376,7 +376,16 @@ it('shows the 422 JSON Pointer error next to the corresponding area and preserve
   )
   expect(issue.closest('td')).toHaveTextContent(team.name)
   expect(issue.closest('tr')).toHaveTextContent('Владелец процесса')
-  expect(screen.getByRole('alert', { name: '' })).toHaveFocus()
+  const summary = screen.getByRole('alert', { name: '' })
+  expect(summary).toHaveFocus()
+  fireEvent.click(
+    within(summary).getByRole('link', {
+      name: /Выбранная область больше недоступна/,
+    }),
+  )
+  const row = issue.closest('tr')
+  expect(row).toHaveFocus()
+  expect(row).toHaveAccessibleDescription(/Выбранная область больше недоступна/)
   expect(screen.queryByText('Untrusted text')).not.toBeInTheDocument()
 })
 
@@ -427,13 +436,26 @@ it('confirms access actions with safe focus and rereads status after each 204', 
     const destructive = within(dialog).getByRole('button', { name: label })
     fireEvent.keyDown(safe, { key: 'Tab', shiftKey: true })
     expect(destructive).toHaveFocus()
-    const count = fetcher.mock.calls.length
-    fireEvent.click(destructive)
+    fireEvent(dialog, new Event('cancel', { cancelable: true }))
     await waitFor(() => {
-      expect(dialog).not.toBeInTheDocument()
+      expect(opener).toHaveFocus()
     })
+    fireEvent.click(opener)
+    const reopened = screen.getByRole('dialog', { name: label })
+    const count = fetcher.mock.calls.length
+    fireEvent.click(within(reopened).getByRole('button', { name: label }))
+    await waitFor(() => {
+      expect(reopened).not.toBeInTheDocument()
+    })
+    const next =
+      label === 'Заблокировать'
+        ? 'Разблокировать'
+        : label === 'Разблокировать'
+          ? 'Заблокировать'
+          : label
     await waitFor(() => {
       expect(screen.getByText('Статус: ' + status)).toBeVisible()
+      expect(screen.getByRole('button', { name: next })).toHaveFocus()
     })
     const requests = fetcher.mock.calls.slice(count)
     expect(requests[0]?.[0]).toBe('/api/v1' + detailPath + '/' + endpoint)
