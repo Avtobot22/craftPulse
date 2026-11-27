@@ -1,0 +1,20 @@
+{
+  "/app": {"id": 31, "slug": "fixture-summary"},
+  "/app/installations/42/access_tokens": {
+    "token": "fixture-github-write-secret",
+    "permissions": {"metadata": "read", "pull_requests": "write"}
+  },
+  "/app/installations/42/access_tokens?broad": {
+    "token": "fixture-github-write-secret",
+    "permissions": {"metadata": "read", "pull_requests": "write", "contents": "write"}
+  },
+  "/installation/repositories?page=1": {"total_count": 2, "repositories": [{"id": 6, "full_name": "demo/removed"}]},
+  "/installation/repositories?page=2": {"total_count": 2, "repositories": [{"id": 7, "full_name": "demo/project-7"}]},
+  "/installation/repositories?page=2&archived=true": {"total_count": 2, "repositories": [{"id": 7, "full_name": "demo/project-7", "archived": true}]},
+  "/repos/demo/project-7/pulls": [
+    {"id": 500, "number": 1, "updated_at": "2026-11-21T10:00:00Z", "base": {"repo": {"id": 7}}}
+  ],
+  "/repos/demo/project-7/pulls/1": {
+    "id": 500, "number": 1, "base": {"repo": {"id": 7}}, "head": {"sha": "2222222222222222222222222222222222222222"}
+  }
+}

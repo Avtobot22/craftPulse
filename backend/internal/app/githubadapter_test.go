@@ -35,6 +35,7 @@ var githubResponses []byte
 
 type githubFixture struct {
 	responses           map[string]json.RawMessage
+	publication         *githubPublicationFixture
 	failure             atomic.Int32
 	moved               atomic.Bool
 	reorder             atomic.Bool
@@ -58,6 +59,9 @@ type githubHistoryFailure struct {
 }
 
 func (f *githubFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if f.publication != nil && f.publication.serve(w, r) {
+		return
+	}
 	if r.Header.Get("Authorization") != "Bearer "+_githubToken || r.Header.Get("X-GitHub-Api-Version") != "2022-11-28" {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
@@ -297,7 +301,12 @@ func (f *githubFixture) serveReorderedPulls(w http.ResponseWriter, page int) {
 
 func newGitHubFixture(t *testing.T) (gitLabTestEnv, *githubFixture) {
 	t.Helper()
-	f := &githubFixture{}
+	return newGitHubFixtureWithPublication(t, nil)
+}
+
+func newGitHubFixtureWithPublication(t *testing.T, publication *githubPublicationFixture) (gitLabTestEnv, *githubFixture) {
+	t.Helper()
+	f := &githubFixture{publication: publication}
 	require.NoError(t, json.Unmarshal(githubResponses, &f.responses))
 	ca := newTestCA(t, "GitHub fixtures")
 	upstream := httptest.NewUnstartedServer(f)
@@ -341,6 +350,20 @@ func TestContract_GitHubAdapter(t *testing.T) {
 	assert.NotContains(t, e.logs.String(), _githubToken)
 }
 
+func assertGitHubProbeCapabilities(t *testing.T, probe adaptersdk.ProbeResult, readState adaptersdk.CapabilityState) {
+	t.Helper()
+	require.Len(t, probe.Capabilities, 5)
+	for _, c := range probe.Capabilities {
+		switch c.Capability {
+		case adaptersdk.CapabilityCapabilityWriteMrComment, adaptersdk.CapabilityCapabilityWebhook:
+			assert.Equal(t, adaptersdk.CapabilityStateMissing, c.State)
+			assert.NotNil(t, c.ReasonCode)
+		default:
+			assert.Equal(t, readState, c.State)
+		}
+	}
+}
+
 func TestGitHubAdapterReadsHistoryAndManifest(t *testing.T) {
 	t.Parallel()
 	e, f := newGitHubFixture(t)
@@ -348,9 +371,7 @@ func TestGitHubAdapterReadsHistoryAndManifest(t *testing.T) {
 	require.NotNil(t, probe.Edition)
 	assert.Equal(t, "GitHub.com", *probe.Edition)
 	assert.Nil(t, probe.AccessMode)
-	for _, c := range probe.Capabilities {
-		assert.Equal(t, adaptersdk.CapabilityStateVerified, c.State)
-	}
+	assertGitHubProbeCapabilities(t, probe, adaptersdk.CapabilityStateVerified)
 	in := e.target.Fetch
 	p, result := e.fetch(t, in)
 	require.NotNil(t, p.Manifest.Selection.NextCursor)
@@ -456,9 +477,7 @@ func TestGitHubAdapterSourceFailures(t *testing.T) {
 	require.Len(t, probe.Scopes, 2)
 	assert.Equal(t, adaptersdk.ScopeCheckStateMissing, probe.Scopes[1].State)
 	assert.NotNil(t, probe.Scopes[1].ReasonCode)
-	for _, c := range probe.Capabilities {
-		assert.Equal(t, adaptersdk.CapabilityStatePartial, c.State)
-	}
+	assertGitHubProbeCapabilities(t, probe, adaptersdk.CapabilityStatePartial)
 	in := e.target.Probe
 	in.BaseUrl = "https://ghe.example.com"
 	status, body := e.call(t, http.MethodPost, "probe", in)

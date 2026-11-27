@@ -1,4 +1,4 @@
-// Package github reads repositories and pull requests from GitHub.com.
+// Package github integrates repositories and pull requests from GitHub.com.
 package github
 
 import (
@@ -6,16 +6,19 @@ import (
 	"encoding/json"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/pkg/adaptersdk"
 	"github.com/Avtobot22/craftPulse/backend/pkg/envelope"
 )
 
-// Adapter serves repository-scoped reads from GitHub.com.
+// Adapter serves repository-scoped operations on GitHub.com.
 type Adapter struct {
 	adaptersdk.Unimplemented
-	client *adaptersdk.SourceClient
+	client        *adaptersdk.SourceClient
+	publicationMu sync.Mutex
+	publications  map[publicationKey]chan struct{}
 }
 
 // New constructs the GitHub.com adapter with the SDK source client.
@@ -53,6 +56,7 @@ type repository struct {
 	FullName      string     `json:"full_name"`
 	DefaultBranch string     `json:"default_branch"`
 	Visibility    string     `json:"visibility"`
+	Archived      bool       `json:"archived"`
 	URL           string     `json:"html_url"`
 	UpdatedAt     *time.Time `json:"updated_at"`
 	Owner         account    `json:"owner"`
@@ -63,6 +67,12 @@ func (r repository) path() string {
 	return "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name)
 }
 
+func (r repository) validIdentity() bool {
+	owner, name, found := strings.Cut(r.FullName, "/")
+	return r.ID > 0 && found && owner != "" && name != "" && !strings.ContainsAny(r.FullName, "?#\\") &&
+		!strings.Contains(name, "/") && owner != "." && owner != ".." && name != "." && name != ".."
+}
+
 func (s source) repository(ctx context.Context, scope adaptersdk.ScopeRef) (repository, error) {
 	n, ok := numeric(scope.NativeScopeId)
 	if !ok || scope.Kind != adaptersdk.ScopeRefKindRepository {
@@ -70,12 +80,8 @@ func (s source) repository(ctx context.Context, scope adaptersdk.ScopeRef) (repo
 	}
 	var r repository
 	err := s.get(ctx, "repository", "/repositories/"+id(n), &r)
-	if err == nil {
-		owner, name, found := strings.Cut(r.FullName, "/")
-		if r.ID != n || !found || owner == "" || name == "" || strings.ContainsAny(r.FullName, "?#\\") ||
-			strings.Contains(name, "/") || owner == "." || owner == ".." || name == "." || name == ".." {
-			err = adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidResponse, "GitHub repository identity does not match")
-		}
+	if err == nil && (r.ID != n || !r.validIdentity()) {
+		err = adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidResponse, "GitHub repository identity does not match")
 	}
 	return r, err
 }
