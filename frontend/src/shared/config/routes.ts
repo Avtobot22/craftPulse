@@ -43,5 +43,6 @@ export const routePaths = Object.freeze({
   taskDetail: '/tasks/:taskId',
   projectTimeline: '/timeline',
   mergeRequestQueue: '/merge-requests',
+  savedViews: '/reports/saved-views',
   savedView: '/reports/saved-views/:savedViewId',
 })

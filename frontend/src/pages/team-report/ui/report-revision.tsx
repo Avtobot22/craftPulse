@@ -1,5 +1,7 @@
 import { Button, Label } from '@gravity-ui/uikit'
 import { useMutation } from '@tanstack/react-query'
+import { Link } from 'react-router'
+import type { To } from 'react-router'
 import type { ApiClient } from '@/shared/api'
 import { ErrorState } from '@/shared/ui'
 import { refreshReport } from '../api/report-api'
@@ -20,6 +22,7 @@ export function ReportRevision({
   isReading,
   onRead,
   onLatest,
+  savedViewLatest,
 }: {
   api: ApiClient
   report: TeamReport
@@ -27,7 +30,8 @@ export function ReportRevision({
   isHistorical: boolean
   isReading: boolean
   onRead: () => void
-  onLatest: () => void
+  onLatest?: () => void
+  savedViewLatest?: To
 }) {
   const { revision } = report
   const timeZone = metadata?.timeZone ?? 'UTC'
@@ -93,6 +97,11 @@ export function ReportRevision({
             <Label>Закреплённая ревизия</Label>
           </li>
         )}
+        {savedViewLatest && !isHistorical && (
+          <li>
+            <Label>Актуальная ревизия</Label>
+          </li>
+        )}
         {report.grouping === 'current_structure' && (
           <li>
             <Label>По текущему составу команды</Label>
@@ -127,10 +136,18 @@ export function ReportRevision({
         )}
       </ul>
       <div className="cp-team-report__actions">
-        <Button size="xl" loading={refresh.isPending} onClick={requestRefresh}>
-          Обновить
-        </Button>
-        {isHistorical ? (
+        {!savedViewLatest && (
+          <Button
+            size="xl"
+            loading={refresh.isPending}
+            onClick={requestRefresh}
+          >
+            Обновить
+          </Button>
+        )}
+        {savedViewLatest && (isHistorical || revision.irreproducible_reason) ? (
+          <Link to={savedViewLatest}>К актуальной ревизии</Link>
+        ) : isHistorical ? (
           <Button size="xl" onClick={onLatest}>
             К актуальной ревизии
           </Button>

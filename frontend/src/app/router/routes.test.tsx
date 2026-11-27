@@ -111,6 +111,10 @@ function mockApi(
               : { ...projects, data: [] },
           ),
         )
+      case '/api/v1/saved-views':
+        return Promise.resolve(jsonResponse({ data: [], next_cursor: null }))
+      case '/api/v1/saved-views/view-1':
+        return Promise.resolve(problemResponse('not_found', 404))
       case timelineApiPath:
       case '/api/v1/projects/second-project/timeline':
         return Promise.resolve(jsonResponse({ ...taskHistory, data: [] }))
@@ -184,7 +188,8 @@ describe('application routes', () => {
       '/reports/revisions/r1/metrics/T08/points/2026-10-01T00:00:00Z',
       'Когорта точки',
     ],
-    ['/reports/saved-views/view-1', 'Сохранённый срез'],
+    ['/reports/saved-views', 'Сохранённые срезы'],
+    ['/reports/saved-views/view-1', 'Отчёт команды'],
   ])('opens %s directly', async (path, heading) => {
     mount(path)
     expect(

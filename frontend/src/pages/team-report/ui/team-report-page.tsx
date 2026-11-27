@@ -2,17 +2,15 @@ import { Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import {
-  generatePath,
   Link,
   Navigate,
   useLocation,
-  useNavigate,
   useOutletContext,
   useSearchParams,
 } from 'react-router'
 import { ApiError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
-import { routePaths, teamReportReturnState } from '@/shared/config'
+import { routePaths } from '@/shared/config'
 import type { TeamReportScope } from '@/shared/config'
 import { EmptyState, ErrorState, LoadingState, StaleState } from '@/shared/ui'
 import {
@@ -21,7 +19,6 @@ import {
   RevisionNotPublished,
 } from '@/shared/api'
 import type { TeamReport } from '@/shared/api'
-import { seriesKey } from '../model/metrics'
 import type { ReportBlockProps } from '../model/metrics'
 import {
   periodError,
@@ -30,14 +27,11 @@ import {
   writeReportParams,
 } from '@/shared/config'
 import type { ReportParams } from '@/shared/config'
-import { CompletenessBlock } from './completeness-block'
-import { CycleTimeBlock } from './cycle-time-block'
-import { WorkAgeBlock } from './work-age-block'
-import { ReopeningsBlock, TargetComplianceBlock } from './outcome-metrics-block'
-import { FlowBalanceBlock } from './flow-balance-block'
+import { useReportPointNavigation } from '../model/use-report-point-navigation'
+import { ReportBlocks } from './report-blocks'
 import { ReportControls } from './report-controls'
 import { ReportRevision } from './report-revision'
-import { ThroughputBlock } from './throughput-block'
+import { SaveReportActions } from './save-report-actions'
 import './team-report.css'
 
 function isAccessFailure(error: unknown) {
@@ -129,7 +123,10 @@ export function TeamReportPage({ api }: { api: ApiClient }) {
         Отчёт команды
       </Text>
       {!scope.team ? (
-        <p>Выберите команду в области отчёта.</p>
+        <>
+          <p>Выберите команду в области отчёта.</p>
+          <SaveReportActions api={api} current={undefined} />
+        </>
       ) : needsDefaults ? (
         <Navigate
           replace
@@ -162,7 +159,6 @@ function TeamReportContent({
   search: URLSearchParams
 }) {
   const [, setSearch] = useSearchParams()
-  const navigate = useNavigate()
   const location = useLocation()
   const restoredFocus = useRef<string | undefined>(undefined)
   const query = reportQuery(params, scope.project?.id)
@@ -186,6 +182,12 @@ function TeamReportContent({
       : undefined
 
   const revisionId = snapshot?.revision.id
+  const selectPoint = useReportPointNavigation(
+    search,
+    params.groupBy,
+    revisionId ?? '',
+    scope.rememberPoint,
+  )
   const revision = useQuery({
     queryKey: ['team-report', 'revision', revisionId],
     queryFn: ({ signal }) =>
@@ -326,6 +328,7 @@ function TeamReportContent({
       <>
         {controls}
         <p role="alert">{invalidPeriod}</p>
+        <SaveReportActions api={api} current={undefined} />
       </>
     )
   if (!snapshot || readingMetadata || unsafeMetadata)
@@ -348,6 +351,12 @@ function TeamReportContent({
         ) : (
           <ReportLoading />
         )}
+        {/* Preserve a draft while the next revision's metadata loads. */}
+        <SaveReportActions
+          key={readingMetadata ? teamId : undefined}
+          api={api}
+          current={undefined}
+        />
       </>
     )
 
@@ -359,51 +368,7 @@ function TeamReportContent({
     projectIds: query.project_id,
     taskType: query.task_type,
     size: query.size_label,
-    selectPoint: (series, pointStart, targetId, chartSeries, cohort) => {
-      scope.rememberPoint({
-        locationKey: location.key,
-        targetId,
-        seriesId: seriesKey(series),
-        pointStart,
-        revisionId: snapshot.revision.id,
-        ...(chartSeries ? { chartSeries } : {}),
-      })
-      const details = new URLSearchParams(search)
-      details.set('point_start', pointStart)
-      details.set('focus_target', targetId)
-      details.set('focus_card', seriesKey(series))
-      details.delete('focus_series')
-      if (chartSeries) details.set('focus_series', chartSeries)
-      details.delete('estimator')
-      details.delete('group_value')
-      if (series.estimator) details.set('estimator', series.estimator)
-      if (series.group && params.groupBy)
-        details.set('group_value', series.group[params.groupBy] ?? '')
-      if (cohort) {
-        details.set('report_search', search.toString())
-        details.set('size_label', cohort.size ?? 'unknown')
-        if (cohort.taskType === null) {
-          details.delete('task_type')
-          details.set('group_by', 'task_type')
-          details.set('group_value', '')
-        } else {
-          if (cohort.taskType !== undefined)
-            details.set('task_type', cohort.taskType)
-          details.delete('group_by')
-          details.delete('group_value')
-        }
-      }
-      void navigate(
-        {
-          pathname: generatePath(routePaths.metricPassport, {
-            revisionId: snapshot.revision.id,
-            metricId: series.metric_id,
-          }),
-          search: details.toString(),
-        },
-        { state: teamReportReturnState },
-      )
-    },
+    selectPoint,
   }
   const state = availability(
     snapshot,
@@ -470,21 +435,11 @@ function TeamReportContent({
             : {})}
         />
       )}
-      {snapshot.metrics.length > 0 && (
-        <div className="cp-team-report__blocks" key={snapshot.revision.id}>
-          <ThroughputBlock block={block} api={api} />
-          <CycleTimeBlock block={block} api={api} />
-          <FlowBalanceBlock block={block} />
-          <WorkAgeBlock block={block} api={api} />
-          <TargetComplianceBlock
-            block={block}
-            api={api}
-            canReadVersions={scope.canManageProcess}
-          />
-          <ReopeningsBlock block={block} />
-          <CompletenessBlock block={block} />
-        </div>
-      )}
+      <ReportBlocks
+        block={block}
+        api={api}
+        canReadVersions={scope.canManageProcess}
+      />
     </>
   )
   return (
@@ -500,6 +455,32 @@ function TeamReportContent({
       ) : (
         results
       )}
+      <SaveReportActions
+        key={teamId}
+        api={api}
+        current={
+          snapshot.step === params.step
+            ? {
+                seriesId: snapshot.revision.series_id,
+                revisionId: snapshot.revision.id,
+                filters: {
+                  from: params.from,
+                  to: params.to,
+                  step: params.step,
+                  ...(query.project_id ? { project_id: query.project_id } : {}),
+                  ...(query.task_type ? { task_type: query.task_type } : {}),
+                  ...(query.size_label ? { size_label: query.size_label } : {}),
+                  ...(query.group_by ? { group_by: query.group_by } : {}),
+                },
+                projectNames: (query.project_id ?? []).map(
+                  (id) =>
+                    scope.projects.find((project) => project.id === id)?.name ??
+                    'Недоступный проект',
+                ),
+              }
+            : undefined
+        }
+      />
     </>
   )
 }

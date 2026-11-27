@@ -21,16 +21,25 @@ function OutcomeReasons({
   point,
   filters,
   expectedCount,
+  detailsCacheKey,
 }: {
   api: ApiClient
   revision: string
   point: string
   filters: OutcomeFilters
   expectedCount: number
+  detailsCacheKey: string | undefined
 }) {
   const [open, setOpen] = useState(false)
   const reasons = useQuery({
-    queryKey: ['team-report', 'outcome-reasons', revision, point, filters],
+    queryKey: [
+      'team-report',
+      'outcome-reasons',
+      revision,
+      point,
+      filters,
+      detailsCacheKey,
+    ],
     queryFn: ({ signal }) =>
       loadOutcomeReasons(api, revision, point, filters, signal),
     enabled: open,
@@ -131,6 +140,7 @@ function OutcomeCard({
       {point && outcomeCount > 0 && !series.estimator && (
         <OutcomeReasons
           api={api}
+          detailsCacheKey={block.detailsCacheKey}
           revision={block.report.revision.id}
           point={point.point_start}
           filters={filters}

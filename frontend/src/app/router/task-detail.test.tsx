@@ -44,6 +44,7 @@ const cleanups: (() => void)[] = []
 function addSourceOpener(routes: RouteObject[], path: string): void {
   for (const route of routes) {
     if (route.path === path) {
+      // The test supplies the source element, so no lazy route module is needed.
       delete route.lazy
       route.element = (
         <TaskDetailLink taskId={taskId}>
@@ -116,7 +117,11 @@ afterEach(() => {
 
 it('shows the ready MR, the original ready event, and the GitLab reviewer action', async () => {
   mount()
-  const observations = await screen.findByRole('region', { name: 'Наблюдения' })
+  const observations = await screen.findByRole(
+    'region',
+    { name: 'Наблюдения' },
+    { timeout: 3_000 },
+  )
   const facts = within(observations)
   expect(
     facts.getByRole('heading', {

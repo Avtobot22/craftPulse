@@ -53,6 +53,8 @@
   align-content: start;
 }
 
+.cp-team-report__saved-link,
+.cp-team-report__saved-form input:not([type='radio']),
 .cp-team-report__filters input,
 .cp-team-report__filters select {
   min-height: 44px;
@@ -68,6 +70,29 @@
 
 .cp-team-report__filters .cp-team-report__actions {
   grid-column: 1 / -1;
+}
+
+.cp-team-report__saved-list,
+.cp-team-report__saved-form,
+.cp-team-report__saved-form fieldset {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cp-team-report__saved-list {
+  margin: 0;
+  padding: 0;
+  overflow-wrap: anywhere;
+  list-style: none;
+}
+
+.cp-team-report__saved-form input:not([type='radio']) {
+  display: block;
+}
+
+.cp-team-report__saved-form input[type='radio'] {
+  margin-inline-end: 8px;
 }
 
 .cp-team-report__filter-toggle {

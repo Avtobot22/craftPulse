@@ -147,7 +147,7 @@ export type {
   SourceAccountListParams,
 } from './account-queries'
 
-export { loadReport, RevisionNotPublished } from './report-queries'
+export { loadReport, readReport, RevisionNotPublished } from './report-queries'
 export type { ReportQuery, ReportSeries, TeamReport } from './report-queries'
 export { isDateTime } from '@/shared/lib/date-time'
 export {

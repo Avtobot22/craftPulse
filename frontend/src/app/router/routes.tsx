@@ -13,7 +13,6 @@ import { WorkflowSettingsPage } from '@/pages/workflow-settings'
 import { TargetSettingsPage } from '@/pages/target-settings'
 import { MetricPassportPage } from '@/pages/metric-passport'
 import { MetricCohortPage } from '@/pages/metric-cohort'
-import { SavedViewPage } from '@/pages/saved-view'
 import { TaskListPage } from '@/pages/task-list'
 import { TaskDetailPage } from '@/pages/task-detail'
 import { ProjectTimelinePage } from '@/pages/project-timeline'
@@ -105,7 +104,21 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.savedView,
-                  element: <SavedViewPage />,
+                  HydrateFallback: LoadingState,
+                  lazy: async () => {
+                    const { SavedViewPage } =
+                      await import('@/pages/team-report')
+                    return { element: <SavedViewPage api={runtime.api} /> }
+                  },
+                },
+                {
+                  path: routePaths.savedViews,
+                  HydrateFallback: LoadingState,
+                  lazy: async () => {
+                    const { SavedViewsPage } =
+                      await import('@/pages/team-report')
+                    return { element: <SavedViewsPage api={runtime.api} /> }
+                  },
                 },
                 {
                   path: routePaths.taskList,

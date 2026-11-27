@@ -269,25 +269,29 @@ afterEach(() => {
 })
 
 const reportReady = () =>
-  screen.findByRole('region', { name: 'Ревизия отчёта' })
+  screen.findByRole('region', { name: 'Ревизия отчёта' }, { timeout: 3_000 })
 
 describe('UI-20', () => {
-  it('switches the scale in the URL and sends the new step without applying the draft', async () => {
-    const { currentSearch, fetcher } = mount()
-    await reportReady()
-    fireEvent.change(screen.getByLabelText('Тип задачи'), {
-      target: { value: 'bug' },
-    })
-    fireEvent.click(screen.getByRole('radio', { name: 'Месяц' }))
-    await reportReady()
-    expect(currentSearch().get('step')).toBe('month')
-    expect(currentSearch().has('task_type')).toBe(false)
-    expect(fetcher).toHaveBeenCalledWith(
-      expect.stringContaining('step=month'),
-      expect.anything(),
-    )
-    expect(screen.getByLabelText('Тип задачи')).toHaveValue('bug')
-  })
+  it(
+    'switches the scale in the URL and sends the new step without applying the draft',
+    { timeout: 10_000 },
+    async () => {
+      const { currentSearch, fetcher } = mount()
+      await reportReady()
+      fireEvent.change(screen.getByLabelText('Тип задачи'), {
+        target: { value: 'bug' },
+      })
+      fireEvent.click(screen.getByRole('radio', { name: 'Месяц' }))
+      await reportReady()
+      expect(currentSearch().get('step')).toBe('month')
+      expect(currentSearch().has('task_type')).toBe(false)
+      expect(fetcher).toHaveBeenCalledWith(
+        expect.stringContaining('step=month'),
+        expect.anything(),
+      )
+      expect(screen.getByLabelText('Тип задачи')).toHaveValue('bug')
+    },
+  )
 
   it('applies and resets report filters while retaining the team scope', async () => {
     const { currentSearch, fetcher } = mount()

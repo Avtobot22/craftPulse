@@ -262,7 +262,11 @@ function mount({
 }
 
 function intake() {
-  return screen.findByRole('combobox', { name: 'Смысл статуса Intake (1)' })
+  return screen.findByRole(
+    'combobox',
+    { name: 'Смысл статуса Intake (1)' },
+    { timeout: 3_000 },
+  )
 }
 
 async function runPreview() {

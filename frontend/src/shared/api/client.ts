@@ -149,6 +149,27 @@ export class ApiClient {
     )
   }
 
+  createSavedView<T>(
+    body: MutationBody<'/saved-views', 'POST'>,
+    decode: Decoder<T>,
+  ): Promise<ApiResponse<T>> {
+    return this.request('POST', '/saved-views', body, decode, {}, false)
+  }
+
+  deleteSavedView(id: string): Promise<ApiResponse<void>> {
+    return this.request(
+      'DELETE',
+      '/saved-views/{saved_view_id}',
+      undefined,
+      (value) => {
+        if (value !== undefined) throw new InvalidResponse()
+        return undefined
+      },
+      { pathParams: { saved_view_id: id } },
+      false,
+    )
+  }
+
   logout(): Promise<ApiResponse<void>> {
     return this.request(
       'POST',
