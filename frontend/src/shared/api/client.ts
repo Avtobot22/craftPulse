@@ -93,6 +93,52 @@ export class ApiClient {
     return this.request(method, path, body, decode, options, true)
   }
 
+  replaceUserRoles<T>(
+    userId: string,
+    body: {
+      data: (Omit<components['schemas']['RoleAssignmentInput'], 'role'> & {
+        role: string
+      })[]
+    },
+    decode: Decoder<T>,
+    options: { ifMatch: string; signal: AbortSignal },
+  ): Promise<ApiResponse<T>> {
+    // The editor can resend role codes introduced by a newer server.
+    return this.request(
+      'PUT',
+      '/users/{user_id}/roles',
+      body,
+      decode,
+      {
+        ...options,
+        pathParams: { user_id: userId },
+      },
+      true,
+    )
+  }
+
+  changeUserAccess(
+    userId: string,
+    action: 'block' | 'unblock' | 'sessions',
+    signal: AbortSignal,
+  ) {
+    const path = {
+      block: '/users/{user_id}/block',
+      unblock: '/users/{user_id}/unblock',
+      sessions: '/users/{user_id}/sessions',
+    } as const
+    return this.request(
+      action === 'sessions' ? 'DELETE' : 'POST',
+      path[action],
+      undefined,
+      (value) => {
+        if (value !== undefined) throw new InvalidResponse()
+      },
+      { pathParams: { user_id: userId }, signal },
+      false,
+    )
+  }
+
   startSourceLink(
     connectionId: operations['startSourceLink']['parameters']['path']['connection_id'],
     returnTo: string,
