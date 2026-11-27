@@ -1,0 +1,65 @@
+.cp-exceptions,
+.cp-exceptions section,
+.cp-exceptions__review,
+.cp-exceptions__list {
+  display: grid;
+  gap: var(--g-spacing-4);
+  min-width: 0;
+}
+
+.cp-exceptions :is(p, dd, li) {
+  margin-block: 0;
+  overflow-wrap: anywhere;
+}
+
+.cp-exceptions__actions,
+.cp-exceptions__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--g-spacing-4);
+}
+
+.cp-exceptions__review {
+  width: min(100%, 34rem);
+  justify-items: start;
+}
+
+.cp-exceptions :is(form, section) label {
+  display: grid;
+  gap: var(--g-spacing-2);
+  max-width: 100%;
+}
+
+.cp-exceptions :is(select, input, textarea) {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 2rem;
+  padding: var(--g-spacing-2);
+  border: 1px solid var(--g-color-line-generic-accent);
+  border-radius: var(--g-border-radius-m);
+  color: var(--g-color-text-primary);
+  background-color: var(--g-color-base-background);
+  font: inherit;
+}
+
+.cp-exceptions__list {
+  margin-block: 0;
+  padding-inline-start: var(--g-spacing-6);
+}
+
+.cp-exceptions__list > li,
+.cp-exceptions__version {
+  padding: var(--g-spacing-4);
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-l);
+}
+
+.cp-exceptions__version h3 {
+  margin-block-start: 0;
+}
+
+.cp-exceptions__version dd {
+  margin-inline-start: 0;
+  margin-block-end: var(--g-spacing-2);
+}

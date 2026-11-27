@@ -1,5 +1,7 @@
+import { generatePath, useSearchParams } from 'react-router'
 import { ActivityTime, SourceLink } from '@/entities/activity'
-import { contractLabel, technicalLabels } from '@/shared/config'
+import { contractLabel, routePaths, technicalLabels } from '@/shared/config'
+import { InspectionLink } from '@/shared/ui'
 import type { FindingDetail } from '../model/finding-links'
 
 const triageStates = {
@@ -16,6 +18,9 @@ const triageStates = {
 
 export function FindingDecisions({ finding }: { finding: FindingDetail }) {
   const { external_triage, exceptions } = finding
+  const [search] = useSearchParams()
+  const historySearch = new URLSearchParams(search)
+  historySearch.set('origin_finding', finding.id)
   return (
     <>
       <section>
@@ -27,6 +32,18 @@ export function FindingDecisions({ finding }: { finding: FindingDetail }) {
                 {contractLabel(technicalLabels.exceptionState, state)}
                 {' · Срок: '}
                 <ActivityTime instant={expires_at} />
+                {' · '}
+                <InspectionLink
+                  id={`finding-exception-${exception_id}`}
+                  to={{
+                    pathname: generatePath(routePaths.exceptions, {
+                      exceptionId: exception_id,
+                    }),
+                    search: historySearch.toString(),
+                  }}
+                >
+                  История решения
+                </InspectionLink>
               </li>
             ))}
           </ul>

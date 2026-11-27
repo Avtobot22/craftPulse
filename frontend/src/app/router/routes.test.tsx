@@ -1111,8 +1111,16 @@ describe('technical screen routes', () => {
       'findings.read',
     ],
     ['/findings/finding-1', 'Карточка находки', 'findings.read'],
-    ['/findings/finding-1/exception', 'Исключение', 'exceptions.manage'],
-    ['/exceptions/exception-1/extend', 'Исключение', 'exceptions.manage'],
+    [
+      '/findings/finding-1/exception',
+      'Оформить исключение',
+      'exceptions.manage',
+    ],
+    [
+      '/exceptions/exception-1/extend',
+      'Продлить исключение',
+      'exceptions.manage',
+    ],
     [
       '/exceptions?state=pending&component_id=component-1',
       'История исключений',

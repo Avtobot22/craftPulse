@@ -43,6 +43,7 @@ func findingBody(f *entity.FindingDetail) (openapi.FindingDetail, error) {
 		Id: summary.Id, FindingKind: summary.FindingKind, RuleId: summary.RuleId, State: summary.State,
 		FirstSeenAt: summary.FirstSeenAt, ComponentId: summary.ComponentId, Confidence: summary.Confidence,
 		Location: summary.Location, Severity: summary.Severity, Package: summary.Package, SourceUrl: f.SourceURL,
+		AreaId:   new(uuid.UUID(f.AreaID)),
 		Actions:  make([]openapi.FindingDetailActions, 0, len(f.Actions)),
 		Evidence: map[string]string{}, Redactions: openapi.Redactions{},
 	}

@@ -6171,9 +6171,12 @@ type Finding struct {
 // FindingDetail defines model for FindingDetail.
 type FindingDetail struct {
 	// Actions Действия, доступные субъекту.
-	Actions     []FindingDetailActions `json:"actions"`
-	ComponentId *openapi_types.UUID    `json:"component_id"`
-	Confidence  *string                `json:"confidence"`
+	Actions []FindingDetailActions `json:"actions"`
+
+	// AreaId Область находки для оформления исключения.
+	AreaId      *openapi_types.UUID `json:"area_id,omitempty"`
+	ComponentId *openapi_types.UUID `json:"component_id"`
+	Confidence  *string             `json:"confidence"`
 
 	// Evidence Очищенное основание. Значение секрета и его фрагменты отсутствуют на всех путях (BR-017).
 	Evidence   map[string]string `json:"evidence"`

@@ -86,8 +86,22 @@ export type {
   FindingListParams,
   TechnicalComparisonParams,
 } from './finding-queries'
-export { getException, listExceptions } from './exception-queries'
-export type { ExceptionListParams } from './exception-queries'
+export {
+  createException,
+  createExceptionVersion,
+  decideException,
+  getException,
+  listExceptions,
+  readExceptionById,
+} from './exception-queries'
+export type {
+  ExceptionDecision,
+  ExceptionDetail,
+  ExceptionDraft,
+  ExceptionListParams,
+  ExceptionScope,
+  ExceptionVersion,
+} from './exception-queries'
 export { getComponentOverview } from './component-queries'
 export {
   getCheckProfile,

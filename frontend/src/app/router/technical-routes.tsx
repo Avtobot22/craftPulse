@@ -33,9 +33,15 @@ export const technicalRoutes = (api: ApiClient) =>
       path: routePaths.findingDetail,
       element: <FindingDetailPage api={api} />,
     },
-    { path: routePaths.exceptionCreate, element: <ExceptionFormPage /> },
-    { path: routePaths.exceptionExtend, element: <ExceptionFormPage /> },
-    { path: routePaths.exceptions, element: <ExceptionsPage /> },
+    {
+      path: routePaths.exceptionCreate,
+      element: <ExceptionFormPage api={api} />,
+    },
+    {
+      path: routePaths.exceptionExtend,
+      element: <ExceptionFormPage api={api} />,
+    },
+    { path: routePaths.exceptions, element: <ExceptionsPage api={api} /> },
     { path: routePaths.checkProfile, element: <CheckProfilePage /> },
     { path: routePaths.ciConfiguration, element: <CiConfigurationPage /> },
     { path: routePaths.baselines, element: <BaselinesPage /> },
