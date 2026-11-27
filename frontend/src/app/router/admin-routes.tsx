@@ -24,7 +24,10 @@ export const adminRoutes = (api: ApiClient) =>
       element: <ConnectionFormPage api={api} />,
     },
     { path: routePaths.syncStatus, element: <SyncStatusPage api={api} /> },
-    { path: routePaths.ingestConflicts, element: <IngestConflictsPage /> },
+    {
+      path: routePaths.ingestConflicts,
+      element: <IngestConflictsPage api={api} />,
+    },
     { path: routePaths.importPackage, element: <ImportPackagePage /> },
     { path: routePaths.receiptJournal, element: <ReceiptJournalPage /> },
     { path: routePaths.receipt, element: <ReceiptPage /> },

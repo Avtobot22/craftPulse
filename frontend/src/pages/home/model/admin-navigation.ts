@@ -10,7 +10,7 @@ export const adminNavigation = [
   connections,
   {
     path: routePaths.ingestConflicts,
-    action: 'connections.manage',
+    action: 'sync.read',
     label: 'Конфликты приёма',
   },
   { path: routePaths.importPackage, action: 'imports.create', label: 'Импорт' },

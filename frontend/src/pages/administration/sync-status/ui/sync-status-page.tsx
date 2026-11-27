@@ -5,7 +5,7 @@ import { SyncDataKind } from '@/entities/sync'
 import { getConnection, getSyncStatus, isUnavailableError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
-import { readTechnicalId, routePaths } from '@/shared/config'
+import { adminLinks, readTechnicalId, routePaths } from '@/shared/config'
 import { ErrorState, LoadingState, UnavailableRedirect } from '@/shared/ui'
 
 export function SyncStatusPage({ api }: { api: ApiClient }) {
@@ -35,6 +35,11 @@ export function SyncStatusPage({ api }: { api: ApiClient }) {
       <Text as="h1" variant="header-1">
         Состояние сбора
       </Text>
+      {canReadSync && (
+        <Link to={adminLinks.ingestConflicts()}>
+          Конфликты приёма организации
+        </Link>
+      )}
       {accessLost && (
         <div role="status">
           <p>
