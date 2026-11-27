@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query'
-import type { ApiClient } from './client'
+import type { ApiClient, VersionedRequestOptions } from './client'
 import type { components, operations } from './generated/schema'
 import type { OpenCodes } from './read-fields'
 import { readNullableNumber, readNumber, readStringMap } from './read-fields'
@@ -18,9 +18,28 @@ export type CiConfigurationParams =
 export type UploadTokenListParams =
   operations['listUploadTokens']['parameters']['query']
 
-function readCheckProfile(
-  value: unknown,
-): OpenCodes<Schema['CheckProfileVersion']> {
+export type CheckProfileEntry = OpenCodes<
+  Schema['CheckProfileVersion']['entries'][number]
+> & {
+  rules_hash?: string | null
+}
+export type CheckProfileVersion = Omit<
+  OpenCodes<Schema['CheckProfileVersion']>,
+  'entries'
+> & {
+  entries: CheckProfileEntry[]
+}
+export type CheckProfileOptions = Omit<
+  Schema['CheckProfileOptions'],
+  'profiles'
+> & {
+  profiles: OpenCodes<Schema['CheckProfileOptions']['profiles'][number]>[]
+}
+export type UploadToken = Schema['UploadToken'] & {
+  last_used_at?: string | null
+}
+
+function readCheckProfile(value: unknown): CheckProfileVersion {
   const raw = readRecord(value)
   return {
     version_no: readNumber(raw.version_no),
@@ -34,6 +53,9 @@ function readCheckProfile(
         mode: readString(entry.mode),
         profile_id: readString(entry.profile_id),
         tool_versions: readStringMap(entry.tool_versions),
+        ...(entry.rules_hash === undefined
+          ? {}
+          : { rules_hash: readNullableString(entry.rules_hash) }),
       }
     }),
     uncovered: readArray(raw.uncovered, (value) => {
@@ -67,23 +89,46 @@ function readCiConfiguration(
   }
 }
 
-function readUploadTokenPage(value: unknown): Schema['UploadTokenPage'] {
+function readUploadToken(value: unknown): UploadToken {
+  const token = readRecord(value)
+  const slot = token.slot
+  if (slot !== 1 && slot !== 2) throw new InvalidResponse()
+  return {
+    id: readString(token.id),
+    project_id: readString(token.project_id),
+    slot,
+    created_at: readString(token.created_at),
+    revoked_at: readNullableString(token.revoked_at),
+    ...(token.last_used_at === undefined
+      ? {}
+      : { last_used_at: readNullableString(token.last_used_at) }),
+  }
+}
+
+function readUploadTokenPage(value: unknown) {
   const raw = readRecord(value)
   return {
-    data: readArray(raw.data, (value) => {
-      const token = readRecord(value)
-      const slot = token.slot
-      if (slot !== 1 && slot !== 2) throw new InvalidResponse()
-      return {
-        id: readString(token.id),
-        project_id: readString(token.project_id),
-        slot,
-        created_at: readString(token.created_at),
-        revoked_at: readNullableString(token.revoked_at),
-      }
-    }),
+    data: readArray(raw.data, readUploadToken),
     next_cursor: readNullableString(raw.next_cursor),
   }
+}
+
+export function createUploadToken(
+  api: ApiClient,
+  projectId: string,
+  idempotencyKey: string,
+  signal: AbortSignal,
+) {
+  return api.createUploadToken(
+    { project_id: projectId },
+    (value) => {
+      readUploadToken(value)
+      const secret = readString(readRecord(value).value)
+      if (!/^cpt_[A-Za-z0-9_-]{43}$/u.test(secret)) throw new InvalidResponse()
+      return secret
+    },
+    { idempotencyKey, signal },
+  )
 }
 
 function readBaselines(value: unknown): OpenCodes<Schema['BaselineList']> {
@@ -106,17 +151,80 @@ function readBaselines(value: unknown): OpenCodes<Schema['BaselineList']> {
   }
 }
 
+export function readCurrentCheckProfile(
+  api: ApiClient,
+  projectId: string,
+  signal: AbortSignal,
+) {
+  return api.read('/projects/{project_id}/check-profiles', readCheckProfile, {
+    pathParams: { project_id: projectId },
+    signal,
+  })
+}
+
+export function createCheckProfileVersion(
+  api: ApiClient,
+  projectId: string,
+  draft: Schema['CheckProfileDraft'],
+  options: Pick<
+    VersionedRequestOptions,
+    'ifMatch' | 'idempotencyKey' | 'signal'
+  >,
+) {
+  return api.update(
+    'POST',
+    '/projects/{project_id}/check-profiles',
+    draft,
+    readCheckProfile,
+    {
+      ...options,
+      pathParams: { project_id: projectId },
+    },
+  )
+}
+
 export function getCheckProfile(
   api: ApiClient,
   projectId: operations['getCheckProfile']['parameters']['path']['project_id'],
 ) {
   return queryOptions({
     queryKey: ['check-profiles', 'current', projectId],
-    queryFn: ({ signal }) =>
-      api.read('/projects/{project_id}/check-profiles', readCheckProfile, {
-        pathParams: { project_id: projectId },
-        signal,
-      }),
+    queryFn: ({ signal }) => readCurrentCheckProfile(api, projectId, signal),
+  })
+}
+
+export function getCheckProfileOptions(api: ApiClient, projectId: string) {
+  return queryOptions({
+    queryKey: ['check-profiles', 'options', projectId],
+    queryFn: async ({ signal }) =>
+      (
+        await api.read(
+          '/projects/{project_id}/check-profiles/options',
+          (value): CheckProfileOptions => {
+            const raw = readRecord(value)
+            return {
+              components: readArray(raw.components, (value) => {
+                const component = readRecord(value)
+                return {
+                  id: readString(component.id),
+                  path_prefix: readString(component.path_prefix),
+                }
+              }),
+              profiles: readArray(raw.profiles, (value) => {
+                const profile = readRecord(value)
+                return {
+                  id: readString(profile.id),
+                  mode: readString(profile.mode),
+                  languages: readArray(profile.languages, readString),
+                  any_language: readBoolean(profile.any_language),
+                  analysis_kinds: readArray(profile.analysis_kinds, readString),
+                }
+              }),
+            }
+          },
+          { pathParams: { project_id: projectId }, signal },
+        )
+      ).data,
   })
 }
 
@@ -147,7 +255,7 @@ export function listUploadTokens(
   params: UploadTokenListParams,
 ) {
   return queryOptions({
-    queryKey: ['upload-tokens', 'list', params],
+    queryKey: ['upload-tokens', 'list', params.project_id, params],
     queryFn: async ({ signal }) =>
       (
         await api.read('/upload-tokens', readUploadTokenPage, {

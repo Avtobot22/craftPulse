@@ -94,19 +94,13 @@ export function technicalReportFilters(params: ReportParams) {
   }
 }
 
-export function technicalCohortLimitMessage(
+export function technicalCohortTaskType(
   metricId: string,
-  groupBy: string,
-  group: string | null,
+  taskType: string | null | undefined,
 ) {
-  // For pipeline and MR rows the types of tasks in basis are unavailable.
-  if (
-    (metricId === 'X04' || metricId === 'X06') &&
-    groupBy === 'task_type' &&
-    group === ''
-  )
-    return 'API не выделяет эту когорту для задач с неизвестным типом. Снимите группировку, чтобы увидеть список.'
-  return undefined
+  if (taskType === null && (metricId === 'X04' || metricId === 'X06'))
+    return { task_type: '' }
+  return taskType ? { task_type: taskType } : {}
 }
 
 export function periodError({ from, to }: ReportParams) {

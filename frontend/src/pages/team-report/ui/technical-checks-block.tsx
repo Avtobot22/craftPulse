@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router'
 import { Button } from '@gravity-ui/uikit'
 import { MetricValue } from '@/entities/metric'
 import type { ApiClient, ReportSeries } from '@/shared/api'
-import { technicalCohortLimitMessage } from '@/shared/config'
 import { reportSteps } from '../model/metric-details'
 import type { ReportBlockProps } from '../model/metrics'
 import { seriesKey } from '../model/metrics'
@@ -113,12 +112,6 @@ function TechnicalMetric({
     metricId === 'X05' &&
     chainStages.includes(series.group?.signal ?? series.estimator ?? '')
 
-  const limitMessage = technicalCohortLimitMessage(
-    metricId,
-    block.groupBy,
-    series.group ? (series.group.task_type ?? '') : null,
-  )
-
   function select(value: string) {
     const next = new URLSearchParams(search)
     next.set(selectionParam, value)
@@ -183,21 +176,18 @@ function TechnicalMetric({
       <Button onClick={toggleCohort} aria-expanded={showCohort}>
         {gaps ? 'Задачи с разрывами' : 'Задачи когорты'}
       </Button>
-      {showCohort &&
-        (limitMessage ? (
-          <p role="status">{limitMessage}</p>
-        ) : (
-          <TechnicalCohort
-            api={api}
-            block={block}
-            series={series}
-            point={step}
-            gaps={gaps}
-            canReadTasks={canReadTasks}
-            canReadMRs={canReadMRs}
-            focusPrefix={id}
-          />
-        ))}
+      {showCohort && (
+        <TechnicalCohort
+          api={api}
+          block={block}
+          series={series}
+          point={step}
+          gaps={gaps}
+          canReadTasks={canReadTasks}
+          canReadMRs={canReadMRs}
+          focusPrefix={id}
+        />
+      )}
     </section>
   )
 }

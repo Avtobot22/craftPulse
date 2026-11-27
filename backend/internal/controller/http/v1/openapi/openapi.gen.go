@@ -607,6 +607,24 @@ func (e CheckPolicyVersionUnknownBehavior) Valid() bool {
 	}
 }
 
+// Defines values for CheckProfileOptionsProfilesMode.
+const (
+	CheckProfileOptionsProfilesModeBuiltin CheckProfileOptionsProfilesMode = "builtin"
+	CheckProfileOptionsProfilesModeImport  CheckProfileOptionsProfilesMode = "import"
+)
+
+// Valid indicates whether the value is a known member of the CheckProfileOptionsProfilesMode enum.
+func (e CheckProfileOptionsProfilesMode) Valid() bool {
+	switch e {
+	case CheckProfileOptionsProfilesModeBuiltin:
+		return true
+	case CheckProfileOptionsProfilesModeImport:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CheckProfileVersionEntriesMode.
 const (
 	CheckProfileVersionEntriesModeBuiltin CheckProfileVersionEntriesMode = "builtin"
@@ -5286,6 +5304,28 @@ type CheckProfileDraft struct {
 	Entries []ProfileEntryInput `json:"entries"`
 }
 
+// CheckProfileOptions defines model for CheckProfileOptions.
+type CheckProfileOptions struct {
+	Components []struct {
+		Id         openapi_types.UUID `json:"id"`
+		PathPrefix string             `json:"path_prefix"`
+	} `json:"components"`
+	Profiles []struct {
+		AnalysisKinds []AnalysisKind `json:"analysis_kinds"`
+
+		// AnyLanguage Принимает любой непустой язык.
+		AnyLanguage bool   `json:"any_language"`
+		Id          string `json:"id"`
+
+		// Languages Пустой список без any_language означает проверку без языка.
+		Languages []string                        `json:"languages"`
+		Mode      CheckProfileOptionsProfilesMode `json:"mode"`
+	} `json:"profiles"`
+}
+
+// CheckProfileOptionsProfilesMode defines model for CheckProfileOptions.Profiles.Mode.
+type CheckProfileOptionsProfilesMode string
+
 // CheckProfileVersion defines model for CheckProfileVersion.
 type CheckProfileVersion struct {
 	BaseVersionNo *int               `json:"base_version_no"`
@@ -9083,7 +9123,7 @@ type ListRevisionCohortParams struct {
 	// ProjectId Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport.
 	ProjectId *[]openapi_types.UUID `form:"project_id,omitempty" json:"project_id,omitempty"`
 
-	// TaskType Тип задачи по сопоставлению.
+	// TaskType Тип задачи по сопоставлению. Для X04 и X06 пустое значение (`task_type=`) выбирает группу «Тип неизвестен». Отсутствие параметра отключает фильтр по типу.
 	TaskType *string `form:"task_type,omitempty" json:"task_type,omitempty"`
 
 	// SizeLabel Размер задачи; `unknown` - группа «без размера».
@@ -9830,6 +9870,9 @@ type ServerInterface interface {
 	// CreateCheckProfileVersion Подтвердить новую матрицу проверок
 	// (POST /projects/{project_id}/check-profiles)
 	CreateCheckProfileVersion(c *gin.Context, projectId ProjectId, params CreateCheckProfileVersionParams)
+	// GetCheckProfileOptions Компоненты и профили для первой матрицы проверок
+	// (GET /projects/{project_id}/check-profiles/options)
+	GetCheckProfileOptions(c *gin.Context, projectId ProjectId)
 	// GetCiConfiguration Фрагмент конфигурации CI
 	// (GET /projects/{project_id}/ci-configuration)
 	GetCiConfiguration(c *gin.Context, projectId ProjectId, params GetCiConfigurationParams)
@@ -13167,6 +13210,31 @@ func (siw *ServerInterfaceWrapper) CreateCheckProfileVersion(c *gin.Context) {
 	siw.Handler.CreateCheckProfileVersion(c, projectId, params)
 }
 
+// GetCheckProfileOptions operation middleware
+func (siw *ServerInterfaceWrapper) GetCheckProfileOptions(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "project_id" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "project_id", c.Param("project_id"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter project_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCheckProfileOptions(c, projectId)
+}
+
 // GetCiConfiguration operation middleware
 func (siw *ServerInterfaceWrapper) GetCiConfiguration(c *gin.Context) {
 
@@ -16159,6 +16227,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/pipelines/:pipeline_id/test-executions", wrapper.ListTestExecutions)
 	router.GET(options.BaseURL+"/projects/:project_id/check-profiles", wrapper.GetCheckProfile)
 	router.POST(options.BaseURL+"/projects/:project_id/check-profiles", wrapper.CreateCheckProfileVersion)
+	router.GET(options.BaseURL+"/projects/:project_id/check-profiles/options", wrapper.GetCheckProfileOptions)
 	router.GET(options.BaseURL+"/projects/:project_id/ci-configuration", wrapper.GetCiConfiguration)
 	router.GET(options.BaseURL+"/projects/:project_id/baselines", wrapper.ListBaselines)
 	router.GET(options.BaseURL+"/components/:component_id/overview", wrapper.GetComponentOverview)
@@ -23278,6 +23347,76 @@ func (response CreateCheckProfileVersion428ApplicationProblemPlusJSONResponse) V
 	return err
 }
 
+type GetCheckProfileOptionsRequestObject struct {
+	ProjectId ProjectId `json:"project_id"`
+}
+
+type GetCheckProfileOptionsResponseObject interface {
+	VisitGetCheckProfileOptionsResponse(w http.ResponseWriter) error
+}
+
+type GetCheckProfileOptions200JSONResponse CheckProfileOptions
+
+func (response GetCheckProfileOptions200JSONResponse) VisitGetCheckProfileOptionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCheckProfileOptions401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetCheckProfileOptions401ApplicationProblemPlusJSONResponse) VisitGetCheckProfileOptionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCheckProfileOptions403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response GetCheckProfileOptions403ApplicationProblemPlusJSONResponse) VisitGetCheckProfileOptionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCheckProfileOptions404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetCheckProfileOptions404ApplicationProblemPlusJSONResponse) VisitGetCheckProfileOptionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetCiConfigurationRequestObject struct {
 	ProjectId ProjectId `json:"project_id"`
 	Params    GetCiConfigurationParams
@@ -29236,6 +29375,9 @@ type StrictServerInterface interface {
 	// CreateCheckProfileVersion Подтвердить новую матрицу проверок
 	// (POST /projects/{project_id}/check-profiles)
 	CreateCheckProfileVersion(ctx context.Context, request CreateCheckProfileVersionRequestObject) (CreateCheckProfileVersionResponseObject, error)
+	// GetCheckProfileOptions Компоненты и профили для первой матрицы проверок
+	// (GET /projects/{project_id}/check-profiles/options)
+	GetCheckProfileOptions(ctx context.Context, request GetCheckProfileOptionsRequestObject) (GetCheckProfileOptionsResponseObject, error)
 	// GetCiConfiguration Фрагмент конфигурации CI
 	// (GET /projects/{project_id}/ci-configuration)
 	GetCiConfiguration(ctx context.Context, request GetCiConfigurationRequestObject) (GetCiConfigurationResponseObject, error)
@@ -32149,6 +32291,32 @@ func (sh *strictHandler) CreateCheckProfileVersion(ctx *gin.Context, projectId P
 		sh.options.HandlerErrorFunc(ctx, err)
 	} else if validResponse, ok := response.(CreateCheckProfileVersionResponseObject); ok {
 		if err := validResponse.VisitCreateCheckProfileVersionResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetCheckProfileOptions operation middleware
+func (sh *strictHandler) GetCheckProfileOptions(ctx *gin.Context, projectId ProjectId) {
+	var request GetCheckProfileOptionsRequestObject
+
+	request.ProjectId = projectId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCheckProfileOptions(ctx, request.(GetCheckProfileOptionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCheckProfileOptions")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(GetCheckProfileOptionsResponseObject); ok {
+		if err := validResponse.VisitGetCheckProfileOptionsResponse(ctx.Writer); err != nil {
 			sh.options.ResponseErrorHandlerFunc(ctx, err)
 		}
 	} else if response != nil {

@@ -105,13 +105,21 @@ export type {
 } from './exception-queries'
 export { getComponentOverview } from './component-queries'
 export {
+  createCheckProfileVersion,
+  createUploadToken,
   getCheckProfile,
+  getCheckProfileOptions,
+  readCurrentCheckProfile,
   getCiConfiguration,
   listBaselines,
   listUploadTokens,
 } from './check-profile-queries'
 export type {
+  CheckProfileEntry,
+  CheckProfileOptions,
+  CheckProfileVersion,
   CiConfigurationParams,
+  UploadToken,
   UploadTokenListParams,
 } from './check-profile-queries'
 export {

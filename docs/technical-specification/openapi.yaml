@@ -2397,7 +2397,7 @@ paths:
         - { name: estimator, in: query, description: 'Оценка точки показателя с несколькими рядами, как `MetricSeries.estimator`; без параметра - первая оценка показателя.', schema: { type: string, maxLength: 32 } }
         - { name: role, in: query, schema: { type: string, enum: [ numerator, denominator, excluded, missing ] } }
         - { name: project_id, in: query, description: 'Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport.', schema: { type: array, maxItems: 50, items: { type: string, format: uuid } } }
-        - {name: task_type, in: query, description: Тип задачи по сопоставлению., schema: {type: string, maxLength: 200}}
+        - {name: task_type, in: query, description: 'Тип задачи по сопоставлению. Для X04 и X06 пустое значение (`task_type=`) выбирает группу «Тип неизвестен». Отсутствие параметра отключает фильтр по типу.', schema: {type: string, maxLength: 200}}
         - {name: size_label, in: query, description: 'Размер задачи; `unknown` - группа «без размера».', schema: {type: string, maxLength: 200}}
         - {name: min_task_age_seconds, in: query, description: Минимальный возраст текущего эпизода задачи в X03., schema: {type: integer, format: int64, minimum: 0}}
         - {name: over_target, in: query, description: Фильтр X03 по превышению срока. Задачи без известного срока исключаются при заданном фильтре., schema: {type: boolean}}
@@ -3115,6 +3115,7 @@ paths:
         Новая версия матрицы (FR-035). Законченный внешний отчёт заменяет только совпадающую
         область; внешний анализатор не выключает проверку секретов и зависимостей (FR-035 A1).
         Неподдержанный язык или вид анализа - `422`. Правила версии как у `createMappingVersion`.
+        Для первой версии отправляется `If-Match: "0"`.
 
         Если содержимое равно действующей версии, возвращается 200 без создания версии.
         Повтор Idempotency-Key возвращает исходный статус и ответ до проверки If-Match.
@@ -3188,6 +3189,29 @@ paths:
                 uncovered: []
                 confirmed_by: 0193a5b0-1111-7000-8000-000000000004
                 confirmed_at: 2026-11-08T12:00:00Z
+  /projects/{project_id}/check-profiles/options:
+    get:
+      operationId: getCheckProfileOptions
+      summary: Компоненты и профили для первой матрицы проверок
+      description: Подтверждённые компоненты проекта и доступные профили из каталога поставки. Данные доступны до подтверждения матрицы.
+      tags: [changes]
+      x-craftpulse-action: check_profiles.manage
+      x-craftpulse-delivery: M0
+      x-craftpulse-trace: [FR-035, UC-25, UI-49]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Варианты для черновика.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CheckProfileOptions'}
+              example:
+                components: [{id: 0193a5b0-7777-7000-8000-000000000001, path_prefix: services/billing}]
+                profiles: [{id: go-default, mode: builtin, languages: [go], any_language: false, analysis_kinds: [code]}]
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /projects/{project_id}/ci-configuration:
     get:
       operationId: getCiConfiguration
@@ -7427,6 +7451,34 @@ components:
         analysis_kind: {$ref: '#/components/schemas/AnalysisKind'}
         mode: {type: string, enum: [import, builtin]}
         profile_id: {type: string, maxLength: 64}
+    CheckProfileOptions:
+      type: object
+      required: [components, profiles]
+      properties:
+        components:
+          type: array
+          items:
+            type: object
+            required: [id, path_prefix]
+            properties:
+              id: {type: string, format: uuid}
+              path_prefix: {type: string}
+        profiles:
+          type: array
+          items:
+            type: object
+            required: [id, mode, languages, any_language, analysis_kinds]
+            properties:
+              id: {type: string}
+              mode: {type: string, enum: [import, builtin]}
+              languages:
+                type: array
+                description: Пустой список без any_language означает проверку без языка.
+                items: {type: string}
+              any_language: {type: boolean, description: Принимает любой непустой язык.}
+              analysis_kinds:
+                type: array
+                items: {$ref: '#/components/schemas/AnalysisKind'}
     CheckProfileDraft:
       type: object
       additionalProperties: false

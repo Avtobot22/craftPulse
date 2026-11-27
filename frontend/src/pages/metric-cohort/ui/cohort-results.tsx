@@ -9,7 +9,7 @@ import { ApiError } from '@/shared/api'
 import type { ApiClient, MetricRevision } from '@/shared/api'
 import {
   routePaths,
-  technicalCohortLimitMessage,
+  technicalCohortTaskType,
   technicalReportFilters,
 } from '@/shared/config'
 import { ErrorState, LoadingState } from '@/shared/ui'
@@ -40,16 +40,13 @@ export function CohortResults({
     : selection.params.projects
   const { params, group } = selection
   const taskType =
-    params.groupBy === 'task_type' && group !== null ? group : params.taskType
+    params.groupBy === 'task_type' && group !== null
+      ? group || null
+      : params.taskType
   const size =
     params.groupBy === 'size_label' && group !== null
       ? group || 'unknown'
       : params.size
-  const limitMessage = technicalCohortLimitMessage(
-    selection.metricId,
-    params.groupBy,
-    group,
-  )
   const technical = /^X0[3-6]$/u.test(selection.metricId)
   const cursor = cursors[page - 1]
   const query = {
@@ -58,7 +55,7 @@ export function CohortResults({
     ...(selection.estimator ? { estimator: selection.estimator } : {}),
     ...(role ? { role } : {}),
     ...(projectIds.length ? { project_id: projectIds } : {}),
-    ...(technical && taskType ? { task_type: taskType } : {}),
+    ...(technical ? technicalCohortTaskType(selection.metricId, taskType) : {}),
     ...(technical && size ? { size_label: size } : {}),
     ...(selection.metricId === 'X03' ? technicalReportFilters(params) : {}),
     limit,
@@ -66,7 +63,6 @@ export function CohortResults({
   }
   const result = useQuery({
     queryKey: ['revision-cohort', revision.id, query],
-    enabled: limitMessage === undefined,
     queryFn: ({ signal }) => loadCohort(api, revision.id, query, signal),
     gcTime: 0,
   })
@@ -116,9 +112,7 @@ export function CohortResults({
       <h2 id="cohort-results" tabIndex={-1} ref={heading}>
         Объекты точки
       </h2>
-      {limitMessage ? (
-        <p role="status">{limitMessage}</p>
-      ) : result.isPending ? (
+      {result.isPending ? (
         <LoadingState />
       ) : result.isError ? (
         <>

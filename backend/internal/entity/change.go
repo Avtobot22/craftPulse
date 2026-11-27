@@ -70,6 +70,11 @@ type ProfileEntry struct {
 	RulesHash    []byte
 }
 
+type CheckProfileOptions struct {
+	Components []Component
+	Profiles   []CheckProfile
+}
+
 type CheckProfileDraft struct {
 	Entries []ProfileEntry
 }

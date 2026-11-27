@@ -6,7 +6,11 @@ import type {
   CohortQuery,
   ReportSeries,
 } from '@/shared/api'
-import { readReportParams, technicalReportFilters } from '@/shared/config'
+import {
+  readReportParams,
+  technicalCohortTaskType,
+  technicalReportFilters,
+} from '@/shared/config'
 import type { ReportBlockProps } from './metrics'
 
 type VisibleItem = Extract<CohortItem, { deleted: false }>
@@ -32,7 +36,7 @@ export function useTechnicalCohort(
     point_start: point,
     ...(estimator ? { estimator } : {}),
     ...(projectIds?.length ? { project_id: projectIds } : {}),
-    ...(taskType ? { task_type: taskType } : {}),
+    ...technicalCohortTaskType(series.metric_id, taskType),
     ...(size ? { size_label: size } : {}),
     ...(series.metric_id === 'X03'
       ? technicalReportFilters(readReportParams(search))

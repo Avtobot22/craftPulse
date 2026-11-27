@@ -32,7 +32,7 @@ export {
   reportQuery,
   writeReportParams,
   technicalReportFilters,
-  technicalCohortLimitMessage,
+  technicalCohortTaskType,
 } from './report-params'
 export type { ReportParams } from './report-params'
 export {
