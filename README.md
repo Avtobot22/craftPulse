@@ -22,6 +22,18 @@ git diff --check
 git config --local core.hooksPath .githooks
 ```
 
+## Браузерная приёмка AC-01
+
+Сценарии запускаются вручную на выделенном стенде с двумя организациями.
+В [инструкции AC-01](deploy/stand/ac01-browser.md) описаны выкат, восстановление базы,
+переменные окружения и матрица Chromium и Firefox.
+
+После подготовки стенда и окружения запусти из корня репозитория:
+
+```sh
+npm --prefix frontend/e2e test
+```
+
 ## Проверка backend и контракта
 
 Нужны Go версии из `backend/go.mod`, Node.js 26.3.0 с npm и Docker с Linux-контейнерами. Для `go test -race` нужен C-компилятор: GCC на Linux или MinGW-w64 на Windows. Добавь в `PATH` каталог `bin` внутри пути, который выводит `go env GOPATH`. Команды ниже рассчитаны на Linux, как раннер CI; на Windows полный набор можно выполнять в Linux-контейнере с Go и Node.js.
