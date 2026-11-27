@@ -39,6 +39,7 @@ type capabilityBody struct {
 
 type connectionBody struct {
 	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
 	Status   string    `json:"status"`
 	Instance struct {
 		ID      uuid.UUID `json:"id"`
@@ -331,6 +332,38 @@ func TestConnections_ProbeFailures(t *testing.T) {
 	})
 }
 
+func TestConnections_StaleRename(t *testing.T) {
+	t.Parallel()
+	e := newConnectionsEnv(t, testadapter.Config{})
+	c, _ := e.create(t, jiraConnection("https://jira.example.org", "10000"))
+	path := "/api/v1/connections/" + c.ID.String()
+
+	firstTab := e.do(t, e.admin, http.MethodGet, path, nil)
+	secondTab := e.do(t, e.admin, http.MethodGet, path, nil)
+	require.Equal(t, http.StatusOK, firstTab.Code, firstTab.Body.String())
+	require.Equal(t, http.StatusOK, secondTab.Code, secondTab.Body.String())
+	oldTag := firstTab.Header().Get("ETag")
+	require.NotEmpty(t, oldTag)
+	require.Equal(t, oldTag, secondTab.Header().Get("ETag"))
+
+	first := e.patch(t, c.ID, oldTag, map[string]string{"name": "Первое имя"})
+	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
+	newTag := first.Header().Get("ETag")
+	assert.NotEmpty(t, newTag)
+	assert.NotEqual(t, oldTag, newTag)
+
+	second := e.patch(t, c.ID, secondTab.Header().Get("ETag"), map[string]string{"name": "Второе имя"})
+	require.Equal(t, http.StatusPreconditionFailed, second.Code, second.Body.String())
+	assert.Equal(t, "version_conflict", decode[problemBody](t, second).Code)
+
+	current := e.do(t, e.admin, http.MethodGet, path, nil)
+	require.Equal(t, http.StatusOK, current.Code, current.Body.String())
+	assert.Equal(t, newTag, current.Header().Get("ETag"))
+	saved := decode[connectionBody](t, current)
+	assert.Equal(t, "Первое имя", saved.Name)
+	assert.Equal(t, "draft", saved.Status)
+}
+
 func TestConnections_RefusedChanges(t *testing.T) {
 	t.Parallel()
 	e := newConnectionsEnv(t, testadapter.Config{})
@@ -362,12 +395,12 @@ func TestConnections_RefusedChanges(t *testing.T) {
 	assert.Equal(t, http.StatusPreconditionFailed, e.patch(t, first.ID, `"5"`, map[string]any{"name": "x"}).Code)
 	renamed := e.patch(t, first.ID, tag, map[string]any{"name": "Jira архив", "sync_paused": true})
 	require.Equal(t, http.StatusOK, renamed.Code, renamed.Body.String())
-	assert.Equal(t, tag, renamed.Header().Get("ETag"), "a name and the pause of sync are not settings a probe checked")
+	assert.Equal(t, `"2"`, renamed.Header().Get("ETag"))
 	assert.True(t, decode[connectionBody](t, renamed).SyncPaused)
 
-	moved := e.patch(t, first.ID, tag, map[string]any{"scopes": []map[string]any{{"kind": "tracker_project", "native_scope_id": "10002", "history_from": nil}}})
+	moved := e.patch(t, first.ID, renamed.Header().Get("ETag"), map[string]any{"scopes": []map[string]any{{"kind": "tracker_project", "native_scope_id": "10002", "history_from": nil}}})
 	require.Equal(t, http.StatusOK, moved.Code, moved.Body.String())
-	assert.Equal(t, `"2"`, moved.Header().Get("ETag"))
+	assert.Equal(t, `"3"`, moved.Header().Get("ETag"))
 	scopes := decode[connectionBody](t, moved).Scopes
 	require.Len(t, scopes, 1)
 	assert.Equal(t, "10002", scopes[0].NativeScopeID)

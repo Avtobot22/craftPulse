@@ -76,7 +76,9 @@ function readConnectionScope(
   }
 }
 
-function readConnection(value: unknown): OpenCodes<Schema['Connection']> {
+export function readConnection(
+  value: unknown,
+): OpenCodes<Schema['Connection']> {
   const raw = readRecord(value)
   const instance = readRecord(raw.instance)
   return {

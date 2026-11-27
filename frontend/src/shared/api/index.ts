@@ -150,6 +150,7 @@ export {
   listAdapters,
   listConnections,
   getConnection,
+  readConnection,
   getSyncStatus,
   getConnectionProbe,
 } from './connection-queries'
