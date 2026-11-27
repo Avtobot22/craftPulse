@@ -1225,6 +1225,42 @@ func (e ScanToolRunReportKind) Valid() bool {
 	}
 }
 
+// Defines values for SonarAnalysisV1Version.
+const (
+	SonarAnalysisV1VersionN1 SonarAnalysisV1Version = "1"
+)
+
+// Valid indicates whether the value is a known member of the SonarAnalysisV1Version enum.
+func (e SonarAnalysisV1Version) Valid() bool {
+	switch e {
+	case SonarAnalysisV1VersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SonarIssueV1Type.
+const (
+	SonarIssueV1TypeBUG           SonarIssueV1Type = "BUG"
+	SonarIssueV1TypeCODESMELL     SonarIssueV1Type = "CODE_SMELL"
+	SonarIssueV1TypeVULNERABILITY SonarIssueV1Type = "VULNERABILITY"
+)
+
+// Valid indicates whether the value is a known member of the SonarIssueV1Type enum.
+func (e SonarIssueV1Type) Valid() bool {
+	switch e {
+	case SonarIssueV1TypeBUG:
+		return true
+	case SonarIssueV1TypeCODESMELL:
+		return true
+	case SonarIssueV1TypeVULNERABILITY:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SourceProvider.
 const (
 	SourceProviderClient          SourceProvider = "client"
@@ -1800,6 +1836,11 @@ type RelationV1Method string
 
 // ReportFileV1 Файл отчёта (класс `file`). `native_ns` - ID попытки CI, а без неё SHA или digest;
 // `native_id` - вид отчёта и путь файла в пакете через `:` (раздел 12.6). Задан SHA или digest.
+// Для страницы SonarQube (`findings`, область `analysis_project`, вид `sonar`, формат `envelope`)
+// `native_ns` - ключ проекта, `native_id` - ключ анализа. В `sha` передаётся revision анализа,
+// в `finished_at` - его время, в `completeness` - полнота выдачи. Файл соответствует
+// `SonarAnalysisV1`. Без revision запись отклоняется при нормализации. Если редакция
+// не поддерживает анализ MR, адаптер не отправляет запись анализа для этого MR.
 type ReportFileV1 struct {
 	ArtifactDigest  *string                   `json:"artifact_digest"`
 	AttemptNativeId *string                   `json:"attempt_native_id,omitempty"`
@@ -1998,6 +2039,39 @@ type Selection struct {
 	// Truncated Объекты, история которых в пакете обрезана; `sync` ставит задание дочитать её.
 	Truncated []TruncatedHistory `json:"truncated"`
 }
+
+// SonarAnalysisV1 Файл одного анализа SonarQube в записи `report_file/1` вида `sonar`.
+type SonarAnalysisV1 struct {
+	Issues []SonarIssueV1 `json:"issues"`
+
+	// Measures Ключ метрики и исходное строковое значение SonarQube.
+	Measures map[string]string      `json:"measures"`
+	Version  SonarAnalysisV1Version `json:"version"`
+}
+
+// SonarAnalysisV1Version defines model for SonarAnalysisV1.Version.
+type SonarAnalysisV1Version string
+
+// SonarIssueV1 defines model for SonarIssueV1.
+type SonarIssueV1 struct {
+	Key       string `json:"key"`
+	LineEnd   *int   `json:"line_end,omitempty"`
+	LineStart *int   `json:"line_start,omitempty"`
+
+	// Path Путь от корня репозитория.
+	Path       *string `json:"path,omitempty"`
+	Resolution *string `json:"resolution,omitempty"`
+
+	// RuleDescription Текст описания правила без примеров и фрагментов кода.
+	RuleDescription *string          `json:"rule_description,omitempty"`
+	RuleId          string           `json:"rule_id"`
+	Severity        string           `json:"severity"`
+	Status          string           `json:"status"`
+	Type            SonarIssueV1Type `json:"type"`
+}
+
+// SonarIssueV1Type defines model for SonarIssueV1.Type.
+type SonarIssueV1Type string
 
 // Source defines model for Source.
 type Source struct {

@@ -429,8 +429,10 @@ func countingInflight(next http.Handler, inflight, peak *atomic.Int64) http.Hand
 func TestSync_WorkerCompletesJobsInTheTransactionOfTheirResult(t *testing.T) {
 	t.Parallel()
 	e := newSyncEnv(t, testadapter.Config{})
+	calculator, err := newCalc(e.app, calcModules{}, e.clock, e.reg)
+	require.NoError(t, err)
 	workers := river.NewWorkers()
-	workerctrl.Register(workers, workerctrl.Deps{Collection: e.uc, Normalizer: e.norm})
+	workerctrl.Register(workers, workerctrl.Deps{Collection: e.uc, Normalizer: e.norm, Calculator: calculator})
 	client, err := river.NewClient(riverpgxv5.New(e.app), &river.Config{
 		Queues: map[string]river.QueueConfig{entity.QueueBulk: {MaxWorkers: 2}}, Workers: workers,
 		JobTimeout: _jobTimeout, RescueStuckJobsAfter: _rescueAfter, FetchCooldown: 20 * time.Millisecond, FetchPollInterval: 50 * time.Millisecond,
@@ -448,9 +450,13 @@ func TestSync_WorkerCompletesJobsInTheTransactionOfTheirResult(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind IN ('sync.page', 'sync.history') AND state <> 'completed'") == 0
 	}, 30*time.Second, 100*time.Millisecond, "every job of collection is completed")
-	assert.Equal(t, 1, count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'sync.reconcile'"))
+	assert.Equal(t, 1, count(t, t.Context(), e.owner, `SELECT count(*) FROM river_job
+		WHERE kind = 'sync.reconcile' AND COALESCE((args->>'round')::int, 0) = 0`))
 	assert.Equal(t, e.manifest(t, conn), unique(e.accepted(t, "task")))
-	assert.Zero(t, count(t, t.Context(), e.owner, "SELECT count(*) FROM sync.lease"), "the lease is released with the last page")
+	// The queued reconciliation can already hold the connection lease.
+	assert.Zero(t, count(t, t.Context(), e.owner, `SELECT count(*) FROM sync.lease l
+		JOIN river_job j ON l.holder = 'river-job-' || j.id::text
+		WHERE j.kind IN ('sync.page', 'sync.history')`), "completed collection jobs release their leases")
 	require.Eventually(t, func() bool {
 		return count(t, t.Context(), e.owner, "SELECT count(*) FROM river_job WHERE kind = 'normalize.batch' AND state <> 'completed'") == 0
 	}, 30*time.Second, 100*time.Millisecond, "every job of normalization is completed")

@@ -175,3 +175,56 @@ func analysisReasons(p entity.Point) []string {
 	}
 	return reasons
 }
+
+func TestAnalysisPoints_SonarCompletesOnlyItsScope(t *testing.T) {
+	t.Parallel()
+	asOf := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	secret := analysisRunForTest(1, 2, asOf.Add(-time.Hour), entity.AnalysisSecrets)
+	const sha = "abcdef0000000000000000000000000000000000"
+	secret.Profile, secret.Producer, secret.Mode = "gitleaks-default", "gitleaks", entity.CheckModeBuiltin
+	secret.SHA = sha
+	secret.Reports = []entity.AnalysisReport{{ID: entity.ID{11}}}
+	sca := analysisRunForTest(2, 2, asOf.Add(-time.Hour), entity.AnalysisSCA)
+	sca.Profile, sca.Producer, sca.Mode = "trivy-default", "trivy", entity.CheckModeBuiltin
+	sca.SHA = sha
+	sca.Reports = []entity.AnalysisReport{{ID: entity.ID{12}}}
+	partialSCA := sca
+	partialSCA.Completeness = "partial"
+	sonar := analysisRunForTest(3, 3, asOf, entity.AnalysisSonar)
+	sonar.Profile, sonar.Producer, sonar.Mode = "sonar-import", "SonarQube", entity.CheckModeImport
+	sonar.SHA = sha
+	sonar.Reports = []entity.AnalysisReport{{ID: entity.ID{13}}}
+	for _, tt := range []struct {
+		name                 string
+		builtin              []entity.AnalysisRun
+		security, completion *float64
+	}{
+		{"Sonar alone", nil, nil, num(1)},
+		{"Sonar and completed security", []entity.AnalysisRun{secret, sca}, num(1), num(1)},
+		{"Sonar and incomplete SCA", []entity.AnalysisRun{secret, partialSCA}, num(.5), num(2.0 / 3)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			before := analysisPoints(asOf, period{}, &entity.AnalysisFacts{Runs: tt.builtin})
+			points := analysisPoints(asOf, period{}, &entity.AnalysisFacts{Runs: append(slices.Clone(tt.builtin), sonar)})
+			s07 := requireAnalysisPoint(t, points, "S07", "")
+			assert.Equal(t, tt.security, s07.Value)
+			assert.Equal(t, requireAnalysisPoint(t, before, "S07", ""), s07)
+
+			c03 := requireAnalysisPoint(t, points, "C03", "")
+			assert.Equal(t, tt.completion, c03.Value)
+			assert.Equal(t, num(float64(len(tt.builtin)+1)), c03.Denominator)
+			for _, run := range tt.builtin {
+				estimator := analysisEstimator(securityProfile(&run))
+				assert.Equal(t, requireAnalysisPoint(t, before, "S01", estimator),
+					requireAnalysisPoint(t, points, "S01", estimator))
+				assert.True(t, slices.ContainsFunc(c03.Contributions, func(c entity.Contribution) bool {
+					return c.ObjectID == run.ID && c.Role == entity.RoleDenominator
+				}))
+			}
+			if len(tt.builtin) == 0 {
+				assert.Equal(t, entity.StateUnknown, requireAnalysisPoint(t, points, "S01", "").State)
+			}
+		})
+	}
+}

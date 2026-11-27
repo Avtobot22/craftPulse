@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
+	"github.com/Avtobot22/craftPulse/backend/pkg/postgres"
 )
 
 func (r *Repo) InsertAnalysisRuns(ctx context.Context, org entity.ID, runs []entity.AnalysisRun) error {
@@ -47,6 +49,26 @@ func (r *Repo) ReceiptAnalysisScopes(ctx context.Context, org, receipt entity.ID
 	out := make([]entity.AnalysisScope, len(rows))
 	for i, row := range rows {
 		out[i] = entity.AnalysisScope{RepositoryID: entity.ID(row.AreaID), ComponentID: entity.ID(row.ComponentID.UUID), SHA: row.Sha}
+	}
+	// A repository-wide Sonar report also contributes to complete root-component scopes.
+	roots, err := postgres.Conn(ctx, r.pool).Query(ctx, `
+		SELECT DISTINCT a.area_id, c.id, a.sha
+		FROM normalize.analysis_run a JOIN org.component c
+			ON c.organization_id = a.organization_id AND c.repository_area_id = a.area_id
+		WHERE a.organization_id = $1 AND a.receipt_id = $2 AND a.metadata->>'kind' = 'sonar'
+			AND c.superseded_seq IS NULL AND c.status = 'confirmed' AND c.path_prefix IN ('', '.')
+		ORDER BY a.area_id, c.id, a.sha`, uuid.UUID(org), uuid.UUID(receipt))
+	if err != nil {
+		return nil, fmt.Errorf("normalize: read Sonar component scopes: %w", err)
+	}
+	out, err = pgx.AppendRows(out, roots, func(row pgx.CollectableRow) (entity.AnalysisScope, error) {
+		var repo, component uuid.UUID
+		var sha string
+		err := row.Scan(&repo, &component, &sha)
+		return entity.AnalysisScope{RepositoryID: entity.ID(repo), ComponentID: entity.ID(component), SHA: sha}, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("normalize: decode Sonar component scopes: %w", err)
 	}
 	return out, nil
 }

@@ -167,7 +167,7 @@ func (u *UseCase) finishProbe(ctx context.Context, orgID entity.ID, p entity.Pro
 		default:
 			p.Status = entity.ProbeSucceeded
 			p.InstanceKey, p.Edition, p.SourceVersion = res.InstanceKey, res.Edition, res.Version
-			p.ContractVersion, p.AccessMode, p.Capabilities = res.ContractVersion, res.AccessMode, complete(res.Capabilities, now)
+			p.ContractVersion, p.AccessMode, p.Capabilities = res.ContractVersion, res.AccessMode, complete(res.Capabilities, now, c.Provider)
 		}
 		return u.d.Repo.FinishProbe(ctx, orgID, p)
 	})
@@ -335,9 +335,13 @@ func (u *UseCase) applyActivation(ctx context.Context, s entity.Subject, c entit
 
 // complete keeps the capabilities the adapter checked, unknown names dropped, and marks the rest missing:
 // only what was checked becomes working (FR-014).
-func complete(checked []entity.Capability, at time.Time) []entity.Capability {
-	out := make([]entity.Capability, 0, len(entity.Capabilities))
-	for _, name := range entity.Capabilities {
+func complete(checked []entity.Capability, at time.Time, provider entity.Provider) []entity.Capability {
+	names := entity.Capabilities
+	if provider == entity.ProviderSonarQube {
+		names = append(slices.Clone(names), entity.CapabilityReadMRAnalysis)
+	}
+	out := make([]entity.Capability, 0, len(names))
+	for _, name := range names {
 		i := slices.IndexFunc(checked, func(c entity.Capability) bool { return c.Name == name })
 		if i >= 0 {
 			out = append(out, checked[i])

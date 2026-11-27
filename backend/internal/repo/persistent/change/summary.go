@@ -167,6 +167,21 @@ func (r *Repo) ReadSummary(ctx context.Context, org, mr entity.ID, no *int, head
 	return v, nil
 }
 
+// SummarySourceAreas lists separately authorized source areas used in the revision.
+func (r *Repo) SummarySourceAreas(ctx context.Context, org, revision entity.ID) ([]entity.ID, error) {
+	rows, err := postgres.Conn(ctx, r.pool).Query(ctx, `
+		SELECT DISTINCT r.area_id
+		FROM change.summary_input i
+		JOIN normalize.report r ON (r.organization_id, r.id) = (i.organization_id, i.input_id)
+		WHERE i.organization_id = $1 AND i.summary_revision_id = $2 AND i.input_kind = 'report'
+			AND r.repository_id IS NOT NULL AND r.area_id <> r.repository_id
+		ORDER BY r.area_id`, uuid.UUID(org), uuid.UUID(revision))
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[entity.ID])
+}
+
 // ReadSummaryItems loads immutable occurrence coordinates and falls back to the original profile for older items.
 func (r *Repo) ReadSummaryItems(ctx context.Context, org, id entity.ID) ([]entity.SummaryItem, error) {
 	rows, err := postgres.Conn(ctx, r.pool).Query(ctx, `

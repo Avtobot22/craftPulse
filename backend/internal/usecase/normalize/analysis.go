@@ -31,7 +31,7 @@ func analysisCandidates(pkg *envelope.Package, recordCount int) ([]analysisCandi
 	var out []analysisCandidate
 	for i := range pkg.ScanManifest.Tools {
 		t := &pkg.ScanManifest.Tools[i]
-		if t.Sha == nil {
+		if t.Sha == nil || string(t.ReportKind) == entity.AnalysisSonar {
 			continue
 		}
 		r := entity.AnalysisRun{

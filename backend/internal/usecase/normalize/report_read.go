@@ -92,3 +92,14 @@ func (u *UseCase) DefaultBranches(ctx context.Context, orgID entity.ID, reposito
 	})
 	return out, err
 }
+
+// SonarMeasures reads the source measures of one immutable Sonar report by its ID.
+func (u *UseCase) SonarMeasures(ctx context.Context, org, report entity.ID) (map[string]string, error) {
+	var out map[string]string
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.SonarMeasures(ctx, org, report)
+		return err
+	})
+	return out, err
+}

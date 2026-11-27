@@ -8,6 +8,7 @@ import (
 // Reasons normalize rejects a record of a report file with (AC-10): the former report of the same area, SHA and kind
 // stays in force.
 const (
+	RecordSonarRevisionMissing     = "sonar_revision_missing"
 	RecordReportInvalid            = "invalid_report"
 	RecordReportFormatUnsupported  = "unsupported_report_format"
 	RecordReportVersionUnsupported = "unsupported_report_version"
@@ -67,6 +68,10 @@ type ScanReport struct {
 	Language     string
 	DocsRunID    string
 	DocsFileHash []byte
+	// Sonar reports retain the analysis project as AreaID and optionally name its linked repository.
+	RepositoryID    *ID
+	SonarAnalysisID string
+	SonarMeasures   map[string]string
 }
 
 type SkippedTarget struct {

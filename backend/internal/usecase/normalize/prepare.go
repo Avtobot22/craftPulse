@@ -27,6 +27,8 @@ var _dictionaries = map[envelope.RecordRecordKind]entity.DictionaryKind{
 // against the current versions are left for the time the knowledge counter is locked.
 type input struct {
 	receipt       entity.ID
+	scopeID       *entity.ID
+	sonarRuns     bool
 	ciResult      *ciReceiptTarget
 	ciReceipt     bool
 	instance      entity.ID
@@ -78,6 +80,7 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 	m := pkg.Manifest
 	in := &input{
 		receipt:   rc.ID,
+		scopeID:   rc.ScopeID,
 		instance:  *rc.SourceInstanceID,
 		provider:  string(m.Source.Provider),
 		area:      entity.SourceKey{InstanceID: *rc.SourceInstanceID, Kind: entity.ObjectKind(m.Area.Kind), NativeID: m.Area.NativeId},

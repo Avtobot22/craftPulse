@@ -38,6 +38,8 @@ type TechnicalReportScope struct {
 }
 
 type TechnicalReport struct {
+	// ComponentPath limits repository-wide Sonar findings to the selected matrix component.
+	ComponentPath     string
 	EventAt           time.Time
 	Format            string
 	ID                ID

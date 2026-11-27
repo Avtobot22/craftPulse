@@ -133,6 +133,11 @@ func (u *UseCase) List(ctx context.Context, s entity.Subject, f entity.Connectio
 			if id, ok := routes[c.ID]; ok {
 				st.WebhookRouteID = &id
 			}
+			if c.Provider == entity.ProviderSonarQube {
+				if err := u.sonarCapability(ctx, s.OrganizationID, &st); err != nil {
+					return err
+				}
+			}
 			out.Items = append(out.Items, st)
 		}
 		return nil
@@ -222,14 +227,15 @@ func (u *UseCase) applyPatch(ctx context.Context, s entity.Subject, cur, next en
 		if err != nil {
 			return err
 		}
-		var history []entity.ConnectionScope
-		added, removed, history = diffScopes(scopes, *p.Scopes)
-		for i := range history {
-			if err := u.d.Repo.SetScopeHistory(ctx, s.OrganizationID, history[i].ID, history[i].HistoryFrom); err != nil {
+		var updated []entity.ConnectionScope
+		added, removed, updated = diffScopes(scopes, *p.Scopes)
+		for i := range updated {
+			scope := &updated[i]
+			if err := u.d.Repo.SetScopeOptions(ctx, s.OrganizationID, scope.ID, scope.HistoryFrom, scope.RepositoryScopeID); err != nil {
 				return err
 			}
 		}
-		reconfigured = reconfigured || len(added) > 0 || len(removed) > 0 || len(history) > 0
+		reconfigured = reconfigured || len(added) > 0 || len(removed) > 0 || len(updated) > 0
 	}
 	if reconfigured && (next.Status == entity.ConnectionActive || next.Status == entity.ConnectionAccessLost) {
 		next.Status, next.AccessLostAt = entity.ConnectionDraft, nil
@@ -254,7 +260,7 @@ func (u *UseCase) applyPatch(ctx context.Context, s entity.Subject, cur, next en
 }
 
 // diffScopes compares the active scopes with the wanted set by kind and source ID.
-func diffScopes(have []entity.ConnectionScope, want []entity.NewScope) (added []entity.NewScope, removed []entity.ID, history []entity.ConnectionScope) {
+func diffScopes(have []entity.ConnectionScope, want []entity.NewScope) (added []entity.NewScope, removed []entity.ID, updated []entity.ConnectionScope) {
 	active := make(map[[2]string]entity.ConnectionScope, len(have))
 	for i := range have {
 		if sc := &have[i]; sc.Active {
@@ -269,9 +275,9 @@ func diffScopes(have []entity.ConnectionScope, want []entity.NewScope) (added []
 		switch {
 		case !ok:
 			added = append(added, w)
-		case !sameTime(sc.HistoryFrom, w.HistoryFrom):
-			sc.HistoryFrom = w.HistoryFrom
-			history = append(history, sc)
+		case !sameTime(sc.HistoryFrom, w.HistoryFrom) || !sameScopeID(sc.RepositoryScopeID, w.RepositoryScopeID):
+			sc.HistoryFrom, sc.RepositoryScopeID = w.HistoryFrom, w.RepositoryScopeID
+			updated = append(updated, sc)
 		}
 	}
 	for k := range active {
@@ -280,7 +286,11 @@ func diffScopes(have []entity.ConnectionScope, want []entity.NewScope) (added []
 		}
 	}
 	slices.SortFunc(removed, func(a, b entity.ID) int { return strings.Compare(a.String(), b.String()) })
-	return added, removed, history
+	return added, removed, updated
+}
+
+func sameScopeID(a, b *entity.ID) bool {
+	return a == b || a != nil && b != nil && *a == *b
 }
 
 // named shows the source ID of a scope until a probe of the source reads its name.

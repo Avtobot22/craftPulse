@@ -77,6 +77,11 @@ func (r *Repo) InsertReport(ctx context.Context, orgID entity.ID, rep *entity.Sc
 	if err != nil {
 		return fmt.Errorf("normalize: insert report: %w", err)
 	}
+	if rep.SonarAnalysisID != "" {
+		if err := r.setSonarReport(ctx, orgID, id, rep); err != nil {
+			return err
+		}
+	}
 	if err := r.insertFindings(ctx, orgID, id, rep.KnownSeq, rows.Findings); err != nil {
 		return err
 	}

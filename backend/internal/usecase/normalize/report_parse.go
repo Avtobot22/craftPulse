@@ -67,6 +67,7 @@ type parsedReport struct {
 	dependencyBaseSHA string
 	dependencies      *entity.DependencyInventory
 	docs              *entity.DocsReportFacts
+	sonarMeasures     map[string]string
 	// excluded are the files of a coverage report outside the repository.
 	excluded []entity.SkippedTarget
 }
@@ -74,6 +75,11 @@ type parsedReport struct {
 // _parsers is the registry of report parsers; a format without a parser here is not read yet, and its record
 // stays accepted without a report.
 var _parsers = []reportParser{
+	{
+		format: _sonarParserKey, version: "sonar-envelope/1",
+		kinds: []string{entity.AnalysisSonar}, accepts: func(v string) bool { return v == "1" },
+		parse: parseSonar,
+	},
 	{
 		format: entity.DocsFormatInventory, version: "docs-json/1",
 		kinds: []string{entity.AnalysisDocs, entity.AnalysisOpenAPI}, accepts: func(v string) bool { return v == "1" },

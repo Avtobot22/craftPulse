@@ -228,12 +228,40 @@ func (r *Repo) RemoveScopes(ctx context.Context, orgID, connectionID entity.ID, 
 	return nil
 }
 
-func (r *Repo) SetScopeHistory(ctx context.Context, orgID, scopeID entity.ID, from *time.Time) error {
-	err := New(postgres.Conn(ctx, r.pool)).SetScopeHistory(ctx, SetScopeHistoryParams{OrganizationID: uuid.UUID(orgID), ID: uuid.UUID(scopeID), HistoryFrom: tstz(from)})
+func (r *Repo) SetScopeOptions(ctx context.Context, orgID, scopeID entity.ID, from *time.Time, repositoryScope *entity.ID) error {
+	var repository uuid.NullUUID
+	if repositoryScope != nil {
+		repository = uuid.NullUUID{UUID: uuid.UUID(*repositoryScope), Valid: true}
+	}
+	_, err := postgres.Conn(ctx, r.pool).Exec(ctx, `UPDATE connect.connection_scope
+		SET history_from = $3, repository_scope_id = $4 WHERE organization_id = $1 AND id = $2`,
+		uuid.UUID(orgID), uuid.UUID(scopeID), tstz(from), repository)
 	if err != nil {
-		return fmt.Errorf("connect: set scope history: %w", err)
+		return fmt.Errorf("connect: set scope options: %w", err)
 	}
 	return nil
+}
+
+// SonarRepository resolves an analysis project's binding to a collected repository in the same organization.
+func (r *Repo) SonarRepository(ctx context.Context, orgID, scopeID entity.ID) (*entity.ID, error) {
+	var id uuid.UUID
+	err := postgres.Conn(ctx, r.pool).QueryRow(ctx, `
+		SELECT target.area_id
+		FROM connect.connection_scope project
+		JOIN connect.connection_scope target ON (target.organization_id, target.id) = (project.organization_id, project.repository_scope_id)
+		JOIN normalize.area a ON (a.organization_id, a.area_id) = (target.organization_id, target.area_id)
+		JOIN normalize.source_object o ON (o.organization_id, o.id) = (a.organization_id, a.area_id)
+		WHERE project.organization_id = $1 AND project.id = $2
+			AND project.scope_kind = 'analysis_project' AND project.status = 'active'
+			AND target.scope_kind = 'repository' AND target.status = 'active' AND a.area_kind = 'repository' AND o.deleted_at IS NULL
+	`, uuid.UUID(orgID), uuid.UUID(scopeID)).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("connect: resolve Sonar repository: %w", err)
+	}
+	return new(entity.ID(id)), nil
 }
 
 // SetScopeArea records the area of a scope once; another area for the same scope is refused.

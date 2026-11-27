@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -188,9 +189,9 @@ func (u *UseCase) summaryFindings(ctx context.Context, org entity.ID, mr entity.
 			keys = append(keys, r.Occurrences[j].ID)
 		}
 	}
-	head.Occurrences = occurrences[head.ID]
+	head.Occurrences = componentOccurrences(head, occurrences[head.ID])
 	if base != nil {
-		base.Occurrences = occurrences[base.ID]
+		base.Occurrences = componentOccurrences(base, occurrences[base.ID])
 	}
 	identities, err := u.d.Repo.OccurrenceIdentities(ctx, org, keys)
 	if err != nil {
@@ -252,6 +253,16 @@ func (u *UseCase) summaryFindings(ctx context.Context, org entity.ID, mr entity.
 		}
 	}
 	return nil
+}
+
+func componentOccurrences(r *entity.TechnicalReport, occurrences []entity.ReportOccurrence) []entity.ReportOccurrence {
+	prefix := strings.TrimSuffix(r.ComponentPath, "/")
+	if prefix == "" || prefix == "." {
+		return occurrences
+	}
+	return slices.DeleteFunc(slices.Clone(occurrences), func(o entity.ReportOccurrence) bool {
+		return !strings.HasPrefix(o.Path, prefix+"/")
+	})
 }
 
 func summaryOccurrences(occurrences []entity.ReportOccurrence, ids []entity.OccurrenceIdentity) map[entity.ID][]entity.ReportOccurrence {

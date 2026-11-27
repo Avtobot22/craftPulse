@@ -38,10 +38,12 @@ func (r *Repo) loadSummaryItems(ctx context.Context, org, revision entity.ID, fo
 		            WHERE a.organization_id = i.organization_id AND a.attempt_no > 1))
 		     ELSE i.value END
 		FROM change.summary_item AS i
-		LEFT JOIN normalize.finding_occurrence AS o ON NOT $3 AND (i.organization_id, i.occurrence_id) = (o.organization_id, o.id)
+		LEFT JOIN normalize.finding_occurrence AS o ON (i.organization_id, i.occurrence_id) = (o.organization_id, o.id)
+		LEFT JOIN normalize.report AS report ON $3 AND (report.organization_id, report.id) = (o.organization_id, o.report_id)
 		LEFT JOIN normalize.ci_run_version AS run ON NOT $3 AND i.item_kind = 'ci_attempts'
 		    AND (run.organization_id, run.id) = (i.organization_id, (i.value->'run_versions'->>0)::uuid)
 		WHERE i.organization_id = $1 AND i.summary_revision_id = $2
+		AND (NOT $3 OR report.repository_id IS NULL)
 		AND (NOT $3 OR i.required_right = 'security' OR i.item_kind IN ('new','resolved','not_evaluated','ci_attempts','coverage','tests'))
 		ORDER BY i.rank NULLS LAST, i.item_no`, uuid.UUID(org), uuid.UUID(revision), forPublication)
 	if err != nil {

@@ -195,7 +195,8 @@ type ConnectRepo interface {
 	ScopesOf(ctx context.Context, orgID entity.ID, connectionIDs []entity.ID) (map[entity.ID][]entity.ConnectionScope, error)
 	RemoveScope(ctx context.Context, orgID, scopeID entity.ID, at time.Time) error
 	RemoveScopes(ctx context.Context, orgID, connectionID entity.ID, at time.Time) error
-	SetScopeHistory(ctx context.Context, orgID, scopeID entity.ID, from *time.Time) error
+	SetScopeOptions(ctx context.Context, orgID, scopeID entity.ID, from *time.Time, repositoryScope *entity.ID) error
+	SonarRepository(ctx context.Context, orgID, scopeID entity.ID) (*entity.ID, error)
 	SetScopeArea(ctx context.Context, orgID, scopeID, areaID entity.ID) (bool, error)
 	AreaSources(ctx context.Context, orgID entity.ID, areaIDs []entity.ID) ([]entity.AreaSource, error)
 	PageSourceAreas(ctx context.Context, orgID entity.ID, f entity.SourceAreaFilter) ([]entity.SourceArea, error)
@@ -339,6 +340,8 @@ type NormalizeRepo interface {
 	FindMRIDs(ctx context.Context, orgID entity.ID, areas, allowed []entity.ID, key entity.SourceKey, sha string, seq int64) ([]entity.ID, error)
 	ReadRepositoryVersion(ctx context.Context, orgID, repositoryID entity.ID) (entity.RepositoryVersion, error)
 
+	SonarAnalysisExists(ctx context.Context, org, area entity.ID, analysis string) (bool, error)
+	SonarMeasures(ctx context.Context, org, report entity.ID) (map[string]string, error)
 	InsertRejectedReport(ctx context.Context, orgID entity.ID, report entity.ScanReport, reason string) error
 	ReadReportEvidence(ctx context.Context, orgID entity.ID, scope entity.ReportScope) ([]entity.ReportEvidence, error)
 	ReadTestExecutions(ctx context.Context, orgID entity.ID, reportIDs []entity.ID, q entity.TestExecutionQuery) ([]entity.ReportExecution, error)

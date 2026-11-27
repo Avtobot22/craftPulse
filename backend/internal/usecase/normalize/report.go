@@ -58,9 +58,11 @@ func (in *input) reportFile(rec *envelope.Record, b baseFact, scan *envelope.Sca
 			ExitClass: _unknownOutcome, Completeness: _unknownOutcome,
 		},
 	}
+	c.paths.kind, c.paths.sha = c.report.Kind, c.report.SHA
+	if c.report.Kind == entity.AnalysisSonar {
+		return in.sonarReport(c, rec, &p, scan), nil
+	}
 	c.parser, _ = parserOf(c.report.Format)
-	c.paths.kind = c.report.Kind
-	c.paths.sha = c.report.SHA
 	if in.area.Kind == entity.ObjectRepository {
 		c.paths.container = in.area.NativeID
 	}
@@ -178,7 +180,7 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 	manifests := map[string][]*manifestCandidate{}
 	var names []string
 	for _, c := range in.reports {
-		if c.parser == nil {
+		if c.parser == nil || c.rejected != "" {
 			continue
 		}
 		if _, ok := byFile[c.file]; !ok {
@@ -204,6 +206,16 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 	}
 	defer body.Close()
 	return envelope.Files(body, names, func(name string, content io.Reader) error {
+		if list := byFile[name]; len(list) > 0 &&
+			slices.ContainsFunc(list, func(c *reportCandidate) bool { return c.report.Kind == entity.AnalysisSonar }) &&
+			(len(manifests[name]) > 0 || slices.ContainsFunc(list, func(c *reportCandidate) bool { return c.report.Kind != entity.AnalysisSonar })) {
+			for _, c := range list {
+				c.rejected = entity.RecordReportFormatUnsupported
+			}
+			if len(manifests[name]) == 0 {
+				return nil
+			}
+		}
 		if list := manifests[name]; len(list) > 0 {
 			return readManifestFile(in, list, content)
 		}
@@ -234,6 +246,15 @@ func (u *UseCase) readReports(ctx context.Context, rc entity.Receipt, in *input)
 			c.report.DependencyDelta = parsed.dependencyDelta
 			c.report.DependencyBaseSHA = parsed.dependencyBaseSHA
 			c.dependencies = parsed.dependencies
+			if c.report.Kind == entity.AnalysisSonar {
+				c.report.SonarMeasures = parsed.sonarMeasures
+				if c.report.ExitClass == "" {
+					c.report.ExitClass = "success"
+					if len(c.findings) > 0 {
+						c.report.ExitClass = "findings"
+					}
+				}
+			}
 			c.report.SkippedTargets = append(c.report.SkippedTargets, parsed.excluded...)
 			c.report.SchemaVersion, c.report.ParserVersion = parsed.formatVersion, first.parser.version
 			if c.report.Kind == entity.AnalysisDocs && c.report.Format == "sarif" {
@@ -366,6 +387,20 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 		}
 		r := c.report
 		r.KnownSeq, r.AreaID = w.seq, area
+		if r.SonarAnalysisID != "" {
+			exists, err := w.u.d.Repo.SonarAnalysisExists(ctx, w.org, area, r.SonarAnalysisID)
+			if err != nil {
+				return err
+			}
+			if exists {
+				continue
+			}
+			if in.scopeID != nil {
+				if r.RepositoryID, err = w.u.d.SonarRepository.SonarRepository(ctx, w.org, *in.scopeID); err != nil {
+					return err
+				}
+			}
+		}
 		r.ComponentID = componentOf(components, c.component)
 		if c.run != nil {
 			id := w.objects[*c.run].ID
@@ -392,6 +427,11 @@ func (w *writer) reports(ctx context.Context, in *input) error {
 			return err
 		}
 		w.changes.add(area, _factReport, changedAt(r.StartedAt, r.FinishedAt))
+		if r.SonarAnalysisID != "" {
+			if err := w.recordSonarRun(ctx, in, &r); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

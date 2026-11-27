@@ -484,6 +484,7 @@ const (
 	CapabilityCapabilityReadDeletions         CapabilityCapability = "read_deletions"
 	CapabilityCapabilityReadFieldHistory      CapabilityCapability = "read_field_history"
 	CapabilityCapabilityReadLinks             CapabilityCapability = "read_links"
+	CapabilityCapabilityReadMrAnalysis        CapabilityCapability = "read_mr_analysis"
 	CapabilityCapabilityReadPermissions       CapabilityCapability = "read_permissions"
 	CapabilityCapabilityReadResolutionHistory CapabilityCapability = "read_resolution_history"
 	CapabilityCapabilityReadSprintHistory     CapabilityCapability = "read_sprint_history"
@@ -503,6 +504,8 @@ func (e CapabilityCapability) Valid() bool {
 	case CapabilityCapabilityReadFieldHistory:
 		return true
 	case CapabilityCapabilityReadLinks:
+		return true
+	case CapabilityCapabilityReadMrAnalysis:
 		return true
 	case CapabilityCapabilityReadPermissions:
 		return true
@@ -5242,6 +5245,7 @@ type CandidateDecisionDecision string
 
 // Capability defines model for Capability.
 type Capability struct {
+	// Capability Для SonarQube read_mr_analysis показывает доступность анализа MR. При отсутствии поддержки редакции адаптер передаёт missing с причиной edition_unsupported.
 	Capability CapabilityCapability `json:"capability"`
 	CheckedAt  time.Time            `json:"checked_at"`
 
@@ -5250,7 +5254,7 @@ type Capability struct {
 	State      CapabilityState `json:"state"`
 }
 
-// CapabilityCapability defines model for Capability.Capability.
+// CapabilityCapability Для SonarQube read_mr_analysis показывает доступность анализа MR. При отсутствии поддержки редакции адаптер передаёт missing с причиной edition_unsupported.
 type CapabilityCapability string
 
 // CapabilityState defines model for Capability.State.

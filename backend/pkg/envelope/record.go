@@ -137,7 +137,7 @@ func semantic(kind string, payload map[string]any) string {
 			return "payload.field_native_id: required for field_change"
 		}
 	case "report_file":
-		if payload["sha"] == nil && payload["artifact_digest"] == nil {
+		if payload["sha"] == nil && payload["artifact_digest"] == nil && payload["report_kind"] != "sonar" {
 			return "payload.sha: sha or artifact_digest is required"
 		}
 	case "document":

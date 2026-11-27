@@ -232,6 +232,8 @@ var Capabilities = []string{
 	"read_links", "read_permissions", "read_deletions", "write_mr_comment", "write_tracker_issue", "webhook",
 }
 
+const CapabilityReadMRAnalysis = "read_mr_analysis"
+
 // CapabilityNotChecked is the reason of a capability the adapter did not report: it is not working.
 const CapabilityNotChecked = "not_checked"
 

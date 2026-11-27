@@ -6,6 +6,7 @@ import (
 	"github.com/Avtobot22/craftPulse/backend/internal/repo"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
 	auditrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/audit"
+	connectrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/connect"
 	linkrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/link"
 	normalizerepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/normalize"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/platform"
@@ -32,7 +33,7 @@ func newNormalize(pool *pgxpool.Pool, store repo.ObjectStore, intake normalize.I
 	})
 	facts := normalizerepo.NewRepo(pool)
 	return normalize.New(normalize.Deps{
-		Repo: facts, SummaryTargets: facts, Tenants: platform.NewRepo(pool), Ingest: intake, Accounts: projects, ReportAreas: projects, Links: links, Rights: rights,
+		Repo: facts, SummaryTargets: facts, SonarRepository: connectrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Ingest: intake, Accounts: projects, ReportAreas: projects, Links: links, Rights: rights,
 		Objects: store, Queue: queue.New(jobs), Tx: tx, Clock: c,
 	}), nil
 }

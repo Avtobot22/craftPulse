@@ -10,7 +10,7 @@ var _analysisDefinitions = []Definition{
 	analysisDefinition("C02", "Eligible file coverage", UnitRatio, _analysisCodeCatalog+"c02",
 		"analyzed eligible files / eligible files reported by each language and tool"),
 	analysisDefinition("C03", "Analysis scope completion", UnitRatio, _analysisCodeCatalog+"c03",
-		"complete requested tool runs / tool runs in the latest scan manifest"),
+		"complete requested runs / runs in the latest scan manifest and the latest report of each Sonar project"),
 	analysisDefinition("C35", "Analysis snapshot age", UnitSeconds, _analysisCodeCatalog+"c35",
 		"as_of - latest completed snapshot of the profile at this commit"),
 	analysisDefinition("C36", "Analyzer duration", UnitSeconds, _analysisCodeCatalog+"c36",
@@ -34,8 +34,12 @@ var _analysisDefinitions = []Definition{
 }
 
 func analysisDefinition(id, name, unit, catalog, formula string) Definition {
+	version := 1
+	if id == "C03" {
+		version = 2
+	}
 	return Definition{
-		ID: id, Version: 1, Name: name, Unit: unit, CatalogRef: catalog, Formula: formula,
+		ID: id, Version: version, Name: name, Unit: unit, CatalogRef: catalog, Formula: formula,
 		Inputs: []string{InputDefinition, entity.InputAnalysisRun}, Roles: _analysisRoles,
 	}
 }

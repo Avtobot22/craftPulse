@@ -18,7 +18,9 @@ func TestCalc_DefinitionRowsFollowRegistry(t *testing.T) {
 	t.Parallel()
 	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
-	rows, err := app.Query(t.Context(), "SELECT metric_id, definition_version, unit, catalog_ref FROM calc.definition ORDER BY metric_id")
+	rows, err := app.Query(t.Context(), `
+		SELECT DISTINCT ON (metric_id) metric_id, definition_version, unit, catalog_ref
+		FROM calc.definition ORDER BY metric_id, definition_version DESC`)
 	require.NoError(t, err)
 	defer rows.Close()
 	var got []calc.Definition
@@ -35,7 +37,11 @@ func TestCalc_DefinitionRowsFollowRegistry(t *testing.T) {
 		want = append(want, calc.Definition{ID: def.ID, Version: def.Version, Unit: def.Unit, CatalogRef: def.CatalogRef})
 	}
 	slices.SortFunc(want, func(a, b calc.Definition) int { return strings.Compare(a.ID, b.ID) })
-	assert.Equal(t, want, got, "the release migration adds the rows of the registry")
+	assert.Equal(t, want, got, "the latest stored definitions follow the registry")
+	var previousC03 bool
+	require.NoError(t, app.QueryRow(t.Context(), `
+		SELECT EXISTS (SELECT 1 FROM calc.definition WHERE metric_id = 'C03' AND definition_version = 1)`).Scan(&previousC03))
+	assert.True(t, previousC03, "historical C03 results retain their definition")
 	_, err = app.Exec(t.Context(), "UPDATE calc.definition SET unit = 'count' WHERE metric_id = 'T08'")
 	assert.Error(t, err, "the application does not change definitions")
 }
