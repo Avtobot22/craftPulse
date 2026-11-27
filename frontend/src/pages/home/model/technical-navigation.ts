@@ -33,6 +33,12 @@ export const technicalNavigation = [
     action: 'check_profiles.manage',
   },
   {
+    pattern: routePaths.baselines,
+    path: generatePath(routePaths.baselines),
+    label: 'Базовые линии',
+    action: 'ci.read',
+  },
+  {
     pattern: routePaths.ciConfiguration,
     path: generatePath(routePaths.ciConfiguration),
     label: 'Подключение шага CI',
@@ -48,7 +54,7 @@ const technicalDetails = [
   { pattern: routePaths.exceptionExtend, action: 'exceptions.manage' },
   { pattern: routePaths.pipeline, action: 'ci.read' },
   { pattern: routePaths.pipelineJob, action: 'ci.read' },
-  { pattern: routePaths.baselines, action: 'ci.read' },
+  { pattern: routePaths.baselineReport, action: 'ci.read' },
   { pattern: routePaths.mergeRequestSummary, action: 'mr.read' },
   { pattern: routePaths.documentationRoots, action: 'docs.read' },
   { pattern: routePaths.documentationFinding, action: 'findings.read' },

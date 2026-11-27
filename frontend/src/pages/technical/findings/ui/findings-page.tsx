@@ -2,6 +2,7 @@ import { Text } from '@gravity-ui/uikit'
 import { useRef } from 'react'
 import { useSearchParams } from 'react-router'
 import type { ApiClient } from '@/shared/api'
+import { InspectionBack } from '@/shared/ui'
 import { readFindingSearch } from '../model/finding-search'
 import { FindingFilters } from './finding-filters'
 import { FindingResults } from './finding-results'
@@ -34,15 +35,18 @@ export function FindingsPage({ api }: { api: ApiClient }) {
 
   return (
     <section className="cp-findings">
-      <Text
-        as="h1"
-        id="findings-heading"
-        variant="header-1"
-        ref={heading}
-        tabIndex={-1}
-      >
-        Находки кода и безопасности
-      </Text>
+      <header>
+        <Text
+          as="h1"
+          id="findings-heading"
+          variant="header-1"
+          ref={heading}
+          tabIndex={-1}
+        >
+          Находки кода и безопасности
+        </Text>
+        <InspectionBack />
+      </header>
       <FindingFilters key={formKey} params={params} apply={apply} />
       <FindingResults api={api} params={params} />
     </section>

@@ -19,7 +19,8 @@ import { routePaths } from '@/shared/config'
 // UI-46: findingId. UI-47: findingId for creation or exceptionId for extension.
 // UI-48: optional exceptionId. Search filters: state, component_id, finding_id,
 // sort, limit and cursor.
-// UI-49/UI-52: projectId. UI-50: projectId and ci_system in the search string.
+// UI-49/UI-52: optional projectId. Baseline evidence: projectId and reportId.
+// UI-50: projectId and ci_system in the search string.
 // UI-53 (routes.tsx): mr with optional revision_no and head_sha search params.
 // UI-55/UI-56 (routes.tsx): pipelineId and, for UI-56, URL-encoded jobKey.
 // UI-57: componentId and base_sha, head_sha, analysis_kind in the search string.
@@ -27,7 +28,10 @@ import { routePaths } from '@/shared/config'
 // A missing optional path ID opens the section before an object is selected.
 export const technicalRoutes = (api: ApiClient) =>
   [
-    { path: routePaths.componentOverview, element: <ComponentOverviewPage /> },
+    {
+      path: routePaths.componentOverview,
+      element: <ComponentOverviewPage api={api} />,
+    },
     { path: routePaths.findings, element: <FindingsPage api={api} /> },
     {
       path: routePaths.findingDetail,
@@ -44,7 +48,8 @@ export const technicalRoutes = (api: ApiClient) =>
     { path: routePaths.exceptions, element: <ExceptionsPage api={api} /> },
     { path: routePaths.checkProfile, element: <CheckProfilePage /> },
     { path: routePaths.ciConfiguration, element: <CiConfigurationPage /> },
-    { path: routePaths.baselines, element: <BaselinesPage /> },
+    { path: routePaths.baselines, element: <BaselinesPage api={api} /> },
+    { path: routePaths.baselineReport, element: <BaselinesPage api={api} /> },
     {
       path: routePaths.technicalComparison,
       element: <TechnicalComparisonPage api={api} />,

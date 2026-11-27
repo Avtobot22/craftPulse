@@ -138,7 +138,7 @@ export function HomePage({
     storageKey,
     params,
     restore,
-    analysisSection || isFindingsList ? current.areas.projects : undefined,
+    analysisSection || technicalAction ? current.areas.projects : undefined,
   )
   const active = settingRoutes.find(
     ({ path }) =>
@@ -287,9 +287,9 @@ export function HomePage({
       params.get(teamParam) ?? '',
       params.get(projectParam) ?? '',
       {
-        projectOnly:
-          pathname === routePaths.findings ||
-          Boolean(taskAnalysisSection(pathname)),
+        projectOnly: Boolean(
+          technicalRouteAction(pathname) ?? taskAnalysisSection(pathname),
+        ),
         keepDate: pathname === routePaths.projectTimeline,
       },
     )
