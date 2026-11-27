@@ -1225,36 +1225,36 @@ func (e ScanToolRunReportKind) Valid() bool {
 	}
 }
 
-// Defines values for SonarAnalysisV1Version.
+// Defines values for SonarAnalysisFileVersion.
 const (
-	SonarAnalysisV1VersionN1 SonarAnalysisV1Version = "1"
+	SonarAnalysisFileVersionN1 SonarAnalysisFileVersion = "1"
 )
 
-// Valid indicates whether the value is a known member of the SonarAnalysisV1Version enum.
-func (e SonarAnalysisV1Version) Valid() bool {
+// Valid indicates whether the value is a known member of the SonarAnalysisFileVersion enum.
+func (e SonarAnalysisFileVersion) Valid() bool {
 	switch e {
-	case SonarAnalysisV1VersionN1:
+	case SonarAnalysisFileVersionN1:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for SonarIssueV1Type.
+// Defines values for SonarIssueType.
 const (
-	SonarIssueV1TypeBUG           SonarIssueV1Type = "BUG"
-	SonarIssueV1TypeCODESMELL     SonarIssueV1Type = "CODE_SMELL"
-	SonarIssueV1TypeVULNERABILITY SonarIssueV1Type = "VULNERABILITY"
+	SonarIssueTypeBUG           SonarIssueType = "BUG"
+	SonarIssueTypeCODESMELL     SonarIssueType = "CODE_SMELL"
+	SonarIssueTypeVULNERABILITY SonarIssueType = "VULNERABILITY"
 )
 
-// Valid indicates whether the value is a known member of the SonarIssueV1Type enum.
-func (e SonarIssueV1Type) Valid() bool {
+// Valid indicates whether the value is a known member of the SonarIssueType enum.
+func (e SonarIssueType) Valid() bool {
 	switch e {
-	case SonarIssueV1TypeBUG:
+	case SonarIssueTypeBUG:
 		return true
-	case SonarIssueV1TypeCODESMELL:
+	case SonarIssueTypeCODESMELL:
 		return true
-	case SonarIssueV1TypeVULNERABILITY:
+	case SonarIssueTypeVULNERABILITY:
 		return true
 	default:
 		return false
@@ -1839,7 +1839,7 @@ type RelationV1Method string
 // Для страницы SonarQube (`findings`, область `analysis_project`, вид `sonar`, формат `envelope`)
 // `native_ns` - ключ проекта, `native_id` - ключ анализа. В `sha` передаётся revision анализа,
 // в `finished_at` - его время, в `completeness` - полнота выдачи. Файл соответствует
-// `SonarAnalysisV1`. Без revision запись отклоняется при нормализации. Если редакция
+// `SonarAnalysisFile`. Без revision запись отклоняется при нормализации. Если редакция
 // не поддерживает анализ MR, адаптер не отправляет запись анализа для этого MR.
 type ReportFileV1 struct {
 	ArtifactDigest  *string                   `json:"artifact_digest"`
@@ -2040,20 +2040,20 @@ type Selection struct {
 	Truncated []TruncatedHistory `json:"truncated"`
 }
 
-// SonarAnalysisV1 Файл одного анализа SonarQube в записи `report_file/1` вида `sonar`.
-type SonarAnalysisV1 struct {
-	Issues []SonarIssueV1 `json:"issues"`
+// SonarAnalysisFile Файл одного анализа SonarQube в записи `report_file/1` вида `sonar`.
+type SonarAnalysisFile struct {
+	Issues []SonarIssue `json:"issues"`
 
 	// Measures Ключ метрики и исходное строковое значение SonarQube.
-	Measures map[string]string      `json:"measures"`
-	Version  SonarAnalysisV1Version `json:"version"`
+	Measures map[string]string        `json:"measures"`
+	Version  SonarAnalysisFileVersion `json:"version"`
 }
 
-// SonarAnalysisV1Version defines model for SonarAnalysisV1.Version.
-type SonarAnalysisV1Version string
+// SonarAnalysisFileVersion defines model for SonarAnalysisFile.Version.
+type SonarAnalysisFileVersion string
 
-// SonarIssueV1 defines model for SonarIssueV1.
-type SonarIssueV1 struct {
+// SonarIssue defines model for SonarIssue.
+type SonarIssue struct {
 	Key       string `json:"key"`
 	LineEnd   *int   `json:"line_end,omitempty"`
 	LineStart *int   `json:"line_start,omitempty"`
@@ -2063,15 +2063,15 @@ type SonarIssueV1 struct {
 	Resolution *string `json:"resolution,omitempty"`
 
 	// RuleDescription Текст описания правила без примеров и фрагментов кода.
-	RuleDescription *string          `json:"rule_description,omitempty"`
-	RuleId          string           `json:"rule_id"`
-	Severity        string           `json:"severity"`
-	Status          string           `json:"status"`
-	Type            SonarIssueV1Type `json:"type"`
+	RuleDescription *string        `json:"rule_description,omitempty"`
+	RuleId          string         `json:"rule_id"`
+	Severity        string         `json:"severity"`
+	Status          string         `json:"status"`
+	Type            SonarIssueType `json:"type"`
 }
 
-// SonarIssueV1Type defines model for SonarIssueV1.Type.
-type SonarIssueV1Type string
+// SonarIssueType defines model for SonarIssue.Type.
+type SonarIssueType string
 
 // Source defines model for Source.
 type Source struct {

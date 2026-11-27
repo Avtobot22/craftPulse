@@ -103,7 +103,7 @@ func readSonarIssues(dec *json.Decoder, out *parsedReport) error {
 	}
 	seen := map[string]bool{}
 	for dec.More() {
-		var issue envelope.SonarIssueV1
+		var issue envelope.SonarIssue
 		if err := dec.Decode(&issue); err != nil {
 			return err
 		}
@@ -121,12 +121,12 @@ func readSonarIssues(dec *json.Decoder, out *parsedReport) error {
 	return err
 }
 
-func sonarFinding(issue envelope.SonarIssueV1) (entity.FindingOccurrence, error) {
+func sonarFinding(issue envelope.SonarIssue) (entity.FindingOccurrence, error) {
 	kind := entity.AnalysisCode
 	switch issue.Type {
-	case envelope.SonarIssueV1TypeVULNERABILITY:
+	case envelope.SonarIssueTypeVULNERABILITY:
 		kind = entity.AnalysisSAST
-	case envelope.SonarIssueV1TypeBUG, envelope.SonarIssueV1TypeCODESMELL:
+	case envelope.SonarIssueTypeBUG, envelope.SonarIssueTypeCODESMELL:
 	default:
 		return entity.FindingOccurrence{}, invalidReport("sonar: unknown issue type")
 	}
