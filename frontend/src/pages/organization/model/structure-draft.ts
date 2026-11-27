@@ -235,6 +235,7 @@ function mergeRows<T extends DraftRow>(
   base: T[],
   local: T[],
   latest: T[],
+  resolveEdit?: (before: T, change: T, current: T) => T,
 ): T[] {
   const original = keyedRows(base)
   const edited = keyedRows(local)
@@ -248,9 +249,10 @@ function mergeRows<T extends DraftRow>(
     } else if (change) {
       // Only replay fields that changed locally. The new preview shows any
       // overlapping edit against the server value before it can be replaced.
+      const resolved = resolveEdit?.(before, change, current) ?? change
       const row = { ...current }
-      for (const field of Object.keys(change) as (keyof T)[]) {
-        if (before[field] !== change[field]) row[field] = change[field]
+      for (const field of Object.keys(resolved) as (keyof T)[]) {
+        if (before[field] !== resolved[field]) row[field] = resolved[field]
       }
       merged.push(row)
     }
@@ -316,26 +318,52 @@ export function reconcileCreations(
   }
 }
 
-export function rebase(base: Draft, local: Draft, latest: Draft): Draft {
+export function rebase(
+  base: Draft,
+  local: Draft,
+  latest: Draft,
+): { draft: Draft; hasConflictingProposalDecision: boolean } {
+  let hasConflictingProposalDecision = false
+  const components = mergeRows(
+    base.components,
+    local.components,
+    latest.components,
+    (before, change, current) => {
+      if (
+        before.status === 'proposed' &&
+        change.status !== 'proposed' &&
+        current.status !== 'proposed' &&
+        change.status !== current.status
+      ) {
+        hasConflictingProposalDecision = true
+        return { ...change, status: current.status }
+      }
+      return change
+    },
+  )
+
   return {
-    teams: mergeRows(base.teams, local.teams, latest.teams),
-    projects: mergeRows(base.projects, local.projects, latest.projects),
-    services: mergeRows(base.services, local.services, latest.services),
-    components: mergeRows(base.components, local.components, latest.components),
-    team_projects: mergeRows(
-      base.team_projects,
-      local.team_projects,
-      latest.team_projects,
-    ),
-    team_members: mergeRows(
-      base.team_members,
-      local.team_members,
-      latest.team_members,
-    ),
-    project_areas: mergeRows(
-      base.project_areas,
-      local.project_areas,
-      latest.project_areas,
-    ),
+    hasConflictingProposalDecision,
+    draft: {
+      teams: mergeRows(base.teams, local.teams, latest.teams),
+      projects: mergeRows(base.projects, local.projects, latest.projects),
+      services: mergeRows(base.services, local.services, latest.services),
+      components,
+      team_projects: mergeRows(
+        base.team_projects,
+        local.team_projects,
+        latest.team_projects,
+      ),
+      team_members: mergeRows(
+        base.team_members,
+        local.team_members,
+        latest.team_members,
+      ),
+      project_areas: mergeRows(
+        base.project_areas,
+        local.project_areas,
+        latest.project_areas,
+      ),
+    },
   }
 }

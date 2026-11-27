@@ -97,9 +97,17 @@ export function useStructureDraft(
       reason === 'uncertain'
         ? reconcileCreations(attempt.draft.base, attempt.draft.edited, fresh)
         : attempt.draft.edited
-    const edited = rebase(attempt.draft.base, local, fresh)
+    const { draft: edited, hasConflictingProposalDecision } = rebase(
+      attempt.draft.base,
+      local,
+      fresh,
+    )
     const remaining = changesBetween(fresh, edited)
-    if (reason === 'uncertain' && !remaining.length) {
+    if (
+      reason === 'uncertain' &&
+      !remaining.length &&
+      !hasConflictingProposalDecision
+    ) {
       return { kind: 'applied', result: latest }
     }
     setSnapshot(latest)

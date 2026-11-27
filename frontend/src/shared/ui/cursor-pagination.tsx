@@ -10,6 +10,7 @@ export function CursorPagination({
   previous,
   limit,
   received,
+  fixedSize = false,
   goTo,
 }: {
   label: string
@@ -18,6 +19,7 @@ export function CursorPagination({
   previous: readonly string[]
   limit: number
   received: number | undefined
+  fixedSize?: boolean
   goTo: (cursor: string, previous: string[], limit: string) => void
 }) {
   const page = !cursor ? 1 : previous[0] === '' ? previous.length + 1 : null
@@ -25,19 +27,21 @@ export function CursorPagination({
     next && next !== cursor && !previous.includes(next) ? next : null
   return (
     <nav className="cp-cursor-pagination" aria-label={label}>
-      <label>
-        Строк на странице
-        <select
-          value={limit}
-          onChange={(event) => {
-            goTo('', [], event.target.value)
-          }}
-        >
-          {pageSizes.map((size) => (
-            <option key={size}>{size}</option>
-          ))}
-        </select>
-      </label>
+      {!fixedSize && (
+        <label>
+          Строк на странице
+          <select
+            value={limit}
+            onChange={(event) => {
+              goTo('', [], event.target.value)
+            }}
+          >
+            {pageSizes.map((size) => (
+              <option key={size}>{size}</option>
+            ))}
+          </select>
+        </label>
+      )}
       <Button
         size="xl"
         disabled={!cursor}

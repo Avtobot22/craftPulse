@@ -127,13 +127,12 @@ afterEach(() => {
 describe('administrator start', () => {
   it('opens UI-06 and links to UI-07 when the structure version is zero', async () => {
     const { router } = mount(routePaths.home)
-    const heading = await screen.findByRole('heading', {
-      name: 'Результат первого входа',
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Результат первого входа' }),
+      ).toHaveFocus()
     })
     expect(router.state.location.pathname).toBe(routePaths.welcome)
-    await waitFor(() => {
-      expect(heading).toHaveFocus()
-    })
     expect(screen.getByText('Организация: Пример')).toBeVisible()
     expect(screen.getByText('Ваша роль: Администратор')).toBeVisible()
     const next = screen.getByRole('link', {

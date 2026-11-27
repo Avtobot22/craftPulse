@@ -378,6 +378,92 @@ it('после 412 показывает чужие правки и требуе�
   })
 })
 
+it('после 412 сохраняет чужое отклонение и подтверждает другое предложение', async () => {
+  const { writes } = setup({
+    initial: { ...baseline, components: [component, secondComponent] },
+    onWrite: (count, snapshot, update) => {
+      if (count !== 1) return undefined
+      update({
+        ...snapshot,
+        version: 8,
+        components: [{ ...component, status: 'rejected' }, secondComponent],
+      })
+      return problemResponse('version_conflict', 412)
+    },
+  })
+  await screen.findByText('Сохранённая версия структуры: 7')
+  press('Сервисы и компоненты')
+  press('Подтвердить services/billing')
+  press('Подтвердить services/api')
+  await confirm()
+  const dialog = within(await screen.findByRole('dialog'))
+  expect(await dialog.findByText('Станет: Отклонён')).toBeVisible()
+  expect(dialog.getAllByText('Станет: Подтверждён')).toHaveLength(1)
+  expect(writes).toHaveLength(1)
+
+  fireEvent.click(dialog.getByRole('button', { name: 'Подтвердить' }))
+  expect(
+    await screen.findByText('Сохранённая версия структуры: 9'),
+  ).toBeVisible()
+  expect(writes.map(({ tag }) => tag)).toEqual(['"7"', '"8"'])
+  expect(writes[1]?.body.components).toEqual([
+    {
+      id: component.id,
+      service_id: service.id,
+      repository_area_id: area.id,
+      path_prefix: component.path_prefix,
+      status: 'rejected',
+    },
+    {
+      id: secondComponent.id,
+      service_id: service.id,
+      repository_area_id: area.id,
+      path_prefix: secondComponent.path_prefix,
+      status: 'confirmed',
+    },
+  ])
+})
+
+it.each([
+  {
+    outcome: '412',
+    response: () => problemResponse('version_conflict', 412),
+  },
+  {
+    outcome: 'нечитаемого ответа',
+    response: () => jsonResponse(null),
+  },
+])(
+  'после $outcome показывает сохранённое отклонение без повторного PUT',
+  async ({ response }) => {
+    const { writes } = setup({
+      onWrite: (_count, snapshot, update) => {
+        update({
+          ...snapshot,
+          version: 8,
+          components: [{ ...component, status: 'rejected' }],
+        })
+        return response()
+      },
+    })
+    await screen.findByText('Сохранённая версия структуры: 7')
+    press('Сервисы и компоненты')
+    press('Подтвердить services/billing')
+    await confirm()
+    const dialog = within(await screen.findByRole('dialog'))
+    expect(await dialog.findByText('Станет: Отклонён')).toBeVisible()
+    expect(dialog.getByText('Изменений нет')).toBeVisible()
+    expect(dialog.getByRole('button', { name: 'Подтвердить' })).toBeDisabled()
+
+    fireEvent.click(dialog.getByRole('button', { name: 'Отмена' }))
+    expect(
+      await screen.findByText('Сохранённая версия структуры: 8'),
+    ).toBeVisible()
+    expect(screen.getByRole('cell', { name: 'Отклонён' })).toBeVisible()
+    expect(writes).toHaveLength(1)
+  },
+)
+
 it('показывает 422 у полей и переводит фокус из сводки к сохранённому вводу', async () => {
   const { writes } = setup({
     onWrite: () =>
