@@ -262,6 +262,21 @@ export class ApiClient {
     return this.request('POST', '/exceptions', body, decode, options, false)
   }
 
+  createImport<T>(
+    form: FormData,
+    decode: Decoder<T>,
+    signal: AbortSignal,
+  ): Promise<ApiResponse<T>> {
+    return this.request(
+      'POST',
+      '/imports',
+      form,
+      decode,
+      { signal, expectedStatus: 202 },
+      false,
+    )
+  }
+
   createUploadToken<T>(
     body: MutationBody<'/upload-tokens', 'POST'>,
     decode: Decoder<T>,
@@ -408,7 +423,7 @@ export class ApiClient {
     path: ApiPath,
     body: unknown,
     decode: Decoder<T>,
-    options: VersionedRequestOptions,
+    options: VersionedRequestOptions & { expectedStatus?: number },
     versioned: boolean,
     mediaType = 'application/json',
   ): Promise<ApiResponse<T>> {
@@ -417,7 +432,8 @@ export class ApiClient {
     const url = this.url(path, options)
     if (method === 'GET') this.versions.delete(url)
     const headers = new Headers({ Accept: 'application/json' })
-    if (body !== undefined) headers.set('Content-Type', mediaType)
+    const multipart = body instanceof FormData
+    if (body !== undefined && !multipart) headers.set('Content-Type', mediaType)
     if (versioned) {
       const etag = options.ifMatch ?? this.versions.get(url)
       if (!isStrongETag(etag)) throw new ApiError('missing-version')
@@ -434,7 +450,9 @@ export class ApiClient {
         credentials: 'same-origin',
         cache: 'no-store',
         ...(options.signal === undefined ? {} : { signal: options.signal }),
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(body === undefined
+          ? {}
+          : { body: multipart ? body : JSON.stringify(body) }),
       })
     } catch (error) {
       this.assertSession(epoch)
@@ -459,6 +477,8 @@ export class ApiClient {
         if (options.signal?.aborted) throw cause
         error = new ApiError(
           response.status === 401 ? 'auth-required' : 'invalid-response',
+          null,
+          response.status,
         )
       }
       if (response.status === 401) {
@@ -468,6 +488,11 @@ export class ApiClient {
       throw error
     }
     try {
+      if (
+        options.expectedStatus !== undefined &&
+        response.status !== options.expectedStatus
+      )
+        throw new InvalidResponse()
       let raw: unknown
       if (response.status !== 204) {
         if (

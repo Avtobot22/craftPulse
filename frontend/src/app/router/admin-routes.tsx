@@ -28,8 +28,11 @@ export const adminRoutes = (api: ApiClient) =>
       path: routePaths.ingestConflicts,
       element: <IngestConflictsPage api={api} />,
     },
-    { path: routePaths.importPackage, element: <ImportPackagePage /> },
+    {
+      path: routePaths.importPackage,
+      element: <ImportPackagePage api={api} />,
+    },
     { path: routePaths.receiptJournal, element: <ReceiptJournalPage /> },
-    { path: routePaths.receipt, element: <ReceiptPage /> },
+    { path: routePaths.receipt, element: <ReceiptPage api={api} /> },
     { path: routePaths.sourceAccounts, element: <SourceAccountsPage /> },
   ] satisfies RouteObject[]

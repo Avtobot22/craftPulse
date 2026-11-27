@@ -1,0 +1,127 @@
+.cp-import {
+  max-inline-size: 720px;
+}
+
+.cp-import__form {
+  display: grid;
+  gap: 16px;
+  margin-block-start: 24px;
+}
+
+.cp-import__fields,
+.cp-import__field,
+.cp-import__row {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.cp-import__fields,
+.cp-import__row {
+  gap: 16px;
+}
+
+.cp-import__fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.cp-import__field label {
+  font-weight: 500;
+}
+
+.cp-import__field select {
+  inline-size: 100%;
+  min-block-size: 44px;
+  padding-inline: 12px;
+  font: inherit;
+  color: var(--g-color-text-primary);
+  background: var(--g-color-base-background);
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: 8px;
+}
+
+.cp-import__field :is(select, input):focus-visible {
+  outline: 2px solid var(--g-color-line-focus);
+  outline-offset: 2px;
+}
+
+.cp-import__field select[aria-invalid='true'] {
+  border-color: var(--g-color-text-danger);
+}
+
+.cp-import__field input[type='file'] {
+  max-inline-size: 100%;
+  min-block-size: 44px;
+  font: inherit;
+}
+
+.cp-import__field input[type='file']::file-selector-button {
+  min-block-size: 44px;
+  padding-inline: 12px;
+  margin-inline-end: 8px;
+  font: inherit;
+  color: inherit;
+  background: var(--g-color-base-generic);
+  border: 0;
+  border-radius: 8px;
+}
+
+.cp-import__hint,
+.cp-import__error {
+  margin: 0;
+}
+
+.cp-import__hint {
+  color: var(--g-color-text-secondary);
+}
+
+.cp-import__error {
+  color: var(--g-color-text-danger);
+}
+
+.cp-import__summary {
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--g-color-base-danger-light);
+}
+
+.cp-import__summary ul {
+  margin: 8px 0 0;
+  padding-inline-start: 20px;
+}
+
+.cp-import__summary a {
+  color: var(--g-color-text-link);
+}
+
+.cp-import__snapshot,
+.cp-import__progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cp-import__file,
+.cp-import__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.cp-import__actions {
+  min-block-size: 64px;
+}
+
+.cp-import__file,
+.cp-import__filename {
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 768px) {
+  .cp-import__row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
