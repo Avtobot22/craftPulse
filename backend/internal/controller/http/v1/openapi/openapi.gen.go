@@ -6214,6 +6214,9 @@ type FindingDetail struct {
 	RuleId   string   `json:"rule_id"`
 	Severity Severity `json:"severity"`
 
+	// SourceUrl Ссылка на место в репозитории GitLab по SHA отчёта. Поле отсутствует, если исходное место или адрес репозитория неизвестны.
+	SourceUrl *string `json:"source_url,omitempty"`
+
 	// State `accepted_risk` не равно исправлению: находка остаётся открытой в истории (BR-012).
 	State FindingState `json:"state"`
 }

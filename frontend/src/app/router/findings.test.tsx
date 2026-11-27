@@ -127,6 +127,9 @@ it('показывает правило, строки и метаданные о
 
   expect(await screen.findByText(secretFinding.rule_id)).toBeVisible()
   expect(screen.getByText('deploy/config.yaml:12-14')).toBeVisible()
+  expect(
+    screen.queryByRole('link', { name: 'deploy/config.yaml:12-14' }),
+  ).toBeNull()
   expect(screen.getByText('Уверенность: неизвестно')).toBeVisible()
   expect(screen.getByText('Версия сопоставления: 2')).toBeVisible()
   for (const text of [
@@ -305,6 +308,33 @@ it('догружает курсор, повторяет ошибку и восс
   })
   expect(router.state.location.search).toBe(initial.slice('/findings'.length))
   expect(screen.getByRole('combobox', { name: 'Вид' })).toHaveValue('security')
+})
+
+it('открывает исходный файл по SHA и строке из карточки отфильтрованной находки', async () => {
+  const source = `https://gitlab.example/team/billing/-/blob/${acceptedDetail.report.sha}/services/billing/repo.go#L88`
+  const { router } = mount('/findings?finding_kind=security', (url) => {
+    if (
+      url.pathname === apiPath &&
+      url.searchParams.get('finding_kind') === 'security'
+    )
+      return page([acceptedFinding])
+    if (url.pathname === `${apiPath}/${acceptedFinding.id}`)
+      return jsonResponse({
+        ...acceptedDetail,
+        source_url: source,
+      } satisfies Schema['FindingDetail'])
+    return undefined
+  })
+
+  const row = await screen.findByRole('link', { name: acceptedFinding.rule_id })
+  row.focus()
+  fireEvent.click(row, { detail: 0 })
+  expect(
+    await screen.findByRole('link', { name: 'services/billing/repo.go:88' }),
+  ).toHaveAttribute('href', source)
+  expect(new URLSearchParams(router.state.location.search).has('mr_id')).toBe(
+    false,
+  )
 })
 
 it('заменяет карточку находки с ответом 404 на UI-04 без старых или переданных в ошибке данных', async () => {

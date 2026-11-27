@@ -1385,6 +1385,7 @@ describe('MR summary and technical comparison', () => {
     severity: { native: 'high', mapped: 'high', mapping_version: 1 },
     confidence: null,
     location: { path: 'src/handler.ts', line_start: 7, line_end: 7 },
+    source_url: `https://gitlab.example/core/-/blob/${head}/src/handler.ts#L7`,
     package: null,
     component_id: componentId,
     first_seen_at: '2026-11-08T12:00:00Z',

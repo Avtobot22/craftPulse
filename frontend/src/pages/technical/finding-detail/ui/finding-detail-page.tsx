@@ -66,7 +66,7 @@ export function FindingDetailPage({ api }: { api: ApiClient }) {
           onRetry={() => void query.refetch()}
         />
       )}
-      {ready && <FindingDetails api={api} finding={query.data} />}
+      {ready && <FindingDetails finding={query.data} />}
     </article>
   )
 }

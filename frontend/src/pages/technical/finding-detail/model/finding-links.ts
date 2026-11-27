@@ -40,7 +40,6 @@ export function readFindingContext(search: URLSearchParams) {
   if (headSha) summarySearch.set('head_sha', headSha)
 
   return {
-    mrId,
     summary: mrId
       ? {
           pathname: generatePath(routePaths.mergeRequestSummary, { mr: mrId }),
@@ -86,42 +85,15 @@ export function findingComparisonLink(
   }
 }
 
-export function gitLabLocationUrl(
-  finding: FindingDetail,
-  mrSource: string | null | undefined,
-) {
-  const { location, report } = finding
-  if (!location || !report.sha || !shaPattern.test(report.sha) || !mrSource)
-    return undefined
-
-  const url = URL.parse(mrSource)
+export function gitLabLocationUrl(source: string | undefined) {
+  const url = source ? URL.parse(source) : null
   if (
     !url ||
-    !['http:', 'https:'].includes(url.protocol) ||
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
     url.username ||
     url.password
   )
     return undefined
 
-  const repository = /^(\/.+)\/-\/merge_requests\/[0-9]+\/?$/u.exec(
-    url.pathname,
-  )?.[1]
-  const path = location.path.split('/')
-  if (
-    !repository ||
-    path.some(
-      (part) => !part || part === '.' || part === '..' || part.includes('\\'),
-    )
-  )
-    return undefined
-
-  url.pathname = `${repository}/-/blob/${report.sha}/${path.map(encodeURIComponent).join('/')}`
-  url.search = ''
-  const first = location.line_start ?? location.line_end
-  const last = location.line_end
-  url.hash =
-    first === null
-      ? ''
-      : `L${String(first)}${last !== null && last > first ? `-${String(last)}` : ''}`
   return url.href
 }

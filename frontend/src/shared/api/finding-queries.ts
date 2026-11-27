@@ -60,6 +60,9 @@ function readFindingDetail(value: unknown): OpenCodes<Schema['FindingDetail']> {
   const finding = readFinding(raw)
   return {
     ...finding,
+    ...(raw.source_url === undefined
+      ? {}
+      : { source_url: readString(raw.source_url) }),
     evidence:
       finding.finding_kind === 'secret' ? {} : readStringMap(raw.evidence),
     report: {

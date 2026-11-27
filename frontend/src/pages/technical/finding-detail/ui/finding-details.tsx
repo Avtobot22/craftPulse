@@ -1,9 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
 import { generatePath, useOutletContext, useSearchParams } from 'react-router'
 import { FindingRow } from '@/entities/finding'
 import { RestrictedResults } from '@/entities/result-access'
-import { getMergeRequest } from '@/shared/api'
-import type { ApiClient } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
 import { routePaths } from '@/shared/config'
 import { InspectionLink } from '@/shared/ui'
@@ -24,35 +21,12 @@ const evidenceLabels: Record<string, string> = {
   anchor: 'Якорь',
 }
 
-export function FindingDetails({
-  finding,
-  api,
-}: {
-  finding: FindingDetail
-  api: ApiClient
-}) {
+export function FindingDetails({ finding }: { finding: FindingDetail }) {
   const [search] = useSearchParams()
   const context = readFindingContext(search)
   const current = useOutletContext<CurrentUser | undefined>()
   const canReadMr = current?.actions.includes('mr.read') ?? false
-  const mr = useQuery({
-    ...getMergeRequest(api, context.mrId ?? ''),
-    refetchOnMount: 'always',
-    enabled: Boolean(
-      canReadMr && context.mrId && finding.location && finding.report.sha,
-    ),
-  })
-  const locationUrl = gitLabLocationUrl(
-    finding,
-    canReadMr &&
-      mr.isSuccess &&
-      mr.isFetchedAfterMount &&
-      context.mrId &&
-      mr.data.id === context.mrId &&
-      mr.data.area.kind === 'repository'
-      ? mr.data.source_url
-      : undefined,
-  )
+  const locationUrl = gitLabLocationUrl(finding.source_url)
   const secret = finding.finding_kind === 'secret'
   const evidence = secret ? [] : Object.entries(finding.evidence)
   const exceptionSearch = new URLSearchParams(context.scope)

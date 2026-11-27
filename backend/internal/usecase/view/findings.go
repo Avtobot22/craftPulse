@@ -5,7 +5,10 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"net/url"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -41,10 +44,44 @@ type FindingDeps struct {
 	Structure    FindingStructure
 	Repositories FindingRepositories
 	Calculator   ComponentCalculator
+	Sources      interface {
+		GitLabFindingSource(context.Context, entity.ID, entity.ID, entity.ID) (entity.GitLabFindingSource, error)
+	}
 }
 
 func (u *UseCase) GetFinding(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID) (entity.FindingDetail, error) {
-	return u.d.Findings.Reader.GetFinding(ctx, s, scope, id)
+	finding, err := u.d.Findings.Reader.GetFinding(ctx, s, scope, id)
+	if err != nil || finding.Observation.Path == "" || !entity.ValidGitSHA(finding.Report.SHA) {
+		return finding, err
+	}
+	err = u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
+		source, err := u.d.Findings.Sources.GitLabFindingSource(ctx, s.OrganizationID, finding.AreaID, finding.Report.ID)
+		if err != nil {
+			return err
+		}
+		finding.SourceURL = findingGitLabURL(source, finding.Report.SHA, &finding.Observation)
+		return nil
+	})
+	return finding, err
+}
+
+func findingGitLabURL(source entity.GitLabFindingSource, sha string, location *entity.FindingOccurrence) *string {
+	parts := strings.Split(location.Path, "/")
+	for i, part := range parts {
+		if part == "" || part == "." || part == ".." || strings.Contains(part, "\\") {
+			return nil
+		}
+		parts[i] = url.PathEscape(part)
+	}
+	route := "/-/blob/" + sha + "/" + strings.Join(parts, "/")
+	if line := cmp.Or(location.LineStart, location.LineEnd); line != nil {
+		route += "#L" + strconv.Itoa(*line)
+		if location.LineEnd != nil && *location.LineEnd > *line {
+			route += "-" + strconv.Itoa(*location.LineEnd)
+		}
+	}
+	return gitLabCIURL(entity.SourceInstance{BaseURL: source.InstanceURL},
+		entity.RepositoryVersion{WebURL: source.RepositoryURL}, source.ProjectPath, route)
 }
 
 func (u *UseCase) ListFindings(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.FindingQuery) (entity.FindingPage, error) {
