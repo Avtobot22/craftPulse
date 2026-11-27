@@ -187,6 +187,68 @@ it('starts only one authorization and retries the original route after success',
   })
 })
 
+it('retries the original route after authorizing again from the fallback page', async () => {
+  const origin = detailPath + '?search=open%20issues#details'
+  const firstAuthorization = new URL(
+    '#first-authorization',
+    window.location.href,
+  )
+  mount(origin, {
+    start: () =>
+      Promise.resolve(
+        jsonResponse({ authorization_url: firstAuthorization.href }),
+      ),
+  })
+  fireEvent.click(await screen.findByRole('button', authorizationAction))
+  await waitFor(() => {
+    expect(window.location.href).toBe(firstAuthorization.href)
+  })
+  dispose()
+
+  const secondAuthorization = new URL(
+    '#second-authorization',
+    window.location.href,
+  )
+  const fallback = mount('/source-links?source_link_result=link_failed', {
+    state: 'revoked',
+    start: () =>
+      Promise.resolve(
+        jsonResponse({ authorization_url: secondAuthorization.href }),
+      ),
+  })
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Повторить разрешение' }),
+  )
+  await waitFor(() => {
+    expect(window.location.href).toBe(secondAuthorization.href)
+  })
+  expect(fallback.fetcher).toHaveBeenCalledWith(
+    startPath + '?return_to=%2Fsource-links',
+    expect.objectContaining({ method: 'POST' }),
+  )
+  expect(
+    fallback.fetcher.mock.calls.some(([input]) => input === taskApiPath),
+  ).toBe(false)
+  dispose()
+
+  const returned = mount('/source-links?source_link_result=linked', {
+    state: 'linked',
+  })
+  expect(await screen.findByText('Доступ к источнику разрешён.')).toBeVisible()
+  expect(
+    returned.fetcher.mock.calls.some(([input]) => input === taskApiPath),
+  ).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Повторить переход' }))
+  const { pathname, search, hash } = returned.router.state.location
+  expect(pathname + search + hash).toBe(origin)
+  await waitFor(() => {
+    expect(returned.fetcher).toHaveBeenCalledWith(
+      taskApiPath,
+      expect.objectContaining({ method: 'GET' }),
+    )
+  })
+})
+
 it.each([
   ['state_conflict', 409, 'Источник сейчас не принимает разрешения.'],
   ['not_found', 404, 'Подключение больше недоступно.'],

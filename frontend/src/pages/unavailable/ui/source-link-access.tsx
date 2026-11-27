@@ -78,12 +78,12 @@ export function SourceLinkAccess({
   }
 
   function retryTransition() {
-    const path =
-      location.pathname === routePaths.unavailable
-        ? identity && takeSourceLinkRetry(identity)
-        : location.pathname === '/source-links'
-          ? routePaths.home
-          : returnPath
+    const usesStoredRetry =
+      location.pathname === routePaths.unavailable ||
+      location.pathname === '/source-links'
+    const path = usesStoredRetry
+      ? identity && takeSourceLinkRetry(identity)
+      : returnPath
     void navigate(path ?? routePaths.home, { replace: true })
   }
 
