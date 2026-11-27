@@ -27,6 +27,7 @@ import {
   taskTitle,
   taskPage,
 } from '../../../test/task-fixtures'
+import { emptyAttempts, noReports } from '../../../test/pipeline-fixtures'
 import { AppProviders } from '../initialization/app-providers'
 import { createAppRuntime } from '../initialization/runtime'
 import type { AppRuntime } from '../initialization/runtime'
@@ -318,6 +319,9 @@ describe('application routes', () => {
           } satisfies components['schemas']['Pipeline']),
         )
       }
+      if (input === '/api/v1/pipelines/' + pipeline + '/attempts?limit=100') {
+        return Promise.resolve(jsonResponse(emptyAttempts))
+      }
       return baseApi(input, init)
     })
 
@@ -362,7 +366,7 @@ describe('application routes', () => {
     expect(
       await screen.findByRole('heading', { name: 'Pipeline', level: 1 }),
     ).toBeInTheDocument()
-    expect(await screen.findByText('Исход: success')).toBeInTheDocument()
+    expect(await screen.findByText('Успешно')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }))
     const restored = await screen.findByRole('link', {
       name: 'Открыть pipeline',
@@ -1064,13 +1068,15 @@ function mockTechnicalApi(action: string) {
     ...currentUser,
     actions: ['session.read', action],
   })
-  return vi
-    .fn<typeof fetch>()
-    .mockImplementation((input, init) =>
-      input === '/api/v1' + summaryURL
-        ? Promise.resolve(jsonResponse(summaryFixture))
-        : fallback(input, init),
-    )
+  return vi.fn<typeof fetch>().mockImplementation((input, init) => {
+    if (input === '/api/v1' + summaryURL)
+      return Promise.resolve(jsonResponse(summaryFixture))
+    if (input === '/api/v1/pipelines/pipeline-1')
+      return Promise.resolve(jsonResponse({ ...noReports, id: 'pipeline-1' }))
+    if (input === '/api/v1/pipelines/pipeline-1/attempts?limit=100')
+      return Promise.resolve(jsonResponse(emptyAttempts))
+    return fallback(input, init)
+  })
 }
 
 describe('technical screen routes', () => {

@@ -8,8 +8,6 @@ import { ExceptionsPage } from '@/pages/technical/exceptions'
 import { CheckProfilePage } from '@/pages/technical/check-profile'
 import { CiConfigurationPage } from '@/pages/technical/ci-configuration'
 import { BaselinesPage } from '@/pages/technical/baselines'
-import { PipelinePage } from '@/pages/technical/pipeline'
-import { PipelineJobPage } from '@/pages/technical/pipeline-job'
 import { TechnicalComparisonPage } from '@/pages/technical/technical-comparison'
 import { DocumentationRootsPage } from '@/pages/technical/documentation-roots'
 import { ServiceDocumentsPage } from '@/pages/technical/service-documents'
@@ -23,7 +21,7 @@ import { routePaths } from '@/shared/config'
 // sort, limit and cursor.
 // UI-49/UI-52: projectId. UI-50: projectId and ci_system in the search string.
 // UI-53 (routes.tsx): mr with optional revision_no and head_sha search params.
-// UI-55 (routes.tsx): pipelineId. UI-56: pipelineId and URL-encoded jobKey.
+// UI-55/UI-56 (routes.tsx): pipelineId and, for UI-56, URL-encoded jobKey.
 // UI-57: componentId and base_sha, head_sha, analysis_kind in the search string.
 // UI-64/UI-65: serviceId. UI-66: findingId.
 // A missing optional path ID opens the section before an object is selected.
@@ -41,8 +39,6 @@ export const technicalRoutes = (api: ApiClient) =>
     { path: routePaths.checkProfile, element: <CheckProfilePage /> },
     { path: routePaths.ciConfiguration, element: <CiConfigurationPage /> },
     { path: routePaths.baselines, element: <BaselinesPage /> },
-    { path: routePaths.pipeline, element: <PipelinePage /> },
-    { path: routePaths.pipelineJob, element: <PipelineJobPage /> },
     {
       path: routePaths.technicalComparison,
       element: <TechnicalComparisonPage api={api} />,

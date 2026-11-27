@@ -61,7 +61,10 @@ export function useInspectionReturn(ready: boolean) {
   }, [key, hash, isHistoryNavigation, ready])
 }
 
-export function InspectionBack() {
+export function InspectionBack({
+  label = 'Назад',
+  fallbackTo,
+}: { label?: string; fallbackTo?: LinkProps['to'] } = {}) {
   const state: unknown = useLocation().state
   const navigate = useNavigate()
   if (
@@ -70,11 +73,11 @@ export function InspectionBack() {
     !('fromInspection' in state) ||
     state.fromInspection !== true
   )
-    return null
+    return fallbackTo ? <Link to={fallbackTo}>{label}</Link> : null
 
   return (
     <button type="button" onClick={() => void navigate(-1)}>
-      Назад
+      {label}
     </button>
   )
 }

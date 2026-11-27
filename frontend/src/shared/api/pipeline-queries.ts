@@ -193,17 +193,48 @@ export function listTestExecutions(
 ) {
   return queryOptions({
     queryKey: ['pipelines', 'test-executions', pipelineId, params],
-    queryFn: async ({ signal }) =>
-      (
-        await api.read(
-          '/pipelines/{pipeline_id}/test-executions',
-          readTestExecutionPage,
-          {
-            pathParams: { pipeline_id: pipelineId },
-            query: params,
-            signal,
-          },
-        )
-      ).data,
+    queryFn: ({ signal }) =>
+      readTestExecutions(api, pipelineId, params, signal),
+  })
+}
+
+async function readTestExecutions(
+  api: ApiClient,
+  pipelineId: string,
+  params: TestExecutionListParams,
+  signal: AbortSignal,
+) {
+  const { data } = await api.read(
+    '/pipelines/{pipeline_id}/test-executions',
+    readTestExecutionPage,
+    { pathParams: { pipeline_id: pipelineId }, query: params, signal },
+  )
+  return data
+}
+
+export function testExecutionPages(
+  api: ApiClient,
+  pipelineId: string,
+  outcome: TestExecutionListParams['outcome'],
+) {
+  return infiniteQueryOptions({
+    queryKey: ['pipelines', 'test-execution-pages', pipelineId, outcome],
+    initialPageParam: '',
+    queryFn: ({ signal, pageParam }) =>
+      readTestExecutions(
+        api,
+        pipelineId,
+        {
+          limit: 100,
+          ...(outcome ? { outcome } : {}),
+          ...(pageParam ? { cursor: pageParam } : {}),
+        },
+        signal,
+      ),
+    getNextPageParam: (last, _, __, cursors) =>
+      last.next_cursor && !cursors.includes(last.next_cursor)
+        ? last.next_cursor
+        : undefined,
+    retry: false,
   })
 }
