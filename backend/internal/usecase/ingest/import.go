@@ -90,7 +90,7 @@ func addJSONRecords(w *envelope.Writer, content []byte) error {
 
 var _providers = []entity.Provider{
 	entity.ProviderJiraCloud, entity.ProviderGitLab, entity.ProviderGitHub, entity.ProviderJenkins, entity.ProviderSonarQube,
-	entity.ProviderConfluenceCloud, entity.ProviderGit, entity.ProviderUniversal, entity.ProviderClient,
+	entity.ProviderConfluenceCloud, entity.ProviderConfluenceDC, entity.ProviderGit, entity.ProviderUniversal, entity.ProviderClient,
 }
 
 func validateImport(f entity.ImportFile) error {

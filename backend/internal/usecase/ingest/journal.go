@@ -75,7 +75,7 @@ func (u *UseCase) prepare(ctx context.Context, rc entity.Receipt, r io.Reader) (
 	}
 	p.Receipt.SourceInstanceID, p.Receipt.PackageHash, p.Receipt.ObjectKey = &instance, res.ContentHash, packageKey(rc.OrganizationID, rc.ID)
 	p.HasScanManifest = allowed && res.ScanManifest != nil
-	p.Records = records(res, instance, allowed)
+	p.Records = records(res, instance, rc.ID, allowed)
 	if rc.Channel == entity.ChannelCI {
 		pkg, err := envelope.ReadCleaned(bytes.NewReader(cleaned.Bytes()), u.d.Limits)
 		if err != nil {
@@ -152,8 +152,10 @@ func (u *UseCase) importScope(ctx context.Context, rc entity.Receipt, m *envelop
 
 // records turns the checked records into journal rows. A record without its own revision is revised by its
 // content hash, a snapshot by the hash together with the read ID (TZ 12.6).
-func records(res *envelope.Result, instance entity.ID, allowed bool) []entity.IngestRecord {
+func records(res *envelope.Result, instance, receipt entity.ID, allowed bool) []entity.IngestRecord {
 	readID := ""
+	wikiDocuments := res.Manifest != nil &&
+		res.Manifest.SchemaId == envelope.ManifestSchemaIdDocuments && res.Manifest.Area.Kind == envelope.AreaRefKindWikiSpace
 	if res.Manifest != nil && res.Manifest.ReadId != nil {
 		readID = *res.Manifest.ReadId
 	}
@@ -169,7 +171,11 @@ func records(res *envelope.Result, instance entity.ID, allowed bool) []entity.In
 		default:
 			rec.InstanceID, rec.ContentHash = instance, unhex(r.Hash)
 			rec.SourceRevision = r.Hash
-			if r.SourceRevision != nil && *r.SourceRevision != "" {
+			if wikiDocuments && r.Kind == "document" {
+				// A new collection can observe the same ACL again after an intervening change.
+				sum := sha256.Sum256([]byte(receipt.String() + "\x00" + r.Hash))
+				rec.SourceRevision = hex.EncodeToString(sum[:])
+			} else if r.SourceRevision != nil && *r.SourceRevision != "" {
 				rec.SourceRevision = *r.SourceRevision
 			} else if r.Class == _classSnapshot {
 				sum := sha256.Sum256([]byte(readID + "\x00" + r.Hash))

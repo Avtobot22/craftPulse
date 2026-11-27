@@ -57,6 +57,9 @@ func (u *UseCase) write(ctx context.Context, org entity.ID, seq int64, in *input
 	if err := w.analysisRuns(ctx, in); err != nil {
 		return nil, err
 	}
+	if err := w.wikiDocuments(ctx, in); err != nil {
+		return nil, err
+	}
 	if err := w.tasks(ctx, in.tasks); err != nil {
 		return nil, err
 	}
@@ -98,6 +101,9 @@ func (in *input) keys() []entity.SourceKey {
 	set := map[entity.SourceKey]bool{in.area: true}
 	if in.ciResult != nil {
 		set[in.ciResult.run] = true
+	}
+	for _, c := range in.wikiPages {
+		set[c.key] = true
 	}
 	for _, t := range in.tasks {
 		set[t.key], set[t.area] = true, true

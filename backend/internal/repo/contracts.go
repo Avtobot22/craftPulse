@@ -270,6 +270,8 @@ type ObjectStore interface {
 
 // SyncRepo is the state of collection and the lease of a connection under row-level security.
 type SyncRepo interface {
+	SaveWikiReconcile(context.Context, entity.ID, entity.ID, int64, []entity.WikiReconcileScope) error
+	ReadWikiCollection(context.Context, entity.ID, []entity.ID, int64, time.Time) (entity.WikiCollection, error)
 	ReceiveWebhook(context.Context, entity.ID, entity.ID, time.Time) (entity.ID, error)
 	RejectWebhook(context.Context, entity.ID, entity.ID, time.Time, string) (bool, error)
 	WebhookStatus(context.Context, entity.ID, entity.ID, time.Time) (*entity.WebhookStatus, error)
@@ -306,6 +308,11 @@ type SyncRepo interface {
 
 // NormalizeRepo is the normalize schema under row-level security: canonical facts in versions of knowledge.
 type NormalizeRepo interface {
+	CurrentWikiVersions(context.Context, entity.ID, entity.ID, []string) (map[entity.ObjectKey]entity.SyncObjectVersion, error)
+	WikiVersionBoundary(context.Context, entity.ID, entity.ID, int64, time.Time) (*time.Time, error)
+	SaveWikiPage(context.Context, entity.ID, entity.ID, int64, entity.WikiPage) (bool, error)
+	WikiDocumentsAt(context.Context, entity.ID, entity.ID, string, int64) ([]entity.DocumentVersion, error)
+	DocumentationAreaKinds(context.Context, entity.ID, []entity.ID) (map[entity.ID]entity.ScopeKind, error)
 	CodeReportSources(context.Context, entity.ID, []entity.ID) (map[entity.ID]entity.CodeReportSource, error)
 	TimelineFacts(context.Context, entity.ID, []entity.ID, []entity.ID, entity.TimelineFactQuery) ([]entity.TimelineFact, error)
 	InsertAnalysisRuns(ctx context.Context, org entity.ID, runs []entity.AnalysisRun) error

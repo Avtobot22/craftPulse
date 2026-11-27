@@ -112,7 +112,7 @@ components:
       required: [provider, instance_key, edition, version]
       additionalProperties: false
       properties:
-        provider: {type: string, enum: [jira_cloud, confluence_cloud, gitlab, github, jenkins, sonarqube, git, universal, client]}
+        provider: {type: string, enum: [jira_cloud, confluence_cloud, confluence_dc, gitlab, github, jenkins, sonarqube, git, universal, client]}
         instance_key: {type: string, minLength: 1, maxLength: 512, description: Ключ экземпляра из `Probe` или объявленный импортом (раздел 12.4).}
         edition: {type: [string, 'null'], maxLength: 64}
         version: {type: [string, 'null'], maxLength: 64}
@@ -664,7 +664,9 @@ components:
         `native_id` - путь от корня, `version_ref` - SHA blob, `commit_sha` и `updated_at` -
         последний коммит default branch, изменивший файл. Удалённый из default branch документ
         приходит с `deleted: true`, его `version_ref` - SHA коммита удаления. Для Confluence
-        `native_id` - ID страницы, `version_ref` - номер версии. Задан путь или страница.
+        `native_id` - ID страницы, `version_ref` - номер версии. Повторные наблюдения той же
+        версии различаются по хэшу записи, так как права, предки и доступность текста меняются
+        независимо от номера версии. Задан путь или страница.
       x-craftpulse-record: {kind: document, version: '1', classes: [object, snapshot]}
       required: [doc_format, version_ref, container_native_id, acl_state]
       additionalProperties: false
@@ -674,8 +676,15 @@ components:
         container_native_id: {type: string, minLength: 1, maxLength: 255, description: Репозиторий или пространство.}
         path: {type: [string, 'null'], maxLength: 4096}
         page_native_id: {type: [string, 'null'], maxLength: 255}
+        ancestor_native_ids:
+          type: array
+          maxItems: 256
+          uniqueItems: true
+          items: {type: string, pattern: '^[0-9]+$', maxLength: 255}
+          description: ID предков страницы Confluence от корня до родителя.
+        source_url: {type: [string, 'null'], maxLength: 4096, format: uri, description: Абсолютный URL страницы Confluence.}
         title: {type: [string, 'null'], maxLength: 1024}
-        restriction: {type: [string, 'null'], maxLength: 255, description: Ограничение страницы или документа у источника.}
+        restriction: {type: [string, 'null'], maxLength: 255, description: 'Действующее ограничение документа у источника, включая унаследованное от предка.'}
         acl_state: {type: string, enum: [known, unknown]}
         content_sha256: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
         content_path: {type: [string, 'null'], pattern: '^files/[A-Za-z0-9._/-]+$', description: Содержимое документа в пакете.}

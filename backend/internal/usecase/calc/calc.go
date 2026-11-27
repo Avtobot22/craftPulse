@@ -103,6 +103,7 @@ type Deps struct {
 	Code        CodeReports
 	CodeSources CodeSources
 	Docs        Documentation
+	Wiki        WikiCollection
 	DocReports  DocumentationReports
 	Decisions   FindingDecisions
 	Rights      Rights

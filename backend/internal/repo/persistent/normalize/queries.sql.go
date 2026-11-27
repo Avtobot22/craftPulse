@@ -1257,7 +1257,7 @@ func (q *Queries) DocumentationReportsAt(ctx context.Context, arg DocumentationR
 }
 
 const documentsAt = `-- name: DocumentsAt :many
-SELECT v.organization_id, v.id, v.document_id, v.area_id, v.known_seq, v.version_ref, v.doc_format, v.path, v.title, v.content_hash, v.owner, v.acl_state FROM normalize.document_version v
+SELECT v.organization_id, v.id, v.document_id, v.area_id, v.known_seq, v.version_ref, v.doc_format, v.path, v.title, v.content_hash, v.owner, v.acl_state, v.page_native_id, v.restriction_native, v.source_url, v.source_updated_at FROM normalize.document_version v
 JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.document_id
 WHERE v.organization_id = $1 AND v.area_id = $2
     AND v.version_ref = $3 AND v.known_seq <= $4 AND v.acl_state = 'known'
@@ -1302,6 +1302,10 @@ func (q *Queries) DocumentsAt(ctx context.Context, arg DocumentsAtParams) ([]Nor
 			&i.ContentHash,
 			&i.Owner,
 			&i.AclState,
+			&i.PageNativeID,
+			&i.RestrictionNative,
+			&i.SourceUrl,
+			&i.SourceUpdatedAt,
 		); err != nil {
 			return nil, err
 		}

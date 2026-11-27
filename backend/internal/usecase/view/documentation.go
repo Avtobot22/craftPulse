@@ -15,6 +15,7 @@ import (
 
 // DocumentationRoots reads the confirmed roots and their normalized inventory through docs.
 type DocumentationRoots interface {
+	WikiInventoryAt(context.Context, entity.Subject, entity.Scope, entity.DocumentationScope, int64) (*entity.DocumentationInventory, []entity.AccessNote, error)
 	ListRoots(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.DocumentationRootSet, error)
 	InventoryAt(context.Context, entity.ID, entity.Scope, entity.DocumentationScope, int64) (*entity.DocumentationInventory, error)
 }
@@ -39,7 +40,7 @@ type DocumentationDeps struct {
 	Tenants  repo.TenantRepo
 }
 
-// ListServiceDocuments reads current Git documents from confirmed and visible roots.
+// ListServiceDocuments reads current documents from confirmed and visible roots.
 func (u *UseCase) ListServiceDocuments(ctx context.Context, s entity.Subject, scope entity.Scope, service, after entity.ID, limit int) (entity.ServiceDocuments, error) {
 	out := entity.ServiceDocuments{State: entity.StateUnknown}
 	d := u.d.Documentation
@@ -59,14 +60,16 @@ func (u *UseCase) ListServiceDocuments(ctx context.Context, s entity.Subject, sc
 	var observed, completed int
 	items := map[entity.ID]*entity.ServiceDocument{}
 	org := s.OrganizationID
+	var seq int64
 	err = u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
-		seq, _, err := d.Tenants.Clock(ctx, org)
+		var err error
+		seq, _, err = d.Tenants.Clock(ctx, org)
 		if err != nil {
 			return err
 		}
 		for i := range set.Roots {
 			root := set.Roots[i]
-			if !scope.Area(root.AreaID) {
+			if root.ProfileID == entity.WikiInventoryProfile || !scope.Area(root.AreaID) {
 				continue
 			}
 			checks, err := d.Reports.LatestDocumentationChecks(ctx, org, root, seq, 0)
@@ -89,12 +92,37 @@ func (u *UseCase) ListServiceDocuments(ctx context.Context, s entity.Subject, sc
 	if err != nil {
 		return entity.ServiceDocuments{}, err
 	}
+	// Permission checks may query the source and need their own connections.
+	for i := range set.Roots {
+		root := &set.Roots[i]
+		if root.ProfileID != entity.WikiInventoryProfile || !scope.Area(root.AreaID) {
+			continue
+		}
+		cut := entity.DocumentationScope{ServiceID: service, RootID: root.ID, RepositoryID: root.AreaID}
+		inventory, notes, err := d.Roots.WikiInventoryAt(ctx, s, scope, cut, seq)
+		if err != nil {
+			return entity.ServiceDocuments{}, err
+		}
+		for _, note := range notes {
+			if !slices.Contains(out.Notes, note) {
+				out.Notes = append(out.Notes, note)
+			}
+		}
+		if inventory == nil || len(inventory.Documents) == 0 {
+			continue
+		}
+		observed++
+		for j := range inventory.Documents {
+			doc := &inventory.Documents[j]
+			items[doc.DocumentID] = &entity.ServiceDocument{DocumentVersion: *doc, SourceURL: doc.SourceURL}
+		}
+	}
 	switch {
 	case completed == len(set.Roots):
 		out.State = entity.StateAssessed
 	case observed > 0:
 		out.State = entity.StateProvisional
-	case !scope.Limited():
+	case len(out.Notes) == 0:
 		out.State = entity.StateNotEvaluated
 	}
 	for id, doc := range items {

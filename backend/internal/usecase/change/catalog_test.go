@@ -23,6 +23,18 @@ func TestParseCatalog_ReadsTheTestCatalog(t *testing.T) {
 	assert.Equal(t, map[string]string{}, c.Profiles[6].ToolVersions, "an import profile has no tools")
 }
 
+func TestParseCatalog_WikiInventoryHasNoCIChecks(t *testing.T) {
+	t.Parallel()
+	valid, err := os.ReadFile("testdata/catalog.yaml")
+	require.NoError(t, err)
+	const wiki = "  - id: wiki-inventory\n    mode: import\n    analysis_kinds: "
+	c, err := ParseCatalog(append(valid, []byte(wiki+"[]\n")...))
+	require.NoError(t, err)
+	require.Len(t, c.Profiles, 7)
+	_, err = ParseCatalog(append(valid, []byte(wiki+"[docs]\n")...))
+	require.ErrorContains(t, err, "wiki inventory only accepts import mode without checks")
+}
+
 func TestParseCatalog_RejectsInvalidCatalogs(t *testing.T) {
 	t.Parallel()
 	valid, err := os.ReadFile("testdata/catalog.yaml")

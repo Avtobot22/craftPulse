@@ -6,6 +6,8 @@ import (
 )
 
 const (
+	WikiInventoryProfile   = "wiki-inventory"
+	GitDocsProfile         = "git-markdown-openapi"
 	DocsFormatInventory    = "docs_json"
 	MetricSetDocumentation = "documentation"
 
@@ -27,15 +29,18 @@ type DocumentationScope struct {
 }
 
 type DocumentVersion struct {
-	ID          ID     `json:"id"`
-	DocumentID  ID     `json:"document_id"`
-	Path        string `json:"path"`
-	VersionRef  string `json:"version_ref"`
-	Format      string `json:"format"`
-	Title       string `json:"title,omitempty"`
-	ContentHash []byte `json:"content_hash"`
-	Owner       string `json:"owner,omitempty"`
-	ACLState    string `json:"acl_state"`
+	ID           ID      `json:"id"`
+	DocumentID   ID      `json:"document_id"`
+	Path         string  `json:"path"`
+	VersionRef   string  `json:"version_ref"`
+	Format       string  `json:"format"`
+	Title        string  `json:"title,omitempty"`
+	ContentHash  []byte  `json:"content_hash"`
+	Owner        string  `json:"owner,omitempty"`
+	ACLState     string  `json:"acl_state"`
+	PageNativeID string  `json:"page_native_id,omitempty"`
+	SourceURL    *string `json:"source_url,omitempty"`
+	Restricted   bool    `json:"-"`
 }
 
 type DocumentationInventory struct {
@@ -128,4 +133,20 @@ type ServiceDocuments struct {
 	Items []ServiceDocument
 	Notes []AccessNote
 	Next  *ID
+}
+
+// WikiPage carries a source version and the access metadata observed with it.
+type WikiPage struct {
+	DocumentID   ID
+	PageNativeID string
+	VersionRef   string
+	Title        *string
+	ContentHash  []byte
+	ACLState     string
+	Restriction  *string
+	AncestorIDs  []string
+	SourceURL    *string
+	UpdatedAt    time.Time
+	ObservedAt   time.Time
+	Deleted      bool
 }
