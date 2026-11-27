@@ -16,7 +16,7 @@ import (
 func (r *Repo) SummaryTargets(ctx context.Context, org entity.ID, seq int64) ([]entity.ID, error) {
 	rows, err := postgres.Conn(ctx, r.pool).Query(ctx, `
 		WITH RECURSIVE scans AS (
-			SELECT area_id, sha, run_id FROM normalize.report WHERE organization_id = $1 AND known_seq = $2
+			SELECT COALESCE(repository_id, area_id) AS area_id, sha, run_id FROM normalize.report WHERE organization_id = $1 AND known_seq = $2
 			UNION ALL SELECT area_id, sha, run_id FROM normalize.rejected_report WHERE organization_id = $1 AND known_seq = $2
 			UNION ALL SELECT area_id, sha, NULL FROM normalize.analysis_run WHERE organization_id = $1 AND known_seq = $2
 		), changed_runs AS (
@@ -82,7 +82,8 @@ func (r *Repo) SummaryMR(ctx context.Context, org, mr entity.ID, lock bool) (ent
 					WHERE c.organization_id = $1 AND c.area_id = m.area_id AND c.superseded_seq IS NULL
 				)
 				SELECT r.known_seq FROM normalize.report r
-				WHERE r.organization_id = $1 AND r.area_id = m.area_id AND r.sha IN (m.head_sha, m.base_sha, m.merge_base_sha)
+				WHERE r.organization_id = $1 AND (r.area_id = m.area_id OR r.repository_id = m.area_id)
+					AND r.sha IN (m.head_sha, m.base_sha, m.merge_base_sha)
 				UNION ALL
 				SELECT r.known_seq FROM normalize.rejected_report r
 				WHERE r.organization_id = $1 AND r.area_id = m.area_id AND r.sha IN (m.head_sha, m.base_sha, m.merge_base_sha)
@@ -146,26 +147,36 @@ func (r *Repo) SummaryReportReadyAt(ctx context.Context, org, report entity.ID) 
 // are checked before choosing an observation, so a newer partial report cannot hide a valid one.
 func (r *Repo) SummaryReports(ctx context.Context, org entity.ID, mr entity.SummaryMR, e entity.ProfileEntry, runs []entity.ID) ([]entity.TechnicalReport, error) {
 	rows, err := postgres.Conn(ctx, r.pool).Query(ctx, `
-		WITH observations AS (
+		WITH sonar_component AS (
+			SELECT c.path_prefix FROM org.component c
+			WHERE $4 = 'code' AND $6 = 'sonar-import' AND $7 = 'import'
+				AND c.organization_id = $1 AND c.id = $3 AND c.repository_area_id = $2
+				AND c.status = 'confirmed' AND c.known_seq <= $9 AND (c.superseded_seq IS NULL OR c.superseded_seq > $9)
+		), observations AS (
 			SELECT r.id, r.sha, r.report_format AS format, COALESCE(r.language,'') AS language, COALESCE(r.producer,'') AS producer,
 				COALESCE(r.producer_version,'') AS producer_version, r.rules_hash, r.config_hash, r.scope_hash,
 				COALESCE(r.db_version,'') AS db_version, r.completeness, r.exit_class,
 				COALESCE(a.outcome = 'canceled', false) AS interrupted, false AS rejected,
 				COALESCE(r.dependency_delta,'') AS delta, COALESCE(r.dependency_base_sha,'') AS delta_base,
-				COALESCE(r.finished_at,r.started_at,i.received_at) AS observed_at, r.known_seq, r.record_no
+				COALESCE(r.finished_at,r.started_at,i.received_at) AS observed_at, r.known_seq, r.record_no,
+				CASE WHEN r.report_kind = 'sonar' THEN COALESCE((SELECT path_prefix FROM sonar_component), '') ELSE '' END AS component_path
 			FROM normalize.report r
 			JOIN ingest.receipt i ON (i.organization_id, i.id) = (r.organization_id, r.receipt_id)
 			LEFT JOIN normalize.ci_attempt_version a ON (a.organization_id, a.attempt_id) = (r.organization_id, r.attempt_id)
 				AND a.known_seq <= $9 AND (a.superseded_seq IS NULL OR a.superseded_seq > $9)
-			WHERE r.organization_id = $1 AND r.area_id = $2 AND r.component_id = $3 AND r.report_kind = $4
-				AND ($5 = '' OR r.language = $5) AND COALESCE(r.profile_id,'') = $6 AND r.mode = $7
+			WHERE r.organization_id = $1 AND COALESCE(r.profile_id,'') = $6 AND r.mode = $7
 				AND r.sha = ANY($8::text[]) AND r.known_seq <= $9
 				AND ($10::bytea IS NULL OR r.rules_hash = $10)
-				AND (cardinality($11::uuid[]) = 0 OR r.run_id = ANY($11))
+				AND (
+					(r.area_id = $2 AND r.component_id = $3 AND r.report_kind = $4 AND ($5 = '' OR r.language = $5)
+						AND (cardinality($11::uuid[]) = 0 OR r.run_id = ANY($11)))
+					OR (r.repository_id = $2 AND r.report_kind = 'sonar' AND cardinality($11::uuid[]) = 0
+						AND EXISTS (SELECT 1 FROM sonar_component))
+				)
 			UNION ALL
 			SELECT r.id, r.sha, COALESCE(r.report_format,''), r.language, COALESCE(r.producer,''), '',
 				CAST(NULL AS bytea), NULL, r.scope_hash, '', 'unknown', '', false, true, '', '',
-				i.received_at, r.known_seq, r.record_no
+				i.received_at, r.known_seq, r.record_no, ''
 			FROM normalize.rejected_report r
 			JOIN ingest.receipt i ON (i.organization_id, i.id) = (r.organization_id, r.receipt_id)
 			WHERE r.organization_id = $1 AND r.area_id = $2 AND r.component_id = $3 AND r.report_kind = $4
@@ -174,7 +185,7 @@ func (r *Repo) SummaryReports(ctx context.Context, org entity.ID, mr entity.Summ
 				AND (cardinality($11::uuid[]) = 0 OR r.run_id = ANY($11))
 		)
 		SELECT id, sha, format, language, producer, producer_version, rules_hash, config_hash, scope_hash, db_version,
-			completeness, exit_class, interrupted, rejected, delta, delta_base, observed_at
+			completeness, exit_class, interrupted, rejected, delta, delta_base, observed_at, component_path
 		FROM observations ORDER BY observed_at DESC, known_seq DESC, record_no DESC, id DESC`,
 		uuid.UUID(org), uuid.UUID(mr.AreaID), uuid.UUID(e.ComponentID), e.AnalysisKind, e.Language, e.ProfileID, e.Mode,
 		[]string{mr.HeadSHA, mr.BaseSHA}, mr.KnowledgeSeq, e.RulesHash, ids(runs))
@@ -185,7 +196,7 @@ func (r *Repo) SummaryReports(ctx context.Context, org entity.ID, mr entity.Summ
 		v := entity.TechnicalReport{ProfileID: e.ProfileID, Mode: e.Mode}
 		var id uuid.UUID
 		err := row.Scan(&id, &v.SHA, &v.Format, &v.Language, &v.Producer, &v.ProducerVersion, &v.RulesHash, &v.ConfigHash, &v.ScopeHash,
-			&v.DBVersion, &v.Completeness, &v.ExitClass, &v.Interrupted, &v.Rejected, &v.DependencyDelta, &v.DependencyBaseSHA, &v.EventAt)
+			&v.DBVersion, &v.Completeness, &v.ExitClass, &v.Interrupted, &v.Rejected, &v.DependencyDelta, &v.DependencyBaseSHA, &v.EventAt, &v.ComponentPath)
 		v.ID = entity.ID(id)
 		return v, err
 	})

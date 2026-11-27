@@ -36,6 +36,7 @@ export const adminLabels = {
     write_mr_comment: 'Публикация комментариев в MR',
     write_tracker_issue: 'Создание задач в трекере',
     webhook: 'Приём вебхуков',
+    read_mr_analysis: 'Чтение анализов MR в SonarQube',
   } satisfies Record<Schema['Capability']['capability'], string>,
   capabilityState: {
     verified: 'проверено',
@@ -59,6 +60,9 @@ export const adminLabels = {
     configuration_changed: 'Настройки подключения изменились во время проверки',
   },
   capabilityReason: {
+    edition_unsupported: 'Редакция SonarQube не поддерживает анализ MR',
+    repository_binding_missing:
+      'Проект SonarQube не связан с собранным репозиторием',
     not_checked: 'Адаптер не проверял эту возможность',
     permission_missing: 'Недостаточно прав в источнике',
     no_repository: 'Нет доступного репозитория для проверки',

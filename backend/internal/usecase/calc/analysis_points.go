@@ -35,7 +35,7 @@ func analysisPoints(asOf time.Time, p period, facts *entity.AnalysisFacts) []ent
 	security := selectAnalysisRuns(runs, securityAnalysis)
 	docs := selectAnalysisRuns(runs, docsAnalysis)
 	out := []entity.SeriesPoint{
-		analysisCompletion(p, "C03", "", latestManifest(runs)),
+		analysisCompletion(p, "C03", "", completionRuns(runs)),
 		analysisCompletion(p, "S07", "", latestManifest(security)),
 	}
 	out = append(out, groupedAnalysis(p, "C02", selectAnalysisRuns(runs, codeAnalysis), fileScope, fileCoverage)...)
@@ -174,6 +174,21 @@ func latestManifest(runs []*entity.AnalysisRun) []*entity.AnalysisRun {
 		return nil
 	}
 	return selectAnalysisRuns(runs, func(r *entity.AnalysisRun) bool { return r.ReceiptID == runs[0].ReceiptID })
+}
+
+// completionRuns keeps the latest CI manifest and the latest report of each independent Sonar project.
+func completionRuns(runs []*entity.AnalysisRun) []*entity.AnalysisRun {
+	manifest := latestManifest(selectAnalysisRuns(runs, func(r *entity.AnalysisRun) bool {
+		return r.Kind != entity.AnalysisSonar
+	}))
+	sonar := selectAnalysisRuns(runs, func(r *entity.AnalysisRun) bool { return r.Kind == entity.AnalysisSonar })
+	for _, group := range groupAnalysisRuns(sonar, func(r *entity.AnalysisRun) string { return r.ScopeHash }) {
+		latest := slices.MaxFunc(group.runs, func(a, b *entity.AnalysisRun) int {
+			return analysisFinished(a).Compare(analysisFinished(b))
+		})
+		manifest = append(manifest, latest)
+	}
+	return manifest
 }
 
 func analysisCompletion(p period, id, estimator string, runs []*entity.AnalysisRun) entity.SeriesPoint {

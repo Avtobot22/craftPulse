@@ -601,6 +601,11 @@ components:
       description: |
         Файл отчёта (класс `file`). `native_ns` - ID попытки CI, а без неё SHA или digest;
         `native_id` - вид отчёта и путь файла в пакете через `:` (раздел 12.6). Задан SHA или digest.
+        Для страницы SonarQube (`findings`, область `analysis_project`, вид `sonar`, формат `envelope`)
+        `native_ns` - ключ проекта, `native_id` - ключ анализа. В `sha` передаётся revision анализа,
+        в `finished_at` - его время, в `completeness` - полнота выдачи. Файл соответствует
+        `SonarAnalysisFile`. Без revision запись отклоняется при нормализации. Если редакция
+        не поддерживает анализ MR, адаптер не отправляет запись анализа для этого MR.
       x-craftpulse-record: {kind: report_file, version: '1', classes: [file]}
       required: [report_kind, report_format, sha, artifact_digest, producer, producer_version]
       additionalProperties: false
@@ -622,6 +627,38 @@ components:
         exit_class: {type: string, enum: [success, findings, partial, failed, timeout, unknown]}
         completeness: {type: string, enum: [complete, partial, unknown]}
       example: {report_kind: junit, report_format: junit_xml, sha: d2126fca9ecbc14c5b15c22bdd35268aabb5cdac, artifact_digest: null, run_native_id: '5001', attempt_native_id: '7002', producer: go test, producer_version: go1.27.0, profile_id: go-light, rules_hash: null, config_hash: null, db_version: null, started_at: '2026-10-01T09:06:00+03:00', finished_at: '2026-10-01T09:08:00+03:00', exit_class: findings, completeness: complete}
+    SonarAnalysisFile:
+      type: object
+      description: Файл одного анализа SonarQube в записи `report_file/1` вида `sonar`.
+      required: [version, issues, measures]
+      additionalProperties: false
+      properties:
+        version: {type: string, enum: ['1']}
+        issues:
+          type: array
+          items: {$ref: '#/components/schemas/SonarIssue'}
+        measures:
+          type: object
+          description: Ключ метрики и исходное строковое значение SonarQube.
+          additionalProperties: {type: string, maxLength: 255}
+    SonarIssue:
+      type: object
+      required: [key, type, rule_id, severity, status]
+      additionalProperties: false
+      properties:
+        key: {type: string, minLength: 1, maxLength: 255}
+        type: {type: string, enum: [VULNERABILITY, BUG, CODE_SMELL]}
+        rule_id: {type: string, minLength: 1, maxLength: 255}
+        path: {type: [string, 'null'], maxLength: 4096, description: Путь от корня репозитория.}
+        line_start: {type: [integer, 'null'], minimum: 1, maximum: 2147483647}
+        line_end: {type: [integer, 'null'], minimum: 1, maximum: 2147483647}
+        severity: {type: string, minLength: 1, maxLength: 64}
+        status: {type: string, minLength: 1, maxLength: 64}
+        resolution: {type: [string, 'null'], maxLength: 64}
+        rule_description:
+          type: [string, 'null']
+          maxLength: 1024
+          description: Текст описания правила без примеров и фрагментов кода.
     ExecutionManifestFileV1:
       type: object
       description: |

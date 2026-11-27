@@ -85,6 +85,10 @@ func summaryBody(s *entity.SummaryRead) (openapi.MergeRequestSummary, error) {
 			return out, fmt.Errorf("decode summary item %s: %w", item.Kind, err)
 		}
 	}
+	if s.SourceRestricted {
+		// The stored I09 point includes reports from separately authorized sources.
+		m.reports = entity.Point{}
+	}
 	m.apply(&out)
 	return out, nil
 }

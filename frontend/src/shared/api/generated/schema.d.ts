@@ -3582,8 +3582,11 @@ export interface components {
             data: components["schemas"]["Adapter"][];
         };
         Capability: {
-            /** @enum {string} */
-            capability: "read_current" | "read_status_history" | "read_field_history" | "read_resolution_history" | "read_sprint_history" | "read_links" | "read_permissions" | "read_deletions" | "write_mr_comment" | "write_tracker_issue" | "webhook";
+            /**
+             * @description Для SonarQube read_mr_analysis показывает доступность анализа MR. При отсутствии поддержки редакции адаптер передаёт missing с причиной edition_unsupported.
+             * @enum {string}
+             */
+            capability: "read_current" | "read_status_history" | "read_field_history" | "read_resolution_history" | "read_sprint_history" | "read_links" | "read_permissions" | "read_deletions" | "write_mr_comment" | "write_tracker_issue" | "webhook" | "read_mr_analysis";
             /** @enum {string} */
             state: "verified" | "partial" | "missing";
             /** @description Причина для `partial` и `missing`, например `permission_missing`. */

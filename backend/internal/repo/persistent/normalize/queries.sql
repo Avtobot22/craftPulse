@@ -873,7 +873,7 @@ SELECT a.id, a.receipt_id, a.known_seq, a.tool_id, a.metadata,
            LEFT JOIN normalize.report r ON r.organization_id = j.organization_id
                AND r.receipt_id = COALESCE(j.first_receipt_id, j.receipt_id)
                AND r.record_no = COALESCE(j.first_record_no, j.record_no) AND r.known_seq <= sqlc.arg(known_seq)
-               AND r.area_id = a.area_id AND r.sha = a.sha AND r.component_id IS NOT DISTINCT FROM a.component_id
+               AND COALESCE(r.repository_id, r.area_id) = a.area_id AND r.sha = a.sha AND r.component_id IS NOT DISTINCT FROM a.component_id
            LEFT JOIN normalize.rejected_report rejected ON rejected.organization_id = j.organization_id
                AND rejected.receipt_id = COALESCE(j.first_receipt_id, j.receipt_id)
                AND rejected.record_no = COALESCE(j.first_record_no, j.record_no) AND rejected.known_seq <= sqlc.arg(known_seq)
@@ -882,7 +882,13 @@ SELECT a.id, a.receipt_id, a.known_seq, a.tool_id, a.metadata,
        ), '[]'::jsonb)::jsonb AS reports
 FROM normalize.analysis_run a
 WHERE a.organization_id = sqlc.arg(organization_id) AND a.area_id = sqlc.arg(area_id)
-  AND a.sha = sqlc.arg(sha) AND a.component_id IS NOT DISTINCT FROM sqlc.narg(component_id)::uuid
+  AND a.sha = sqlc.arg(sha)
+  AND (a.component_id IS NOT DISTINCT FROM sqlc.narg(component_id)::uuid
+      OR (a.component_id IS NULL AND a.metadata->>'kind' = 'sonar' AND EXISTS (
+          SELECT 1 FROM org.component c WHERE c.organization_id = a.organization_id AND c.id = sqlc.narg(component_id)::uuid
+              AND c.repository_area_id = a.area_id AND c.status = 'confirmed' AND c.path_prefix IN ('', '.')
+              AND c.known_seq <= sqlc.arg(known_seq) AND (c.superseded_seq IS NULL OR c.superseded_seq > sqlc.arg(known_seq))
+      )))
   AND a.known_seq <= sqlc.arg(known_seq)
 ORDER BY a.known_seq DESC, a.receipt_id, a.tool_id;
 

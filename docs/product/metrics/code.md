@@ -101,7 +101,7 @@ Git-репозиторий и его API - разные источники. Че
 |---|---|---|---|
 | C01 | Production NLOC: сумма непустых строк вне комментариев по утверждённому scope | Ш inventory/parser; строки | M0. Знаменатель и объём проекта, не эффективность команды |
 | C02 | Поддержка языков: analyzed eligible files/eligible files отдельно по language и tool | Ш/О run manifest; % и n | M0. Нельзя выдавать «поддержан Java», когда сделан только clone search |
-| C03 | Успех анализа: complete requested scopes/all requested scopes | Ш/О execution; % scopes | M0. Parser error/timeout отдельно от findings |
+| C03 | Успех анализа: complete requested scopes/all requested scopes | Ш/О execution; % scopes | M0. Parser error/timeout отдельно от findings. Штатные проверки берутся из последнего манифеста, анализ SonarQube - из последнего отчёта каждого привязанного проекта. |
 | C04 | CC функции: значение analyzer; p50/p90/max по функциям | Ш Lizard/К Sonar; CC | M0. Сравнение внутри языка/инструмента; среднее не скрывает хвост |
 | C05 | Функции выше CC-порога: count(CC>configured threshold)/analyzed functions | Ш function facts; % и count | M0. Порог отображается рядом |
 | C06 | Длина функции: NLOC, p50/p90/max и count NLOC>threshold | Ш Lizard; строки | M0. Сигнал для review, не оценка бизнеса |

@@ -44,6 +44,9 @@ type ReportAreas interface {
 type Complete = func(ctx context.Context) error
 
 type Deps struct {
+	SonarRepository interface {
+		SonarRepository(ctx context.Context, org, scope entity.ID) (*entity.ID, error)
+	}
 	SummaryTargets interface {
 		SummaryTargets(context.Context, entity.ID, int64) ([]entity.ID, error)
 	}
@@ -129,11 +132,12 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 			}
 			areas = union(areas, changed)
 		}
+		analysisReports := job.AnalysisReports || in != nil && (len(in.analysis) > 0 || in.sonarRuns)
 		if more {
 			next := job
 			next.AfterNo, next.Areas, next.Reports = part[len(part)-1].No, areas, reports
 			next.CodeReports, next.DocsReports = codeReports, docsReports
-			next.SecurityReports = securityReports
+			next.SecurityReports, next.AnalysisReports = securityReports, analysisReports
 			if err := u.d.Queue.Enqueue(ctx, next, queueOf(rc)); err != nil {
 				return err
 			}
@@ -165,7 +169,7 @@ func (u *UseCase) RunBatch(ctx context.Context, job entity.NormalizeBatchJob, co
 				return err
 			}
 		}
-		if in != nil && len(in.analysis) > 0 {
+		if analysisReports {
 			recount := entity.CalcRecountJob{OrganizationID: org, AnalysisReceiptID: job.ReceiptID, CorrelationID: job.CorrelationID}
 			if err := u.d.Queue.Enqueue(ctx, recount, entity.QueueBulk); err != nil {
 				return err

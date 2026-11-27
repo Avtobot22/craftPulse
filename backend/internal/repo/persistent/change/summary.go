@@ -167,13 +167,29 @@ func (r *Repo) ReadSummary(ctx context.Context, org, mr entity.ID, no *int, head
 	return v, nil
 }
 
+// SummarySourceAreas lists separately authorized source areas used in the revision.
+func (r *Repo) SummarySourceAreas(ctx context.Context, org, revision entity.ID) ([]entity.ID, error) {
+	rows, err := postgres.Conn(ctx, r.pool).Query(ctx, `
+		SELECT DISTINCT r.area_id
+		FROM change.summary_input i
+		JOIN normalize.report r ON (r.organization_id, r.id) = (i.organization_id, i.input_id)
+		WHERE i.organization_id = $1 AND i.summary_revision_id = $2 AND i.input_kind = 'report'
+			AND r.repository_id IS NOT NULL AND r.area_id <> r.repository_id
+		ORDER BY r.area_id`, uuid.UUID(org), uuid.UUID(revision))
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[entity.ID])
+}
+
 // ReadSummaryItems loads immutable occurrence coordinates and falls back to the original profile for older items.
 func (r *Repo) ReadSummaryItems(ctx context.Context, org, id entity.ID) ([]entity.SummaryItem, error) {
 	rows, err := postgres.Conn(ctx, r.pool).Query(ctx, `
 		SELECT i.item_kind, i.finding_identity_id, i.occurrence_id, i.required_right, i.component_id,
 		       COALESCE(i.analysis_kind,''), COALESCE(i.reason_code,''), COALESCE(i.severity,''), i.value,
 		       COALESCE(i.mode, orep.mode, p.mode, ''), COALESCE(o.rule_id, f.rule_id, i.value->>'rule', ''),
-		       COALESCE(o.path, i.value->>'path', ''), COALESCE(o.line_start, (i.value->>'line')::integer), o.line_end
+		       COALESCE(o.path, i.value->>'path', ''), COALESCE(o.line_start, (i.value->>'line')::integer), o.line_end,
+		       CASE WHEN orep.area_id <> orep.repository_id THEN orep.area_id END
 		FROM change.summary_item i
 		JOIN change.summary_revision s ON (s.organization_id,s.id) = (i.organization_id,i.summary_revision_id)
 		LEFT JOIN normalize.finding_occurrence o ON (o.organization_id,o.id) = (i.organization_id,i.occurrence_id)
@@ -191,10 +207,11 @@ func (r *Repo) ReadSummaryItems(ctx context.Context, org, id entity.ID) ([]entit
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (entity.SummaryItem, error) {
 		var i entity.SummaryItem
-		var finding, occurrence, component *uuid.UUID
+		var finding, occurrence, component, sourceArea *uuid.UUID
 		err := row.Scan(&i.Kind, &finding, &occurrence, &i.RequiredRight,
 			&component, &i.AnalysisKind, &i.ReasonCode, &i.Severity, &i.Value,
-			&i.Mode, &i.RuleID, &i.Path, &i.LineStart, &i.LineEnd)
+			&i.Mode, &i.RuleID, &i.Path, &i.LineStart, &i.LineEnd, &sourceArea)
+		i.SourceAreaID = (*entity.ID)(sourceArea)
 		i.FindingID, i.OccurrenceID, i.ComponentID = (*entity.ID)(finding), (*entity.ID)(occurrence), (*entity.ID)(component)
 		return i, err
 	})

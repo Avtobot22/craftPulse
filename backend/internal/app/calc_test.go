@@ -2,7 +2,6 @@ package app
 
 import (
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +17,8 @@ func TestCalc_DefinitionRowsFollowRegistry(t *testing.T) {
 	t.Parallel()
 	db := newMigratedDB(t)
 	app := db.pool(t, "craftpulse_app")
-	rows, err := app.Query(t.Context(), "SELECT metric_id, definition_version, unit, catalog_ref FROM calc.definition ORDER BY metric_id")
+	rows, err := app.Query(t.Context(), `
+		SELECT metric_id, definition_version, unit, catalog_ref FROM calc.definition`)
 	require.NoError(t, err)
 	defer rows.Close()
 	var got []calc.Definition
@@ -30,12 +30,15 @@ func TestCalc_DefinitionRowsFollowRegistry(t *testing.T) {
 	require.NoError(t, rows.Err())
 
 	defs := calc.Definitions()
-	want := make([]calc.Definition, 0, len(defs))
+	want := make([]calc.Definition, 0, len(defs)+1)
 	for _, def := range defs {
 		want = append(want, calc.Definition{ID: def.ID, Version: def.Version, Unit: def.Unit, CatalogRef: def.CatalogRef})
 	}
-	slices.SortFunc(want, func(a, b calc.Definition) int { return strings.Compare(a.ID, b.ID) })
-	assert.Equal(t, want, got, "the release migration adds the rows of the registry")
+	// Historical C03 results still reference version 1.
+	want = append(want, calc.Definition{
+		ID: "C03", Version: 1, Unit: calc.UnitRatio, CatalogRef: "docs/product/metrics/code.md#c03",
+	})
+	assert.ElementsMatch(t, want, got, "the stored definitions follow the registry and keep historical C03")
 	_, err = app.Exec(t.Context(), "UPDATE calc.definition SET unit = 'count' WHERE metric_id = 'T08'")
 	assert.Error(t, err, "the application does not change definitions")
 }

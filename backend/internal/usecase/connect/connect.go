@@ -110,7 +110,10 @@ func (u *UseCase) State(ctx context.Context, orgID, connectionID entity.ID) (ent
 			out.WebhookRouteID = &id
 		}
 		out.Capabilities, err = u.d.Repo.Capabilities(ctx, orgID, connectionID)
-		return err
+		if err != nil || c.Provider != entity.ProviderSonarQube {
+			return err
+		}
+		return u.sonarCapability(ctx, orgID, &out)
 	})
 	return out, err
 }
