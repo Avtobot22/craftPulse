@@ -9,6 +9,7 @@ import { createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { afterEach, beforeAll, expect, it, vi } from 'vitest'
 import type { components } from '@/shared/api'
+import { probeExample, syncStatusExample } from '../../../test/admin-fixtures'
 import {
   currentUser,
   jsonResponse,
@@ -29,7 +30,20 @@ const newPath = '/settings/connections/new'
 const id = '0193a5b0-5555-7000-8000-000000000001'
 const detailPath = '/settings/connections/' + id
 const detailApi = apiRoot + '/' + id
-const user = { ...currentUser, actions: ['connections.manage', 'session.read'] }
+const user = {
+  ...currentUser,
+  actions: ['connections.manage', 'session.read', 'sync.read'],
+}
+const pendingProbe = {
+  ...probeExample,
+  status: 'pending',
+  finished_at: null,
+  edition: null,
+  source_version: null,
+  contract_version: null,
+  capabilities: [],
+  retry_after_seconds: 1,
+} satisfies Schema['ConnectionProbe']
 const adapter = {
   provider: 'jira_cloud',
   display_name: 'Jira Cloud',
@@ -76,6 +90,11 @@ const draft = {
   ],
   capabilities: [],
 } satisfies Schema['Connection']
+const active = {
+  ...draft,
+  status: 'active',
+  capabilities: probeExample.capabilities,
+} satisfies Schema['Connection']
 
 beforeAll(() => {
   if (!Object.hasOwn(HTMLDialogElement.prototype, 'showModal')) {
@@ -111,13 +130,31 @@ function mount({
     jsonResponse(connection, 200, { ETag: path === newPath ? '"2"' : '"1"' }),
   write = () =>
     jsonResponse(connection, path === newPath ? 201 : 200, { ETag: '"2"' }),
+  start = () => jsonResponse(pendingProbe, 202),
+  readProbe = () => jsonResponse(probeExample),
+  activate = () => jsonResponse(active, 200, { ETag: '"2"' }),
+  sync = () =>
+    jsonResponse({
+      ...syncStatusExample,
+      data_kinds: syncStatusExample.data_kinds.map((entry) => ({
+        ...entry,
+        phase: 'backfill',
+      })),
+    }),
 }: {
   path?: string
   connection?: Schema['Connection']
   cachedConnection?: Schema['Connection']
   read?: () => Response | Promise<Response>
   write?: (request: RequestInit) => Response | Promise<Response>
+  start?: () => Response
+  readProbe?: (probeId: string) => Response
+  activate?: (request: RequestInit) => Response
+  sync?: () => Response
 } = {}) {
+  const starts = vi.fn(start)
+  const probeReads = vi.fn(readProbe)
+  const activations = vi.fn(activate)
   const saves = vi.fn(write)
   const readConnection = vi.fn(read)
   const fetcher: typeof fetch = async (input, request) => {
@@ -125,6 +162,18 @@ function mount({
       input instanceof Request ? input.url : input,
       'https://craftpulse.test',
     )
+    if (
+      url.pathname === detailApi + '/activation' &&
+      request?.method === 'POST'
+    )
+      return activations(request)
+    if (url.pathname === detailApi + '/probes' && request?.method === 'POST')
+      return starts()
+    if (
+      url.pathname.startsWith(detailApi + '/probes/') &&
+      request?.method === 'GET'
+    )
+      return probeReads(url.pathname.slice((detailApi + '/probes/').length))
     if (request?.method === 'POST' || request?.method === 'PATCH')
       return saves(request)
     switch (url.pathname) {
@@ -136,6 +185,8 @@ function mount({
         return jsonResponse(projects)
       case '/api/v1/adapters':
         return jsonResponse({ data: [adapter] })
+      case detailApi + '/sync-status':
+        return sync()
       case detailApi:
         return readConnection()
       default:
@@ -164,7 +215,15 @@ function mount({
     runtime.session.dispose()
     runtime.queryClient.clear()
   })
-  return { router, cache: runtime.queryClient, saves, readConnection }
+  return {
+    router,
+    cache: runtime.queryClient,
+    saves,
+    readConnection,
+    starts,
+    probeReads,
+    activations,
+  }
 }
 
 function jsonBody(request: RequestInit | undefined): unknown {
@@ -512,4 +571,327 @@ it('открывает UI-18 при отмене и уходит без запи
   ).toBeVisible()
   expect(saves).not.toHaveBeenCalled()
   expect(document.body.outerHTML).not.toContain(token)
+})
+
+async function startCheck() {
+  const button = await screen.findByRole('button', {
+    name: 'Проверить подключение',
+  })
+  expect(button).toBeEnabled()
+  fireEvent.click(button)
+  return button
+}
+
+function beginActivation() {
+  return screen.getByRole('button', { name: 'Подтвердить и начать сбор' })
+}
+
+async function openActivation() {
+  await screen.findByText('Проверка завершена', {}, { timeout: 3000 })
+  fireEvent.click(beginActivation())
+  return screen.getByRole('dialog', { name: 'Подтвердите подключение' })
+}
+
+it('ожидает интервал пробы и показывает возможности по группам до активации', async () => {
+  const { starts, probeReads } = mount({ path: detailPath })
+  const check = await startCheck()
+  expect(await screen.findByText('Ожидание пробного чтения')).toBeVisible()
+  expect(check).toBeDisabled()
+  expect(beginActivation()).toBeDisabled()
+  expect(starts).toHaveBeenCalledTimes(1)
+  expect(probeReads).not.toHaveBeenCalled()
+
+  expect(
+    await screen.findByText('1001.0.0-SNAPSHOT', {}, { timeout: 3000 }),
+  ).toBeVisible()
+  const panel = screen.getByRole('group', { name: 'Проверка подключения' })
+  expect(within(panel).getByText('cloud')).toBeVisible()
+  expect(within(panel).getByText('1')).toBeVisible()
+  expect(probeReads).toHaveBeenCalledWith(probeExample.id)
+  const publication = within(panel)
+    .getByRole('heading', { name: 'Публикация и запись' })
+    .closest('section')
+  expect(publication).not.toBeNull()
+  if (publication === null) throw Error('Expected publication group')
+  const denied = within(publication)
+    .getByText('Создание задач в трекере')
+    .closest('li')
+  if (denied === null) throw Error('Expected missing capability')
+  expect(within(denied).getByText('недоступно')).toBeVisible()
+  expect(
+    within(denied).getByText('Недостаточно прав в источнике'),
+  ).toBeVisible()
+  expect(within(panel).getByRole('heading', { name: 'История' })).toBeVisible()
+  expect(within(panel).getByRole('heading', { name: 'Права' })).toBeVisible()
+  const permissions = within(panel)
+    .getByText('Чтение прав доступа')
+    .closest('li')
+  if (permissions === null)
+    throw Error('Expected unchecked permission capability')
+  expect(within(permissions).getByText('не проверено')).toBeVisible()
+  expect(
+    within(panel).getByText(
+      'Показатели, которым нужны недостающие данные, будут неизвестны.',
+    ),
+  ).toBeVisible()
+})
+
+it.each([
+  [
+    'edition_mismatch',
+    'Это другая редакция, этот адаптер её не поддерживает',
+    'Воспользуйтесь универсальным импортом.',
+  ],
+  [
+    'auth_failed',
+    'Источник отклонил учётные данные',
+    'Замените учётные данные в форме, сохраните их и повторите проверку.',
+  ],
+  [
+    'timeout',
+    'Источник не ответил вовремя',
+    'Проверьте адрес источника или повторите проверку позже.',
+  ],
+  ['adapter_unavailable', 'Адаптер недоступен', 'Повторите проверку позже.'],
+  [
+    'outside_network_scope',
+    'Адрес вне разрешённой сетевой области',
+    'Проверьте базовый адрес и разрешённую сетевую область.',
+  ],
+  [
+    'certificate_untrusted',
+    'Сертификат источника не входит в список доверенных',
+    'Проверьте адрес и настройте доверие к сертификату источника.',
+  ],
+  [
+    'contract_unsupported',
+    'Версия контракта адаптера не поддерживается',
+    'Уточните поддерживаемую версию у администратора установки и повторите проверку.',
+  ],
+  [
+    'configuration_changed',
+    'Настройки подключения изменились во время проверки',
+    'Сохраните актуальные настройки и запустите новую проверку.',
+  ],
+])(
+  'блокирует активацию после failed с причиной %s',
+  async (code, reason, remedy) => {
+    mount({
+      path: detailPath,
+      readProbe: () =>
+        jsonResponse({
+          ...pendingProbe,
+          status: 'failed',
+          finished_at: probeExample.finished_at,
+          reason_code: code,
+          retry_after_seconds: null,
+        } satisfies Schema['ConnectionProbe']),
+    })
+    const check = await startCheck()
+    const alert = await screen.findByRole('alert', {}, { timeout: 3000 })
+    expect(within(alert).getByText(reason)).toBeVisible()
+    expect(within(alert).getByText(remedy)).toBeVisible()
+    expect(check).toBeEnabled()
+    expect(beginActivation()).toBeDisabled()
+    if (code === 'edition_mismatch')
+      expect(
+        within(alert).getByRole('link', { name: 'Универсальный импорт' }),
+      ).toHaveAttribute('href', '/settings/import')
+  },
+)
+
+it('подтверждает показанную пробу с If-Match и открывает загрузку истории на UI-11', async () => {
+  const { router, activations } = mount({
+    path: detailPath,
+    readProbe: () =>
+      jsonResponse({
+        ...probeExample,
+        capabilities: [
+          ...probeExample.capabilities,
+          {
+            capability: 'read_field_history',
+            state: 'partial',
+            reason_code: 'changelog_unavailable',
+            checked_at: probeExample.finished_at,
+          },
+        ],
+      } satisfies Schema['ConnectionProbe']),
+  })
+  await startCheck()
+  const dialog = await openActivation()
+  const confirm = within(dialog).getByRole('button', { name: 'Подтвердить' })
+  expect(within(dialog).getByRole('button', { name: 'Отмена' })).toHaveFocus()
+  fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true })
+  expect(confirm).toHaveFocus()
+  expect(
+    within(dialog).getByText('Проект трекера 10200', { exact: false }),
+  ).toBeVisible()
+  expect(within(dialog).getByText('Чтение истории полей')).toBeVisible()
+  expect(within(dialog).getByText('Создание задач в трекере')).toBeVisible()
+  expect(within(dialog).getByText('Подключение будет частичным.')).toBeVisible()
+  expect(
+    within(dialog).getByText('После подтверждения начнётся загрузка истории.'),
+  ).toBeVisible()
+  fireEvent.click(confirm)
+  expect(
+    await screen.findByRole('heading', { name: 'Состояние сбора' }),
+  ).toBeVisible()
+  expect(await screen.findByText('Загрузка истории')).toBeVisible()
+  expect(router.state.location.pathname).toBe(detailPath + '/sync')
+  const request = activations.mock.calls[0]?.[0]
+  expect(new Headers(request?.headers).get('If-Match')).toBe('"1"')
+  expect(jsonBody(request)).toEqual({ probe_id: probeExample.id })
+})
+
+it('при 409 заменяет завершённую пробу и требует повторного подтверждения', async () => {
+  const nextId = '0193a5b0-5757-7000-8000-000000000002'
+  const start = vi
+    .fn(() => jsonResponse(pendingProbe, 202))
+    .mockImplementationOnce(() => jsonResponse(pendingProbe, 202))
+    .mockImplementationOnce(() =>
+      jsonResponse({ ...pendingProbe, id: nextId }, 202),
+    )
+  const { activations, probeReads, readConnection } = mount({
+    path: detailPath,
+    start,
+    readProbe: (probeId) => jsonResponse({ ...probeExample, id: probeId }),
+    activate: () => problemResponse('state_conflict', 409),
+  })
+  await startCheck()
+  const dialog = await openActivation()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
+  expect(
+    await screen.findByText(
+      'Сервер отклонил подтверждение. Для него нужна последняя успешная проверка.',
+    ),
+  ).toBeVisible()
+  expect(beginActivation()).toBeDisabled()
+  expect(screen.queryByText('1001.0.0-SNAPSHOT')).toBeNull()
+  await openActivation()
+  expect(probeReads).toHaveBeenLastCalledWith(nextId)
+  expect(readConnection).toHaveBeenCalledTimes(2)
+  expect(activations).toHaveBeenCalledTimes(1)
+})
+
+it('при 412 показывает конфликт версии в UI-17 и сохраняет блокировку старой пробы', async () => {
+  const { starts } = mount({
+    path: detailPath,
+    activate: () => problemResponse('version_conflict', 412),
+  })
+  await startCheck()
+  const dialog = await openActivation()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
+  const conflict = await screen.findByRole('dialog', {
+    name: 'Данные подключения изменились',
+  })
+  expect(
+    within(conflict).getByRole('button', {
+      name: 'Загрузить актуальную версию',
+    }),
+  ).toBeVisible()
+  fireEvent.click(within(conflict).getByRole('button', { name: 'Отмена' }))
+  expect(beginActivation()).toBeDisabled()
+  expect(starts).toHaveBeenCalledTimes(1)
+})
+
+it('после изменения и сохранения области требует новую пробу', async () => {
+  const nextId = '0193a5b0-5757-7000-8000-000000000002'
+  const start = vi
+    .fn(() => jsonResponse(pendingProbe, 202))
+    .mockImplementationOnce(() => jsonResponse(pendingProbe, 202))
+    .mockImplementationOnce(() =>
+      jsonResponse(
+        { ...pendingProbe, id: nextId, configuration_version: 2 },
+        202,
+      ),
+    )
+  const { activations } = mount({
+    path: detailPath,
+    start,
+    readProbe: (probeId) =>
+      jsonResponse({
+        ...probeExample,
+        id: probeId,
+        configuration_version: probeId === nextId ? 2 : 1,
+      }),
+    write: () =>
+      jsonResponse(
+        {
+          ...draft,
+          scopes: draft.scopes.map((scope) => ({
+            ...scope,
+            display_name: '10300',
+            native_scope_id: '10300',
+          })),
+        },
+        200,
+        { ETag: '"2"' },
+      ),
+  })
+  await startCheck()
+  await screen.findByText('Проверка завершена', {}, { timeout: 3000 })
+  fill('Идентификатор области в источнике', '10300')
+  expect(beginActivation()).toBeDisabled()
+  expect(
+    screen.getByText('Результат проверки устарел. Запустите новую проверку.'),
+  ).toBeVisible()
+  save()
+  expect(await screen.findByText('Подключение сохранено')).toBeVisible()
+  expect(beginActivation()).toBeDisabled()
+  await startCheck()
+  const dialog = await openActivation()
+  expect(
+    within(dialog).getByText('Проект трекера 10300', { exact: false }),
+  ).toBeVisible()
+  expect(activations).not.toHaveBeenCalled()
+})
+
+it('возвращается с UI-11, сохраняет новые учётные данные и подтверждает восстановление', async () => {
+  let connection: Schema['Connection'] = { ...draft, status: 'access_lost' }
+  const { router, saves, activations } = mount({
+    path: detailPath + '/sync',
+    sync: () =>
+      jsonResponse({
+        ...syncStatusExample,
+        connection_status: connection.status,
+      }),
+    read: () => jsonResponse(connection, 200, { ETag: '"1"' }),
+    write: () => {
+      connection = { ...connection, credentials_set_at: '2026-11-08T10:00:30Z' }
+      return jsonResponse(connection, 200, { ETag: '"2"' })
+    },
+    start: () =>
+      jsonResponse({ ...pendingProbe, configuration_version: 2 }, 202),
+    readProbe: () =>
+      jsonResponse({ ...probeExample, configuration_version: 2 }),
+    activate: () => {
+      connection = active
+      return jsonResponse(active, 200, { ETag: '"3"' })
+    },
+  })
+  fireEvent.click(
+    await screen.findByRole('link', { name: 'Восстановить доступ' }),
+  )
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Заменить учётные данные' }),
+  )
+  fillCredentials()
+  save()
+  expect(await screen.findByText('Подключение сохранено')).toBeVisible()
+  expect(jsonBody(saves.mock.calls[0]?.[0])).toEqual({
+    credentials: { email: 'service@example.org', token },
+  })
+  await startCheck()
+  const dialog = await openActivation()
+  expect(
+    within(dialog).getByText('Сбор продолжится с сохранённого места.'),
+  ).toBeVisible()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
+  expect(
+    await screen.findByRole('heading', { name: 'Состояние сбора' }),
+  ).toBeVisible()
+  expect(router.state.location.pathname).toBe(detailPath + '/sync')
+  expect(
+    new Headers(activations.mock.calls[0]?.[0]?.headers).get('If-Match'),
+  ).toBe('"2"')
 })

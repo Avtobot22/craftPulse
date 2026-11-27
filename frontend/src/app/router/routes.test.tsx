@@ -14,6 +14,10 @@ import { listTeams, listServices } from '@/shared/api'
 import type { components } from '@/shared/api'
 import { routePaths, taskAnalysisLinks } from '@/shared/config'
 import {
+  connectionExample,
+  syncStatusExample,
+} from '../../../test/admin-fixtures'
+import {
   currentUser,
   projects,
   teams,
@@ -131,6 +135,12 @@ function mockApi(
               : { ...projects, data: [] },
           ),
         )
+      case `/api/v1/connections/${connectionExample.id}`:
+        return Promise.resolve(
+          jsonResponse(connectionExample, 200, { ETag: '"1"' }),
+        )
+      case `/api/v1/connections/${syncStatusExample.connection_id}/sync-status`:
+        return Promise.resolve(jsonResponse(syncStatusExample))
       case '/api/v1/connections':
       case '/api/v1/saved-views':
         return Promise.resolve(jsonResponse({ data: [], next_cursor: null }))
@@ -1405,7 +1415,10 @@ describe('administration routes', () => {
       '/settings/connections/0193a5b0-5555-7000-8000-000000000001',
       'Настройки подключения',
     ],
-    ['/settings/connections/c1/sync', 'Состояние сбора'],
+    [
+      `/settings/connections/${syncStatusExample.connection_id}/sync`,
+      'Состояние сбора',
+    ],
     ['/settings/ingest-conflicts?status=resolved', 'Конфликты приёма'],
     ['/settings/import?schema_id=tasks&schema_version=1', 'Импорт'],
     ['/settings/receipts?connection_id=c1', 'Журнал приёма'],

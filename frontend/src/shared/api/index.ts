@@ -153,6 +153,8 @@ export {
   readConnection,
   getSyncStatus,
   getConnectionProbe,
+  startConnectionProbe,
+  activateConnection,
 } from './connection-queries'
 export type { ConnectionListParams } from './connection-queries'
 export {

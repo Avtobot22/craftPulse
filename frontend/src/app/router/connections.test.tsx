@@ -382,6 +382,9 @@ it('refreshes list and sync status on tab return and remount', async () => {
   expect(sync).toHaveBeenCalledTimes(2)
   fireEvent.click(link)
   await screen.findByRole('heading', { name: 'Состояние сбора', level: 1 })
+  await waitFor(() => {
+    expect(sync).toHaveBeenCalledTimes(3)
+  })
   list.mockImplementation(() =>
     connectionPage([{ ...connectionExample, name: 'Новое имя' }]),
   )
@@ -391,7 +394,7 @@ it('refreshes list and sync status on tab return and remount', async () => {
     await (await row('Новое имя')).findByText('Полные данные'),
   ).toBeVisible()
   expect(list).toHaveBeenCalledTimes(3)
-  expect(sync).toHaveBeenCalledTimes(3)
+  expect(sync).toHaveBeenCalledTimes(4)
 })
 
 it('hides restricted actions and skips sync reads without sync.read', async () => {
