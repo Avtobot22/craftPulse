@@ -1,0 +1,87 @@
+.cp-targets,
+.cp-targets__group {
+  display: grid;
+  gap: var(--g-spacing-4);
+  min-width: 0;
+}
+
+.cp-targets__columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--g-spacing-4);
+}
+
+.cp-targets__panel {
+  display: grid;
+  gap: var(--g-spacing-4);
+  min-width: 0;
+}
+
+.cp-targets fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: var(--g-spacing-3);
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-m);
+}
+
+.cp-targets input,
+.cp-targets select {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--g-spacing-2);
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-m);
+  background: var(--g-color-base-background);
+  color: var(--g-color-text-primary);
+  font: inherit;
+}
+
+.cp-targets [aria-invalid='true'] {
+  border-color: var(--g-color-line-danger);
+}
+
+.cp-targets__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--g-spacing-3);
+}
+
+.cp-targets__fields label {
+  flex: 1 1 10rem;
+}
+
+.cp-targets__table {
+  overflow: auto;
+  margin-block: var(--g-spacing-3);
+}
+
+.cp-targets__table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cp-targets__table :is(th, td) {
+  padding: var(--g-spacing-2);
+  border-bottom: 1px solid var(--g-color-line-generic);
+  text-align: start;
+  vertical-align: top;
+}
+
+.cp-targets__unsized {
+  padding-inline-start: var(--g-spacing-5);
+}
+
+.cp-targets__errors {
+  color: var(--g-color-text-danger);
+}
+
+@media (max-width: 1150px) {
+  .cp-targets__columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

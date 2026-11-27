@@ -84,7 +84,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.targetSettings,
-                  element: <TargetSettingsPage />,
+                  element: <TargetSettingsPage api={runtime.api} />,
                 },
                 {
                   path: routePaths.teamReport,
