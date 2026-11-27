@@ -29,6 +29,19 @@
   background: var(--g-color-base-generic-ultralight);
 }
 
+.cp-connection__capabilities {
+  display: grid;
+  gap: 16px;
+  overflow-wrap: anywhere;
+}
+
+.cp-connection__capabilities ul {
+  display: grid;
+  gap: 12px;
+  margin-block: 8px 0;
+  padding-inline-start: 20px;
+}
+
 .cp-connection__columns,
 .cp-connection__field {
   display: grid;

@@ -176,6 +176,21 @@ export class ApiClient {
     return this.request('POST', '/connections', body, decode, { signal }, false)
   }
 
+  startConnectionProbe<T>(
+    connectionId: operations['startConnectionProbe']['parameters']['path']['connection_id'],
+    decode: Decoder<T>,
+    signal: AbortSignal,
+  ): Promise<ApiResponse<T>> {
+    return this.request(
+      'POST',
+      '/connections/{connection_id}/probes',
+      undefined,
+      decode,
+      { pathParams: { connection_id: connectionId }, signal },
+      false,
+    )
+  }
+
   updateConnection<T>(
     connectionId: operations['updateConnection']['parameters']['path']['connection_id'],
     body: operations['updateConnection']['requestBody']['content']['application/merge-patch+json'],

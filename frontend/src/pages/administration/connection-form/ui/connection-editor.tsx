@@ -7,6 +7,10 @@ import { getConnection, isStrongETag } from '@/shared/api'
 import type { ApiClient, ApiResponse } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import { UnsavedChangesDialog } from '@/shared/ui'
+import {
+  canActivateConnection,
+  useConnectionProbe,
+} from '../api/use-connection-probe'
 import { useSaveConnection } from '../api/use-save-connection'
 import type { ConnectionWrite } from '../api/use-save-connection'
 import {
@@ -24,6 +28,8 @@ import type {
 } from '../model/connection-draft'
 import { editablePaths, fieldId, formIssues } from '../model/connection-issues'
 import type { Issue } from '../model/connection-issues'
+import { ActivationDialog } from './activation-dialog'
+import { ConnectionProbePanel } from './connection-probe-panel'
 import { ConnectionDialog } from './connection-dialog'
 import {
   CredentialFields,
@@ -49,7 +55,7 @@ export function ConnectionEditor({
   const [credentials, setCredentials] = useState<Credentials>({})
   const [replacing, setReplacing] = useState(false)
   const [issues, setIssues] = useState<readonly Issue[]>([])
-  const [dialog, setDialog] = useState<'draft' | 'conflict'>()
+  const [dialog, setDialog] = useState<'draft' | 'conflict' | 'activation'>()
   const [reloading, setReloading] = useState(false)
   const [reloadFailed, setReloadFailed] = useState(false)
   const [createdId, setCreatedId] = useState<string>()
@@ -58,6 +64,10 @@ export function ConnectionEditor({
   const summary = useRef<HTMLDivElement>(null)
   const submitButton = useRef<HTMLButtonElement>(null)
   const sending = useRef(false)
+  const probeButton = useRef<HTMLButtonElement>(null)
+  const activationButton = useRef<HTMLButtonElement>(null)
+  const conflictOpener = useRef<HTMLButtonElement>(null)
+  const probe = useConnectionProbe(api, baseline)
   const mutation = useSaveConnection(api)
 
   const connection = baseline?.data
@@ -74,7 +84,7 @@ export function ConnectionEditor({
       (!connection && Boolean(draft.provider)) ||
       pendingCredentials)
   const editingCredentials = !connection || replacing
-  const busy = mutation.isPending || reloading
+  const busy = mutation.isPending || reloading || Boolean(probe.pending)
   const readonly = Boolean(
     connection && (connection.adapter_kind !== 'builtin' || !adapter),
   )
@@ -92,6 +102,7 @@ export function ConnectionEditor({
   }, [createdId, navigate])
 
   function edit(next: ConnectionDraft) {
+    probe.invalidate()
     setDraft(next)
     setIssues([])
     setSaved(false)
@@ -102,6 +113,11 @@ export function ConnectionEditor({
     edit(connectionDraft(response?.data))
     setReplacing(false)
     setCredentials({})
+  }
+
+  function showConflict(opener: HTMLButtonElement | null) {
+    conflictOpener.current = opener
+    setDialog('conflict')
   }
 
   function prepareWrite(): ConnectionWrite | undefined {
@@ -135,7 +151,7 @@ export function ConnectionEditor({
         fields,
       }
     if (!isStrongETag(baseline.etag)) {
-      setDialog('conflict')
+      showConflict(submitButton.current)
       return undefined
     }
     return {
@@ -160,7 +176,7 @@ export function ConnectionEditor({
         editingCredentials ? credentials : undefined,
       )
       if (result.kind === 'conflict') {
-        if (write.kind === 'update') setDialog('conflict')
+        if (write.kind === 'update') showConflict(submitButton.current)
         else setIssues([{ message: 'Не удалось сохранить подключение' }])
         return
       }
@@ -357,6 +373,7 @@ export function ConnectionEditor({
           values={credentials}
           issues={issues}
           start={() => {
+            probe.invalidate()
             setReplacing(true)
             setSaved(false)
           }}
@@ -366,6 +383,7 @@ export function ConnectionEditor({
             setIssues([])
           }}
           change={(name, value) => {
+            probe.invalidate()
             setCredentials((previous) =>
               value
                 ? { ...previous, [name]: value }
@@ -386,6 +404,27 @@ export function ConnectionEditor({
             edit({ ...draft, scopes })
           }}
         />
+        {connection &&
+          canActivateConnection(connection.status) &&
+          !readonly && (
+            <ConnectionProbePanel
+              probe={probe}
+              blocked={busy || dirty || replacing || Boolean(dialog)}
+              saveFirst={dirty || replacing}
+              restoring={connection.status === 'access_lost'}
+              opener={activationButton}
+              probeButton={probeButton}
+              check={() => {
+                if (!isStrongETag(baseline.etag) || probe.versionChanged)
+                  showConflict(probeButton.current)
+                else void probe.start()
+              }}
+              open={() => {
+                probe.clearActivationError()
+                setDialog('activation')
+              }}
+            />
+          )}
         <footer className="cp-connection__actions">
           <Button
             type="submit"
@@ -428,7 +467,53 @@ export function ConnectionEditor({
           reset(baseline)
         }}
       />
-      {dialog && (
+      {dialog === 'activation' && connection && probe.data && (
+        <ActivationDialog
+          connection={connection}
+          probe={probe.data}
+          busy={busy}
+          error={probe.activationError}
+          opener={activationButton}
+          close={() => {
+            setDialog(undefined)
+          }}
+          confirm={() => {
+            if (
+              dirty ||
+              replacing ||
+              busy ||
+              !canActivateConnection(connection.status)
+            )
+              return
+            void probe.activate({
+              onActivated: async (response) => {
+                const { queryKey } = getConnection(api, connection.id)
+                await cache.cancelQueries({ queryKey })
+                cache.setQueryData(queryKey, response)
+                void cache.invalidateQueries({
+                  queryKey: ['connections', 'list'],
+                })
+                void cache.invalidateQueries({
+                  queryKey: ['connections', 'sync-status', connection.id],
+                })
+                void navigate(
+                  generatePath(routePaths.syncStatus, {
+                    connectionId: connection.id,
+                  }),
+                  { replace: true },
+                )
+              },
+              onVersionConflict: () => {
+                showConflict(activationButton.current)
+              },
+              onStateConflict: () => {
+                setDialog(undefined)
+              },
+            })
+          }}
+        />
+      )}
+      {(dialog === 'draft' || dialog === 'conflict') && (
         <ConnectionDialog
           key={dialog}
           kind={dialog}
@@ -439,7 +524,7 @@ export function ConnectionEditor({
             setDialog(undefined)
             setReloadFailed(false)
           }}
-          opener={submitButton}
+          opener={dialog === 'conflict' ? conflictOpener : submitButton}
         />
       )}
     </>

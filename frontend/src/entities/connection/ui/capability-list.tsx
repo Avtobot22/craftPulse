@@ -34,8 +34,10 @@ function capabilityBadge(state: string) {
 
 export function CapabilityList({
   capabilities,
+  unchecked = [],
 }: {
   capabilities: readonly OpenCodes<Capability>[]
+  unchecked?: readonly string[]
 }) {
   return (
     <ul>
@@ -62,6 +64,14 @@ export function CapabilityList({
             ) : (
               state !== 'verified' && <span>Причина не указана</span>
             )}
+          </Flex>
+        </li>
+      ))}
+      {unchecked.map((capability) => (
+        <li key={capability}>
+          <Flex wrap alignItems="center" gap="spacing-2">
+            <strong>{contractLabel(adminLabels.capability, capability)}</strong>
+            <StatusLabel {...unknown} text="не проверено" />
           </Flex>
         </li>
       ))}
