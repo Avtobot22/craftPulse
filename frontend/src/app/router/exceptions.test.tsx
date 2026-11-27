@@ -1,4 +1,6 @@
+import { focusManager } from '@tanstack/react-query'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -139,6 +141,7 @@ beforeAll(() => {
 
 afterEach(() => {
   for (const dispose of disposers.splice(0)) dispose()
+  focusManager.setFocused(undefined)
 })
 
 async function fillCreate() {
@@ -160,12 +163,81 @@ async function fillCreate() {
   })
 }
 
+function refocusWindow() {
+  act(() => {
+    focusManager.setFocused(false)
+    focusManager.setFocused(true)
+  })
+}
+
 async function confirmForm() {
   fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
   const dialog = await screen.findByRole('dialog')
   fireEvent.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
   return dialog
 }
+
+it('показывает ошибку вместо формы при первой неудачной загрузке находки', async () => {
+  mount({
+    at: findingPage + '/exception',
+    handle: (url) => {
+      if (url.pathname === '/api/v1' + findingPage)
+        throw new TypeError('Connection lost')
+      return undefined
+    },
+  })
+
+  expect(
+    await screen.findByRole('alert', { name: 'Ошибка' }),
+  ).toHaveTextContent('Не удалось загрузить данные исключения.')
+  expect(screen.queryByLabelText(/^Причина/u)).toBeNull()
+})
+
+it('сохраняет черновик при сетевой ошибке обновления находки', async () => {
+  let offline = false
+  mount({
+    handle: (url) => {
+      if (url.pathname === '/api/v1' + findingPage && offline)
+        throw new TypeError('Connection lost')
+      return undefined
+    },
+  })
+  await fillCreate()
+
+  offline = true
+  refocusWindow()
+
+  const failure = await screen.findByRole('alert', { name: 'Ошибка' })
+  expect(screen.getByLabelText(/^Причина/u)).toHaveValue(draft.reason)
+  expect(failure).toHaveTextContent('Не удалось обновить карточку находки.')
+
+  offline = false
+  fireEvent.click(within(failure).getByRole('button', { name: 'Повторить' }))
+  await waitFor(() => {
+    expect(failure).not.toBeInTheDocument()
+  })
+  expect(screen.getByLabelText(/^Причина/u)).toHaveValue(draft.reason)
+})
+
+it('закрывает редактор после отказа в доступе к находке при обновлении', async () => {
+  let accessRevoked = false
+  mount({
+    handle: (url) => {
+      if (url.pathname === '/api/v1' + findingPage && accessRevoked)
+        return problemResponse('forbidden', 403)
+      return undefined
+    },
+  })
+  await fillCreate()
+
+  accessRevoked = true
+  refocusWindow()
+
+  expect(
+    await screen.findByRole('alert', { name: 'Ошибка' }),
+  ).toHaveTextContent('Не удалось загрузить данные исключения.')
+  expect(screen.queryByLabelText(/^Причина/u)).toBeNull()
+})
 
 it('оформляет решение из UI-46 и показывает ожидание в UI-48', async () => {
   const { fetcher } = mount()

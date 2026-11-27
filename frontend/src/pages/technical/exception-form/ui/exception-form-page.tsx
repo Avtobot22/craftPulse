@@ -2,7 +2,7 @@ import { Alert, Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
 import { generatePath, useParams, useSearchParams } from 'react-router'
 import { exceptionOrigin } from '@/entities/exception'
-import { getException, getFinding, isStrongETag } from '@/shared/api'
+import { ApiError, getException, getFinding, isStrongETag } from '@/shared/api'
 import type { ApiClient, ExceptionScope } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import { ErrorState, InspectionBack, LoadingState } from '@/shared/ui'
@@ -28,8 +28,15 @@ export function ExceptionFormPage({ api }: { api: ApiClient }) {
     ...getFinding(api, sourceId ?? ''),
     enabled: Boolean(sourceId),
   })
+  const useCachedFinding =
+    !exceptionId &&
+    finding.isRefetchError &&
+    finding.error instanceof ApiError &&
+    finding.error.kind === 'network'
   const source =
-    finding.isSuccess && finding.data.id === sourceId ? finding.data : undefined
+    (finding.isSuccess || useCachedFinding) && finding.data.id === sourceId
+      ? finding.data
+      : undefined
   const sourceArea = source?.area_id
   const anchor: ExceptionScope | undefined =
     source && sourceArea && (!version || sourceArea === version.scope.area_id)
@@ -55,7 +62,7 @@ export function ExceptionFormPage({ api }: { api: ApiClient }) {
     (query.isFetching && !query.isFetchedAfterMount) ||
     Boolean(sourceId && finding.isPending)
   const canEdit = exceptionId
-    ? isStrongETag(existing.data?.etag)
+    ? !existing.isError && isStrongETag(existing.data?.etag)
     : source?.actions.includes('create_exception')
 
   return (
@@ -64,14 +71,19 @@ export function ExceptionFormPage({ api }: { api: ApiClient }) {
         {exceptionId ? 'Продлить исключение' : 'Оформить исключение'}
       </Text>
       <InspectionBack fallbackTo={fallback} />
-      {waiting ? (
-        <LoadingState />
-      ) : query.isError ? (
+      {!waiting && query.isError && (
         <ErrorState
-          reason="Не удалось загрузить данные исключения."
+          reason={
+            useCachedFinding
+              ? 'Не удалось обновить карточку находки.'
+              : 'Не удалось загрузить данные исключения.'
+          }
           onRetry={() => void query.refetch()}
           retrying={query.isFetching}
         />
+      )}
+      {waiting ? (
+        <LoadingState />
       ) : canEdit &&
         anchor &&
         !version?.external_authority &&
@@ -83,7 +95,7 @@ export function ExceptionFormPage({ api }: { api: ApiClient }) {
           existing={existing.data}
           findingId={findingId ?? anchor.finding_id}
         />
-      ) : (
+      ) : !query.isError ? (
         <Alert
           theme="warning"
           message={
@@ -94,7 +106,7 @@ export function ExceptionFormPage({ api }: { api: ApiClient }) {
                 : 'Данные для оформления исключения недоступны.'
           }
         />
-      )}
+      ) : null}
     </article>
   )
 }
