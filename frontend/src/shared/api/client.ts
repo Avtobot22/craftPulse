@@ -135,6 +135,24 @@ export class ApiClient {
     )
   }
 
+  requestDocumentationCheck<T>(
+    serviceId: string,
+    body: MutationBody<'/services/{service_id}/documentation-checks', 'POST'>,
+    decode: Decoder<T>,
+  ): Promise<ApiResponse<T>> {
+    return this.request(
+      'POST',
+      '/services/{service_id}/documentation-checks',
+      body,
+      decode,
+      {
+        pathParams: { service_id: serviceId },
+        signal: AbortSignal.timeout(30_000),
+      },
+      false,
+    )
+  }
+
   startSeriesRefresh<T>(
     seriesId: string,
     decode: Decoder<T>,

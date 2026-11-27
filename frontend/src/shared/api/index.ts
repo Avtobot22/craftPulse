@@ -84,6 +84,7 @@ export {
 } from './finding-queries'
 export type {
   FindingListParams,
+  FindingDetail,
   TechnicalComparisonParams,
 } from './finding-queries'
 export {
@@ -116,8 +117,20 @@ export type {
 export {
   listDocumentationRoots,
   listServiceDocuments,
+  serviceDocumentPages,
+  readDocumentationRoots,
+  replaceDocumentationRoots,
+  requestDocumentationCheck,
+  getDocumentationCheck,
+  repositoryAreas,
 } from './documentation-queries'
-export type { ServiceDocumentListParams } from './documentation-queries'
+export type {
+  DocumentationRoot,
+  DocumentationRoots,
+  DocumentationRootInput,
+  ServiceDocument,
+  ServiceDocumentListParams,
+} from './documentation-queries'
 export { listTestExecutions, testExecutionPages } from './pipeline-queries'
 export type { TestExecutionListParams } from './pipeline-queries'
 export type { MergeRequestSummaryParams } from './merge-request-summary-queries'

@@ -9,3 +9,4 @@ export {
 export { navigateToLogin } from './login-navigation'
 export { readCurrentUser } from './current-user'
 export type { CurrentUser, RoleAssignment } from './current-user'
+export { canManageDocumentation } from './documentation-access'
