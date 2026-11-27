@@ -150,12 +150,15 @@ export {
   listAdapters,
   listConnections,
   getConnection,
+  readConnection,
   getSyncStatus,
   getSyncOperation,
   readConnectionById,
   requestSyncRun,
   setConnectionPaused,
   getConnectionProbe,
+  startConnectionProbe,
+  activateConnection,
 } from './connection-queries'
 export type { ConnectionListParams, SyncOperation } from './connection-queries'
 export {

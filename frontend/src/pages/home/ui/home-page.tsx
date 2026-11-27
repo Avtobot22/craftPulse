@@ -179,8 +179,10 @@ export function HomePage({
       ({ role, team_id }) =>
         role === 'process_owner' && team_id === selectedTeamId,
     )
-  const canOpenSetting = ({ action }: { action: string }) =>
-    current.actions.includes(action) &&
+  const canOpenSetting = ({ path, action }: { path: string; action: string }) =>
+    (current.actions.includes(action) ||
+      (path === routePaths.syncStatus &&
+        current.actions.includes('sync.read'))) &&
     (action !== 'process.manage' || ownsProcess)
   const allowed = settings.filter(canOpenSetting)
   const currentSetting = active && canOpenSetting(active) ? active : undefined

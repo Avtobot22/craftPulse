@@ -2,6 +2,7 @@ import { Text } from '@gravity-ui/uikit'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect } from 'react'
 import { Link, useOutletContext, useParams } from 'react-router'
+import { SyncDataKind } from '@/entities/sync'
 import {
   ApiError,
   getConnection,
@@ -10,7 +11,7 @@ import {
   type ApiClient,
 } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
-import { adminLinks } from '@/shared/config'
+import { adminLinks, readTechnicalId } from '@/shared/config'
 import {
   ErrorState,
   LoadingState,
@@ -26,9 +27,11 @@ import './sync-status-page.css'
 const refreshInterval = 5_000
 
 export function SyncStatusPage({ api }: { api: ApiClient }) {
-  const { connectionId } = useParams()
+  const connectionId = readTechnicalId(useParams().connectionId)
   const { actions } = useOutletContext<CurrentUser>()
-  if (!connectionId || !actions.includes('connections.manage')) {
+  const canReadSync = actions.includes('sync.read')
+  const canManage = actions.includes('connections.manage')
+  if (!connectionId || (!canReadSync && !canManage)) {
     return <UnavailableRedirect forbidden />
   }
   return (
@@ -36,7 +39,8 @@ export function SyncStatusPage({ api }: { api: ApiClient }) {
       key={connectionId}
       api={api}
       connectionId={connectionId}
-      canReadSync={actions.includes('sync.read')}
+      canReadSync={canReadSync}
+      canManage={canManage}
     />
   )
 }
@@ -45,14 +49,17 @@ function SyncStatusContent({
   api,
   connectionId,
   canReadSync,
+  canManage,
 }: {
   api: ApiClient
   connectionId: string
   canReadSync: boolean
+  canManage: boolean
 }) {
   const client = useQueryClient()
   const connection = useQuery({
     ...getConnection(api, connectionId),
+    enabled: canManage,
     refetchOnMount: 'always',
     refetchOnWindowFocus: 'always',
   })
@@ -86,14 +93,16 @@ function SyncStatusContent({
       if (inFlight) await invalidate()
     }
     await Promise.all([
-      refreshQuery(getConnection(api, connectionId).queryKey),
+      ...(canManage
+        ? [refreshQuery(getConnection(api, connectionId).queryKey)]
+        : []),
       ...(canReadSync
         ? [refreshQuery(getSyncStatus(api, connectionId).queryKey)]
         : []),
     ])
-  }, [api, canReadSync, client, connectionId])
+  }, [api, canManage, canReadSync, client, connectionId])
 
-  const resource = connection.data
+  const resource = canManage ? connection.data : undefined
   const data = canReadSync && !sync.isError ? sync.data : undefined
   const readConnection = connection.refetch
   const connectionStatus = resource?.data.status
@@ -105,8 +114,10 @@ function SyncStatusContent({
     }
   }, [connectionStatus, readConnection, syncStatus])
 
-  if (isUnavailableError(connection.error))
+  if (canManage && isUnavailableError(connection.error))
     return <UnavailableRedirect error={connection.error} />
+  if (canReadSync && isUnavailableError(sync.error))
+    return <UnavailableRedirect error={sync.error} />
   const status = data?.connection_status ?? resource?.data.status
   const effectiveStatus =
     status === 'access_lost' || resource?.data.status === 'access_lost'
@@ -137,8 +148,14 @@ function SyncStatusContent({
           Состояние сбора
         </Text>
       )}
-      {connection.isPending && <LoadingState />}
-      {connection.isError && (
+      {!resource && effectiveStatus === 'access_lost' && (
+        <p role="status">
+          Доступ к источнику потерян. Текущие результаты этого источника
+          неизвестны. Для возобновления сбора нужно заменить учётные данные.
+        </p>
+      )}
+      {canManage && connection.isPending && <LoadingState />}
+      {canManage && connection.isError && (
         <ErrorState
           reason="Не удалось загрузить подключение"
           {...(connectionCorrelation
@@ -177,7 +194,7 @@ function SyncStatusContent({
           onRetry={() => void sync.refetch({ cancelRefetch: false })}
         />
       )}
-      {canReadSync && (
+      {canReadSync && canManage && (
         <SyncRuns
           api={api}
           connectionId={connectionId}
@@ -190,6 +207,10 @@ function SyncStatusContent({
           canRun={Boolean(resource) && !connection.isError}
         />
       )}
+      {!canManage &&
+        data?.data_kinds.map((kind) => (
+          <SyncDataKind key={kind.data_kind} data={kind} />
+        ))}
       {data?.data_kinds.length === 0 && (
         <p>Состояние по видам данных ещё не получено</p>
       )}
@@ -208,9 +229,11 @@ function SyncStatusContent({
               </Link>
             </li>
           )}
-          <li>
-            <Link to={adminLinks.ingestConflicts()}>Конфликты приёма</Link>
-          </li>
+          {canManage && (
+            <li>
+              <Link to={adminLinks.ingestConflicts()}>Конфликты приёма</Link>
+            </li>
+          )}
         </ul>
       </nav>
     </section>

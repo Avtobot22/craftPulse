@@ -93,24 +93,6 @@ export class ApiClient {
     return this.request(method, path, body, decode, options, true)
   }
 
-  updateConnection<T>(
-    connectionId: string,
-    body: components['schemas']['ConnectionPatch'],
-    decode: Decoder<T>,
-    ifMatch: string,
-    signal: AbortSignal,
-  ) {
-    return this.request(
-      'PATCH',
-      '/connections/{connection_id}',
-      body,
-      decode,
-      { pathParams: { connection_id: connectionId }, ifMatch, signal },
-      true,
-      'application/merge-patch+json',
-    )
-  }
-
   deleteConnection(connectionId: string, signal: AbortSignal) {
     return this.request(
       'DELETE',
@@ -212,6 +194,47 @@ export class ApiClient {
         signal,
       },
       false,
+    )
+  }
+
+  createConnection<T>(
+    body: MutationBody<'/connections', 'POST'>,
+    decode: Decoder<T>,
+    signal: AbortSignal,
+  ): Promise<ApiResponse<T>> {
+    return this.request('POST', '/connections', body, decode, { signal }, false)
+  }
+
+  startConnectionProbe<T>(
+    connectionId: operations['startConnectionProbe']['parameters']['path']['connection_id'],
+    decode: Decoder<T>,
+    signal: AbortSignal,
+  ): Promise<ApiResponse<T>> {
+    return this.request(
+      'POST',
+      '/connections/{connection_id}/probes',
+      undefined,
+      decode,
+      { pathParams: { connection_id: connectionId }, signal },
+      false,
+    )
+  }
+
+  updateConnection<T>(
+    connectionId: operations['updateConnection']['parameters']['path']['connection_id'],
+    body: operations['updateConnection']['requestBody']['content']['application/merge-patch+json'],
+    decode: Decoder<T>,
+    ifMatch: string,
+    signal: AbortSignal,
+  ): Promise<ApiResponse<T>> {
+    return this.request(
+      'PATCH',
+      '/connections/{connection_id}',
+      body,
+      decode,
+      { pathParams: { connection_id: connectionId }, ifMatch, signal },
+      true,
+      'application/merge-patch+json',
     )
   }
 
@@ -371,14 +394,14 @@ export class ApiClient {
     decode: Decoder<T>,
     options: VersionedRequestOptions,
     versioned: boolean,
-    contentType = 'application/json',
+    mediaType = 'application/json',
   ): Promise<ApiResponse<T>> {
     if (this.ended) throw new ApiError('session-ended')
     const epoch = this.epoch
     const url = this.url(path, options)
     if (method === 'GET') this.versions.delete(url)
     const headers = new Headers({ Accept: 'application/json' })
-    if (body !== undefined) headers.set('Content-Type', contentType)
+    if (body !== undefined) headers.set('Content-Type', mediaType)
     if (versioned) {
       const etag = options.ifMatch ?? this.versions.get(url)
       if (!isStrongETag(etag)) throw new ApiError('missing-version')

@@ -146,8 +146,8 @@ func (u *UseCase) List(ctx context.Context, s entity.Subject, f entity.Connectio
 }
 
 // Update applies a merge patch on the version the form read. A new address, adapter or scope set returns
-// the connection to draft until a new probe; new credentials need a new probe as well, because every
-// change of them, of the address, of the adapter or of the scopes moves row_version (TZ 12.5.3).
+// the connection to draft until a new probe. Renaming advances row_version without changing
+// the status, so a stale form cannot overwrite the new name.
 func (u *UseCase) Update(ctx context.Context, s entity.Subject, id entity.ID, baseVersion int, p entity.ConnectionPatch) (entity.ConnectionState, error) {
 	cur, err := u.connection(ctx, s.OrganizationID, id)
 	if err != nil {
@@ -240,7 +240,7 @@ func (u *UseCase) applyPatch(ctx context.Context, s entity.Subject, cur, next en
 	if reconfigured && (next.Status == entity.ConnectionActive || next.Status == entity.ConnectionAccessLost) {
 		next.Status, next.AccessLostAt = entity.ConnectionDraft, nil
 	}
-	if reconfigured || len(p.Credentials) > 0 {
+	if reconfigured || len(p.Credentials) > 0 || next.Name != cur.Name {
 		next.RowVersion++
 	}
 	if err := u.d.Repo.SaveConnection(ctx, next); err != nil {

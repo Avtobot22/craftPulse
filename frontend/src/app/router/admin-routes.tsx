@@ -15,8 +15,14 @@ import { routePaths } from '@/shared/config'
 export const adminRoutes = (api: ApiClient) =>
   [
     { path: routePaths.connections, element: <ConnectionsPage api={api} /> },
-    { path: routePaths.connectionNew, element: <ConnectionFormPage /> },
-    { path: routePaths.connectionDetail, element: <ConnectionFormPage /> },
+    {
+      path: routePaths.connectionNew,
+      element: <ConnectionFormPage api={api} />,
+    },
+    {
+      path: routePaths.connectionDetail,
+      element: <ConnectionFormPage api={api} />,
+    },
     { path: routePaths.syncStatus, element: <SyncStatusPage api={api} /> },
     { path: routePaths.ingestConflicts, element: <IngestConflictsPage /> },
     { path: routePaths.importPackage, element: <ImportPackagePage /> },

@@ -77,7 +77,9 @@ function readConnectionScope(
   }
 }
 
-function readConnection(value: unknown): OpenCodes<Schema['Connection']> {
+export function readConnection(
+  value: unknown,
+): OpenCodes<Schema['Connection']> {
   const raw = readRecord(value)
   const instance = readRecord(raw.instance)
   return {
@@ -261,6 +263,30 @@ export function getConnectionProbe(
         )
       ).data,
   })
+}
+
+export async function startConnectionProbe(
+  api: ApiClient,
+  connectionId: ConnectionId,
+  signal: AbortSignal,
+) {
+  return (await api.startConnectionProbe(connectionId, readProbe, signal)).data
+}
+
+export function activateConnection(
+  api: ApiClient,
+  connectionId: ConnectionId,
+  probeId: ProbePath['probe_id'],
+  ifMatch: string,
+  signal: AbortSignal,
+) {
+  return api.update(
+    'POST',
+    '/connections/{connection_id}/activation',
+    { probe_id: probeId },
+    readConnection,
+    { pathParams: { connection_id: connectionId }, ifMatch, signal },
+  )
 }
 
 export function readConnectionById(

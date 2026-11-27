@@ -384,6 +384,9 @@ it('refreshes list and sync status on tab return and remount', async () => {
   expect(sync).toHaveBeenCalledTimes(2)
   fireEvent.click(link)
   await screen.findByRole('heading', { name: 'Состояние сбора', level: 1 })
+  await waitFor(() => {
+    expect(sync).toHaveBeenCalledTimes(3)
+  })
   list.mockImplementation(() =>
     connectionPage([{ ...connectionExample, name: 'Новое имя' }]),
   )
