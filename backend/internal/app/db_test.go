@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -39,6 +40,7 @@ func TestMain(m *testing.M) {
 	if flag.Lookup("test.list").Value.String() != "" {
 		os.Exit(m.Run())
 	}
+	gin.EnableJsonDecoderDisallowUnknownFields()
 	os.Exit(runWithPostgres(m))
 }
 

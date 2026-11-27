@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	tcexec "github.com/testcontainers/testcontainers-go/exec"
 
+	"github.com/Avtobot22/craftPulse/backend/config"
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/cli"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/persistent"
@@ -81,7 +85,7 @@ func newInstallEnv(t *testing.T) *installEnv {
 	t.Cleanup(e.idp.Close)
 	e.site = httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	t.Cleanup(e.site.Close)
-	e.uc = newInstallation(e.app, keyring, storeProbe{}, probe.New(e.idp.Client()), clock.NewManual(_now))
+	e.uc = newInstallation(e.app, keyring, storeProbe{}, probe.New(e.idp.Client()), clock.NewManual(_now), nil)
 	return e
 }
 
@@ -222,6 +226,32 @@ func TestInstall_CheckWritesProtocol(t *testing.T) {
 		"adapter": "skipped", "adapter_store": "skipped", "update_source": "skipped",
 	}, outcomes)
 	assert.NotContains(t, out.String(), _secretMarker)
+}
+
+func TestInstall_CheckRecordsJiraCloudContract(t *testing.T) {
+	t.Parallel()
+	e := newInstallEnv(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"commit_sha": _testSHA, "contract_version": "1"})
+	})
+	mux.HandleFunc("GET /readyz", func(http.ResponseWriter, *http.Request) {})
+	srv := httptest.NewTLSServer(mux)
+	t.Cleanup(srv.Close)
+	ca := filepath.Join(t.TempDir(), "adapter-ca.pem")
+	require.NoError(t, os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o600))
+	caller, err := newAdapterCaller(config.Adapters{
+		Builtin: map[string]string{"jira_cloud": srv.URL}, InternalCAFile: ca,
+	}, nil)
+	require.NoError(t, err)
+	uc := newInstallation(e.app, e.keyring, storeProbe{}, probe.New(e.idp.Client()), clock.NewManual(_now), caller)
+
+	require.NoError(t, cli.Install(t.Context(), uc, e.params(), zerolog.Nop()))
+	var outcome, detail string
+	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT outcome, detail FROM install.check_result WHERE check_kind = 'adapter'").
+		Scan(&outcome, &detail))
+	assert.Equal(t, "passed", outcome)
+	assert.Equal(t, "jira_cloud contract 1", detail)
 }
 
 func TestInstall_CheckReportsUnavailableProvider(t *testing.T) {

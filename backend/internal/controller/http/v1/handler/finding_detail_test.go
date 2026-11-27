@@ -21,7 +21,7 @@ func TestFindingBodyMatchesContract(t *testing.T) {
 	for _, kind := range []string{entity.FindingCode, entity.FindingSecret} {
 		t.Run(kind, func(t *testing.T) {
 			body, err := findingBody(&entity.FindingDetail{
-				FindingIdentity: entity.FindingIdentity{ID: entity.ID{1}, Kind: kind, FirstSeenAt: time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)},
+				FindingIdentity: entity.FindingIdentity{ID: entity.ID{1}, AreaID: entity.ID{3}, Kind: kind, FirstSeenAt: time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)},
 				Observation: entity.FindingOccurrence{
 					RuleID: "example", Path: "example.go", LineStart: new(2), NativeSeverity: "high",
 					Evidence: json.RawMessage(`{"rule_name":"Rule name","snippet":"synthetic-marker"}`),
@@ -35,6 +35,7 @@ func TestFindingBodyMatchesContract(t *testing.T) {
 			var value any
 			require.NoError(t, json.Unmarshal(raw, &value))
 			require.NoError(t, schema.VisitJSON(value))
+			assert.Contains(t, string(raw), `"area_id":"03000000-0000-0000-0000-000000000000"`)
 			assert.NotContains(t, string(raw), "synthetic-marker")
 			if kind == entity.FindingSecret {
 				assert.Empty(t, body.Evidence)

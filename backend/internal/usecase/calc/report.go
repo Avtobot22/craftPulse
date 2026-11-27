@@ -51,6 +51,7 @@ type cohort struct {
 type visibility struct {
 	whole        bool
 	projects     []entity.ID
+	security     []entity.ID
 	areas        []entity.ID
 	objects      []entity.ID
 	notes        []entity.AccessNote
@@ -126,7 +127,8 @@ func (u *UseCase) VisibleCohort(ctx context.Context, s entity.Subject, scope ent
 	}
 	var page entity.CohortPage
 	hidden := false
-	filter := entity.ReportFilter{Projects: q.Projects}
+	filter := q.Filter
+	filter.Projects = q.Projects
 	rows := c.rows[key]
 	for i := range rows {
 		row := &rows[i]
@@ -141,10 +143,13 @@ func (u *UseCase) VisibleCohort(ctx context.Context, s entity.Subject, scope ent
 		var basis crossEvidence
 		if isCrossMetric(q.MetricID) {
 			var restricted bool
-			basis, restricted = c.crossBasis(row, &v)
-			if restricted {
-				crossScore(&contribution, q.Estimator, &basis)
-				hidden = true
+			basis, restricted = c.crossBasis(row, &v, &filter, nil)
+			hidden = hidden || restricted
+			if !crossSelected(row.MetricID, row.Estimator, &basis, &filter) || crossNeedsMR(row) && len(basis.MRs) == 0 {
+				continue
+			}
+			if restricted || crossNeedsMR(row) {
+				scoreCrossRow(&contribution, row, &basis)
 			}
 			contribution.Evidence = nil
 		}
@@ -159,7 +164,7 @@ func (u *UseCase) VisibleCohort(ctx context.Context, s entity.Subject, scope ent
 		it := c.item(row)
 		it.Contribution = contribution
 		if isCrossMetric(q.MetricID) && !it.Object.Deleted {
-			c.crossItem(&it, &basis)
+			c.crossItem(&it, row, &basis)
 		}
 		page.Items = append(page.Items, it)
 	}
@@ -228,14 +233,14 @@ func (c *cohort) index(rows []entity.CohortRow) ([]entity.ID, error) {
 			if r.ProjectID != nil {
 				c.tasks[r.ObjectID] = *r
 			}
-		case entity.ObjectMergeRequest:
+		case entity.ObjectMergeRequest, entity.ObjectCIRun:
 			seen[r.ObjectID] = true
 		default:
 		}
-		if !isCrossMetric(r.MetricID) {
+		if !isCrossMetric(r.MetricID) || len(r.Evidence) == 0 {
 			continue
 		}
-		key := crossKey{start: r.PointStart.UnixNano(), task: r.ObjectID}
+		key := crossBasisKey(r)
 		if _, ok := c.cross[key]; ok {
 			continue
 		}
@@ -247,6 +252,9 @@ func (c *cohort) index(rows []entity.CohortRow) ([]entity.ID, error) {
 		for i := range b.MRs {
 			m := &b.MRs[i]
 			seen[m.ID] = true
+			for _, id := range m.Tasks {
+				seen[id] = true
+			}
 			if m.PipelineID != nil {
 				seen[*m.PipelineID] = true
 			}
@@ -298,7 +306,7 @@ func (u *UseCase) visibility(ctx context.Context, s entity.Subject, scope entity
 			return visibility{}, err
 		}
 	}
-	v := visibility{whole: scope.Whole(), projects: sortedIDs(scope.Projects()), objects: sortedIDs(scope.Objects()), notes: scope.Notes(), areaProjects: areaProjects}
+	v := visibility{whole: scope.Whole(), projects: sortedIDs(scope.Projects()), objects: sortedIDs(scope.Objects()), security: sortedIDs(scope.SecurityProjects()), notes: scope.Notes(), areaProjects: areaProjects}
 	for _, a := range areas {
 		if scope.Area(a) {
 			v.areas = append(v.areas, a)
@@ -317,7 +325,7 @@ func (c *cohort) visible(v *visibility, r *entity.CohortRow) bool {
 			return r.ProjectID != nil && (v.whole || slices.Contains(v.projects, *r.ProjectID))
 		}
 		return c.objectVisible(v, r.ObjectID)
-	case entity.ObjectMergeRequest:
+	case entity.ObjectMergeRequest, entity.ObjectCIRun:
 		return c.objectVisible(v, r.ObjectID)
 	default:
 		return true
@@ -360,6 +368,13 @@ func (c *cohort) series(v *visibility, f *entity.ReportFilter) (out []entity.Ser
 					version = def.Version
 				}
 				group := g
+				if isTechnicalCross(sp.MetricID, sp.Estimator) {
+					signal := entity.SeriesGroup{Signal: sp.Estimator}
+					if g != nil {
+						signal.TaskType, signal.SizeLabel = g.TaskType, g.SizeLabel
+					}
+					group = &signal
+				}
 				if sp.MetricID == "A22" {
 					if events := eventGroup(sp.Estimator); events != nil {
 						if g != nil {
@@ -385,28 +400,32 @@ func (c *cohort) series(v *visibility, f *entity.ReportFilter) (out []entity.Ser
 func (c *cohort) point(v *visibility, f *entity.ReportFilter, g *entity.SeriesGroup, sp *entity.SeriesPoint) (entity.Point, bool) {
 	rows := c.rows[keyOf(sp.MetricID, sp.Estimator, sp.Start)]
 	kept := make([]entity.Contribution, 0, len(rows))
-	hidden := false
+	hidden, rescored := false, false
 	for i := range rows {
 		r := &rows[i]
 		if !c.visible(v, r) {
 			hidden = true
 			continue
 		}
-		if !selected(r, f, g) || r.ObjectKind == entity.ObjectMergeRequest && !c.mrSelected(v, r, f, g) {
+		if !selected(r, f, g) || r.ObjectKind == entity.ObjectMergeRequest && !crossNeedsMR(r) && !c.mrSelected(v, r, f, g) {
 			continue
 		}
 		row := r.Contribution
 		if isCrossMetric(sp.MetricID) {
-			b, restricted := c.crossBasis(r, v)
-			if restricted {
-				hidden = true
-				crossScore(&row, sp.Estimator, &b)
+			b, restricted := c.crossBasis(r, v, f, g)
+			hidden = hidden || restricted
+			if !crossSelected(r.MetricID, r.Estimator, &b, f) || crossNeedsMR(r) && len(b.MRs) == 0 {
+				continue
+			}
+			if restricted || crossNeedsMR(r) {
+				scoreCrossRow(&row, r, &b)
+				rescored = true
 			}
 		}
 		kept = append(kept, row)
 	}
 	pt := sp.Point
-	if regathered(sp) && (hidden || len(kept) < len(rows)) {
+	if regathered(sp) && (rescored || hidden || len(kept) < len(rows)) {
 		pt = regather(sp, kept)
 	}
 	pt.Contributions = nil
@@ -475,7 +494,7 @@ func (c *cohort) groups(v *visibility, f *entity.ReportFilter) []*entity.SeriesG
 func (c *cohort) item(r *entity.CohortRow) entity.CohortItem {
 	it := entity.CohortItem{Contribution: r.Contribution, TaskType: r.TaskType, SizeLabel: r.SizeLabel}
 	it.Object = entity.CohortObject{ID: r.ObjectID, Kind: r.ObjectKind}
-	if r.ObjectKind != entity.ObjectTask && r.ObjectKind != entity.ObjectMergeRequest {
+	if r.ObjectKind != entity.ObjectTask && r.ObjectKind != entity.ObjectMergeRequest && r.ObjectKind != entity.ObjectCIRun {
 		return it
 	}
 	o, ok := c.objects[r.ObjectID]
@@ -533,10 +552,17 @@ func notesOf(v *visibility, hidden bool) []entity.AccessNote {
 func reportKey(revisionID entity.ID, v *visibility, f *entity.ReportFilter) string {
 	var b strings.Builder
 	b.WriteString(revisionID.String())
-	for _, list := range [][]entity.ID{v.areas, v.objects, v.projects, sortedIDs(f.Projects)} {
+	for _, list := range [][]entity.ID{v.areas, v.objects, v.projects, v.security, sortedIDs(f.Projects)} {
 		b.WriteByte('|')
 		for _, id := range list {
 			b.WriteString(id.String())
+		}
+	}
+	for _, area := range v.areas {
+		for _, project := range sortedIDs(v.areaProjects[area]) {
+			if slices.Contains(v.security, project) {
+				b.WriteString("|" + area.String() + "/" + project.String())
+			}
 		}
 	}
 	b.WriteString("|" + strconv.FormatBool(v.whole) + "|" + strconv.FormatBool(f.UnknownSize) + "|" + string(f.GroupBy))
@@ -545,6 +571,12 @@ func reportKey(revisionID entity.ID, v *visibility, f *entity.ReportFilter) stri
 		if label != nil {
 			b.WriteString(hex.EncodeToString([]byte(*label)))
 		}
+	}
+	if f.MinTaskAgeSeconds != nil {
+		b.WriteString("|age=" + strconv.FormatInt(*f.MinTaskAgeSeconds, 10))
+	}
+	if f.OverTarget != nil {
+		b.WriteString("|over=" + strconv.FormatBool(*f.OverTarget))
 	}
 	return b.String()
 }
@@ -567,4 +599,8 @@ func firstEstimator(metric string) string {
 		return def.Estimators[0]
 	}
 	return ""
+}
+
+func crossNeedsMR(row *entity.CohortRow) bool {
+	return row.MetricID == "X04" || row.MetricID == "X06"
 }

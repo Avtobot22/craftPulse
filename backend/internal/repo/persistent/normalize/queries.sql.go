@@ -186,6 +186,8 @@ WHERE r.organization_id = $1
   AND r.sha = $4 AND r.report_format = $5
   AND r.producer IS NOT DISTINCT FROM $6::text AND r.profile_id IS NOT DISTINCT FROM $7::text
   AND r.known_seq <= $8
+  AND ($9::text IS NULL OR (r.mode = $9::text
+      AND r.language IS NOT DISTINCT FROM $10::text))
   AND r.exit_class NOT IN ('timeout', 'failed')
   AND r.report_format IN ('lizard_csv', 'jscpd_json')
 ORDER BY r.known_seq DESC, r.record_no DESC, r.id DESC
@@ -201,6 +203,8 @@ type CodeReportAtParams struct {
 	Producer       pgtype.Text
 	ProfileID      pgtype.Text
 	KnownSeq       int64
+	Mode           pgtype.Text
+	Language       pgtype.Text
 }
 
 type CodeReportAtRow struct {
@@ -221,6 +225,8 @@ func (q *Queries) CodeReportAt(ctx context.Context, arg CodeReportAtParams) (Cod
 		arg.Producer,
 		arg.ProfileID,
 		arg.KnownSeq,
+		arg.Mode,
+		arg.Language,
 	)
 	var i CodeReportAtRow
 	err := row.Scan(
@@ -234,7 +240,7 @@ func (q *Queries) CodeReportAt(ctx context.Context, arg CodeReportAtParams) (Cod
 }
 
 const currentCIAttemptVersions = `-- name: CurrentCIAttemptVersions :many
-SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, attempt_id, run_id, job_key, config_fingerprint, attempt_no, native_status, outcome, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_s FROM normalize.ci_attempt_version WHERE organization_id = $1 AND attempt_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, attempt_id, run_id, job_key, config_fingerprint, attempt_no, native_status, outcome, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_s, observed_via, start_offset_s, finish_offset_s FROM normalize.ci_attempt_version WHERE organization_id = $1 AND attempt_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
 `
 
 type CurrentCIAttemptVersionsParams struct {
@@ -275,6 +281,9 @@ func (q *Queries) CurrentCIAttemptVersions(ctx context.Context, arg CurrentCIAtt
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.DurationS,
+			&i.ObservedVia,
+			&i.StartOffsetS,
+			&i.FinishOffsetS,
 		); err != nil {
 			return nil, err
 		}
@@ -287,7 +296,7 @@ func (q *Queries) CurrentCIAttemptVersions(ctx context.Context, arg CurrentCIAtt
 }
 
 const currentCIRunVersions = `-- name: CurrentCIRunVersions :many
-SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history, allow_failure_semantics FROM normalize.ci_run_version WHERE organization_id = $1 AND run_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
+SELECT organization_id, id, known_seq, superseded_seq, superseded_at, receipt_id, record_no, source_revision, content_hash, observed_at, run_id, area_id, mr_id, source_updated_at, ref_name, sha, parent_run_id, definition_version, native_status, outcome, started_at, finished_at, attempt_history, allow_failure_semantics, observed_via, start_offset_s, finish_offset_s FROM normalize.ci_run_version WHERE organization_id = $1 AND run_id = ANY ($2::uuid[]) AND superseded_seq IS NULL
 `
 
 type CurrentCIRunVersionsParams struct {
@@ -329,6 +338,9 @@ func (q *Queries) CurrentCIRunVersions(ctx context.Context, arg CurrentCIRunVers
 			&i.FinishedAt,
 			&i.AttemptHistory,
 			&i.AllowFailureSemantics,
+			&i.ObservedVia,
+			&i.StartOffsetS,
+			&i.FinishOffsetS,
 		); err != nil {
 			return nil, err
 		}
@@ -1644,7 +1656,9 @@ WITH input AS (
     SELECT (doc.value->>'document_id')::uuid AS document_id, doc.value->>'path' AS path,
         doc.value->>'version_ref' AS version_ref, doc.value->>'format' AS format, doc.value->>'title' AS title,
         doc.value->>'owner' AS owner, doc.value->>'acl_state' AS acl_state, (doc.value->>'spec_valid')::boolean AS spec_valid,
-        decode(doc.value->>'content_hash', 'base64') AS hash
+        decode(doc.value->>'content_hash', 'base64') AS hash,
+        (doc.value->>'event_time')::timestamptz AS event_time,
+        COALESCE((doc.value->>'event_offset_s')::integer, 0) AS event_offset_s
     FROM jsonb_array_elements($3::jsonb) AS doc(value)
 ), inserted AS (
     INSERT INTO normalize.document_version
@@ -1662,8 +1676,8 @@ WITH input AS (
         AND i.hash = v.content_hash AND i.format = v.doc_format
     WHERE v.organization_id = $1 AND v.area_id = $4
 )
-INSERT INTO normalize.docs_report_document (organization_id, report_id, document_version_id, spec_valid)
-SELECT $1, $2, v.id, i.spec_valid
+INSERT INTO normalize.docs_report_document (organization_id, report_id, document_version_id, spec_valid, event_time, event_offset_s)
+SELECT $1, $2, v.id, i.spec_valid, i.event_time, i.event_offset_s
 FROM versions v JOIN input i USING (document_id)
 `
 
@@ -2744,7 +2758,7 @@ func (q *Queries) ReadAnalysisRuns(ctx context.Context, arg ReadAnalysisRunsPara
 }
 
 const readCIAttemptVersions = `-- name: ReadCIAttemptVersions :many
-SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.attempt_id, v.run_id, v.job_key, v.config_fingerprint, v.attempt_no, v.native_status, v.outcome, v.allow_failure, v.failure_kind, v.runner_class, v.started_at, v.finished_at, v.duration_s FROM normalize.ci_attempt_version v
+SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.attempt_id, v.run_id, v.job_key, v.config_fingerprint, v.attempt_no, v.native_status, v.outcome, v.allow_failure, v.failure_kind, v.runner_class, v.started_at, v.finished_at, v.duration_s, v.observed_via, v.start_offset_s, v.finish_offset_s FROM normalize.ci_attempt_version v
 JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
 WHERE v.organization_id = $1 AND o.deleted_at IS NULL AND o.current_area_id = ANY($2::uuid[])
     AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
@@ -2800,6 +2814,9 @@ func (q *Queries) ReadCIAttemptVersions(ctx context.Context, arg ReadCIAttemptVe
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.DurationS,
+			&i.ObservedVia,
+			&i.StartOffsetS,
+			&i.FinishOffsetS,
 		); err != nil {
 			return nil, err
 		}
@@ -2812,7 +2829,7 @@ func (q *Queries) ReadCIAttemptVersions(ctx context.Context, arg ReadCIAttemptVe
 }
 
 const readCIRunVersions = `-- name: ReadCIRunVersions :many
-SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.run_id, v.area_id, v.mr_id, v.source_updated_at, v.ref_name, v.sha, v.parent_run_id, v.definition_version, v.native_status, v.outcome, v.started_at, v.finished_at, v.attempt_history, v.allow_failure_semantics FROM normalize.ci_run_version v
+SELECT v.organization_id, v.id, v.known_seq, v.superseded_seq, v.superseded_at, v.receipt_id, v.record_no, v.source_revision, v.content_hash, v.observed_at, v.run_id, v.area_id, v.mr_id, v.source_updated_at, v.ref_name, v.sha, v.parent_run_id, v.definition_version, v.native_status, v.outcome, v.started_at, v.finished_at, v.attempt_history, v.allow_failure_semantics, v.observed_via, v.start_offset_s, v.finish_offset_s FROM normalize.ci_run_version v
 JOIN normalize.source_object o ON o.organization_id = v.organization_id AND o.id = v.run_id
 WHERE v.organization_id = $1 AND o.deleted_at IS NULL AND o.current_area_id = ANY($2::uuid[])
     AND (NOT o.restricted OR o.id = ANY($3::uuid[]))
@@ -2869,6 +2886,9 @@ func (q *Queries) ReadCIRunVersions(ctx context.Context, arg ReadCIRunVersionsPa
 			&i.FinishedAt,
 			&i.AttemptHistory,
 			&i.AllowFailureSemantics,
+			&i.ObservedVia,
+			&i.StartOffsetS,
+			&i.FinishOffsetS,
 		); err != nil {
 			return nil, err
 		}
@@ -3682,11 +3702,11 @@ func (q *Queries) ReceiptAnalysisScopes(ctx context.Context, arg ReceiptAnalysis
 }
 
 const receiptCodeScopes = `-- name: ReceiptCodeScopes :many
-SELECT DISTINCT r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id
+SELECT DISTINCT r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id, r.mode, r.language
 FROM normalize.report r
 JOIN normalize.code_report_fact f ON f.organization_id = r.organization_id AND f.report_id = r.id
 WHERE r.organization_id = $1 AND r.receipt_id = $2 AND r.sha IS NOT NULL
-ORDER BY r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id
+ORDER BY r.area_id, r.component_id, r.sha, r.report_format, r.producer, r.profile_id, r.mode, r.language
 `
 
 type ReceiptCodeScopesParams struct {
@@ -3701,6 +3721,8 @@ type ReceiptCodeScopesRow struct {
 	ReportFormat string
 	Producer     pgtype.Text
 	ProfileID    pgtype.Text
+	Mode         string
+	Language     pgtype.Text
 }
 
 func (q *Queries) ReceiptCodeScopes(ctx context.Context, arg ReceiptCodeScopesParams) ([]ReceiptCodeScopesRow, error) {
@@ -3719,6 +3741,8 @@ func (q *Queries) ReceiptCodeScopes(ctx context.Context, arg ReceiptCodeScopesPa
 			&i.ReportFormat,
 			&i.Producer,
 			&i.ProfileID,
+			&i.Mode,
+			&i.Language,
 		); err != nil {
 			return nil, err
 		}

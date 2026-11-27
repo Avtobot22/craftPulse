@@ -83,11 +83,7 @@ func Structure(st entity.Structure) openapi.OrganizationStructure {
 		TeamMembers:  make([]openapi.TeamMemberLink, len(st.TeamMembers)),
 	}
 	for i := range st.Components {
-		c := &st.Components[i]
-		out.Components[i] = openapi.Component{
-			Id: openapi_types.UUID(c.ID), ServiceId: openapi_types.UUID(c.ServiceID), RepositoryAreaId: openapi_types.UUID(c.RepositoryAreaID),
-			PathPrefix: c.PathPrefix, Status: openapi.ComponentStatus(c.Status), Origin: openapi.ComponentOrigin(c.Origin),
-		}
+		out.Components[i] = Component(&st.Components[i])
 	}
 	for i, l := range st.TeamProjects {
 		out.TeamProjects[i] = openapi.TeamProjectLink{
@@ -108,6 +104,13 @@ func Structure(st entity.Structure) openapi.OrganizationStructure {
 		}
 	}
 	return out
+}
+
+func Component(c *entity.Component) openapi.Component {
+	return openapi.Component{
+		Id: openapi_types.UUID(c.ID), ServiceId: openapi_types.UUID(c.ServiceID), RepositoryAreaId: openapi_types.UUID(c.RepositoryAreaID),
+		PathPrefix: c.PathPrefix, Status: openapi.ComponentStatus(c.Status), Origin: openapi.ComponentOrigin(c.Origin),
+	}
 }
 
 func optionalTime(t time.Time) *time.Time {

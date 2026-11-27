@@ -58,7 +58,8 @@ func (r *Repo) InsertCIRunVersions(ctx context.Context, orgID entity.ID, version
 			DefinitionVersion: text(v.DefinitionVersion), NativeStatus: v.NativeStatus, Outcome: string(v.Outcome),
 			StartedAt: tstz(v.StartedAt), FinishedAt: tstz(v.FinishedAt), AttemptHistory: string(v.AttemptHistory),
 			KnownSeq: v.KnownSeq, ReceiptID: uuid.UUID(v.Record.ReceiptID), RecordNo: no, SourceRevision: v.Revision.Source,
-			ContentHash: v.Revision.Hash, ObservedAt: v.ObservedAt, AllowFailureSemantics: v.AllowFailureSemantics,
+			ContentHash: v.Revision.Hash, ObservedAt: v.ObservedAt,
+			ObservedVia: text(string(v.ObservedVia)), StartOffsetS: v.StartOffsetS, FinishOffsetS: v.FinishOffsetS, AllowFailureSemantics: v.AllowFailureSemantics,
 		}
 	}
 	var batchErr error
@@ -78,6 +79,7 @@ func mapCIRunVersions(rows []NormalizeCiRunVersion) []entity.CIRunVersion {
 			Knowledge: knowledge(row.KnownSeq, row.SupersededSeq, row.SupersededAt),
 			Record:    entity.RecordRef{ReceiptID: entity.ID(row.ReceiptID), RecordNo: int(row.RecordNo)},
 			Revision:  entity.Revision{Source: row.SourceRevision, Hash: row.ContentHash}, ObservedAt: row.ObservedAt,
+			ObservedVia: entity.ObservedVia(row.ObservedVia.String), StartOffsetS: row.StartOffsetS, FinishOffsetS: row.FinishOffsetS,
 			SourceUpdatedAt: timePtr(row.SourceUpdatedAt), RefName: row.RefName, SHA: row.Sha, ParentRunID: idPtr(row.ParentRunID),
 			DefinitionVersion: row.DefinitionVersion.String, NativeStatus: row.NativeStatus, Outcome: entity.CIOutcome(row.Outcome),
 			StartedAt: timePtr(row.StartedAt), FinishedAt: timePtr(row.FinishedAt), AttemptHistory: entity.AttemptHistory(row.AttemptHistory),
@@ -137,6 +139,7 @@ func (r *Repo) InsertCIAttemptVersions(ctx context.Context, orgID entity.ID, ver
 			StartedAt: tstz(v.StartedAt), FinishedAt: tstz(v.FinishedAt), DurationS: int8Of(v.DurationS),
 			KnownSeq: v.KnownSeq, ReceiptID: uuid.UUID(v.Record.ReceiptID), RecordNo: no, SourceRevision: v.Revision.Source,
 			ContentHash: v.Revision.Hash, ObservedAt: v.ObservedAt,
+			ObservedVia: text(string(v.ObservedVia)), StartOffsetS: v.StartOffsetS, FinishOffsetS: v.FinishOffsetS,
 		}
 	}
 	var batchErr error
@@ -156,6 +159,7 @@ func mapCIAttemptVersions(rows []NormalizeCiAttemptVersion) []entity.CIAttemptVe
 			Knowledge: knowledge(row.KnownSeq, row.SupersededSeq, row.SupersededAt),
 			Record:    entity.RecordRef{ReceiptID: entity.ID(row.ReceiptID), RecordNo: int(row.RecordNo)},
 			Revision:  entity.Revision{Source: row.SourceRevision, Hash: row.ContentHash}, ObservedAt: row.ObservedAt,
+			ObservedVia: entity.ObservedVia(row.ObservedVia.String), StartOffsetS: row.StartOffsetS, FinishOffsetS: row.FinishOffsetS,
 			JobKey: row.JobKey, ConfigFingerprint: row.ConfigFingerprint, AttemptNo: int(row.AttemptNo), NativeStatus: row.NativeStatus,
 			Outcome: entity.CIOutcome(row.Outcome), AllowFailure: row.AllowFailure, FailureKind: row.FailureKind.String,
 			RunnerClass: row.RunnerClass.String, StartedAt: timePtr(row.StartedAt), FinishedAt: timePtr(row.FinishedAt),

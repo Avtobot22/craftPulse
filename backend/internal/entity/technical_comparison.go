@@ -1,6 +1,9 @@
 package entity
 
-import "regexp"
+import (
+	"regexp"
+	"time"
+)
 
 var _gitSHA = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
@@ -35,6 +38,7 @@ type TechnicalReportScope struct {
 }
 
 type TechnicalReport struct {
+	EventAt           time.Time
 	Format            string
 	ID                ID
 	SHA               string

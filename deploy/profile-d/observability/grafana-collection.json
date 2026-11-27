@@ -1,0 +1,232 @@
+{
+  "uid": "craftpulse-collection",
+  "title": "craftPulse · Сбор данных",
+  "schemaVersion": 40,
+  "tags": [
+    "craftpulse"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-48h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Время с последнего успешного сбора",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "craftpulse_sync_seconds_since_success{service=\"worker\"}",
+          "legendFormat": "{{connection_id}} · {{data_kind}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Отставание от watermark",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "craftpulse_sync_lag_seconds{service=\"worker\"}",
+          "legendFormat": "{{connection_id}} · {{data_kind}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Ошибки сбора за 5 минут",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (class) (increase(craftpulse_sync_errors_total{service=\"worker\"}[5m]))",
+          "legendFormat": "{{class}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Ошибки проверки прав за 2 минуты",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (connection_id) (increase(craftpulse_access_check_failures_total[2m]))",
+          "legendFormat": "{{connection_id}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Доля отклонённых пакетов за 5 минут",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (channel) (increase(craftpulse_ingest_resolved_packages_total{status=\"rejected\"}[5m])) / (sum by (channel) (increase(craftpulse_ingest_resolved_packages_total[5m])) > 0)",
+          "legendFormat": "{{channel}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Отклонения пакетов по причинам за 5 минут",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (channel, reason) (increase(craftpulse_ingest_rejected_packages_total[5m]))",
+          "legendFormat": "{{channel}} · {{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "До истечения сертификата Jira Cloud",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min by (service) (craftpulse_adapter_tls_not_after_timestamp_seconds) - time()",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Рабочий набор адаптеров Jira Cloud и GitLab",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "craftpulse-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "container_memory_working_set_bytes{service=~\"adapter-(gitlab|jiracloud)\"}",
+          "legendFormat": "{{container}}"
+        }
+      ]
+    }
+  ]
+}

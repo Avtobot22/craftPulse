@@ -7,6 +7,17 @@ import (
 
 var ErrInvalidCursor = errors.New("invalid or expired list cursor")
 
+// GitLabCISource locates a run or job from a selected CI version.
+type GitLabCISource struct {
+	ObjectID       ID
+	Kind           ObjectKind
+	NativeID       string
+	InstanceURL    string
+	RepositoryURL  string
+	RepositoryPath string
+	ManifestPath   string
+}
+
 type MRDetail struct {
 	ReviewWait *ReviewWait
 	Version    MRVersion
@@ -37,10 +48,11 @@ type PipelineReport struct {
 }
 
 type PipelineDetail struct {
-	Reports []PipelineReport
-	Run     CIRun
-	Summary RunSummary
-	Metrics TestCoverageRevision
+	SourceURL *string
+	Reports   []PipelineReport
+	Run       CIRun
+	Summary   RunSummary
+	Metrics   TestCoverageRevision
 }
 
 type AttemptQuery struct {
@@ -51,6 +63,7 @@ type AttemptQuery struct {
 }
 
 type AttemptList struct {
+	SourceURLs   map[ID]string // keyed by attempt ID
 	IssuedAt     time.Time
 	Items        []CIAttemptVersion
 	Next         *ID

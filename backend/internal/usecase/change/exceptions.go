@@ -18,6 +18,7 @@ type Decisions interface {
 	Get(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID) (entity.ExceptionView, error)
 	Save(ctx context.Context, s entity.Subject, scope entity.Scope, cmd entity.ExceptionWrite) (entity.ExceptionView, error)
 	ActiveAt(ctx context.Context, org, area entity.ID, seq int64, at time.Time) ([]entity.ExceptionVersion, error)
+	ActiveAndExpiredAt(ctx context.Context, org, area entity.ID, seq int64, at time.Time) ([]entity.ExceptionVersion, error)
 }
 
 // FindingRights checks access to the source area and the finding class.

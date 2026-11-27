@@ -540,7 +540,10 @@ func TestCIUpload_WorkerTransactionRetry(t *testing.T) {
 	q := &ciRetryQueue{JobQueue: queue.New(jobs)}
 	metrics := ingestMetrics{
 		rejected: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "rejected_test"}, []string{"channel", "reason"}),
-		ci:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "craftpulse_ingest_ci_packages_total"}, []string{"outcome", "reason"}),
+		resolved: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "craftpulse_ingest_resolved_packages_total",
+		}, []string{"channel", "status"}),
+		ci: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "craftpulse_ingest_ci_packages_total"}, []string{"outcome", "reason"}),
 	}
 	tx := persistent.NewTransactor(e.app)
 	uc := ingest.New(ingest.Deps{
@@ -557,7 +560,9 @@ func TestCIUpload_WorkerTransactionRetry(t *testing.T) {
 	assert.Equal(t, 1, e.jobs(t, entity.KindNormalizeBatch))
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(metrics.ci))
+	require.NoError(t, reg.Register(metrics.resolved))
 	assert.Equal(t, 1.0, ciMetric(t, reg, "accepted", ""))
+	assert.InDelta(t, 1, gathered(t, reg, "craftpulse_ingest_resolved_packages_total", "accepted"), 0)
 }
 
 func TestCIUpload_ResultLinkWaitsForPipelineVersion(t *testing.T) {

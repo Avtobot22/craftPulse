@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import type { ApiClient } from './client'
+import { InvalidResponse } from './response'
 import type { components, operations } from './generated/schema'
 import type { OpenCodes } from './read-fields'
 import { readNumber, readScopedPage } from './read-fields'
@@ -15,6 +16,12 @@ type Schema = components['schemas']
 export type ExceptionListParams = NonNullable<
   operations['listExceptions']['parameters']['query']
 >
+
+export type ExceptionVersion = OpenCodes<Schema['ExceptionVersion']>
+export type ExceptionDetail = OpenCodes<Schema['ExceptionDetail']>
+export type ExceptionDraft = Schema['ExceptionDraft']
+export type ExceptionDecision = Schema['ExceptionDecision']
+export type ExceptionScope = Schema['ExceptionScope']
 
 function readExceptionVersion(
   value: unknown,
@@ -103,10 +110,81 @@ export function getException(
 ) {
   return queryOptions({
     queryKey: ['exceptions', 'detail', exceptionId],
-    queryFn: ({ signal }) =>
-      api.read('/exceptions/{exception_id}', readExceptionDetail, {
-        pathParams: { exception_id: exceptionId },
-        signal,
-      }),
+    queryFn: ({ signal }) => readExceptionById(api, exceptionId, signal),
   })
+}
+
+export function readExceptionById(
+  api: ApiClient,
+  exceptionId: string,
+  signal: AbortSignal,
+) {
+  return api.read('/exceptions/{exception_id}', exceptionDecoder(exceptionId), {
+    pathParams: { exception_id: exceptionId },
+    signal,
+  })
+}
+
+function exceptionDecoder(expectedId: string) {
+  return (raw: unknown) => {
+    const detail = readExceptionDetail(raw)
+    if (detail.id !== expectedId) throw new InvalidResponse()
+    return detail
+  }
+}
+
+export function createException(
+  api: ApiClient,
+  draft: ExceptionDraft,
+  idempotencyKey: string,
+  signal: AbortSignal,
+) {
+  return api.createException(draft, readExceptionDetail, {
+    idempotencyKey,
+    signal,
+  })
+}
+
+export function createExceptionVersion(
+  api: ApiClient,
+  exceptionId: string,
+  draft: ExceptionDraft,
+  ifMatch: string,
+  idempotencyKey: string,
+  signal: AbortSignal,
+) {
+  return api.update(
+    'POST',
+    '/exceptions/{exception_id}/versions',
+    draft,
+    exceptionDecoder(exceptionId),
+    {
+      pathParams: { exception_id: exceptionId },
+      ifMatch,
+      idempotencyKey,
+      signal,
+    },
+  )
+}
+
+export function decideException(
+  api: ApiClient,
+  exceptionId: string,
+  decision: ExceptionDecision,
+  ifMatch: string,
+  idempotencyKey: string,
+  signal: AbortSignal,
+) {
+  return api.update(
+    'POST',
+    '/exceptions/{exception_id}/decisions',
+    decision,
+    exceptionDecoder(exceptionId),
+    {
+      pathParams: { exception_id: exceptionId },
+      ifMatch,
+      idempotencyKey,
+      signal,
+    },
+  )
 }

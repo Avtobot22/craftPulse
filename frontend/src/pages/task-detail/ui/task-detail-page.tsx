@@ -10,9 +10,16 @@ import {
 import { RestrictedResults } from '@/entities/result-access'
 import { ApiError, getTask } from '@/shared/api'
 import type { ApiClient, Team } from '@/shared/api'
+import type { CurrentUser } from '@/shared/auth'
 import { readTaskOrigin, routePaths, taskAnalysisLinks } from '@/shared/config'
-import { ErrorState, LoadingState, StaleState } from '@/shared/ui'
+import {
+  ErrorState,
+  LoadingState,
+  StaleState,
+  TaskReturnLink,
+} from '@/shared/ui'
 import { useTaskHistory } from '../model/use-task-history'
+import { TaskChangeDetails } from './task-change-details'
 import { TaskHeader } from './task-header'
 import { TaskHistory } from './task-history'
 import { TaskObservations } from './task-observations'
@@ -53,7 +60,10 @@ function TaskDetailContent({
   taskId: string
 }) {
   const state: unknown = useLocation().state
-  const context = useOutletContext<{ teams: Team[] | undefined } | undefined>()
+  const context = useOutletContext<
+    | (Pick<CurrentUser, 'actions' | 'roles'> & { teams: Team[] | undefined })
+    | undefined
+  >()
   const [params] = useSearchParams()
   const revisionId = params.get('revision_id')
   const revision = revisionId && uuid.test(revisionId) ? revisionId : null
@@ -88,17 +98,15 @@ function TaskDetailContent({
   const detail = task.data
   const teamId = params.get('team_id')
   const projectId = params.get('project_id')
-  const back = (
+  const back = origin ? (
+    <TaskReturnLink origin={origin} />
+  ) : (
     <Link
-      to={
-        origin ??
-        taskAnalysisLinks.taskList({
-          ...(teamId ? { team_id: teamId } : {}),
-          ...(projectId ? { project_id: projectId } : {}),
-        })
-      }
+      to={taskAnalysisLinks.taskList({
+        ...(teamId ? { team_id: teamId } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      })}
       replace
-      state={origin ? { taskReturnFocus: origin.focusId } : undefined}
     >
       Назад
     </Link>
@@ -118,6 +126,15 @@ function TaskDetailContent({
     />
   )
   const team = context?.teams?.find(({ id }) => id === detail?.team_id)
+  const canDecide =
+    detail?.project_id != null &&
+    context?.actions.includes('links.decide') === true &&
+    context.roles.some(
+      ({ role, project_id, team_id, service_id }) =>
+        role === 'project_manager' &&
+        (project_id === detail.project_id ||
+          (project_id === null && team_id === null && service_id === null)),
+    )
   const content = !waiting && detail && (
     <>
       <RestrictedResults redactions={detail.redactions} />
@@ -128,6 +145,14 @@ function TaskDetailContent({
         revision={revision}
         events={events}
         receivedAt={task.dataUpdatedAt}
+      />
+      <TaskChangeDetails
+        api={api}
+        task={detail}
+        canDecide={canDecide && !task.isError}
+        refreshTask={async () => {
+          await task.refetch({ throwOnError: true })
+        }}
       />
       <TaskHistory
         events={events}
@@ -156,20 +181,19 @@ function TaskDetailContent({
         task={waiting ? undefined : detail}
         teamName={team?.name ?? detail?.team_id ?? undefined}
       />
-      {waiting ? (
-        <LoadingState />
-      ) : failure && !detail ? (
-        failure
-      ) : failure ? (
-        <StaleState
-          snapshotAt={new Date(task.dataUpdatedAt).toISOString()}
-          currentError={failure}
-        >
-          {content}
-        </StaleState>
-      ) : (
-        content
-      )}
+      {waiting && <LoadingState />}
+      {failure &&
+        (detail ? (
+          <StaleState
+            snapshotAt={new Date(task.dataUpdatedAt).toISOString()}
+            currentError={failure}
+          >
+            {null}
+          </StaleState>
+        ) : (
+          failure
+        ))}
+      {content}
     </article>
   )
 }

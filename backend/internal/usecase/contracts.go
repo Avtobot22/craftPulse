@@ -153,6 +153,7 @@ type Operations interface {
 type TeamReports interface {
 	SavedViews
 	TeamReport(ctx context.Context, s entity.Subject, scope entity.Scope, q entity.ReportQuery) (entity.TeamReport, error)
+	SeriesData(ctx context.Context, s entity.Subject, seriesID entity.ID, revisionID *entity.ID, metrics []string) (entity.TeamReport, error)
 	Revision(ctx context.Context, s entity.Subject, revisionID entity.ID) (entity.RevisionPassport, error)
 	Cohort(ctx context.Context, s entity.Subject, revisionID entity.ID, q entity.CohortQuery) (entity.CohortPage, []string, error)
 	MetricDefinitions() []entity.MetricDefinition
@@ -245,6 +246,12 @@ type Documentation interface {
 	RootsAt(ctx context.Context, orgID entity.ID, scope entity.Scope, serviceID, areaID entity.ID, seq int64) ([]entity.DocumentationRoot, error)
 }
 
+// ServiceDocumentation exposes the service corpus and requests for repeat checks.
+type ServiceDocumentation interface {
+	ListServiceDocuments(context.Context, entity.Subject, entity.Scope, entity.ID, entity.ID, int) (entity.ServiceDocuments, error)
+	RequestDocumentationCheck(context.Context, entity.Subject, entity.Scope, entity.ID, entity.ID) (entity.Operation, error)
+}
+
 type SourceLinks interface {
 	ListSourceLinks(context.Context, entity.Subject) ([]entity.SourceLink, error)
 	StartSourceLink(context.Context, entity.Subject, entity.ID, string, string) (string, error)
@@ -253,6 +260,7 @@ type SourceLinks interface {
 }
 
 type TaskViews interface {
+	ListProjectTimeline(context.Context, entity.Subject, entity.Scope, entity.ID, entity.ProjectTimelineQuery) (entity.TaskEventPage, error)
 	ListTasks(context.Context, entity.Subject, entity.Scope, entity.TaskViewQuery) (entity.TaskViewPage, error)
 	GetTask(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.TaskDetail, error)
 	ListTaskEvents(context.Context, entity.Subject, entity.Scope, entity.ID, entity.TaskEventQuery) (entity.TaskEventPage, error)
@@ -275,6 +283,8 @@ type ExceptionDrafts interface {
 
 // Findings reads a canonical finding in the caller's source and security scope.
 type Findings interface {
+	ListFindings(context.Context, entity.Subject, entity.Scope, entity.FindingQuery) (entity.FindingPage, error)
+	ComponentOverview(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.ComponentOverview, error)
 	GetFinding(context.Context, entity.Subject, entity.Scope, entity.ID) (entity.FindingDetail, error)
 }
 

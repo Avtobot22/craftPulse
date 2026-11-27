@@ -359,6 +359,31 @@ func TestDecide_FreshnessOfTheModeShortensTheCache(t *testing.T) {
 	assert.Equal(t, int64(2), e.sources.calls.Load())
 }
 
+func TestDecide_CountsRepeatedUnknownSourceChecks(t *testing.T) {
+	t.Parallel()
+	e := newDecideEnv()
+	project := entity.ID{1}
+	area := e.area(project, "A-1")
+	q := entity.SourceQuery{Areas: []entity.ID{area}}
+	e.sources.set("A-1", entity.SourceUnknown)
+	e.sources.maxAge = new(0)
+
+	for attempt := int64(1); attempt <= 3; attempt++ {
+		got := e.decide(t, roleScope(project), q)
+		assert.False(t, got.Area(area))
+		assert.Equal(t, []entity.AccessNote{{Code: entity.NoteCheckUnavailable, ConnectionID: _conn}}, got.Notes())
+		assert.Equal(t, attempt, e.sources.calls.Load())
+		assert.Equal(t, attempt, e.metrics.failed.Load())
+	}
+
+	e.sources.set("A-1", entity.SourceDenied)
+	got := e.decide(t, roleScope(project), q)
+	assert.False(t, got.Area(area))
+	assert.Equal(t, []entity.AccessNote{{Code: entity.NoteRestricted}}, got.Notes())
+	assert.Equal(t, int64(4), e.sources.calls.Load())
+	assert.Equal(t, int64(3), e.metrics.failed.Load())
+}
+
 func TestDecide_SlowCheckClosesTheAreaAndIsNotKept(t *testing.T) {
 	t.Parallel()
 	e := newDecideEnv(func(d *Deps) { d.CheckTimeout = 50 * time.Millisecond })

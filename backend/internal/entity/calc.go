@@ -116,6 +116,7 @@ type Point struct {
 
 // SeriesGroup is the group of a split series; a nil label is the group of tasks without it.
 type SeriesGroup struct {
+	Signal    string
 	TaskType  *string
 	SizeLabel *string
 	EventKind string
@@ -478,6 +479,7 @@ type TargetBaselines struct {
 // completeness of a calculation (T39, T40, T42). Completeness is complete only after a reconciliation without
 // differences (BR-022).
 type AreaCollection struct {
+	InstanceID          ID
 	AreaID              ID
 	ConnectionID        ID
 	DataKind            string

@@ -210,7 +210,7 @@ function TargetSettings({
           </section>
           <div className="cp-targets__group">
             <TargetGroupForm
-              key={groupKey}
+              key={'form:' + groupKey}
               group={group}
               select={(next) => {
                 if (
@@ -223,7 +223,7 @@ function TargetSettings({
             />
             {group && (
               <TargetEditor
-                key={groupKey}
+                key={'editor:' + groupKey}
                 api={api}
                 teamId={team.id}
                 group={group}

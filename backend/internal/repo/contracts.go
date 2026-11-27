@@ -306,6 +306,8 @@ type SyncRepo interface {
 
 // NormalizeRepo is the normalize schema under row-level security: canonical facts in versions of knowledge.
 type NormalizeRepo interface {
+	CodeReportSources(context.Context, entity.ID, []entity.ID) (map[entity.ID]entity.CodeReportSource, error)
+	TimelineFacts(context.Context, entity.ID, []entity.ID, []entity.ID, entity.TimelineFactQuery) ([]entity.TimelineFact, error)
 	InsertAnalysisRuns(ctx context.Context, org entity.ID, runs []entity.AnalysisRun) error
 	ReadAnalysisFacts(ctx context.Context, org entity.ID, scope entity.AnalysisScope, seq int64, asOf time.Time) (entity.AnalysisFacts, error)
 	ReceiptAnalysisScopes(ctx context.Context, org, receipt entity.ID) ([]entity.AnalysisScope, error)
@@ -358,6 +360,7 @@ type NormalizeRepo interface {
 	ReadCIRunVersions(ctx context.Context, orgID entity.ID, areas, allowed, runs []entity.ID, seq int64) ([]entity.CIRunVersion, error)
 	FindCIRunIDs(ctx context.Context, orgID entity.ID, areas, allowed []entity.ID, q entity.RunsQuery, seq int64) ([]entity.ID, error)
 	ReadCIAttemptVersions(ctx context.Context, orgID entity.ID, areas, allowed, runs []entity.ID, seq int64) ([]entity.CIAttemptVersion, error)
+	GitLabCISources(ctx context.Context, orgID entity.ID, areas, allowed, versions []entity.ID) ([]entity.GitLabCISource, error)
 
 	// ReportedRecords are the records of a receipt among nos that already gave a report.
 	ReportedRecords(ctx context.Context, orgID, receiptID entity.ID, nos []int) ([]int, error)
@@ -365,6 +368,8 @@ type NormalizeRepo interface {
 	InsertReport(ctx context.Context, orgID entity.ID, rep *entity.ScanReport, rows entity.ReportRows) error
 	CodeReportAt(ctx context.Context, orgID entity.ID, scope entity.CodeScope, seq int64) (*entity.CodeReport, error)
 	DocumentsAt(ctx context.Context, org, area entity.ID, prefix, sha string, seq int64) ([]entity.DocumentVersion, error)
+	DocumentationCheckCompleted(ctx context.Context, org entity.ID, root entity.DocumentationRoot, through, after int64, requestedAt time.Time) (bool, error)
+	LatestDocumentationChecks(ctx context.Context, org entity.ID, root entity.DocumentationRoot, through, after int64) ([]entity.DocumentationCheck, error)
 	DocumentationReportsAt(ctx context.Context, org entity.ID, root *entity.DocumentationRoot, sha string, seq int64) ([]entity.DocsReport, []entity.DocsFinding, error)
 	ReceiptDocumentationRoots(ctx context.Context, org, receipt entity.ID) ([]entity.DocsReceiptRoot, error)
 	ReceiptCodeScopes(ctx context.Context, orgID, receiptID entity.ID) ([]entity.CodeScope, error)
@@ -446,6 +451,8 @@ type ProcessRepo interface {
 // CalcRepo keeps the series of calc, their immutable revisions and the parts they share (TZ 12.5.8, 12.7).
 // Every call runs in an organization transaction; a missing series or revision is entity.ErrNotFound.
 type CalcRepo interface {
+	ComponentCodeRevisions(context.Context, entity.ID, entity.Component, []string) ([]entity.ComponentCodeRevision, error)
+	TimelinePublications(context.Context, entity.ID, []entity.ID, time.Time, time.Time) ([]entity.TimelinePublication, error)
 	// EnsureSeries creates the series of the scope, set and step unless it exists, and returns it.
 	EnsureSeries(ctx context.Context, orgID entity.ID, s entity.CalcSeries) (entity.CalcSeries, error)
 	Series(ctx context.Context, orgID, id entity.ID) (entity.CalcSeries, error)
@@ -519,6 +526,7 @@ type ViewRepo interface {
 
 // ChangeRepo keeps the versions of the matrix of checks of projects.
 type ChangeRepo interface {
+	ReadFindingSnapshot(ctx context.Context, orgID entity.ID, read func(context.Context) error) error
 	ExpectedPipelineReports(ctx context.Context, orgID, areaID entity.ID, at time.Time, whole bool, projects []entity.ID) ([]entity.ExpectedReport, error)
 	LatestProfileVersion(ctx context.Context, orgID, projectID entity.ID) (entity.CheckProfileVersion, error)
 	ProfileVersionByConfirmation(ctx context.Context, orgID, confirmationID entity.ID) (entity.CheckProfileVersion, error)
@@ -530,7 +538,7 @@ type ChangeRepo interface {
 	AssignedOccurrences(ctx context.Context, orgID entity.ID, occurrences []entity.ID) ([]entity.ID, error)
 	InsertOccurrenceIdentities(ctx context.Context, orgID entity.ID, list []entity.OccurrenceIdentity, at time.Time, seq int64) error
 	FindingIdentity(ctx context.Context, orgID, id entity.ID) (entity.FindingIdentity, error)
-	FindingObservation(ctx context.Context, orgID, id entity.ID) (entity.FindingDetail, error)
+	FindingObservations(ctx context.Context, orgID, id entity.ID, selection entity.FindingSelection) ([]entity.FindingDetail, error)
 	FindingKindsForException(ctx context.Context, org entity.ID, s entity.ExceptionScope) ([]string, error)
 	LockExceptionProjection(ctx context.Context, org, area entity.ID) error
 	ProjectExceptions(ctx context.Context, org, area entity.ID, seq int64, at time.Time, versions []entity.ID) error

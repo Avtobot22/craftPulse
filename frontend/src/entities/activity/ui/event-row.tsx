@@ -1,5 +1,6 @@
 import { ArrowDownToLine, Clock } from '@gravity-ui/icons'
 import { Flex, Text } from '@gravity-ui/uikit'
+import type { ReactNode } from 'react'
 import type { TimelineEvent } from '@/shared/api'
 import { contractLabel, contractLabels } from '@/shared/config'
 import { ActivityBadge } from './activity-badge'
@@ -10,9 +11,15 @@ import { SourceLink } from './source-link'
 export function EventRow({
   event,
   sourceName,
+  eventHeading,
+  grouped = false,
+  showSourceLink = true,
 }: {
   event: TimelineEvent
-  sourceName?: string
+  sourceName?: string | undefined
+  eventHeading?: ReactNode
+  grouped?: boolean
+  showSourceLink?: boolean
 }) {
   const {
     object,
@@ -26,10 +33,12 @@ export function EventRow({
     .join(' · ')
   return (
     <Flex direction="column" gap="spacing-2">
-      <Text as="strong">{objectLabel || 'Объект события'}</Text>
-      <Text as="div">
-        {contractLabel(contractLabels.eventKind, event.event_kind)}
-      </Text>
+      {!grouped && <Text as="strong">{objectLabel || 'Объект события'}</Text>}
+      {eventHeading ?? (
+        <Text as="div">
+          {contractLabel(contractLabels.eventKind, event.event_kind)}
+        </Text>
+      )}
       {(field !== null || before !== null || after !== null) && (
         <Text as="div">
           {field === null ? null : field + ': '}
@@ -69,10 +78,9 @@ export function EventRow({
           )}
         </Flex>
       )}
-      <SourceLink
-        url={object.source_url}
-        {...(sourceName === undefined ? {} : { sourceName })}
-      />
+      {showSourceLink && (
+        <SourceLink url={object.source_url} sourceName={sourceName} />
+      )}
     </Flex>
   )
 }

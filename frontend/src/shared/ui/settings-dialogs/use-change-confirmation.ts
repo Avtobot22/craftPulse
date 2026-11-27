@@ -26,6 +26,8 @@ type Status<Draft, Result> =
 
 export function useChangeConfirmation<Draft, Result>({
   proposal: initialProposal,
+  initialWrite = false,
+  onRejected,
   submit,
   recheck,
   onSaved,
@@ -140,7 +142,8 @@ export function useChangeConfirmation<Draft, Result>({
           error.kind === 'missing-version' ||
           (error.problem && error.problem.status < 500)
         ) {
-          setStatus({ kind: 'rejected', attempt })
+          if (onRejected?.(error)) close()
+          else setStatus({ kind: 'rejected', attempt })
           return
         }
       }
@@ -171,7 +174,7 @@ export function useChangeConfirmation<Draft, Result>({
     if (
       status.kind === 'preview' &&
       status.proposal.changes.length > 0 &&
-      isStrongETag(status.proposal.etag)
+      (initialWrite || isStrongETag(status.proposal.etag))
     ) {
       const proposal = status.proposal
       run(() => send({ ...proposal, idempotencyKey: crypto.randomUUID() }))

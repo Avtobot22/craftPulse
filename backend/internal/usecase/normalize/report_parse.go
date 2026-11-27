@@ -387,12 +387,13 @@ func bounded(s string, limit int) string {
 // weaknesses and packages, never a fragment of code or the value of a secret (BR-017).
 type evidence struct {
 	entity.SecurityEvidence
-	Tool             *toolRef                 `json:"tool,omitempty"`
-	RuleName         string                   `json:"rule_name,omitempty"`
-	RuleDescription  string                   `json:"rule_description,omitempty"`
-	SecuritySeverity string                   `json:"security_severity,omitempty"`
-	Identifiers      []identifier             `json:"identifiers,omitempty"`
-	Link             *envelope.DocsLinkTarget `json:"link,omitempty"`
+	ExternalSuppressions []string                 `json:"external_suppressions,omitempty"`
+	Tool                 *toolRef                 `json:"tool,omitempty"`
+	RuleName             string                   `json:"rule_name,omitempty"`
+	RuleDescription      string                   `json:"rule_description,omitempty"`
+	SecuritySeverity     string                   `json:"security_severity,omitempty"`
+	Identifiers          []identifier             `json:"identifiers,omitempty"`
+	Link                 *envelope.DocsLinkTarget `json:"link,omitempty"`
 }
 
 type toolRef struct {

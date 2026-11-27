@@ -1,44 +1,72 @@
 import { Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
-import { useParams } from 'react-router'
-import { FindingRow } from '@/entities/finding'
-import { RestrictedResults } from '@/entities/result-access'
-import { getFinding, InvalidResponse } from '@/shared/api'
+import { Navigate, useLocation, useParams } from 'react-router'
+import { ApiError, getFinding, InvalidResponse } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
-import { ErrorState, InspectionBack, LoadingState } from '@/shared/ui'
+import { routePaths } from '@/shared/config'
+import {
+  ErrorState,
+  InspectionBack,
+  LoadingState,
+  useInspectionReturn,
+} from '@/shared/ui'
+import { FindingDetails } from './finding-details'
+import './finding-detail-page.css'
 
 export function FindingDetailPage({ api }: { api: ApiClient }) {
   const { findingId = '' } = useParams()
+  const state: unknown = useLocation().state
+  const id = findingId.toLowerCase()
   const query = useQuery({
-    ...getFinding(api, findingId),
-    retry: false,
+    ...getFinding(api, id),
+    refetchOnMount: 'always',
     select: (finding) => {
-      if (finding.id !== findingId) throw new InvalidResponse()
+      if (finding.id !== id) throw new InvalidResponse()
       return finding
     },
   })
-  const finding = query.data
+  const waiting =
+    query.isPending || (query.isFetching && !query.isFetchedAfterMount)
+  const ready = query.isSuccess && !waiting
+  useInspectionReturn(ready)
+
+  if (
+    query.error instanceof ApiError &&
+    (query.error.kind === 'not-found' ||
+      query.error.kind === 'forbidden' ||
+      query.error.problem?.status === 404)
+  ) {
+    const fromInspection =
+      state !== null &&
+      typeof state === 'object' &&
+      'fromInspection' in state &&
+      state.fromInspection === true
+    return (
+      <Navigate
+        to={routePaths.unavailable}
+        replace
+        state={{ fromInspection }}
+      />
+    )
+  }
 
   return (
-    <article>
+    <article className="cp-finding-detail">
       <Text as="h1" variant="header-1">
         Карточка находки
       </Text>
-      <InspectionBack />
-      {query.isPending && <LoadingState />}
-      {query.isError && (
+      <div>
+        <InspectionBack fallbackTo={routePaths.findings} />
+      </div>
+      {waiting && <LoadingState />}
+      {!waiting && query.isError && (
         <ErrorState
           reason="Не удалось загрузить карточку находки"
           retrying={query.isFetching}
           onRetry={() => void query.refetch()}
         />
       )}
-      {query.isSuccess && finding && (
-        <>
-          <RestrictedResults redactions={finding.redactions} />
-          <FindingRow finding={finding} />
-        </>
-      )}
+      {ready && <FindingDetails finding={query.data} />}
     </article>
   )
 }

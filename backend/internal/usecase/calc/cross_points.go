@@ -15,11 +15,22 @@ const (
 
 // crossEvidence stores the facts needed to recalculate a task's one contribution after repository checks.
 type crossEvidence struct {
+	UnknownMembership bool  `json:"unknown_membership,omitempty"`
+	OverTarget        *bool `json:"over_target,omitempty"`
+	UnknownLink       bool  `json:"unknown_link,omitempty"`
+
 	Age *int64    `json:"task_age_seconds,omitempty"`
 	MRs []crossMR `json:"merge_requests,omitempty"`
 }
 
 type crossMR struct {
+	AllowFailureSupported bool                   `json:"allow_failure_supported,omitempty"`
+	Tasks                 []entity.ID            `json:"tasks,omitempty"`
+	Technical             *entity.TechnicalCross `json:"technical,omitempty"`
+	PipelineReports       *entity.TechnicalCross `json:"pipeline_reports,omitempty"`
+	FailToPass            *bool                  `json:"fail_to_pass,omitempty"`
+	AllowedFailure        *bool                  `json:"allowed_failure,omitempty"`
+
 	ID            entity.ID              `json:"id"`
 	ReviewSignal  entity.ObservationKind `json:"review_signal,omitempty"`
 	ReviewerKnown bool                   `json:"reviewer_known,omitempty"`
@@ -72,8 +83,10 @@ func (x *reportSignals) crossPoints(pr *prepared, p period) []entity.SeriesPoint
 			switch {
 			case pr.in.mapping == nil:
 				pt.ReasonCode = entity.ReasonMappingMissing
-			case estimator == _ciMissingReport:
+			case estimator == _ciMissingReport && x.technical == nil:
 				pt.ReasonCode = _reasonReportProfile
+			case estimator == _ciMissingReport:
+				continue // The technical evidence supplies this X02 slice.
 			default:
 				cs := make([]entity.Contribution, len(tasks))
 				for i := range tasks {
@@ -158,11 +171,19 @@ func crossRatio(p period, cs []entity.Contribution) entity.Point {
 }
 
 func (x *reportSignals) observationsAt(at time.Time) map[entity.ID]crossMR {
+	mrs, _, _ := x.crossObservations(at, false)
+	return mrs
+}
+
+func (x *reportSignals) crossObservations(at time.Time, allRuns bool) (mrs map[entity.ID]crossMR, technicalHeads []entity.TechnicalHead, pipelines map[entity.ID][]crossMR) {
 	facts := x.facts
 	facts.AsOf = at
 	ci := observationCI(&facts, x.runs)
 	heads := observationRevisions(&facts, x.linked)
-	out := make(map[entity.ID]crossMR, len(x.linked))
+	mrs = make(map[entity.ID]crossMR, len(x.linked))
+	if allRuns {
+		pipelines = map[entity.ID][]crossMR{}
+	}
 	for i := range x.review.mrs {
 		m := &x.review.mrs[i]
 		v := &m.version
@@ -170,18 +191,69 @@ func (x *reportSignals) observationsAt(at time.Time) map[entity.ID]crossMR {
 			continue
 		}
 		b := crossReview(m, at)
+		head := entity.TechnicalHead{MRVersion: *v}
+		head.HeadSHA = observationHead(v, heads[v.MRID], at)
 		if run := ci.forMR(v, heads[v.MRID]); run != nil {
-			b.PipelineID = &run.version.RunID
-			b.CIClass = taskPipelineClass(&ci, run)
-			if b.CIClass == "success" {
-				o, ok := taskPipelineObservation(&facts, &ci, run, entity.ObjectRef{})
-				b.Retry = ok && o.Kind == entity.ObservationCIRetried
-				b.RetryKnown = run.complete
+			b.setPipeline(&facts, &ci, run)
+			head.PipelineID, head.PipelineStarted = run.version.RunID, run.version.StartedAt
+		}
+		mrs[v.MRID] = b
+		if head.HeadSHA == "" {
+			continue
+		}
+		if allRuns {
+			for _, i := range ci.byMR[v.MRID] {
+				run := &ci.source.runs[i]
+				if run.version.ParentRunID != nil || run.version.AreaID != v.AreaID || run.version.SHA != head.HeadSHA {
+					continue
+				}
+				b := crossMR{ID: v.MRID}
+				b.setPipeline(&facts, &ci, run)
+				pipelines[v.MRID] = append(pipelines[v.MRID], b)
+				if b.CIClass == "success" {
+					head.SuccessfulPipelines = append(head.SuccessfulPipelines, entity.TechnicalPipeline{
+						ID: run.version.RunID, ProfileAt: runOrderTime(&run.version),
+					})
+				}
 			}
 		}
-		out[v.MRID] = b
+		technicalHeads = append(technicalHeads, head)
 	}
-	return out
+	return mrs, technicalHeads, pipelines
+}
+
+func (m *crossMR) setPipeline(facts *entity.TaskObservationFacts, ci *taskCI, run *ciRun) {
+	m.PipelineID = &run.version.RunID
+	m.CIClass = taskPipelineClass(ci, run)
+	if m.CIClass != "success" {
+		return
+	}
+	o, ok := taskPipelineObservation(facts, ci, run, entity.ObjectRef{})
+	m.Retry = ok && o.Kind == entity.ObservationCIRetried
+	m.RetryKnown = run.complete
+	flipped, known := false, run.complete
+	for i := range run.jobs {
+		hit, knownRetry := ci.source.retryFlip(&run.jobs[i])
+		flipped = flipped || hit
+		known = known && knownRetry
+	}
+	if flipped || known {
+		m.FailToPass = new(flipped)
+	}
+	m.AllowFailureSupported = run.version.AllowFailureSemantics
+	if !run.complete || !run.version.AllowFailureSemantics {
+		return
+	}
+	known, allowed := true, false
+	for _, job := range run.jobs {
+		last := &job.attempts[len(job.attempts)-1]
+		class := ci.source.attemptClass(last)
+		known = known && class != "unknown"
+		allowed = allowed || isAllowedFailure(last, class)
+	}
+	if known || allowed {
+		m.AllowedFailure = new(allowed)
+	}
 }
 
 func crossReview(m *reviewMR, at time.Time) crossMR {

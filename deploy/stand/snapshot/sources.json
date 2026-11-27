@@ -33,6 +33,12 @@
     "edition": "Community Edition",
     "version": "19.6.1",
     "projects": [1, 2, 3, 4, 5, 6],
+    "craftpulse_webhook": {
+      "url_template": "https://craftpulse.defects.team/api/v1/webhooks/{route_id}",
+      "project_ids": [1, 2, 3, 4],
+      "events": ["merge_requests_events", "pipeline_events", "job_events", "note_events"],
+      "secret_rotation": "Заменить webhook_secret через учётные данные подключения craftPulse, обновить Secret token в каждом webhook этого подключения и проверить доставку."
+    },
     "accounts": [
       {"login": "cp87-collector", "permissions": ["Reporter projects 1–4", "read_api"]},
       {"login": "cp87-clone", "permissions": ["Reporter projects 1–4", "read_repository"]},

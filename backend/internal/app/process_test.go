@@ -144,6 +144,11 @@ func (e *processEnv) collectDictionaries(t *testing.T) {
 // after the clock moved to the times of the jobs.
 func (e *processEnv) collect(t *testing.T, m *envelope.Manifest, recs ...*envelope.Record) {
 	t.Helper()
+	require.Equal(t, entity.ReceiptAccepted, e.collectVia(t, "", m, recs...))
+}
+
+func (e *processEnv) collectVia(t *testing.T, via entity.ObservedVia, m *envelope.Manifest, recs ...*envelope.Record) entity.ReceiptStatus {
+	t.Helper()
 	caller, err := adapterapi.NewCaller(adapterapi.Config{Resolver: mapResolver{}})
 	require.NoError(t, err)
 	conn, err := newConnect(e.app, e.keyring, caller, e.clock)
@@ -157,15 +162,16 @@ func (e *processEnv) collect(t *testing.T, m *envelope.Manifest, recs ...*envelo
 
 	p, err := intake.PreparePage(t.Context(), e.orgID, entity.ID(e.conn), entity.ID(scope), bytes.NewReader(pack(t, m, recs...)))
 	require.NoError(t, err)
+	p.ObservedVia = via
+	var rc entity.Receipt
 	require.NoError(t, pg.InOrgTx(t.Context(), e.app, uuid.UUID(e.orgID), func(ctx context.Context) error {
-		rc, err := intake.RecordPage(ctx, p)
-		if err == nil && rc.Status != entity.ReceiptAccepted {
-			err = errors.New("the page is not accepted: " + string(rc.Status))
-		}
+		var err error
+		rc, err = intake.RecordPage(ctx, p)
 		return err
 	}))
 	e.settle(t)
 	require.Equal(t, http.StatusFound, e.login(t, e.member, _otherSub).Code)
+	return rc.Status
 }
 
 func dictionaryRecord(t *testing.T, kind, id string, payload any) *envelope.Record {

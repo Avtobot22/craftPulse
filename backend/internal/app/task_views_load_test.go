@@ -1,6 +1,9 @@
 package app
 
 import (
+	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -8,6 +11,7 @@ import (
 	osexec "os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/openapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -23,11 +28,16 @@ import (
 
 // TestTaskViews_LoadProfileD adds the card as the fourth D-load operation and measures the first page separately.
 func TestTaskViews_LoadProfileD(t *testing.T) {
-	if os.Getenv("CRAFTPULSE_LOAD") != "1" {
+	httpOnly := os.Getenv("CRAFTPULSE_TIMELINE_LOAD") == "1"
+	if !httpOnly && os.Getenv("CRAFTPULSE_LOAD") != "1" {
 		t.Skip("set CRAFTPULSE_LOAD=1 to run the D-load profile with k6")
 	}
-	k6, err := osexec.LookPath("k6")
-	require.NoError(t, err)
+	var k6 string
+	if !httpOnly {
+		var err error
+		k6, err = osexec.LookPath("k6")
+		require.NoError(t, err)
+	}
 	e := newReportEnv(t, true)
 	var initial int
 	require.NoError(t, e.owner.QueryRow(t.Context(), "SELECT count(*) FROM normalize.source_object WHERE object_kind = 'task'").Scan(&initial))
@@ -45,7 +55,7 @@ func TestTaskViews_LoadProfileD(t *testing.T) {
 		BaseURL: srv.URL, TeamID: e.team.String(), RevisionID: revision.Revision.ID.String(),
 		From: e.week.AddDate(0, 0, -7*30).Format(time.RFC3339), To: e.next.AddDate(0, 0, 7).Format(time.RFC3339),
 		Filters:   []map[string]string{{}, {"size_label": "S"}, {"task_type": "Story"}, {"group_by": "size_label"}, {"size_label": "unknown"}},
-		TaskPaths: paths,
+		TaskPaths: paths, ProjectID: e.project.String(),
 	}
 	for _, s := range revision.Metrics {
 		for _, p := range s.Points {
@@ -87,6 +97,10 @@ func TestTaskViews_LoadProfileD(t *testing.T) {
 	require.Equal(t, 10, mrs)
 	require.Equal(t, 20, runs)
 	t.Logf("Fixture: %d tasks, %d events, %d MRs/PRs, %d CI runs", tasks, events, mrs, runs)
+	if httpOnly {
+		measureTimelineHTTP(t, srv.Client(), &m)
+		return
+	}
 	runTaskLoad(t, k6, "testdata/k6/report.js", &m)
 	p, team := e.project.String(), e.team.String()
 	m.Filters = []map[string]string{
@@ -178,4 +192,63 @@ func seedTaskLinkVolume(t *testing.T, e *reportEnv, first uuid.UUID) []string {
 		require.GreaterOrEqual(t, len(detail.Links), 2)
 	}
 	return paths
+}
+
+func measureTimelineHTTP(t *testing.T, client *http.Client, m *loadManifest) {
+	t.Helper()
+	period := url.Values{"from": {m.From}, "to": {m.To}}
+	project := "/api/v1/projects/" + m.ProjectID + "/timeline?" + period.Encode()
+	var points [2][]time.Duration
+	for op, name := range []string{"listTaskEvents", "listProjectTimeline"} {
+		samples := make(chan time.Duration, len(m.Sessions)*20)
+		group, ctx := errgroup.WithContext(t.Context())
+		for vu, cookie := range m.Sessions {
+			group.Go(func() error {
+				for cycle := range 25 {
+					path := project
+					if op == 0 {
+						path = m.TaskPaths[(vu*7+cycle)%len(m.TaskPaths)] + "/events"
+					}
+					elapsed, err := timedTimelineRequest(ctx, client, m.BaseURL+path, cookie)
+					if err != nil {
+						return err
+					}
+					if cycle >= 5 {
+						samples <- elapsed
+					}
+				}
+				return nil
+			})
+		}
+		require.NoError(t, group.Wait())
+		close(samples)
+		for sample := range samples {
+			points[op] = append(points[op], sample)
+		}
+		slices.Sort(points[op])
+		require.Len(t, points[op], 100)
+		p95, maxTime := points[op][94], points[op][99]
+		t.Logf("%s n=100 p95=%s max=%s", name, p95, maxTime)
+		require.LessOrEqual(t, p95, 2*time.Second)
+		require.LessOrEqual(t, maxTime, 5*time.Second)
+	}
+}
+
+func timedTimelineRequest(ctx context.Context, client *http.Client, target, cookie string) (time.Duration, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Cookie", cookie)
+	start := time.Now()
+	res, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("timeline returned HTTP %d", res.StatusCode)
+	}
+	_, err = io.Copy(io.Discard, res.Body)
+	return time.Since(start), err
 }

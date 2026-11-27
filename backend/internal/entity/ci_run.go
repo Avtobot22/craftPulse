@@ -50,19 +50,21 @@ type CIRunVersion struct {
 	// the run is a head of a revision of the MR.
 	MRID *ID
 	Knowledge
-	Record            RecordRef
-	Revision          Revision
-	ObservedAt        time.Time
-	SourceUpdatedAt   *time.Time
-	RefName           string
-	SHA               string
-	ParentRunID       *ID
-	DefinitionVersion string
-	NativeStatus      string
-	Outcome           CIOutcome
-	StartedAt         *time.Time
-	FinishedAt        *time.Time
-	AttemptHistory    AttemptHistory
+	Record                      RecordRef
+	Revision                    Revision
+	ObservedAt                  time.Time
+	ObservedVia                 ObservedVia
+	StartOffsetS, FinishOffsetS int32
+	SourceUpdatedAt             *time.Time
+	RefName                     string
+	SHA                         string
+	ParentRunID                 *ID
+	DefinitionVersion           string
+	NativeStatus                string
+	Outcome                     CIOutcome
+	StartedAt                   *time.Time
+	FinishedAt                  *time.Time
+	AttemptHistory              AttemptHistory
 	// AllowFailureSemantics tells whether the CI of the run marks an allowed failure of a job; without it I05
 	// leaves the run out.
 	AllowFailureSemantics bool
@@ -75,15 +77,17 @@ type CIAttemptVersion struct {
 	AttemptID ID
 	RunID     ID
 	Knowledge
-	Record            RecordRef
-	Revision          Revision
-	ObservedAt        time.Time
-	JobKey            string
-	ConfigFingerprint []byte
-	AttemptNo         int
-	NativeStatus      string
-	Outcome           CIOutcome
-	AllowFailure      bool
+	Record                      RecordRef
+	Revision                    Revision
+	ObservedAt                  time.Time
+	ObservedVia                 ObservedVia
+	StartOffsetS, FinishOffsetS int32
+	JobKey                      string
+	ConfigFingerprint           []byte
+	AttemptNo                   int
+	NativeStatus                string
+	Outcome                     CIOutcome
+	AllowFailure                bool
 	// FailureKind is empty when the cause is unknown; it is not attributed to the code (FR-039 A2).
 	FailureKind string
 	RunnerClass string

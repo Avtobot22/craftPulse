@@ -1,5 +1,5 @@
 import type { RouteObject } from 'react-router'
-import { PipelinePage } from '@/pages/ci-result'
+import { PipelineJobPage, PipelinePage } from '@/pages/ci-result'
 import { HomePage } from '@/pages/home'
 import { MergeRequestSummaryPage } from '@/pages/merge-request-summary'
 import { LoginPage } from '@/pages/login'
@@ -75,6 +75,10 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                   element: <PipelinePage api={runtime.api} />,
                 },
                 {
+                  path: routePaths.pipelineJob,
+                  element: <PipelineJobPage api={runtime.api} />,
+                },
+                {
                   path: routePaths.workflowSettings,
                   element: <WorkflowSettingsPage api={runtime.api} />,
                 },
@@ -93,11 +97,11 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.metricPassport,
-                  element: <MetricPassportPage />,
+                  element: <MetricPassportPage api={runtime.api} />,
                 },
                 {
                   path: routePaths.metricCohort,
-                  element: <MetricCohortPage />,
+                  element: <MetricCohortPage api={runtime.api} />,
                 },
                 {
                   path: routePaths.savedView,
@@ -113,11 +117,11 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.projectTimeline,
-                  element: <ProjectTimelinePage />,
+                  element: <ProjectTimelinePage api={runtime.api} />,
                 },
                 {
                   path: routePaths.mergeRequestQueue,
-                  element: <MergeRequestQueuePage />,
+                  element: <MergeRequestQueuePage api={runtime.api} />,
                 },
                 ...adminRoutes,
                 ...technicalRoutes(runtime.api),

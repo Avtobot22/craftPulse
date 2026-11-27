@@ -13,13 +13,14 @@ export function ChangeConfirmationDialog<Draft, Result>(
     scope,
     consequences,
     dangerous = false,
+    initialWrite = false,
     wide = false,
     openerRef,
   } = props
   const { status, proposal, working, uncertain, confirm, cancel, retryCheck } =
     useChangeConfirmation(props)
   const unchanged = status.kind === 'preview' && proposal.changes.length === 0
-  const missingVersion = !isStrongETag(proposal.etag)
+  const missingVersion = !initialWrite && !isStrongETag(proposal.etag)
   const retryable = status.kind === 'retryable'
   const canSubmit =
     retryable || (status.kind === 'preview' && !missingVersion && !unchanged)
@@ -96,8 +97,8 @@ export function ChangeConfirmationDialog<Draft, Result>(
         <div role="alert">
           <Alert
             theme="warning"
-            title="Версия пока не изменилась"
-            message="Исход сохранения неизвестен. Повторите запрос или вернитесь к черновику."
+            title="Исход сохранения неизвестен"
+            message="Повторите тот же запрос или вернитесь к черновику."
           />
         </div>
       )}
@@ -139,8 +140,12 @@ export function ChangeConfirmationDialog<Draft, Result>(
       <dl className="cp-settings-dialog__details">
         <dt>Область</dt>
         <dd>{scope}</dd>
-        <dt>Версия для сравнения</dt>
-        <dd>{proposal.etag}</dd>
+        {!initialWrite && (
+          <>
+            <dt>Версия для сравнения</dt>
+            <dd>{proposal.etag}</dd>
+          </>
+        )}
         <dt>Последствия</dt>
         <dd>{consequences}</dd>
       </dl>

@@ -27,6 +27,8 @@ import {
   taskTitle,
   taskPage,
 } from '../../../test/task-fixtures'
+import { secretDetail } from '../../../test/finding-fixtures'
+import { emptyAttempts, noReports } from '../../../test/pipeline-fixtures'
 import { AppProviders } from '../initialization/app-providers'
 import { createAppRuntime } from '../initialization/runtime'
 import type { AppRuntime } from '../initialization/runtime'
@@ -41,6 +43,7 @@ const cleanups: (() => void)[] = []
 const [team] = teams.data
 const [project] = projects.data
 if (!team || !project) throw new Error('Expected one team and project fixture')
+const timelineApiPath = `/api/v1/projects/${project.id}/timeline`
 const processOwnerRole = {
   role: 'process_owner',
   team_id: team.id,
@@ -108,6 +111,9 @@ function mockApi(
               : { ...projects, data: [] },
           ),
         )
+      case timelineApiPath:
+      case '/api/v1/projects/second-project/timeline':
+        return Promise.resolve(jsonResponse({ ...taskHistory, data: [] }))
       case '/api/v1/tasks':
         return Promise.resolve(jsonResponse(taskPage))
       case `/api/v1/tasks/${taskId}`:
@@ -314,6 +320,9 @@ describe('application routes', () => {
           } satisfies components['schemas']['Pipeline']),
         )
       }
+      if (input === '/api/v1/pipelines/' + pipeline + '/attempts?limit=100') {
+        return Promise.resolve(jsonResponse(emptyAttempts))
+      }
       return baseApi(input, init)
     })
 
@@ -358,7 +367,7 @@ describe('application routes', () => {
     expect(
       await screen.findByRole('heading', { name: 'Pipeline', level: 1 }),
     ).toBeInTheDocument()
-    expect(await screen.findByText('Исход: success')).toBeInTheDocument()
+    expect(await screen.findByText('Успешно')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }))
     const restored = await screen.findByRole('link', {
       name: 'Открыть pipeline',
@@ -993,9 +1002,11 @@ describe('task analysis routes', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Проект' }), {
       target: { value: second.id },
     })
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Несовместимые параметры сброшены при смене области',
-    )
+    expect(
+      await screen.findByText(
+        'Несовместимые параметры сброшены при смене области.',
+      ),
+    ).toBeVisible()
     expect(router.state.location.pathname).toBe('/timeline')
     expect([...new URLSearchParams(router.state.location.search)]).toEqual([
       ['date', '2026-10-02'],
@@ -1058,13 +1069,26 @@ function mockTechnicalApi(action: string) {
     ...currentUser,
     actions: ['session.read', action],
   })
-  return vi
-    .fn<typeof fetch>()
-    .mockImplementation((input, init) =>
-      input === '/api/v1' + summaryURL
-        ? Promise.resolve(jsonResponse(summaryFixture))
-        : fallback(input, init),
-    )
+  return vi.fn<typeof fetch>().mockImplementation((input, init) => {
+    if (input === '/api/v1' + summaryURL)
+      return Promise.resolve(jsonResponse(summaryFixture))
+    if (input === '/api/v1/pipelines/pipeline-1')
+      return Promise.resolve(jsonResponse({ ...noReports, id: 'pipeline-1' }))
+    if (input === '/api/v1/pipelines/pipeline-1/attempts?limit=100')
+      return Promise.resolve(jsonResponse(emptyAttempts))
+    if (typeof input === 'string' && input.split('?')[0] === '/api/v1/findings')
+      return Promise.resolve(
+        jsonResponse({
+          data: [],
+          next_cursor: null,
+          access_limited: false,
+          access_notes: [],
+        }),
+      )
+    if (input === '/api/v1/findings/finding-1')
+      return Promise.resolve(jsonResponse({ ...secretDetail, id: 'finding-1' }))
+    return fallback(input, init)
+  })
 }
 
 describe('technical screen routes', () => {
@@ -1087,8 +1111,16 @@ describe('technical screen routes', () => {
       'findings.read',
     ],
     ['/findings/finding-1', 'Карточка находки', 'findings.read'],
-    ['/findings/finding-1/exception', 'Исключение', 'exceptions.manage'],
-    ['/exceptions/exception-1/extend', 'Исключение', 'exceptions.manage'],
+    [
+      '/findings/finding-1/exception',
+      'Оформить исключение',
+      'exceptions.manage',
+    ],
+    [
+      '/exceptions/exception-1/extend',
+      'Продлить исключение',
+      'exceptions.manage',
+    ],
     [
       '/exceptions?state=pending&component_id=component-1',
       'История исключений',
@@ -1361,6 +1393,7 @@ describe('MR summary and technical comparison', () => {
     severity: { native: 'high', mapped: 'high', mapping_version: 1 },
     confidence: null,
     location: { path: 'src/handler.ts', line_start: 7, line_end: 7 },
+    source_url: `https://gitlab.example/core/-/blob/${head}/src/handler.ts#L7`,
     package: null,
     component_id: componentId,
     first_seen_at: '2026-11-08T12:00:00Z',
@@ -1563,6 +1596,16 @@ describe('MR summary and technical comparison', () => {
       expect(
         await screen.findByText('Исходная серьёзность: high'),
       ).toBeVisible()
+      expect(
+        await screen.findByRole('link', { name: 'src/handler.ts:7' }),
+      ).toHaveAttribute(
+        'href',
+        `https://gitlab.example/core/-/blob/${head}/src/handler.ts#L7`,
+      )
+      expect(screen.getByRole('link', { name: 'Сводка MR' })).toHaveAttribute(
+        'href',
+        `${summaryPath}?org_slug=example&revision_no=3&head_sha=${head}`,
+      )
       fireEvent.click(screen.getByRole('button', { name: 'Назад' }), {
         detail: 0,
       })

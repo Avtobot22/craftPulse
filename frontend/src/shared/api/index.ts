@@ -46,10 +46,12 @@ export type { TaskListParams } from './task-queries'
 export {
   listProjectTimeline,
   listTaskEvents,
+  projectTimelinePages,
   taskEventPages,
 } from './timeline-queries'
 export type {
   ProjectTimelineParams,
+  ProjectTimelinePageData,
   TaskEventsParams,
   TimelineEvent,
 } from './timeline-queries'
@@ -77,14 +79,29 @@ export { getMergeRequestSummary } from './merge-request-summary-queries'
 export {
   getFinding,
   listFindings,
+  findingPages,
   compareTechnicalResults,
 } from './finding-queries'
 export type {
   FindingListParams,
   TechnicalComparisonParams,
 } from './finding-queries'
-export { getException, listExceptions } from './exception-queries'
-export type { ExceptionListParams } from './exception-queries'
+export {
+  createException,
+  createExceptionVersion,
+  decideException,
+  getException,
+  listExceptions,
+  readExceptionById,
+} from './exception-queries'
+export type {
+  ExceptionDecision,
+  ExceptionDetail,
+  ExceptionDraft,
+  ExceptionListParams,
+  ExceptionScope,
+  ExceptionVersion,
+} from './exception-queries'
 export { getComponentOverview } from './component-queries'
 export {
   getCheckProfile,
@@ -101,7 +118,7 @@ export {
   listServiceDocuments,
 } from './documentation-queries'
 export type { ServiceDocumentListParams } from './documentation-queries'
-export { listTestExecutions } from './pipeline-queries'
+export { listTestExecutions, testExecutionPages } from './pipeline-queries'
 export type { TestExecutionListParams } from './pipeline-queries'
 export type { MergeRequestSummaryParams } from './merge-request-summary-queries'
 
@@ -129,3 +146,19 @@ export type {
   PersonListParams,
   SourceAccountListParams,
 } from './account-queries'
+
+export { loadReport, RevisionNotPublished } from './report-queries'
+export type { ReportQuery, ReportSeries, TeamReport } from './report-queries'
+export { isDateTime } from '@/shared/lib/date-time'
+export {
+  findMetricDefinition,
+  followUpDays,
+  loadMetricRevision,
+  loadRevisionMetadata,
+  loadRevisionSeries,
+} from './revision-queries'
+export type {
+  MetricDefinition,
+  MetricRevision,
+  RevisionMetadata,
+} from './revision-queries'

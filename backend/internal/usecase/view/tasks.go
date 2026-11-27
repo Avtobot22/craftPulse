@@ -18,6 +18,8 @@ const (
 )
 
 type TaskFacts interface {
+	TimelineFacts(context.Context, entity.Scope, entity.ID, []entity.ID, entity.TimelineFactQuery) ([]entity.TimelineFact, error)
+	TimelineMRFacts(context.Context, entity.Scope, entity.ID, entity.ID, int64) (entity.ReviewFacts, error)
 	VisibleAreaFacts(context.Context, entity.Scope, entity.ID, entity.ID, int64) (entity.AreaFacts, error)
 	VisibleTaskFacts(context.Context, entity.Scope, entity.ID, entity.LinkEnd, int64) (entity.AreaFacts, error)
 	TaskActorKinds(context.Context, entity.ID, int64, []entity.TaskEvent) (map[entity.ID]entity.PersonKind, error)
@@ -35,6 +37,7 @@ type TaskSettings interface {
 }
 
 type TaskCollection interface {
+	TimelineCollection(context.Context, entity.ID, []entity.ID) ([]entity.AreaCollection, error)
 	AreaCollection(context.Context, entity.ID, []entity.ID) ([]entity.AreaCollection, error)
 	MRCollection(context.Context, entity.ID, []entity.ID) ([]entity.AreaCollection, error)
 	CICollection(context.Context, entity.ID, []entity.ID) ([]entity.AreaCollection, error)
@@ -46,9 +49,16 @@ type TaskCalculator interface {
 	SortTaskObservations([]entity.TaskObservation)
 }
 
-type TaskObservationProvider func(*entity.TaskObservationFacts) []entity.TaskObservation
+// TaskObservationProvider reads observations on the card's cut. The flag reports restricted evidence.
+type TaskObservationProvider func(context.Context, entity.Subject, entity.Scope, *entity.TaskObservationFacts) ([]entity.TaskObservation, bool, error)
+
+type TimelineRevisions interface {
+	TimelineRevision(context.Context, entity.ID, entity.ID, []entity.ID) (entity.CalcRevision, error)
+	TimelinePublications(context.Context, entity.ID, []entity.ID, time.Time, time.Time) ([]entity.TimelinePublication, error)
+}
 
 type TaskDeps struct {
+	Revisions    TimelineRevisions
 	Facts        TaskFacts
 	Structure    TaskStructure
 	Settings     TaskSettings
@@ -100,14 +110,16 @@ func (u *UseCase) taskStructure(ctx context.Context, org entity.ID, scope entity
 }
 
 type taskRead struct {
-	uc         *UseCase
-	org        entity.ID
-	cut        taskCut
-	structure  taskStructure
-	history    map[entity.ID]*time.Time
-	settings   map[entity.ID]taskSettings
-	instances  map[entity.ID]entity.SourceInstance
-	dictionary map[entity.ID]map[entity.DictionaryKind]map[string]string
+	uc           *UseCase
+	org          entity.ID
+	cut          taskCut
+	structure    taskStructure
+	history      map[entity.ID]*time.Time
+	collection   []entity.AreaCollection
+	settings     map[entity.ID]taskSettings
+	instances    map[entity.ID]entity.SourceInstance
+	repositories map[entity.ID]entity.RepositoryVersion
+	dictionary   map[entity.ID]map[entity.DictionaryKind]map[string]string
 }
 
 type taskSettings struct {
@@ -125,7 +137,7 @@ func (u *UseCase) taskRead(ctx context.Context, org entity.ID, cut taskCut, stru
 		return nil, err
 	}
 	r := &taskRead{
-		uc: u, org: org, cut: cut, structure: structure, history: taskHistory(collection),
+		uc: u, org: org, cut: cut, structure: structure, history: taskHistory(collection), collection: collection,
 		settings: map[entity.ID]taskSettings{}, instances: map[entity.ID]entity.SourceInstance{},
 		dictionary: make(map[entity.ID]map[entity.DictionaryKind]map[string]string, len(dict)),
 	}

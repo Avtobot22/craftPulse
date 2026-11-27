@@ -1,0 +1,48 @@
+.cp-exception-form,
+.cp-exception-form form {
+  display: grid;
+  justify-items: start;
+  gap: var(--g-spacing-4);
+}
+
+.cp-exception-form form {
+  width: min(100%, 42rem);
+  padding: var(--g-spacing-5);
+  box-sizing: border-box;
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-l);
+}
+
+.cp-exception-form form label {
+  display: grid;
+  gap: var(--g-spacing-2);
+  width: 100%;
+}
+
+.cp-exception-form form :is(input, select, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: var(--g-spacing-2);
+  border: 1px solid var(--g-color-line-generic-accent);
+  border-radius: var(--g-border-radius-m);
+  color: var(--g-color-text-primary);
+  background-color: var(--g-color-base-background);
+  font: inherit;
+}
+
+.cp-exception-form form [aria-invalid='true'] {
+  border-color: var(--g-color-line-danger);
+}
+
+.cp-exception-form p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.cp-exception-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--g-spacing-4);
+}

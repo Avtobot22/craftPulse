@@ -291,6 +291,30 @@ describe('Целевые сроки команды', () => {
     expect(screen.getByText('Не рассчитано')).toBeVisible()
   })
 
+  it('открывает предыдущую группу через форму после перехода по ссылке', async () => {
+    mount()
+    await selectGroup()
+    fireEvent.change(screen.getByLabelText('Тип задачи'), {
+      target: { value: 'Task' },
+    })
+    fireEvent.click(screen.getByRole('link', { name: 'Задать срок: Story, M' }))
+    expect(
+      await screen.findByRole('heading', { name: 'Срок группы Story, M' }),
+    ).toHaveFocus()
+
+    const taskType = screen.getByLabelText('Тип задачи')
+    const size = screen.getByLabelText('Размер задачи')
+    expect(taskType).toHaveValue('Story')
+    expect(size).toHaveValue('M')
+    fireEvent.change(taskType, { target: { value: 'Bug' } })
+    fireEvent.change(size, { target: { value: 'S' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть группу' }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Срок группы Bug, S' }),
+    ).toBeVisible()
+  })
+
   it('при отсутствии подтверждённого сопоставления предлагает UI-14', async () => {
     const { fetcher } = mount({ mappingPage: { data: [], next_cursor: null } })
     expect(

@@ -272,7 +272,7 @@ func TestInstallation_LatestProtocol(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, e.do(t, admin, http.MethodGet, "/api/v1/installation/protocols/latest", nil).Code)
 	site := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	t.Cleanup(site.Close)
-	uc := newInstallation(e.app, e.keyring, storeProbe{}, probe.New(e.idp.srv.Client()), e.clock)
+	uc := newInstallation(e.app, e.keyring, storeProbe{}, probe.New(e.idp.srv.Client()), e.clock, nil)
 	params := entity.InstallParams{
 		ReleaseSHA: _testSHA,
 		SiteURL:    site.URL,

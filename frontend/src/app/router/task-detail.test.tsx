@@ -19,6 +19,7 @@ import {
   problemResponse,
   teams,
 } from '../../../test/fixtures'
+import { mergeRequest } from '../../../test/task-changes-fixtures'
 import {
   mrReference,
   pipelineReference,
@@ -43,6 +44,7 @@ const cleanups: (() => void)[] = []
 function addSourceOpener(routes: RouteObject[], path: string): void {
   for (const route of routes) {
     if (route.path === path) {
+      delete route.lazy
       route.element = (
         <TaskDetailLink taskId={taskId}>
           Открыть задачу из источника
@@ -80,6 +82,8 @@ function mount({
         return Promise.resolve(jsonResponse(taskPage))
       case `/api/v1/tasks/${taskId}`:
         return Promise.resolve(loadTask())
+      case `/api/v1/merge-requests/${mrReference.id}`:
+        return Promise.resolve(jsonResponse(mergeRequest))
       case `/api/v1/tasks/${taskId}/events`:
         return Promise.resolve(loadHistory(url))
       default:

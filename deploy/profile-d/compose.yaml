@@ -31,8 +31,6 @@ x-core-env: &core-env
 
 x-core: &core
   <<: *runtime
-  extra_hosts:
-    - gitlab.defects.team:host-gateway
   networks: [data, edge]
   logging: *logs
   volumes:
@@ -267,6 +265,7 @@ services:
       - ./observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/craftpulse.yaml:ro
       - ./observability/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/craftpulse.yaml:ro
       - ./observability/grafana-overview.json:/etc/grafana/craftpulse-dashboards/overview.json:ro
+      - ./observability/grafana-collection.json:/etc/grafana/craftpulse-dashboards/collection.json:ro
       - ./observability/grafana-alerts.yaml:/etc/grafana/provisioning/alerting/craftpulse.yaml:ro
     networks: [data, edge]
     ports: ["127.0.0.1:${GRAFANA_PORT:-13000}:3000"]

@@ -38,7 +38,7 @@ type Auditor interface {
 }
 
 type Metrics interface {
-	PackageRejected(channel entity.ReceiptChannel, reason string)
+	PackageResolved(channel entity.ReceiptChannel, status entity.ReceiptStatus, reason string)
 	CIPackage(outcome, reason string)
 	SecretsRedacted(channel entity.ReceiptChannel, count int64)
 }
@@ -162,7 +162,9 @@ func (u *UseCase) submit(ctx context.Context, s entity.Subject, rc entity.Receip
 	if err := describe(&rc, res.Manifest); err != nil {
 		return entity.Receipt{}, err
 	}
+	initialReceipt := rc
 	err = u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
+		rc = initialReceipt
 		if rc.Channel == entity.ChannelCI {
 			rc.PackageHash = res.ContentHash
 			if err := u.d.Repo.LockPackageHash(ctx, rc.OrganizationID, res.ContentHash); err != nil {
@@ -191,6 +193,7 @@ func (u *UseCase) submit(ctx context.Context, s entity.Subject, rc entity.Receip
 		return entity.Receipt{}, err
 	}
 	if rc.Status == entity.ReceiptDuplicate {
+		u.d.Metrics.PackageResolved(rc.Channel, rc.Status, rc.ReasonCode)
 		return rc, u.d.Objects.Delete(ctx, quarantineKey(s.OrganizationID, rc.ID))
 	}
 	return rc, nil
@@ -226,7 +229,7 @@ func (u *UseCase) refuse(ctx context.Context, s entity.Subject, rc entity.Receip
 	if err := u.d.Tx.InOrgTx(ctx, rc.OrganizationID, func(ctx context.Context) error { return u.saveSubmitted(ctx, s, rc) }); err != nil {
 		return entity.Receipt{}, err
 	}
-	u.d.Metrics.PackageRejected(rc.Channel, reason)
+	u.d.Metrics.PackageResolved(rc.Channel, rc.Status, reason)
 	u.d.Metrics.SecretsRedacted(rc.Channel, rc.RedactionCount)
 	return rc, nil
 }
@@ -275,8 +278,11 @@ func (u *UseCase) ProcessPackage(ctx context.Context, orgID, receiptID entity.ID
 	if err != nil {
 		return err
 	}
-	if processed && rc.Channel == entity.ChannelCI {
-		u.d.Metrics.CIPackage(string(recorded.Status), ciReason(p))
+	if processed {
+		u.d.Metrics.PackageResolved(recorded.Channel, recorded.Status, recorded.ReasonCode)
+		if rc.Channel == entity.ChannelCI {
+			u.d.Metrics.CIPackage(string(recorded.Status), ciReason(p))
+		}
 	}
 	return u.d.Objects.Delete(ctx, key)
 }

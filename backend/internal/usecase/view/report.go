@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	_operationRevision = "getRevision"
-	_operationCohort   = "listRevisionCohort"
+	_operationSeriesData = "getSeriesData"
+	_operationRevision   = "getRevision"
+	_operationCohort     = "listRevisionCohort"
 	// _jiraIssuePath is where Jira Cloud and Data Center show an issue by its key.
 	_jiraIssuePath = "/browse/"
 )
@@ -67,6 +68,35 @@ func (u *UseCase) TeamReport(ctx context.Context, s entity.Subject, scope entity
 		out.Series = append(out.Series, series)
 	}
 	return out, nil
+}
+
+// SeriesData reads the current or an explicit published revision of a team flow series.
+func (u *UseCase) SeriesData(ctx context.Context, s entity.Subject, seriesID entity.ID, revisionID *entity.ID,
+	metrics []string,
+) (entity.TeamReport, error) {
+	team, scope, err := u.authorizeReportSeries(ctx, s, seriesID, _operationSeriesData)
+	if err != nil {
+		return entity.TeamReport{}, err
+	}
+	rev, err := u.d.Reports.Revision(ctx, s.OrganizationID, seriesID, revisionID)
+	if err != nil {
+		return entity.TeamReport{}, err
+	}
+	if rev.PublishedAt == nil {
+		return entity.TeamReport{}, entity.ErrNotFound
+	}
+	visible, err := u.d.Reports.VisibleSeries(ctx, s, scope, rev, team, entity.ReportFilter{})
+	if err != nil {
+		return entity.TeamReport{}, err
+	}
+	series := visible.Series
+	if len(metrics) > 0 {
+		// VisibleSeries shares its cached slice with other requests.
+		series = slices.DeleteFunc(slices.Clone(series), func(s entity.Series) bool {
+			return !slices.Contains(metrics, s.MetricID)
+		})
+	}
+	return entity.TeamReport{Revision: rev, Notes: visible.Notes, Series: series}, nil
 }
 
 func (u *UseCase) reportRevision(ctx context.Context, org entity.ID, q *entity.ReportQuery) (entity.CalcRevision, error) {
@@ -178,17 +208,23 @@ func (u *UseCase) readableRevision(ctx context.Context, s entity.Subject, revisi
 	if rev.PublishedAt == nil {
 		return entity.CalcRevision{}, entity.ID{}, entity.Scope{}, entity.ErrNotFound
 	}
-	team, err := u.d.Series.SeriesTeam(ctx, org, rev.SeriesID)
+	team, scope, err := u.authorizeReportSeries(ctx, s, rev.SeriesID, operation)
+	return rev, team, scope, err
+}
+
+func (u *UseCase) authorizeReportSeries(ctx context.Context, s entity.Subject, seriesID entity.ID, operation string,
+) (entity.ID, entity.Scope, error) {
+	team, err := u.d.Series.SeriesTeam(ctx, s.OrganizationID, seriesID)
 	if err != nil {
-		return entity.CalcRevision{}, entity.ID{}, entity.Scope{}, err
+		return entity.ID{}, entity.Scope{}, err
 	}
 	scope, err := u.d.Access.Authorize(ctx, s, entity.AccessRequest{
 		Operation: operation, Action: _actionReadReport, Area: entity.AreaRef{Kind: entity.AreaTeam, ID: team},
 	})
 	if errors.Is(err, entity.ErrForbidden) {
-		return entity.CalcRevision{}, entity.ID{}, entity.Scope{}, entity.ErrNotFound
+		return entity.ID{}, entity.Scope{}, entity.ErrNotFound
 	}
-	return rev, team, scope, err
+	return team, scope, err
 }
 
 // sourceURLs are the addresses of the objects of a page in their sources, empty when unknown: a task of Jira

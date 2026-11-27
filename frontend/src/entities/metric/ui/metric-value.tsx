@@ -9,6 +9,8 @@ type Value = OpenCodes<components['schemas']['MetricValue']>
 export interface MetricValueProps {
   value: Value
   showCompleteness?: boolean
+  showBreakdown?: boolean
+  excludedLabel?: string
   renderValue?: (display: string) => ReactNode
 }
 
@@ -115,6 +117,8 @@ export function MetricValue({
   value,
   renderValue,
   showCompleteness = false,
+  showBreakdown = false,
+  excludedLabel = 'Исключено',
 }: MetricValueProps) {
   const { unit, numerator, denominator, n, bound, low_sample, reason_code } =
     value
@@ -159,7 +163,23 @@ export function MetricValue({
           Охват: {number.format(numerator)} из {number.format(denominator)}
         </Text>
       )}
-      {showCoverage && (
+      {showBreakdown && (
+        <dl>
+          <dt>Числитель</dt>
+          <dd>
+            {numerator === null ? 'Нет данных' : number.format(numerator)}
+          </dd>
+          <dt>Знаменатель</dt>
+          <dd>
+            {denominator === null ? 'Нет данных' : number.format(denominator)}
+          </dd>
+          <dt>Пропущено</dt>
+          <dd>{number.format(value.missing_count)}</dd>
+          <dt>{excludedLabel}</dt>
+          <dd>{number.format(value.excluded_count)}</dd>
+        </dl>
+      )}
+      {showCoverage && !showBreakdown && (
         <Text>
           Пропущено: {number.format(value.missing_count)}. Исключено:{' '}
           {number.format(value.excluded_count)}.

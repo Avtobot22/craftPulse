@@ -1,0 +1,59 @@
+.cp-finding-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  overflow-wrap: anywhere;
+}
+
+.cp-finding-detail :is(h1, h2, p, dl) {
+  margin: 0;
+}
+
+.cp-finding-detail section {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.cp-finding-detail__columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.cp-finding-detail dt {
+  font-weight: 600;
+}
+
+.cp-finding-detail dd {
+  margin: 0 0 8px;
+}
+
+.cp-finding-detail__evidence {
+  white-space: pre-wrap;
+}
+
+.cp-finding-detail nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.cp-finding-detail a {
+  color: var(--g-color-text-link);
+}
+
+.cp-finding-detail :is(a, button):focus-visible {
+  outline: 2px solid var(--g-color-line-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+  .cp-finding-detail__columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

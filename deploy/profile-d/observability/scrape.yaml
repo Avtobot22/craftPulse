@@ -10,6 +10,24 @@ scrape_configs:
       - targets: [worker:9090]
         labels:
           service: worker
+  - job_name: jira-adapter
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: [adapter-jiracloud]
+        type: A
+        port: 9090
+    relabel_configs:
+      - target_label: service
+        replacement: adapter-jiracloud
+  - job_name: gitlab-adapter
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: [adapter-gitlab]
+        type: A
+        port: 9090
+    relabel_configs:
+      - target_label: service
+        replacement: adapter-gitlab
   - job_name: containers
     static_configs:
       - targets: [cadvisor:8080]

@@ -95,6 +95,11 @@ func (u *UseCase) findRuns(ctx context.Context, scope entity.Scope, orgID entity
 	return out, err
 }
 
+// TechnicalPipeline reads the selected pipeline graph for internal report calculations.
+func (u *UseCase) TechnicalPipeline(ctx context.Context, org, area, run entity.ID, seq int64) (entity.CIRun, error) {
+	return u.readRunAt(ctx, org, run, []entity.ID{area}, []entity.ID{run}, seq)
+}
+
 // SummaryPipeline reads the latest root pipeline linked to this MR on its exact head.
 func (u *UseCase) SummaryPipeline(ctx context.Context, org entity.ID, mr entity.SummaryMR) (entity.CIRun, error) {
 	areas := []entity.ID{mr.AreaID}
@@ -125,4 +130,17 @@ func (u *UseCase) SummaryPipeline(ctx context.Context, org entity.ID, mr entity.
 		return err
 	})
 	return out, err
+}
+
+func (u *UseCase) GitLabCISources(ctx context.Context, scope entity.Scope, org entity.ID, versions []entity.ID) ([]entity.GitLabCISource, error) {
+	if len(versions) == 0 {
+		return nil, nil
+	}
+	var sources []entity.GitLabCISource
+	err := u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		sources, err = u.d.Repo.GitLabCISources(ctx, org, scope.Areas(), scope.Objects(), versions)
+		return err
+	})
+	return sources, err
 }

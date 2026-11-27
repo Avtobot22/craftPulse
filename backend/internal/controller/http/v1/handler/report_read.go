@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,6 +39,7 @@ func (h *reports) GetTeamReport(ctx context.Context, req openapi.GetTeamReportRe
 		}
 	}
 	q.Filter.TaskType = p.TaskType
+	q.Filter.MinTaskAgeSeconds, q.Filter.OverTarget = p.MinTaskAgeSeconds, p.OverTarget
 	switch {
 	case p.SizeLabel != nil && *p.SizeLabel == _unknownSize:
 		q.Filter.UnknownSize = true
@@ -54,23 +56,49 @@ func (h *reports) GetTeamReport(ctx context.Context, req openapi.GetTeamReportRe
 	return openapi.GetTeamReport200JSONResponse(teamReport(&r, &q)), nil
 }
 
+func (h *reports) GetSeriesData(ctx context.Context, req openapi.GetSeriesDataRequestObject) (openapi.GetSeriesDataResponseObject, error) {
+	s, ok := middleware.SubjectFrom(ctx)
+	if !ok {
+		return nil, entity.ErrAuthRequired
+	}
+	var metrics []string
+	if req.Params.MetricId != nil {
+		metrics = strings.Split(*req.Params.MetricId, ",")
+	}
+	r, err := h.views.SeriesData(ctx, s, entity.ID(req.SeriesId), (*entity.ID)(req.Params.RevisionId), metrics)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.GetSeriesData200JSONResponse{
+		SeriesId: uuid.UUID(r.Revision.SeriesID), Revision: revisionSummary(&r.Revision),
+		Metrics: metricSeriesList(r.Series), AccessLimited: len(r.Notes) > 0, AccessNotes: accessNotes(r.Notes),
+	}, nil
+}
+
 func teamReport(r *entity.TeamReport, q *entity.ReportQuery) openapi.TeamReport {
-	rev := &r.Revision
-	out := openapi.TeamReport{
-		TeamId: uuid.UUID(q.TeamID), Period: openapi.Period{From: q.From, To: q.To}, Step: openapi.TeamReportStep(rev.Window.Step),
-		Revision: openapi.RevisionSummary{
-			Id: uuid.UUID(rev.ID), SeriesId: uuid.UUID(rev.SeriesID), RevisionNo: rev.RevisionNo, AsOf: rev.AsOf, PublishedAt: rev.PublishedAt,
-			Loading: rev.Loading,
-		},
-		Grouping: openapi.CurrentStructure, Metrics: make([]openapi.MetricSeries, 0, len(r.Series)),
+	return openapi.TeamReport{
+		TeamId: uuid.UUID(q.TeamID), Period: openapi.Period{From: q.From, To: q.To}, Step: openapi.TeamReportStep(r.Revision.Window.Step),
+		Revision: revisionSummary(&r.Revision), Grouping: openapi.CurrentStructure, Metrics: metricSeriesList(r.Series),
 		AccessLimited: len(r.Notes) > 0, AccessNotes: accessNotes(r.Notes),
+	}
+}
+
+func revisionSummary(rev *entity.CalcRevision) openapi.RevisionSummary {
+	out := openapi.RevisionSummary{
+		Id: uuid.UUID(rev.ID), SeriesId: uuid.UUID(rev.SeriesID), RevisionNo: rev.RevisionNo, AsOf: rev.AsOf,
+		PublishedAt: rev.PublishedAt, Loading: rev.Loading,
 	}
 	if rev.IrreproducibleReason != "" {
 		reason := openapi.RevisionSummaryIrreproducibleReason(rev.IrreproducibleReason)
-		out.Revision.IrreproducibleReason = &reason
+		out.IrreproducibleReason = &reason
 	}
-	for i := range r.Series {
-		out.Metrics = append(out.Metrics, metricSeries(&r.Series[i]))
+	return out
+}
+
+func metricSeriesList(series []entity.Series) []openapi.MetricSeries {
+	out := make([]openapi.MetricSeries, len(series))
+	for i := range series {
+		out[i] = metricSeries(&series[i])
 	}
 	return out
 }
@@ -84,9 +112,10 @@ func metricSeries(s *entity.Series) openapi.MetricSeries {
 		out.Group = &struct {
 			ActorKind *openapi.ActorKind `json:"actor_kind,omitempty"`
 			EventKind *string            `json:"event_kind,omitempty"`
+			Signal    *string            `json:"signal,omitempty"`
 			SizeLabel *string            `json:"size_label,omitempty"`
 			TaskType  *string            `json:"task_type,omitempty"`
-		}{SizeLabel: g.SizeLabel, TaskType: g.TaskType, EventKind: optional(g.EventKind)}
+		}{SizeLabel: g.SizeLabel, TaskType: g.TaskType, EventKind: optional(g.EventKind), Signal: optional(g.Signal)}
 		if g.ActorKind != "" {
 			actor := openapi.ActorKind(g.ActorKind)
 			out.Group.ActorKind = &actor
@@ -209,7 +238,17 @@ func (h *reports) ListRevisionCohort(ctx context.Context, req openapi.ListRevisi
 	if p.Role != nil {
 		q.Role = entity.ContributionRole(*p.Role)
 	}
+	q.Filter = entity.ReportFilter{TaskType: p.TaskType, SizeLabel: p.SizeLabel, MinTaskAgeSeconds: p.MinTaskAgeSeconds, OverTarget: p.OverTarget}
+	if p.SizeLabel != nil && *p.SizeLabel == "unknown" {
+		q.Filter.SizeLabel, q.Filter.UnknownSize = nil, true
+	}
 	filter := q.MetricID + "/" + q.Estimator + "/" + string(q.Role)
+	if p.TaskType != nil || p.SizeLabel != nil || p.MinTaskAgeSeconds != nil || p.OverTarget != nil {
+		filter += fmt.Sprintf("/%x", sha256.Sum256(fmt.Appendf(nil, "%q/%q/%d/%t/%t/%t/%t", valueOrZero(p.TaskType), valueOrZero(p.SizeLabel), valueOrZero(p.MinTaskAgeSeconds), valueOrZero(p.OverTarget), p.TaskType != nil, p.SizeLabel != nil, p.MinTaskAgeSeconds != nil)))
+		if p.OverTarget == nil {
+			filter += "/any"
+		}
+	}
 	if p.ProjectId != nil && len(*p.ProjectId) > 0 {
 		q.Projects = make([]entity.ID, len(*p.ProjectId))
 		for i, id := range *p.ProjectId {
@@ -241,11 +280,22 @@ func (h *reports) ListRevisionCohort(ctx context.Context, req openapi.ListRevisi
 	return openapi.ListRevisionCohort200JSONResponse(out), nil
 }
 
+func valueOrZero[T any](v *T) (zero T) {
+	if v != nil {
+		return *v
+	}
+	return zero
+}
+
 func cohortItem(it *entity.CohortItem, url string) openapi.CohortItem {
+	kind := openapi.ObjectRefKind(it.Object.Kind)
+	if it.Object.Kind == entity.ObjectCIRun {
+		kind = openapi.ObjectRefKind("pipeline")
+	}
 	out := openapi.CohortItem{
-		Object: openapi.ObjectRef{Kind: openapi.ObjectRefKind(it.Object.Kind), Id: uuid.UUID(it.ObjectID), SourceUrl: optional(url)},
+		Object: openapi.ObjectRef{Kind: kind, Id: uuid.UUID(it.ObjectID), SourceUrl: optional(url)},
 		ItemNo: it.ItemNo, Role: openapi.CohortItemRole(it.Role), Value: float32Of(it.Value), ReasonCode: optional(it.ReasonCode),
-		TaskType: it.TaskType, SizeLabel: it.SizeLabel, BasisDeleted: it.Object.Deleted,
+		TaskType: it.TaskType, SizeLabel: it.SizeLabel, BasisDeleted: it.Object.Deleted, OverTarget: it.OverTarget,
 	}
 	if !it.Object.Deleted {
 		out.Object.DisplayKey, out.Object.Title = it.Object.DisplayKey, it.Object.Title

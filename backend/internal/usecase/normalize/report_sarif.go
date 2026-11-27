@@ -64,8 +64,11 @@ type sarifResult struct {
 	} `json:"locations"`
 	Fingerprints        map[string]string `json:"fingerprints"`
 	PartialFingerprints map[string]string `json:"partialFingerprints"` //nolint:tagliatelle // SARIF wire format.
-	Suppressions        []json.RawMessage `json:"suppressions"`
-	Properties          sarifProperties   `json:"properties"`
+	Suppressions        []struct {
+		Kind   string `json:"kind"`
+		Status string `json:"status"`
+	} `json:"suppressions"`
+	Properties sarifProperties `json:"properties"`
 }
 
 // sarifProperties are the property bags SARIF tools put tags, CWE, confidence and security-severity in.
@@ -217,6 +220,17 @@ func (run *sarifRun) findings(kind string, out *[]entity.FindingOccurrence) erro
 		}
 		ev := evidence{Tool: tool}
 		ev.Suppressed = len(res.Suppressions) > 0
+		for _, suppression := range res.Suppressions {
+			if suppression.Kind != "external" {
+				continue
+			}
+			switch suppression.Status {
+			case "accepted", "rejected", "underReview":
+				if !slices.Contains(ev.ExternalSuppressions, suppression.Status) {
+					ev.ExternalSuppressions = append(ev.ExternalSuppressions, suppression.Status)
+				}
+			}
+		}
 		tags := res.Properties.texts("tags")
 		if rule != nil {
 			if f.NativeConfidence == "" {
@@ -247,8 +261,7 @@ func (run *sarifRun) findings(kind string, out *[]entity.FindingOccurrence) erro
 			}
 		}
 		if kind == entity.AnalysisSecrets {
-			ev = evidence{Tool: tool}
-			ev.Suppressed = len(res.Suppressions) > 0
+			ev = evidence{Tool: tool, ExternalSuppressions: ev.ExternalSuppressions, SecurityEvidence: entity.SecurityEvidence{Suppressed: ev.Suppressed}}
 		}
 		if kind == entity.AnalysisDocs {
 			ev.Link = docsLinkEvidence(run.tool.Driver.Name, &f, res)

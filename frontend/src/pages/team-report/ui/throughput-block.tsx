@@ -4,7 +4,8 @@ import { useState } from 'react'
 import type { ApiClient } from '@/shared/api'
 import { ErrorState, LoadingState } from '@/shared/ui'
 import { loadOutcomeReasons } from '../api/report-api'
-import type { OutcomeFilters, ReportSeries } from '../api/report-api'
+import type { ReportSeries } from '@/shared/api'
+import type { OutcomeFilters } from '../api/report-api'
 import {
   formatTime,
   latestPoint,

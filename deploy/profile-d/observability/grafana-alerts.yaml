@@ -308,3 +308,242 @@ groups:
                   operator: {type: and}
                   query: {params: [B]}
                   reducer: {type: last, params: []}
+  - orgId: 1
+    name: craftpulse-collection
+    folder: craftPulse
+    interval: 30s
+    rules:
+      - uid: cp-collection-stale
+        title: Сбор не завершался успешно больше 26 ч
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'У подключения {{ $labels.connection_id }} отстал сбор {{ $labels.data_kind }}.'
+          __dashboardUid__: craftpulse-collection
+          __panelId__: "1"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                craftpulse_sync_seconds_since_success{service="worker"}
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [93600]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp-collection-auth
+        title: Источник отклонил учётные данные сбора
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Проверь токен и права сборщика. Источник ответил 401 или 403.'
+          __dashboardUid__: craftpulse-collection
+          __panelId__: "3"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                time() - max(craftpulse_sync_last_auth_error_timestamp_seconds{service="worker"})
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: lt, params: [300]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp-collection-errors
+        title: Ошибки сбора растут больше часа
+        condition: B
+        for: 1h
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Класс ошибки {{ $labels.class }}. Для adapter_unavailable проверь адаптер и его TLS.'
+          __dashboardUid__: craftpulse-collection
+          __panelId__: "3"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                sum by (class) (increase(craftpulse_sync_errors_total{service="worker",class!="auth"}[5m]))
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [0]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp-source-access-errors
+        title: Проверка прав источника завершается ошибкой дольше 5 мин
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Проверь источник подключения {{ $labels.connection_id }}.'
+          __dashboardUid__: craftpulse-collection
+          __panelId__: "4"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                sum by (connection_id) (increase(craftpulse_access_check_failures_total[2m]))
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [0]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp-ingest-rejection-share
+        title: Растёт доля отклонённых пакетов
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Доля отклонений канала {{ $labels.channel }} выросла более чем на 20 п.п. между соседними окнами по 5 минут.'
+          __dashboardUid__: craftpulse-collection
+          __panelId__: "5"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                (
+                  sum by (channel) (increase(craftpulse_ingest_resolved_packages_total{status="rejected"}[5m]))
+                  / sum by (channel) (increase(craftpulse_ingest_resolved_packages_total[5m]))
+                  -
+                  sum by (channel) (increase(craftpulse_ingest_resolved_packages_total{status="rejected"}[5m] offset 5m))
+                  / (sum by (channel) (increase(craftpulse_ingest_resolved_packages_total[5m] offset 5m)) > 0)
+                ) and on (channel) (sum by (channel) (increase(craftpulse_ingest_resolved_packages_total[5m])) >= 5)
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: gt, params: [0.2]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
+      - uid: cp-jira-cert-expiry
+        title: Сертификат адаптера истекает меньше чем через 30 дней
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Перевыпусти сертификат {{ $labels.service }} внутренним центром установки.'
+          __dashboardUid__: craftpulse-collection
+          __panelId__: "7"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            datasourceUid: craftpulse-metrics
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: craftpulse-metrics}
+              editorMode: code
+              expr: >-
+                min by (service) (craftpulse_adapter_tls_not_after_timestamp_seconds) - time()
+              instant: true
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange: {from: 0, to: 0}
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              refId: B
+              type: threshold
+              conditions:
+                - type: query
+                  evaluator: {type: lt, params: [2592000]}
+                  operator: {type: and}
+                  query: {params: [B]}
+                  reducer: {type: last, params: []}
