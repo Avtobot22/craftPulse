@@ -210,6 +210,7 @@ type ManifestItem struct {
 	NativeID   string
 	Version    string
 	UpdatedAt  *time.Time
+	IssueCount *int
 }
 
 type SourceAccessInput struct {

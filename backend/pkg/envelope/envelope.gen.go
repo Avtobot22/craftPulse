@@ -1225,6 +1225,30 @@ func (e ScanToolRunReportKind) Valid() bool {
 	}
 }
 
+// Defines values for SonarAnalysisFileIssuesState.
+const (
+	SonarAnalysisFileIssuesStateComplete                  SonarAnalysisFileIssuesState = "complete"
+	SonarAnalysisFileIssuesStateHistorical                SonarAnalysisFileIssuesState = "historical"
+	SonarAnalysisFileIssuesStateIssueSearchWindowExceeded SonarAnalysisFileIssuesState = "issue_search_window_exceeded"
+	SonarAnalysisFileIssuesStateMissingRevision           SonarAnalysisFileIssuesState = "missing_revision"
+)
+
+// Valid indicates whether the value is a known member of the SonarAnalysisFileIssuesState enum.
+func (e SonarAnalysisFileIssuesState) Valid() bool {
+	switch e {
+	case SonarAnalysisFileIssuesStateComplete:
+		return true
+	case SonarAnalysisFileIssuesStateHistorical:
+		return true
+	case SonarAnalysisFileIssuesStateIssueSearchWindowExceeded:
+		return true
+	case SonarAnalysisFileIssuesStateMissingRevision:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SonarAnalysisFileVersion.
 const (
 	SonarAnalysisFileVersionN1 SonarAnalysisFileVersion = "1"
@@ -2053,25 +2077,31 @@ type Selection struct {
 
 // SonarAnalysisFile Файл одного анализа SonarQube в записи `report_file/1` вида `sonar`.
 type SonarAnalysisFile struct {
-	Issues []SonarIssue `json:"issues"`
+	Issues      []SonarIssue                  `json:"issues"`
+	IssuesState *SonarAnalysisFileIssuesState `json:"issues_state,omitempty"`
 
 	// Measures Ключ метрики и исходное строковое значение SonarQube.
 	Measures map[string]string        `json:"measures"`
 	Version  SonarAnalysisFileVersion `json:"version"`
 }
 
+// SonarAnalysisFileIssuesState defines model for SonarAnalysisFile.IssuesState.
+type SonarAnalysisFileIssuesState string
+
 // SonarAnalysisFileVersion defines model for SonarAnalysisFile.Version.
 type SonarAnalysisFileVersion string
 
-// SonarIssue defines model for SonarIssue.
+// SonarIssue Исходный идентификатор SonarQube задаётся в `issue_id`. Для прежних файлов поддерживается поле `key`.
 type SonarIssue struct {
-	Key       string `json:"key"`
+	IssueId   string `json:"issue_id,omitempty"`
+	Key       string `json:"key,omitempty"`
 	LineEnd   *int   `json:"line_end,omitempty"`
 	LineStart *int   `json:"line_start,omitempty"`
 
 	// Path Путь от корня репозитория.
-	Path       *string `json:"path,omitempty"`
-	Resolution *string `json:"resolution,omitempty"`
+	Path       *string        `json:"path,omitempty"`
+	Resolution *string        `json:"resolution,omitempty"`
+	Rule       *SonarRuleInfo `json:"rule,omitempty"`
 
 	// RuleDescription Текст описания правила без примеров и фрагментов кода.
 	RuleDescription *string        `json:"rule_description,omitempty"`
@@ -2083,6 +2113,14 @@ type SonarIssue struct {
 
 // SonarIssueType defines model for SonarIssue.Type.
 type SonarIssueType string
+
+// SonarRuleInfo defines model for SonarRuleInfo.
+type SonarRuleInfo struct {
+	Key        string `json:"key"`
+	Language   string `json:"language"`
+	Name       string `json:"name"`
+	Repository string `json:"repository"`
+}
 
 // Source defines model for Source.
 type Source struct {

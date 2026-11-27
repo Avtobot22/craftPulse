@@ -1,0 +1,18 @@
+{
+  "status": {"id":"fixture-server","version":"26.11.0.134175","status":"UP"},
+  "project": {"component":{"key":"orders:main","qualifier":"TRK"}},
+  "analyses": [
+    {"key":"latest","date":"2026-11-25T12:00:00+0300","revision":"b111111111111111111111111111111111111111"},
+    {"key":"older","date":"2026-11-24T12:00:00+0300","revision":"a111111111111111111111111111111111111111"}
+  ],
+  "measures":{"component":{"key":"orders:main","measures":[{"metric":"ncloc","value":"531"},{"metric":"coverage","value":"69.4"}]}},
+  "issue":{"key":"issue-A","rule":"go:S1481","severity":"MAJOR","component":"orders:main:internal/order/order.go","project":"orders:main","line":8,"textRange":{"startLine":8,"endLine":9},"status":"RESOLVED","resolution":"FALSE-POSITIVE","type":"CODE_SMELL","message":"fixture-source-snippet","updateDate":"2026-11-25T12:00:00+0300"},
+  "components":[{"key":"orders:main:internal/order/order.go","path":"internal/order/order.go","qualifier":"FIL"}],
+  "rules":[{"key":"go:S1481","name":"Unused local variables","lang":"go","repo":"go"}],
+  "errors":{
+    "401":{"errors":[{"msg":"Authentication is required"}]},
+    "403":{"errors":[{"msg":"Insufficient privileges"}]},
+    "429":{"errors":[{"msg":"Too many requests"}]},
+    "503":{"errors":[{"msg":"Service unavailable"}]}
+  }
+}

@@ -66,9 +66,9 @@ x-craftpulse-identity:
   - {srs_row: Запуск и job GitHub Actions, provider: github, object_kind: ci_attempt, native_ns: ID запуска workflow, native_id: 'номер попытки запуска и ID job через `/`', mutable: имя job}
   - {srs_row: Сборка Jenkins, provider: jenkins, object_kind: ci_run, native_ns: полное имя job, native_id: номер сборки, mutable: '-'}
   - {srs_row: Сборка Jenkins, provider: jenkins, object_kind: execution_manifest, native_ns: полное имя job, native_id: номер сборки, mutable: '-'}
-  - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: analysis_project, native_ns: пусто, native_id: ключ проекта, mutable: название проекта}
-  - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: report_file, native_ns: ключ проекта, native_id: ключ анализа, mutable: ветка}
-  - {srs_row: 'Проект, анализ и замечание SonarQube', provider: sonarqube, object_kind: finding, native_ns: ключ проекта, native_id: ключ замечания, mutable: строка замечания}
+  - {srs_row: Проект SonarQube, provider: sonarqube, object_kind: analysis_project, native_ns: пусто, native_id: ключ проекта, mutable: название проекта}
+  - {srs_row: Анализ SonarQube, provider: sonarqube, object_kind: report_file, native_ns: ключ проекта, native_id: ключ анализа, mutable: ветка}
+  - {srs_row: Замечание SonarQube, provider: sonarqube, object_kind: finding, native_ns: ключ проекта, native_id: ключ замечания, mutable: строка замечания}
   - {srs_row: Репозиторий адаптера `git`, provider: git, object_kind: repository, native_ns: пусто, native_id: 'нормализованный адрес remote: хост в нижнем регистре, порт только нестандартный, путь без `.git` и завершающего `/`, без схемы и пользователя', identity_quality: derived, mutable: 'ветки и теги; коммит задаётся SHA'}
   - {srs_row: Репозиторий адаптера `git`, provider: git, object_kind: git_ref, native_ns: нормализованный адрес remote, native_id: полное имя ref, identity_quality: derived, mutable: SHA коммита}
   - {srs_row: Страница Confluence Cloud, provider: confluence_cloud, object_kind: document, native_ns: пусто, native_id: ID страницы, mutable: 'заголовок, пространство'}
@@ -548,7 +548,7 @@ components:
       type: object
       required: [object_kind, native_ns, native_id]
       properties:
-        object_kind: {type: string, enum: [task, merge_request, ci_run, ci_attempt, document, finding]}
+        object_kind: {type: string, enum: [task, merge_request, ci_run, ci_attempt, document, finding, report_file]}
         native_ns: {type: string, maxLength: 255}
         native_id: {type: string, minLength: 1, maxLength: 1024}
     CredentialsInput:
@@ -606,9 +606,9 @@ components:
         capability:
           type: string
           description: >-
-            Для SonarQube read_mr_analysis показывает доступность анализа MR.
-            При отсутствии поддержки редакции адаптер передаёт missing с причиной edition_unsupported.
-          enum: [read_current, read_status_history, read_field_history, read_resolution_history, read_sprint_history, read_links, read_permissions, read_deletions, write_mr_comment, write_tracker_issue, webhook, read_mr_analysis]
+            Для SonarQube read_branch_analysis и read_mr_analysis показывают доступность анализа веток и MR.
+            При отсутствии поддержки редакции адаптер передаёт partial с причиной.
+          enum: [read_current, read_status_history, read_field_history, read_resolution_history, read_sprint_history, read_links, read_permissions, read_deletions, write_mr_comment, write_tracker_issue, webhook, read_branch_analysis, read_mr_analysis]
         state: {type: string, enum: [verified, partial, missing]}
         reason_code: {type: [string, 'null'], maxLength: 64, description: 'Причина для `partial` и `missing`.'}
         checked_at: {type: string, format: date-time}
@@ -662,6 +662,7 @@ components:
         native_id: {type: string, minLength: 1, maxLength: 1024}
         version: {type: [string, 'null'], maxLength: 255, description: Номер версии источника.}
         updated_at: {type: [string, 'null'], format: date-time, description: 'Время изменения; обязательно, если номера версии нет.'}
+        issue_count: {type: integer, minimum: 0, description: 'Число issues текущего состояния проекта для последнего анализа SonarQube.'}
     CheckAccessInput:
       type: object
       required: [user_id, account_native_id, items]
