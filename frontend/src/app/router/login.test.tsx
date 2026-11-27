@@ -64,7 +64,7 @@ describe('UI-02 and login errors', () => {
       )
       expect(
         screen.getByRole('heading', { name: 'Вход', level: 1 }),
-      ).not.toHaveFocus()
+      ).toHaveFocus()
       fireEvent.click(
         screen.getByRole('button', { name: 'Войти через GitLab' }),
       )
@@ -184,7 +184,7 @@ describe('UI-02 and login errors', () => {
       )
       expect(
         screen.getByRole('heading', { name: 'Не удалось войти' }),
-      ).not.toHaveFocus()
+      ).toHaveFocus()
       expect(screen.getByRole('alert')).toHaveTextContent(title)
       expect(document.body).not.toHaveTextContent('unknown-private-password')
       expect(document.body).not.toHaveTextContent(currentUser.user.display_name)
@@ -324,7 +324,7 @@ describe('UI-03 after a 401 on an edited form', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Проверить сессию' }))
     expect(
       await screen.findByRole('heading', { name: 'Сессия завершилась' }),
-    ).not.toHaveFocus()
+    ).toHaveFocus()
     expect(screen.queryByText('Закрытый объект')).not.toBeInTheDocument()
     expect(
       screen.queryByText('Уведомление закрытого объекта'),

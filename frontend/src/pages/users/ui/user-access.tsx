@@ -1,6 +1,7 @@
-import { Button } from '@gravity-ui/uikit'
+import { CircleCheck, Clock } from '@gravity-ui/icons'
+import { Button, Icon } from '@gravity-ui/uikit'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { isUnavailableError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import { DialogFrame, ErrorState, UnavailableRedirect } from '@/shared/ui'
@@ -42,6 +43,8 @@ export function UserAccess({
   const client = useQueryClient()
   const [pending, setPending] = useState<Action>()
   const [notice, setNotice] = useState('')
+  const statusButton = useRef<HTMLButtonElement>(null)
+  const sessionsButton = useRef<HTMLButtonElement>(null)
   const mutation = useMutation({
     mutationFn: (action: Action) =>
       api.changeUserAccess(user.id, action, AbortSignal.timeout(30_000)),
@@ -75,6 +78,7 @@ export function UserAccess({
       <div className="cp-users__controls">
         {statusAction && (
           <Button
+            ref={statusButton}
             size="xl"
             view="outlined"
             disabled={!statusCurrent}
@@ -86,6 +90,7 @@ export function UserAccess({
           </Button>
         )}
         <Button
+          ref={sessionsButton}
           size="xl"
           view="outlined"
           disabled={!statusCurrent}
@@ -96,12 +101,17 @@ export function UserAccess({
           {actions.sessions.label}
         </Button>
       </div>
-      {notice && <p role="status">{notice}</p>}
+      {notice && (
+        <p role="status">
+          <Icon data={CircleCheck} size={16} aria-hidden="true" /> {notice}
+        </p>
+      )}
       {pending && (
         <DialogFrame
           title={actions[pending].label}
           description={userName(user) + '. ' + actions[pending].description}
           focusSafeAction
+          openerRef={pending === 'sessions' ? sessionsButton : statusButton}
           onCancel={cancel}
           actions={
             <>
@@ -126,7 +136,12 @@ export function UserAccess({
             </>
           }
         >
-          {mutation.isPending && <p role="status">Выполняется запрос</p>}
+          {mutation.isPending && (
+            <p role="status">
+              <Icon data={Clock} size={16} aria-hidden="true" /> Выполняется
+              запрос
+            </p>
+          )}
           {mutation.isError && (
             <ErrorState reason="Не удалось выполнить действие. Повторите запрос." />
           )}

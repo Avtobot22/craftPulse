@@ -86,6 +86,7 @@ export function UnsavedChangesDialog({
         onDiscard()
         if (blocker.state === 'blocked') blocker.proceed()
       }}
+      navigating={blocker.state === 'blocked'}
       formName={formName}
       hasSensitiveInput={hasSensitiveInput}
       lastFormFocus={lastFormFocus}
@@ -98,12 +99,14 @@ function UnsavedPrompt({
   formName,
   hasSensitiveInput,
   lastFormFocus,
+  navigating,
   onDiscard,
 }: {
   onKeepEditing: (() => void) | undefined
   formName: string
   hasSensitiveInput: boolean
   lastFormFocus: RefObject<HTMLElement | null>
+  navigating: boolean
   onDiscard: () => void
 }) {
   const discarding = useRef(false)
@@ -121,7 +124,11 @@ function UnsavedPrompt({
       focusSafeAction
       onCancel={() => onKeepEditing?.()}
       returnFocus={(opener) =>
-        discarding.current ? false : (lastFormFocus.current ?? opener)
+        discarding.current && navigating
+          ? false
+          : opener && opener !== document.body
+            ? opener
+            : lastFormFocus.current
       }
       actions={
         <>

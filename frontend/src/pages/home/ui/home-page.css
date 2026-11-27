@@ -20,11 +20,6 @@
   clip-path: inset(50%);
 }
 
-.cp-shell :is(a, button, select, h1, main):focus-visible {
-  outline: 2px solid var(--g-color-line-focus);
-  outline-offset: 2px;
-}
-
 .cp-shell__header,
 .cp-shell__controls,
 .cp-shell__profile {
