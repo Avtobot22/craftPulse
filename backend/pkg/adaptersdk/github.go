@@ -1,12 +1,17 @@
 package adaptersdk
 
 import (
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 func classifyGitHubStatus(resp *http.Response, now time.Time) *Error {
@@ -34,4 +39,28 @@ func classifyGitHubStatus(resp *http.Response, now time.Time) *Error {
 		retry = &at
 	}
 	return &Error{Code: AdapterErrorCodeRateLimited, Detail: "GitHub request rate limited", RetryAt: retry}
+}
+
+// SignGitHubAppJWT signs the short-lived credential used to request installation tokens.
+func SignGitHubAppJWT(clientID, privateKey string, now time.Time) (string, error) {
+	invalid := NewError(AdapterErrorCodeAuth, "invalid GitHub App private key")
+	block, _ := pem.Decode([]byte(privateKey))
+	if block == nil || block.Type != "RSA PRIVATE KEY" {
+		return "", invalid
+	}
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil || key.N.BitLen() < 2048 {
+		return "", invalid
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key}, nil)
+	if err != nil {
+		return "", invalid
+	}
+	token, err := jwt.Signed(signer).Claims(jwt.Claims{
+		Issuer: clientID, IssuedAt: jwt.NewNumericDate(now.Add(-time.Minute)), Expiry: jwt.NewNumericDate(now.Add(9 * time.Minute)),
+	}).Serialize()
+	if err != nil {
+		return "", invalid
+	}
+	return token, nil
 }

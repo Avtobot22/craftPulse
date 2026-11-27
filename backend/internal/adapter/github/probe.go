@@ -53,7 +53,56 @@ func (a *Adapter) Probe(ctx context.Context, call adaptersdk.Call, in adaptersdk
 	if err := call.BindSource(ctx, secret, githubBinding); err != nil {
 		return adaptersdk.ProbeResult{}, err
 	}
+	out.Capabilities = append(out.Capabilities, a.probeWrite(ctx, call, token, in.Scopes),
+		adaptersdk.Capability{
+			Capability: adaptersdk.CapabilityCapabilityWebhook, State: adaptersdk.CapabilityStateMissing,
+			CheckedAt: time.Now().UTC(), ReasonCode: optional("github_webhook_unsupported"),
+		},
+	)
 	return out, nil
+}
+
+func (a *Adapter) probeWrite(ctx context.Context, call adaptersdk.Call, collectToken string, scopes []adaptersdk.ScopeRef) adaptersdk.Capability {
+	result := a.probeWriteScopes(ctx, call, collectToken, scopes)
+	return result.capability(adaptersdk.CapabilityCapabilityWriteMrComment, time.Now().UTC())
+}
+
+func (a *Adapter) probeWriteScopes(ctx context.Context, call adaptersdk.Call, collectToken string, scopes []adaptersdk.ScopeRef) probeOutcome {
+	bot, err := a.writeBot(ctx, call, collectToken)
+	if unavailableScope(err) {
+		return probeOutcome{reason: _writePermissionMissing}
+	}
+	if err != nil {
+		return probeOutcome{reason: "write_bot_not_verified"}
+	}
+	repositories := make(map[string]bool, len(scopes))
+	for _, scope := range scopes {
+		if scope.Kind == adaptersdk.ScopeRefKindRepository {
+			repositories[scope.NativeScopeId] = false
+		}
+	}
+	if len(repositories) == 0 {
+		return probeOutcome{}
+	}
+	if err := bot.walkRepositories(ctx, func(repo repository) error {
+		key := id(repo.ID)
+		if _, candidate := repositories[key]; candidate {
+			repositories[key] = !repo.Archived
+		}
+		return nil
+	}); err != nil {
+		return probeOutcome{reason: "write_bot_not_verified"}
+	}
+
+	var result probeOutcome
+	for _, allowed := range repositories {
+		if allowed {
+			result.add("")
+		} else {
+			result.add(_writePermissionMissing)
+		}
+	}
+	return result
 }
 
 type probeOutcome struct {
