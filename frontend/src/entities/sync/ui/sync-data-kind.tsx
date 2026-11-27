@@ -1,7 +1,12 @@
 import { Text } from '@gravity-ui/uikit'
 import type { components, OpenCodes } from '@/shared/api'
 import { adminLabels, contractLabel } from '@/shared/config'
-import { ContractReason, DataStateBadge, StatusTime } from '@/shared/ui'
+import {
+  ContractReason,
+  DataStateBadge,
+  StatusTime,
+  TechnicalValue,
+} from '@/shared/ui'
 import './sync-data-kind.css'
 
 const hours = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 })
@@ -52,7 +57,7 @@ export function SyncDataKind({
           {data.last_error_code === null ? (
             data.last_outcome === 'error' ? (
               'Причина не указана'
-            ) : summary && data.last_outcome === 'success' ? (
+            ) : data.last_outcome === 'success' ? (
               'Нет ошибок'
             ) : (
               'Нет данных'
@@ -67,9 +72,7 @@ export function SyncDataKind({
         <dt>Страница с ошибкой</dt>
         <dd>
           {data.failed_page_present
-            ? summary
-              ? 'Сбор остановился на странице, повтор продолжит с неё'
-              : 'Есть'
+            ? 'Сбор остановился на странице, повтор продолжит с неё'
             : 'Нет'}
         </dd>
         <dt>Последний успешный сбор</dt>
@@ -78,7 +81,7 @@ export function SyncDataKind({
         </dd>
         {!summary && (
           <>
-            <dt>Данные сверены до</dt>
+            <dt>Выборка подтверждена сверкой до</dt>
             <dd>
               <StatusTime value={data.watermark} />
             </dd>
@@ -88,7 +91,7 @@ export function SyncDataKind({
         <dd>{formatLag(data.lag_seconds)}</dd>
         {!summary && (
           <>
-            <dt>История с</dt>
+            <dt>История известна с</dt>
             <dd>
               <StatusTime value={data.history_from} />
             </dd>
@@ -107,7 +110,15 @@ export function SyncDataKind({
         {!summary && data.unknown_fields.length > 0 && (
           <>
             <dt>Поля с неизвестными значениями</dt>
-            <dd>{data.unknown_fields.join(', ')}</dd>
+            <dd>
+              <ul className="cp-sync-data-kind__fields">
+                {data.unknown_fields.map((field) => (
+                  <li key={field}>
+                    <TechnicalValue label="Код поля" value={field} />
+                  </li>
+                ))}
+              </ul>
+            </dd>
           </>
         )}
         {!summary && data.affected_metrics.length > 0 && (

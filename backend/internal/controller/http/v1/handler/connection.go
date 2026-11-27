@@ -273,7 +273,7 @@ func (h *connections) connectionBody(st entity.ConnectionState) openapi.Connecti
 	out := openapi.Connection{
 		Id: uuid.UUID(c.ID), Name: c.Name, Provider: openapi.Provider(c.Provider), Status: openapi.ConnectionStatus(c.Status),
 		AdapterKind: openapi.ConnectionAdapterKind(c.AdapterKind), AccessMode: openapi.ConnectionAccessMode(c.AccessMode),
-		CredentialsSetAt: c.CredentialsSetAt, SyncPaused: c.SyncPaused, PausedUntil: c.PausedUntil,
+		CredentialsSetAt: c.CredentialsSetAt, AccessLostAt: c.AccessLostAt, SyncPaused: c.SyncPaused, PausedUntil: c.PausedUntil,
 		Scopes: make([]openapi.ConnectionScope, 0, len(st.Scopes)), Capabilities: make([]openapi.Capability, 0, len(st.Capabilities)),
 	}
 	if st.WebhookRouteID != nil {

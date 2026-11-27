@@ -17,7 +17,7 @@ export const adminRoutes = (api: ApiClient) =>
     { path: routePaths.connections, element: <ConnectionsPage api={api} /> },
     { path: routePaths.connectionNew, element: <ConnectionFormPage /> },
     { path: routePaths.connectionDetail, element: <ConnectionFormPage /> },
-    { path: routePaths.syncStatus, element: <SyncStatusPage /> },
+    { path: routePaths.syncStatus, element: <SyncStatusPage api={api} /> },
     { path: routePaths.ingestConflicts, element: <IngestConflictsPage /> },
     { path: routePaths.importPackage, element: <ImportPackagePage /> },
     { path: routePaths.receiptJournal, element: <ReceiptJournalPage /> },

@@ -151,9 +151,13 @@ export {
   listConnections,
   getConnection,
   getSyncStatus,
+  getSyncOperation,
+  readConnectionById,
+  requestSyncRun,
+  setConnectionPaused,
   getConnectionProbe,
 } from './connection-queries'
-export type { ConnectionListParams } from './connection-queries'
+export type { ConnectionListParams, SyncOperation } from './connection-queries'
 export {
   listReceipts,
   getReceipt,

@@ -6245,6 +6245,7 @@ components:
         access_mode: {type: string, enum: [service_account, user_token, synced]}
         webhook_url: {type: [string, 'null'], format: uri, description: 'Адрес `receiveWebhook` этого подключения для настройки в источнике; `null`, если адаптер не поддерживает webhook. Секрет подписи вводится вместе с учётными данными и хранится адаптером.'}
         credentials_set_at: {type: [string, 'null'], format: date-time, description: Учётные данные заданы; их значение не возвращается.}
+        access_lost_at: {type: string, format: date-time, description: Время первой подтверждённой потери доступа в текущем эпизоде. Присутствует при потере доступа.}
         sync_paused: {type: boolean}
         paused_until: {type: [string, 'null'], format: date-time, description: Пауза лимита источника по `Retry-After`.}
         last_success_at: {type: [string, 'null'], format: date-time}

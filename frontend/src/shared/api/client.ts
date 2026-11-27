@@ -93,6 +93,53 @@ export class ApiClient {
     return this.request(method, path, body, decode, options, true)
   }
 
+  updateConnection<T>(
+    connectionId: string,
+    body: components['schemas']['ConnectionPatch'],
+    decode: Decoder<T>,
+    ifMatch: string,
+    signal: AbortSignal,
+  ) {
+    return this.request(
+      'PATCH',
+      '/connections/{connection_id}',
+      body,
+      decode,
+      { pathParams: { connection_id: connectionId }, ifMatch, signal },
+      true,
+      'application/merge-patch+json',
+    )
+  }
+
+  deleteConnection(connectionId: string, signal: AbortSignal) {
+    return this.request(
+      'DELETE',
+      '/connections/{connection_id}',
+      undefined,
+      (value) => {
+        if (value !== undefined) throw new InvalidResponse()
+      },
+      { pathParams: { connection_id: connectionId }, signal },
+      false,
+    )
+  }
+
+  requestSyncRun<T>(
+    connectionId: string,
+    body: components['schemas']['SyncRunRequest'],
+    decode: Decoder<T>,
+    signal: AbortSignal,
+  ) {
+    return this.request(
+      'POST',
+      '/connections/{connection_id}/sync-runs',
+      body,
+      decode,
+      { pathParams: { connection_id: connectionId }, signal },
+      false,
+    )
+  }
+
   replaceUserRoles<T>(
     userId: string,
     body: {
@@ -324,13 +371,14 @@ export class ApiClient {
     decode: Decoder<T>,
     options: VersionedRequestOptions,
     versioned: boolean,
+    contentType = 'application/json',
   ): Promise<ApiResponse<T>> {
     if (this.ended) throw new ApiError('session-ended')
     const epoch = this.epoch
     const url = this.url(path, options)
     if (method === 'GET') this.versions.delete(url)
     const headers = new Headers({ Accept: 'application/json' })
-    if (body !== undefined) headers.set('Content-Type', 'application/json')
+    if (body !== undefined) headers.set('Content-Type', contentType)
     if (versioned) {
       const etag = options.ifMatch ?? this.versions.get(url)
       if (!isStrongETag(etag)) throw new ApiError('missing-version')

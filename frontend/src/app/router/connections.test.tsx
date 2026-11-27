@@ -85,6 +85,8 @@ function mount({
       )
     if (url.pathname === listApiPath)
       return Promise.resolve(list(url.searchParams))
+    if (url.pathname === listApiPath + '/' + connectionExample.id)
+      return Promise.resolve(jsonResponse(connectionExample))
     const connection = /^\/api\/v1\/connections\/([^/]+)\/sync-status$/u.exec(
       url.pathname,
     )?.[1]
@@ -391,7 +393,7 @@ it('refreshes list and sync status on tab return and remount', async () => {
     await (await row('Новое имя')).findByText('Полные данные'),
   ).toBeVisible()
   expect(list).toHaveBeenCalledTimes(3)
-  expect(sync).toHaveBeenCalledTimes(3)
+  expect(sync).toHaveBeenCalledTimes(4)
 })
 
 it('hides restricted actions and skips sync reads without sync.read', async () => {

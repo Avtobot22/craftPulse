@@ -3658,6 +3658,11 @@ export interface components {
              * @description Учётные данные заданы; их значение не возвращается.
              */
             credentials_set_at: string | null;
+            /**
+             * Format: date-time
+             * @description Время первой подтверждённой потери доступа в текущем эпизоде. Присутствует при потере доступа.
+             */
+            access_lost_at?: string;
             sync_paused: boolean;
             /**
              * Format: date-time

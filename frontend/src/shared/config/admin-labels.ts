@@ -96,6 +96,12 @@ export const adminLabels = {
     webhook_secret_missing_nightly_reconciliation:
       'Секрет подписи вебхука не задан. Выполняется ночная сверка',
   },
+  connectionStatus: {
+    draft: 'Черновик',
+    active: 'Активно',
+    access_lost: 'Доступ потерян',
+    deleted: 'Отключено',
+  } satisfies Record<Schema['Connection']['status'], string>,
   syncPhase: {
     backfill: 'Загрузка истории',
     incremental: 'Сбор изменений',
