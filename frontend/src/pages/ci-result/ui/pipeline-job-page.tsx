@@ -9,10 +9,11 @@ import {
   attemptUsage,
   configParam,
   groupJobs,
+  jobPipelineParam,
   pipelinePath,
   secondsText,
 } from '../model/pipeline'
-import type { Attempt, Pipeline } from '../model/pipeline'
+import type { Job, Pipeline } from '../model/pipeline'
 import { usePipelineAttempts } from '../model/use-pipeline-attempts'
 import { PipelineAttemptList } from './pipeline-attempt-list'
 import { AttemptHistory } from './pipeline-overview'
@@ -23,12 +24,14 @@ export function PipelineJobPage({ api }: { api: ApiClient }) {
   const { pipelineId = '', jobKey = '' } = useParams()
   const [params] = useSearchParams()
   const config = params.get(configParam)
+  const jobPipelineId = params.get(jobPipelineParam)
   const returnParams = new URLSearchParams(params)
   returnParams.delete(configParam)
+  returnParams.delete(jobPipelineParam)
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => {
     heading.current?.focus()
-  }, [pipelineId, jobKey, config])
+  }, [pipelineId, jobKey, config, jobPipelineId])
 
   return (
     <PipelineResult
@@ -52,6 +55,7 @@ export function PipelineJobPage({ api }: { api: ApiClient }) {
           pipeline={pipeline}
           jobKey={jobKey}
           config={config}
+          jobPipelineId={jobPipelineId}
         />
       )}
     </PipelineResult>
@@ -63,11 +67,13 @@ function JobContent({
   pipeline,
   jobKey,
   config,
+  jobPipelineId,
 }: {
   api: ApiClient
   pipeline: Pipeline
   jobKey: string
   config: string | null
+  jobPipelineId: string | null
 }) {
   const query = usePipelineAttempts(api, pipeline.id)
   return (
@@ -86,6 +92,9 @@ function JobContent({
                 job_key === jobKey &&
                 (config === null || config === config_fingerprint),
             ),
+            pipeline.id,
+          ).filter(
+            (job) => jobPipelineId === null || job.pipelineId === jobPipelineId,
           )
           if (jobs.length === 0) {
             return (
@@ -98,16 +107,14 @@ function JobContent({
           }
           const incomplete =
             hasNextPage || pipeline.attempt_history !== 'complete'
-          return jobs.map((job) => {
-            const fingerprint = job[0]?.config_fingerprint
-            return (
-              <JobAttempts
-                key={fingerprint}
-                attempts={job}
-                incomplete={incomplete}
-              />
-            )
-          })
+          return jobs.map((job) => (
+            <JobAttempts
+              key={job.key}
+              job={job}
+              isChildPipeline={job.pipelineId !== pipeline.id}
+              incomplete={incomplete}
+            />
+          ))
         }}
       </PipelineAttemptList>
     </>
@@ -119,19 +126,27 @@ function AttemptTime({ instant }: { instant: string | null }) {
 }
 
 function JobAttempts({
-  attempts,
+  job,
+  isChildPipeline,
   incomplete,
 }: {
-  attempts: Attempt[]
+  job: Job
+  isChildPipeline: boolean
   incomplete: boolean
 }) {
+  const { attempts } = job
   const retries = attempts.filter(({ attempt_no }) => attempt_no > 1)
   return (
     <Card className="cp-ci-panel">
       <Text as="h3" variant="subheader-2">
         Конфигурация
       </Text>
-      <code>{attempts[0]?.config_fingerprint}</code>
+      <code>{attempts[0].config_fingerprint}</code>
+      {isChildPipeline && (
+        <p>
+          Дочерний pipeline <code>{job.pipelineId}</code>
+        </p>
+      )}
       <dl className="cp-ci-facts">
         <div>
           <dt>Расход задания</dt>

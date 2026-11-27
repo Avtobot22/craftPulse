@@ -5087,9 +5087,12 @@ type Attempt struct {
 	JobKey       string             `json:"job_key"`
 	NativeStatus string             `json:"native_status"`
 	Outcome      AttemptOutcome     `json:"outcome"`
-	RunnerClass  *string            `json:"runner_class"`
-	SourceUrl    *string            `json:"source_url"`
-	StartedAt    *time.Time         `json:"started_at"`
+
+	// PipelineId ID запуска задания. Для попытки дочернего запуска отличается от ID в пути запроса.
+	PipelineId  *openapi_types.UUID `json:"pipeline_id,omitempty"`
+	RunnerClass *string             `json:"runner_class"`
+	SourceUrl   *string             `json:"source_url"`
+	StartedAt   *time.Time          `json:"started_at"`
 }
 
 // AttemptOutcome defines model for Attempt.Outcome.

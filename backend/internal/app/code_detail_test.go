@@ -130,6 +130,33 @@ func TestCodeAPI_V28PaginationAndTruncatedHistory(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, e.do(t, b, http.MethodGet, path+"/attempts?cursor="+*first.NextCursor, nil).Code)
 }
 
+func TestCodeAPI_PipelineAttemptsIdentifyOwningPipeline(t *testing.T) {
+	t.Parallel()
+	e, b := codeEnv(t)
+	e.imported(t, e.admin, pack(t, ciManifest("42"),
+		ciRun(t, runSpec{id: "5001", project: "42", sha: _headA, status: "failed", revision: "p1", updated: _t1}),
+		ciRun(t, runSpec{id: "5002", project: "42", sha: _headA, status: "success", revision: "p1", updated: _t1, parent: "5001"}),
+		ciAttempt(t, attemptSpec{id: "7001", run: "5001", job: "test", fingerprint: _linux, status: "failed", no: 1, seconds: 60}),
+		ciAttempt(t, attemptSpec{id: "7002", run: "5002", job: "test", fingerprint: _linux, status: "success", no: 1, seconds: 40}),
+	))
+	e.drain(t)
+
+	parent, child := runID(t, e, "5001"), runID(t, e, "5002")
+	path := "/api/v1/pipelines/" + parent.String() + "/attempts"
+	page := decode[openapi.AttemptPage](t, codeRead(t, e.loginEnv, b, path, "AttemptPage"))
+	require.Len(t, page.Data, 2)
+	pipelines := make(map[openapi.AttemptOutcome]uuid.UUID, len(page.Data))
+	for _, attempt := range page.Data {
+		assert.Equal(t, "test", attempt.JobKey)
+		assert.Equal(t, _linux, attempt.ConfigFingerprint)
+		assert.Equal(t, 1, attempt.AttemptNo)
+		require.NotNil(t, attempt.PipelineId)
+		pipelines[attempt.Outcome] = *attempt.PipelineId
+	}
+	assert.Equal(t, uuid.UUID(parent), pipelines[openapi.AttemptOutcome("failed")])
+	assert.Equal(t, uuid.UUID(child), pipelines[openapi.AttemptOutcome("success")])
+}
+
 func TestCodeAPI_NormalizedPipelineReports(t *testing.T) {
 	t.Parallel()
 	e, b := codeEnv(t)

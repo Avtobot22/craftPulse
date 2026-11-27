@@ -8,8 +8,9 @@ import {
   groupJobs,
   isAccessError,
   jobPath,
+  jobPipelineParam,
 } from '../model/pipeline'
-import type { Attempt, Pipeline } from '../model/pipeline'
+import type { Job, Pipeline } from '../model/pipeline'
 import type { usePipelineAttempts } from '../model/use-pipeline-attempts'
 import { PipelineAttemptList } from './pipeline-attempt-list'
 import { AttemptTotals } from './pipeline-overview'
@@ -23,8 +24,8 @@ export function PipelineJobs({
   query: ReturnType<typeof usePipelineAttempts>
 }) {
   const pages = isAccessError(query.error) ? undefined : query.data?.pages
-  const jobs = groupJobs(pages?.flatMap(({ data }) => data) ?? [])
-  const attempts = jobs.flat()
+  const jobs = groupJobs(pages?.flatMap(({ data }) => data) ?? [], pipeline.id)
+  const attempts = jobs.flatMap((job) => job.attempts)
   const retries = attempts.filter(({ attempt_no }) => attempt_no > 1)
   const partial =
     query.hasNextPage ||
@@ -69,51 +70,59 @@ function PipelineJobTable({
   partial,
 }: {
   pipelineId: string
-  jobs: Attempt[][]
+  jobs: Job[]
   partial: boolean
 }) {
   const [params] = useSearchParams()
-  const rows = jobs.flatMap((job) => {
-    const first = job[0]
-    const last = job.at(-1)
-    if (!first || !last) return []
+  const rows = jobs.map((job) => {
+    const first = job.attempts[0]
+    const last = job.attempts.at(-1) ?? first
     const search = new URLSearchParams(params)
     search.set(configParam, first.config_fingerprint)
-    const firstFailure = job.find(({ outcome }) => outcome === 'failed')
+    search.set(jobPipelineParam, job.pipelineId)
+    const firstFailure = job.attempts.find(
+      ({ outcome }) => outcome === 'failed',
+    )
     const passedAfterFailure =
       firstFailure &&
-      job.some(
+      job.attempts.some(
         ({ outcome, attempt_no }) =>
           outcome === 'success' && attempt_no > firstFailure.attempt_no,
       )
     const allowedFailure = last.outcome === 'failed' && last.allow_failure
-    return [
-      {
-        key: first.id,
-        cells: [
-          <InspectionLink
-            key="job"
-            id={`pipeline-job-${first.id}`}
-            to={{
-              pathname: jobPath(pipelineId, first.job_key),
-              search: search.toString(),
-            }}
-          >
-            {first.job_key}
-          </InspectionLink>,
-          <code key="config">{first.config_fingerprint}</code>,
-          first.attempt_no === 1
-            ? contractLabel(contractLabels.ciOutcome, first.outcome)
-            : 'Неизвестен',
-          contractLabel(contractLabels.ciOutcome, last.outcome),
+    return {
+      key: job.key,
+      cells: [
+        <InspectionLink
+          key="job"
+          id={`pipeline-job-${first.id}`}
+          to={{
+            pathname: jobPath(pipelineId, first.job_key),
+            search: search.toString(),
+          }}
+        >
+          {first.job_key}
+        </InspectionLink>,
+        <code key="config">{first.config_fingerprint}</code>,
+        first.attempt_no === 1
+          ? contractLabel(contractLabels.ciOutcome, first.outcome)
+          : 'Неизвестен',
+        contractLabel(contractLabels.ciOutcome, last.outcome),
+        <>
+          {passedAfterFailure && <div>Сбой → успех после повтора</div>}
+          {allowedFailure && <div>Разрешённое падение</div>}
+          {!passedAfterFailure && !allowedFailure && 'Нет'}
+        </>,
+        job.pipelineId === pipelineId ? (
+          'Текущий pipeline'
+        ) : (
           <>
-            {passedAfterFailure && <div>Сбой → успех после повтора</div>}
-            {allowedFailure && <div>Разрешённое падение</div>}
-            {!passedAfterFailure && !allowedFailure && 'Нет'}
-          </>,
-        ],
-      },
-    ]
+            <div>Дочерний pipeline</div>
+            <code>{job.pipelineId}</code>
+          </>
+        ),
+      ],
+    }
   })
   return (
     <PipelineTable
@@ -124,6 +133,7 @@ function PipelineJobTable({
         'Первый исход',
         partial ? 'Последний известный исход' : 'Итоговый исход',
         'Оговорки',
+        'Pipeline',
       ]}
       rows={rows}
     />

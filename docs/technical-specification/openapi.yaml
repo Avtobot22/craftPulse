@@ -3026,7 +3026,7 @@ paths:
     get:
       operationId: listPipelineAttempts
       summary: Jobs и все известные попытки
-      description: Попытки с конфигурацией матрицы, первым и итоговым исходом и длительностью (FR-039, UI-56). Одноимённые jobs разных конфигураций различаются отпечатком. Неполная история даёт нижнюю границу расхода.
+      description: Попытки с конфигурацией матрицы, первым и итоговым исходом и длительностью (FR-039, UI-56). Задание определяется сочетанием pipeline_id, job_key и config_fingerprint. Неполная история даёт нижнюю границу расхода.
       tags: [changes]
       x-craftpulse-action: ci.read
       x-craftpulse-delivery: M0
@@ -3044,8 +3044,8 @@ paths:
               schema: {$ref: '#/components/schemas/AttemptPage'}
               example:
                 data:
-                  - {id: 0193a5b0-d2d2-7000-8000-000000000001, job_key: test-linux, config_fingerprint: 4f1c0d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d, attempt_no: 1, outcome: failed, native_status: failed, allow_failure: false, failure_kind: null, runner_class: linux-medium, started_at: '2026-11-08T10:51:00Z', finished_at: '2026-11-08T10:52:00Z', duration_seconds: 60, source_url: 'https://gitlab.example/core/-/jobs/99101'}
-                  - {id: 0193a5b0-d2d2-7000-8000-000000000002, job_key: test-linux, config_fingerprint: 4f1c0d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d, attempt_no: 2, outcome: success, native_status: success, allow_failure: false, failure_kind: null, runner_class: linux-medium, started_at: '2026-11-08T10:53:00Z', finished_at: '2026-11-08T10:53:30Z', duration_seconds: 30, source_url: 'https://gitlab.example/core/-/jobs/99107'}
+                  - {id: 0193a5b0-d2d2-7000-8000-000000000001, pipeline_id: 0193a5b0-d1d1-7000-8000-000000000001, job_key: test-linux, config_fingerprint: 4f1c0d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d, attempt_no: 1, outcome: failed, native_status: failed, allow_failure: false, failure_kind: null, runner_class: linux-medium, started_at: '2026-11-08T10:51:00Z', finished_at: '2026-11-08T10:52:00Z', duration_seconds: 60, source_url: 'https://gitlab.example/core/-/jobs/99101'}
+                  - {id: 0193a5b0-d2d2-7000-8000-000000000002, pipeline_id: 0193a5b0-d1d1-7000-8000-000000000001, job_key: test-linux, config_fingerprint: 4f1c0d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d, attempt_no: 2, outcome: success, native_status: success, allow_failure: false, failure_kind: null, runner_class: linux-medium, started_at: '2026-11-08T10:53:00Z', finished_at: '2026-11-08T10:53:30Z', duration_seconds: 30, source_url: 'https://gitlab.example/core/-/jobs/99107'}
                 next_cursor: null
                 usage_seconds: {state: ASSESSED, value: 130, unit: seconds, numerator: null, denominator: null, n: 3, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: null}
         '400': {$ref: '#/components/responses/BadRequest'}
@@ -7376,6 +7376,7 @@ components:
       required: [id, job_key, config_fingerprint, attempt_no, outcome, native_status, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_seconds, source_url]
       properties:
         id: {type: string, format: uuid}
+        pipeline_id: {type: string, format: uuid, description: ID запуска задания. Для попытки дочернего запуска отличается от ID в пути запроса.}
         job_key: {type: string}
         config_fingerprint: {type: string, pattern: '^[0-9a-f]{64}$'}
         attempt_no: {type: integer, minimum: 1}

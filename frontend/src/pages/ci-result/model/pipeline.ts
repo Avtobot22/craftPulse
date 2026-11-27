@@ -12,7 +12,14 @@ export type Pipeline = OpenCodes<Schema['Pipeline']>
 export type Attempt = OpenCodes<Schema['Attempt']>
 export type Usage = OpenCodes<Schema['MetricValue']>
 export const configParam = 'config_fingerprint'
+export const jobPipelineParam = 'job_pipeline_id'
 export const testOutcomeParam = 'test_outcome'
+
+export interface Job {
+  key: string
+  pipelineId: string
+  attempts: [Attempt, ...Attempt[]]
+}
 
 export const testOutcomeLabels = {
   passed: 'Прошли',
@@ -56,18 +63,27 @@ export function isAccessError(error: Error | null) {
   )
 }
 
-export function groupJobs(attempts: readonly Attempt[]) {
-  const jobs = new Map<string, Attempt[]>()
+export function groupJobs(
+  attempts: readonly Attempt[],
+  rootPipelineId: string,
+) {
+  const jobs = new Map<string, Job>()
   const byId = new Map(attempts.map((attempt) => [attempt.id, attempt]))
   for (const attempt of byId.values()) {
-    const key = JSON.stringify([attempt.job_key, attempt.config_fingerprint])
+    const pipelineId = attempt.pipeline_id ?? rootPipelineId
+    const key = JSON.stringify([
+      pipelineId,
+      attempt.job_key,
+      attempt.config_fingerprint,
+    ])
     const job = jobs.get(key)
-    if (job) job.push(attempt)
-    else jobs.set(key, [attempt])
+    if (job) job.attempts.push(attempt)
+    else jobs.set(key, { key, pipelineId, attempts: [attempt] })
   }
-  return [...jobs.values()].map((job) =>
-    job.sort((a, b) => a.attempt_no - b.attempt_no),
-  )
+  for (const job of jobs.values()) {
+    job.attempts.sort((a, b) => a.attempt_no - b.attempt_no)
+  }
+  return [...jobs.values()]
 }
 
 export function attemptUsage(

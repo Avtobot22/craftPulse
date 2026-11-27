@@ -162,6 +162,64 @@ it('показывает V-28 с расходом 130 с, повтором 30 с
   ).not.toBeInTheDocument()
 })
 
+const childPipelineId = '0193a5b0-d1d1-7000-8000-000000000002'
+
+it('разделяет одноимённые задания родительского и дочернего pipeline при переходе к попыткам', async () => {
+  const search = '?org_slug=example&test_outcome=failed'
+  const data = v28Attempts.data
+    .filter(({ attempt_no }) => attempt_no === 1)
+    .map((attempt) => ({
+      ...attempt,
+      pipeline_id:
+        attempt.config_fingerprint === linux ? pipelineId : childPipelineId,
+      config_fingerprint: linux,
+    }))
+  mount({
+    initial: path + search,
+    pipeline: { ...v28, attempts_total: 2, retried_jobs: 0 },
+    attempts: () =>
+      jsonResponse({
+        ...v28Attempts,
+        data,
+        usage_seconds: { ...v28Attempts.usage_seconds, value: 100, n: 2 },
+      } satisfies Schema['AttemptPage']),
+  })
+
+  for (const { origin, outcome, usage } of [
+    { origin: 'Текущий pipeline', outcome: 'Сбой', usage: '60 с' },
+    { origin: childPipelineId, outcome: 'Успешно', usage: '40 с' },
+  ]) {
+    const jobs = await screen.findByRole('table', { name: 'Задания CI' })
+    expect(within(jobs).getAllByRole('rowheader')).toHaveLength(2)
+    const row = within(jobs).getByText(origin).closest('tr')
+    if (!row) throw new Error('Expected a job row')
+    expect(within(row).getAllByText(outcome)).toHaveLength(2)
+    expect(
+      within(row).queryByText('Сбой → успех после повтора'),
+    ).not.toBeInTheDocument()
+    activateFromKeyboard(within(row).getByRole('link', { name: jobKey }))
+
+    const table = await screen.findByRole('table', { name: 'Попытки задания' })
+    expect(within(table).getAllByRole('rowheader')).toHaveLength(1)
+    expect(within(table).getByText(outcome)).toBeVisible()
+    expect(
+      screen.getByText('Расход задания').nextElementSibling?.textContent,
+    ).toBe(usage)
+
+    activateFromKeyboard(
+      screen.getByRole('button', { name: 'Назад к pipeline' }),
+    )
+    await waitFor(() => {
+      const returnedRow = screen.getByText(origin).closest('tr')
+      if (!returnedRow) throw new Error('Expected a job row on return')
+      expect(
+        within(returnedRow).getByRole('link', { name: jobKey }),
+      ).toHaveFocus()
+    })
+    expect(window.location.search).toBe(search)
+  }
+})
+
 it.each([
   ['V-28', v28, linux, 'failed'],
   [
@@ -370,7 +428,7 @@ it('сохраняет два выполнения одного теста и п
 it('догружает попытки по курсору после сбоя и сохраняет уже показанные строки', async () => {
   let failNext = true
   mount({
-    initial: `${job}?config_fingerprint=${linux}&test_outcome=failed`,
+    initial: `${job}?config_fingerprint=${linux}&job_pipeline_id=${pipelineId}&test_outcome=failed`,
     attempts: (params) => {
       if (!params.has('cursor'))
         return jsonResponse({

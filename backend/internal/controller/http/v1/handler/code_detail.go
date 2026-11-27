@@ -180,7 +180,8 @@ func (h *codeDetails) ListPipelineAttempts(ctx context.Context, req openapi.List
 			duration = &n
 		}
 		out.Data[i] = openapi.Attempt{
-			Id: uuid.UUID(a.AttemptID), JobKey: a.JobKey, ConfigFingerprint: hex.EncodeToString(a.ConfigFingerprint), AttemptNo: a.AttemptNo,
+			Id: uuid.UUID(a.AttemptID), PipelineId: uuidPtr(&a.RunID),
+			JobKey: a.JobKey, ConfigFingerprint: hex.EncodeToString(a.ConfigFingerprint), AttemptNo: a.AttemptNo,
 			Outcome: openapi.AttemptOutcome(a.Outcome), NativeStatus: a.NativeStatus, AllowFailure: a.AllowFailure,
 			FailureKind: optional(a.FailureKind), RunnerClass: optional(a.RunnerClass), StartedAt: a.StartedAt, FinishedAt: a.FinishedAt, DurationSeconds: duration,
 			SourceUrl: optional(page.SourceURLs[a.AttemptID]),

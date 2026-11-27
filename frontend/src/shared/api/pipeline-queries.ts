@@ -70,6 +70,9 @@ function readAttempt(value: unknown): OpenCodes<Schema['Attempt']> {
   const raw = readRecord(value)
   return {
     id: readString(raw.id),
+    ...(raw.pipeline_id === undefined
+      ? {}
+      : { pipeline_id: readString(raw.pipeline_id) }),
     job_key: readString(raw.job_key),
     config_fingerprint: readString(raw.config_fingerprint),
     attempt_no: readNumber(raw.attempt_no),
