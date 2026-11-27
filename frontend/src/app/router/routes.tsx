@@ -70,8 +70,12 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                   path: routePaths.organization,
                   element: <OrganizationPage api={runtime.api} />,
                 },
-                { path: routePaths.users, element: <UsersPage /> },
-                { path: routePaths.users + '/:userId', element: <UsersPage /> },
+                {
+                  path: routePaths.users + '/:userId?',
+                  element: (
+                    <UsersPage api={runtime.api} session={runtime.session} />
+                  ),
+                },
                 {
                   path: routePaths.pipeline,
                   element: <PipelinePage api={runtime.api} />,

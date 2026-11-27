@@ -10,6 +10,7 @@ export interface ChangePreview {
 export interface ChangeProposal<Draft> {
   /** Strong ETag of the version shown as the baseline. */
   etag: string
+  baseline?: { label: string; value: string }
   /** Display values only. Mask secrets before building the preview. */
   changes: readonly ChangePreview[]
   /** Changes already present in the server version after a refresh. */

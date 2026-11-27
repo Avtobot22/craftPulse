@@ -105,6 +105,17 @@ function mockApi(
     switch (url.pathname) {
       case '/api/v1/me':
         return Promise.resolve(jsonResponse(user))
+      case '/api/v1/users':
+        return Promise.resolve(
+          jsonResponse({
+            data: [{ ...user.user, id: '123' }],
+            next_cursor: null,
+          }),
+        )
+      case '/api/v1/users/123/roles':
+        return Promise.resolve(jsonResponse({ data: [] }, 200, { ETag: '"1"' }))
+      case '/api/v1/services':
+        return Promise.resolve(jsonResponse({ data: [], next_cursor: null }))
       case '/api/v1/me/source-links':
         return Promise.resolve(jsonResponse({ data: [] }))
       case '/api/v1/installation/protocols/latest':
@@ -438,10 +449,17 @@ describe('application routes', () => {
   })
 
   it('rechecks /me on window focus and handles a session closed in another tab', async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse(adminWithoutAreas))
-      .mockResolvedValueOnce(problemResponse('auth_required', 401))
+    let currentReads = 0
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((url) => {
+      if (url === '/api/v1/me') {
+        return Promise.resolve(
+          currentReads++ === 0
+            ? jsonResponse(adminWithoutAreas)
+            : problemResponse('auth_required', 401),
+        )
+      }
+      return Promise.resolve(jsonResponse({ data: [], next_cursor: null }))
+    })
     const { runtime } = mount('/users', fetcher)
     await screen.findByRole('heading', { name: 'Пользователи и роли' })
     await act(async () => {
@@ -452,15 +470,24 @@ describe('application routes', () => {
     await screen.findByRole('heading', {
       name: 'Сессия завершилась',
     })
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(
+      fetcher.mock.calls.filter(([url]) => url === '/api/v1/me'),
+    ).toHaveLength(2)
     expect(runtime.queryClient.getQueryCache().getAll()).toHaveLength(0)
   })
 
   it('navigates to UI-02 after confirmed logout and clears the cache', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse(adminWithoutAreas))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockImplementation((url) =>
+        Promise.resolve(
+          url === '/api/v1/me'
+            ? jsonResponse(adminWithoutAreas)
+            : url === '/api/v1/session/logout'
+              ? new Response(null, { status: 204 })
+              : jsonResponse({ data: [], next_cursor: null }),
+        ),
+      )
     const { runtime, router } = mount('/users', fetcher)
     await screen.findByRole('heading', { name: 'Пользователи и роли' })
     await act(async () => {
