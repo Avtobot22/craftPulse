@@ -1,22 +1,22 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   Link,
-  Navigate,
   useLocation,
   useOutletContext,
   useParams,
   useSearchParams,
 } from 'react-router'
 import { RestrictedResults } from '@/entities/result-access'
-import { ApiError, getTask } from '@/shared/api'
+import { ApiError, getTask, isUnavailableError } from '@/shared/api'
 import type { ApiClient, Team } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
-import { readTaskOrigin, routePaths, taskAnalysisLinks } from '@/shared/config'
+import { readTaskOrigin, taskAnalysisLinks } from '@/shared/config'
 import {
   ErrorState,
   LoadingState,
   StaleState,
   TaskReturnLink,
+  UnavailableRedirect,
 } from '@/shared/ui'
 import { useTaskHistory } from '../model/use-task-history'
 import { TaskChangeDetails } from './task-change-details'
@@ -28,25 +28,9 @@ import './task-detail-page.css'
 
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu
 
-function unavailable(error: Error | null) {
-  return (
-    error instanceof ApiError && ['not-found', 'forbidden'].includes(error.kind)
-  )
-}
-
 export function TaskDetailPage({ api }: { api: ApiClient }) {
   const { taskId } = useParams()
-  const state: unknown = useLocation().state
-  const origin = readTaskOrigin(state)
-  if (!taskId || !uuid.test(taskId)) {
-    return (
-      <Navigate
-        to={routePaths.unavailable}
-        replace
-        state={{ taskOrigin: origin }}
-      />
-    )
-  }
+  if (!taskId || !uuid.test(taskId)) return <UnavailableRedirect />
   return (
     <TaskDetailContent key={taskId} api={api} taskId={taskId.toLowerCase()} />
   )
@@ -83,17 +67,11 @@ function TaskDetailContent({
   } = useTaskHistory(
     api,
     taskId,
-    !waiting && !unavailable(task.error) ? task.data : undefined,
+    !waiting && !isUnavailableError(task.error) ? task.data : undefined,
   )
 
-  if (unavailable(task.error) || unavailable(history.error))
-    return (
-      <Navigate
-        to={routePaths.unavailable}
-        replace
-        state={{ taskOrigin: origin }}
-      />
-    )
+  const denial = [task.error, history.error].find(isUnavailableError)
+  if (denial) return <UnavailableRedirect error={denial} />
 
   const detail = task.data
   const teamId = params.get('team_id')

@@ -577,7 +577,11 @@ it('открывает следующую страницу, копирует с�
 
 it('показывает общий отказ для удалённого или недоступного по правам среза', async () => {
   mount(savedPath + '/' + savedId, () => problemResponse('not_found', 404))
-  expect(await screen.findByText('Сохранённый срез недоступен')).toBeVisible()
+  expect(
+    await screen.findByRole('heading', {
+      name: 'Объект или область недоступны',
+    }),
+  ).toHaveFocus()
   expect(
     screen.queryByRole('region', { name: 'Ревизия отчёта' }),
   ).not.toBeInTheDocument()

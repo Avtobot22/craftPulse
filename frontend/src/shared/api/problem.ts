@@ -114,3 +114,10 @@ export function fieldErrorsByPointer(
   }
   return fields
 }
+
+export function isUnavailableError(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    (error.kind === 'forbidden' || error.kind === 'not-found')
+  )
+}

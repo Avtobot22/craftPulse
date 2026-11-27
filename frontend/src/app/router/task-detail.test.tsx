@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -9,6 +10,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { createMemoryRouter } from 'react-router'
 import type { RouteObject } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
+import { getTask } from '@/shared/api'
 import type { components, OpenCodes } from '@/shared/api'
 import { routePaths, taskAnalysisLinks } from '@/shared/config'
 import { TaskDetailLink } from '@/shared/ui'
@@ -16,6 +18,7 @@ import {
   currentUser,
   jsonResponse,
   lateTimelineEvent,
+  problem,
   problemResponse,
   teams,
 } from '../../../test/fixtures'
@@ -63,12 +66,14 @@ function mount({
   sourceRoute,
   detail = taskDetail,
   loadTask = () => jsonResponse(detail),
+  loadList = () => jsonResponse(taskPage),
   loadHistory = () => jsonResponse(taskHistory),
 }: {
   path?: string
   sourceRoute?: string
   detail?: Task
   loadTask?: () => Response
+  loadList?: () => Response
   loadHistory?: (url: URL) => Response
 } = {}) {
   const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
@@ -80,7 +85,7 @@ function mount({
       case '/api/v1/teams':
         return Promise.resolve(jsonResponse(teams))
       case '/api/v1/tasks':
-        return Promise.resolve(jsonResponse(taskPage))
+        return Promise.resolve(loadList())
       case `/api/v1/tasks/${taskId}`:
         return Promise.resolve(loadTask())
       case `/api/v1/merge-requests/${mrReference.id}`:
@@ -108,7 +113,7 @@ function mount({
     runtime.session.dispose()
     runtime.queryClient.clear()
   })
-  return { router, fetcher }
+  return { router, fetcher, runtime }
 }
 
 afterEach(() => {
@@ -465,41 +470,65 @@ it('returns from the card to the same list filters, cursor, and focused opener',
   )
 })
 
-it('redirects a closed task to UI-04 without showing the task title', async () => {
-  const { router, fetcher } = mount({
-    loadTask: () => problemResponse('not_found', 404),
-  })
-  const unavailable = await screen.findByRole('heading', {
-    name: 'Объект или область недоступны',
-  })
-  expect(router.state.location.pathname).toBe('/access-denied')
-  await waitFor(() => {
-    expect(unavailable).toHaveFocus()
-  })
-  expect(screen.queryByText(taskDetail.title ?? '')).not.toBeInTheDocument()
-  expect(fetcher).not.toHaveBeenCalledWith(
-    `/api/v1/tasks/${taskId}/events`,
-    expect.anything(),
-  )
-})
+const unavailableHeading = { name: 'Объект или область недоступны' }
+const diagnostic = '0193a5b0-7c2e-7d41-8a10-5e2f0c9d4b1'
 
-it('returns from UI-04 to the originating task link after the API denies access', async () => {
+it.each([
+  [
+    'not_found',
+    404,
+    'Not found',
+    diagnostic + '4',
+    'Не удалось открыть объект или область.',
+  ],
+  [
+    'forbidden',
+    403,
+    'Action is not allowed',
+    diagnostic + '3',
+    'Это действие недоступно вашей роли.',
+  ],
+] as const)(
+  'opens UI-04 on %s with the OpenAPI diagnostic code',
+  async (code, status, title, correlationId, reason) => {
+    const { router, fetcher } = mount({
+      loadTask: () =>
+        jsonResponse(
+          {
+            ...problem(code, status),
+            title,
+            detail: `${taskTitle} ${taskId}`,
+            correlation_id: correlationId,
+          },
+          status,
+          { 'Content-Type': 'application/problem+json' },
+        ),
+    })
+    expect(await screen.findByRole('heading', unavailableHeading)).toHaveFocus()
+    expect(screen.getByRole('alert')).toHaveTextContent(reason)
+    expect(screen.getByRole('alert')).toHaveTextContent(correlationId)
+    expect(router.state.location.pathname).toBe('/access-denied')
+    expect(screen.getByRole('main').outerHTML).not.toContain(taskId)
+    expect(screen.queryByText(taskTitle)).not.toBeInTheDocument()
+    expect(fetcher).not.toHaveBeenCalledWith(
+      `/api/v1/tasks/${taskId}/events`,
+      expect.anything(),
+    )
+  },
+)
+
+it('returns to the permitted list and restores the available opener after a 403', async () => {
   const source = '/tasks?sort=key'
   const { router } = mount({
     path: source,
     loadTask: () => problemResponse('forbidden', 403),
   })
   fireEvent.click(await screen.findByRole('link', { name: taskTitle }))
-  const unavailable = await screen.findByRole('heading', {
-    name: 'Объект или область недоступны',
-  })
-  await waitFor(() => {
-    expect(unavailable).toHaveFocus()
-  })
-  expect(
-    screen.queryByRole('heading', { name: taskTitle }),
-  ).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('link', { name: 'Назад' }))
+  expect(await screen.findByRole('heading', unavailableHeading)).toHaveFocus()
+  const back = screen.getByRole('button', { name: 'К списку' })
+  back.focus()
+  expect(back).toHaveFocus()
+  fireEvent.click(back, { detail: 0 })
   const opener = await screen.findByRole('link', { name: taskTitle })
   await waitFor(() => {
     expect(opener).toHaveFocus()
@@ -507,6 +536,57 @@ it('returns from UI-04 to the originating task link after the API denies access'
   expect(router.state.location.pathname + router.state.location.search).toBe(
     source,
   )
+})
+
+it('evicts the closed task from the detail and list caches before Back and reopening', async () => {
+  let denied = false
+  const loadTask = vi.fn(() =>
+    denied ? problemResponse('not_found', 404) : jsonResponse(taskDetail),
+  )
+  const source = '/tasks?sort=key'
+  const { router, runtime } = mount({
+    path: source,
+    loadTask,
+    loadList: () => jsonResponse(denied ? { ...taskPage, data: [] } : taskPage),
+  })
+  fireEvent.click(await screen.findByRole('link', { name: taskTitle }), {
+    detail: 0,
+  })
+  expect(await screen.findByRole('heading', { name: taskTitle })).toBeVisible()
+  const query = getTask(runtime.api, taskId)
+  denied = true
+  await act(() =>
+    runtime.queryClient.refetchQueries({
+      queryKey: query.queryKey,
+      exact: true,
+    }),
+  )
+  expect(await screen.findByRole('heading', unavailableHeading)).toHaveFocus()
+  expect(
+    runtime.queryClient.getQueryCache().findAll({ queryKey: ['tasks'] }),
+  ).toHaveLength(0)
+  expect(screen.getByRole('main').outerHTML).not.toContain(taskId)
+  expect(screen.queryByText(taskTitle)).not.toBeInTheDocument()
+
+  await act(() => router.navigate(-1))
+  expect(router.state.location.pathname + router.state.location.search).toBe(
+    source,
+  )
+  expect(await screen.findByRole('heading', { name: 'Задачи' })).toBeVisible()
+  await waitFor(() => {
+    expect(
+      runtime.queryClient.getQueriesData({
+        queryKey: ['tasks', 'list'],
+      })[0]?.[1],
+    ).toMatchObject({ data: [] })
+  })
+  expect(screen.getByRole('main').outerHTML).not.toContain(taskId)
+  expect(screen.queryByText(taskTitle)).not.toBeInTheDocument()
+
+  await act(() => router.navigate(detailPath))
+  expect(await screen.findByRole('heading', unavailableHeading)).toHaveFocus()
+  expect(loadTask).toHaveBeenCalledTimes(3)
+  expect(screen.queryByText(taskTitle)).not.toBeInTheDocument()
 })
 
 it.each([

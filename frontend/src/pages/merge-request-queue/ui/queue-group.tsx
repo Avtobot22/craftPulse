@@ -1,17 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { useRef } from 'react'
-import { Navigate } from 'react-router'
 import { ActivityTime } from '@/entities/activity'
 import { RestrictedResults } from '@/entities/result-access'
 import { ApiError, listMergeRequests } from '@/shared/api'
 import type { ApiClient, MergeRequestListParams } from '@/shared/api'
-import { routePaths } from '@/shared/config'
 import {
   CursorPagination,
   EmptyState,
   ErrorState,
   LoadingState,
   StaleState,
+  UnavailableRedirect,
 } from '@/shared/ui'
 import { waitGroups } from '../model/queue-search'
 import type { WaitGroup } from '../model/queue-search'
@@ -38,7 +37,7 @@ export function QueueGroup({
   })
   const error = query.error instanceof ApiError ? query.error : undefined
   if (error?.kind === 'forbidden' || error?.kind === 'not-found') {
-    return <Navigate to={routePaths.unavailable} replace />
+    return <UnavailableRedirect error={error} />
   }
   const pending =
     query.isPending || (query.isFetching && !query.isFetchedAfterMount)

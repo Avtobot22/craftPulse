@@ -13,7 +13,7 @@ export function InspectionLink({
   pageCount = 1,
   ...props
 }: Pick<LinkProps, 'to' | 'children'> & { id: string; pageCount?: number }) {
-  const { key } = useLocation()
+  const { key, pathname, search, hash } = useLocation()
 
   function remember(event: MouseEvent<HTMLAnchorElement>) {
     if (
@@ -35,7 +35,7 @@ export function InspectionLink({
     <Link
       {...props}
       id={id}
-      state={{ fromInspection: true }}
+      state={{ fromInspection: true, inspectionFrom: pathname + search + hash }}
       onClick={remember}
     />
   )

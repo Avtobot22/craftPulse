@@ -1,9 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { Button, Text } from '@gravity-ui/uikit'
 import { useRef, useState } from 'react'
-import { Navigate } from 'react-router'
 import { ApiError, fieldErrorsByPointer } from '@/shared/api'
-import { routePaths } from '@/shared/config'
 import {
   ChangeConfirmationDialog,
   EmptyState,
@@ -11,6 +9,7 @@ import {
   LoadingState,
   SuccessState,
   UnsavedChangesDialog,
+  UnavailableRedirect,
 } from '@/shared/ui'
 import type { ChangeProposal } from '@/shared/ui'
 import type { WorkflowApi, WorkflowData } from '../api/workflow-api'
@@ -103,7 +102,15 @@ export function WorkflowEditor({
     accessLost(mapping.older.error) ||
     accessLost(calendar.older.error)
   )
-    return <Navigate to={routePaths.unavailable} replace />
+    return (
+      <UnavailableRedirect
+        error={
+          accessLost(mapping.older.error)
+            ? mapping.older.error
+            : calendar.older.error
+        }
+      />
+    )
 
   const stale =
     preview.data !== undefined && preview.variables !== mapping.draft

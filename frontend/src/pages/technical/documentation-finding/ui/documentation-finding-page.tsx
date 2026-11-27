@@ -1,6 +1,11 @@
 import { Button, Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
-import { InspectionBack, ErrorState, LoadingState } from '@/shared/ui'
+import {
+  InspectionBack,
+  ErrorState,
+  LoadingState,
+  UnavailableRedirect,
+} from '@/shared/ui'
 import {
   Navigate,
   useOutletContext,
@@ -53,7 +58,11 @@ function FindingView({
       (finding.id !== id ||
         !['docs', 'openapi'].includes(finding.finding_kind)))
   ) {
-    return <Navigate to={routePaths.unavailable} replace />
+    return (
+      <UnavailableRedirect
+        error={query.error instanceof ApiError ? query.error : undefined}
+      />
+    )
   }
 
   return (

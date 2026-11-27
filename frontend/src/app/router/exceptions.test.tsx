@@ -234,8 +234,13 @@ it('закрывает редактор после отказа в доступ�
   refocusWindow()
 
   expect(
-    await screen.findByRole('alert', { name: 'Ошибка' }),
-  ).toHaveTextContent('Не удалось загрузить данные исключения.')
+    await screen.findByRole('heading', {
+      name: 'Объект или область недоступны',
+    }),
+  ).toHaveFocus()
+  expect(screen.getByRole('alert', { name: 'Ошибка' })).toHaveTextContent(
+    'Это действие недоступно вашей роли.',
+  )
   expect(screen.queryByLabelText(/^Причина/u)).toBeNull()
 })
 

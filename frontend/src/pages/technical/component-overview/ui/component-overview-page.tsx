@@ -8,7 +8,11 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router'
-import { ApiError, getComponentOverview, InvalidResponse } from '@/shared/api'
+import {
+  isUnavailableError,
+  getComponentOverview,
+  InvalidResponse,
+} from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
 import {
@@ -21,6 +25,7 @@ import {
   ErrorState,
   InspectionBack,
   LoadingState,
+  UnavailableRedirect,
   useInspectionReturn,
 } from '@/shared/ui'
 import { OverviewDetails } from './overview-details'
@@ -61,9 +66,8 @@ export function ComponentOverviewPage({ api }: { api: ApiClient }) {
       })
   }
 
-  const unavailable =
-    query.error instanceof ApiError &&
-    (query.error.kind === 'not-found' || query.error.kind === 'forbidden')
+  if (isUnavailableError(query.error))
+    return <UnavailableRedirect error={query.error} />
 
   return (
     <article className="cp-component-overview">
@@ -96,8 +100,7 @@ export function ComponentOverviewPage({ api }: { api: ApiClient }) {
         </form>
       )}
       {waiting && <LoadingState />}
-      {!waiting && unavailable && <p role="status">Компонент недоступен.</p>}
-      {!waiting && query.isError && !unavailable && (
+      {!waiting && query.isError && (
         <ErrorState
           reason="Не удалось загрузить обзор компонента"
           retrying={query.isFetching}

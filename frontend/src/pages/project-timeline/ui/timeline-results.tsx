@@ -1,7 +1,7 @@
 import { Alert, Button, Text } from '@gravity-ui/uikit'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
-import { Navigate, useLocation } from 'react-router'
+import { useLocation } from 'react-router'
 import { ActivityTime } from '@/entities/activity'
 import { RestrictedResults } from '@/entities/result-access'
 import {
@@ -10,8 +10,13 @@ import {
   projectTimelinePages,
 } from '@/shared/api'
 import type { ApiClient, ProjectTimelineParams } from '@/shared/api'
-import { routePaths } from '@/shared/config'
-import { EmptyState, ErrorState, LoadingState, StaleState } from '@/shared/ui'
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  StaleState,
+  UnavailableRedirect,
+} from '@/shared/ui'
 import { readTimelineReturn } from '../model/timeline-return'
 import { TimelineCoverage, timelineCoverage } from './timeline-coverage'
 import { TimelineEvents } from './timeline-events'
@@ -54,7 +59,7 @@ export function TimelineResults({
 
   const error = query.error instanceof ApiError ? query.error : null
   if (error?.kind === 'not-found' || error?.kind === 'forbidden') {
-    return <Navigate to={routePaths.unavailable} replace />
+    return <UnavailableRedirect error={error} />
   }
   if (
     query.isPending ||

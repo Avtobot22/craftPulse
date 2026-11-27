@@ -1,11 +1,5 @@
 import { Button, Text } from '@gravity-ui/uikit'
-import {
-  Link,
-  Navigate,
-  useLocation,
-  useNavigate,
-  useSearchParams,
-} from 'react-router'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 import {
   InspectionReturn,
   isRevisionAccessDenied,
@@ -15,8 +9,7 @@ import {
   useMetricRevision,
 } from '@/entities/metric'
 import type { ApiClient } from '@/shared/api'
-import { routePaths } from '@/shared/config'
-import { ErrorState, LoadingState } from '@/shared/ui'
+import { ErrorState, LoadingState, UnavailableRedirect } from '@/shared/ui'
 import { parseRole } from '@/shared/api'
 import { roleLabels } from '../model/cohort-roles'
 import { CohortResults } from './cohort-results'
@@ -36,7 +29,7 @@ export function MetricCohortPage({ api }: { api: ApiClient }) {
   )
 
   if (isRevisionAccessDenied(revision.error))
-    return <Navigate to={routePaths.unavailable} replace />
+    return <UnavailableRedirect error={revision.error} />
 
   return (
     <section className="cp-cohort">

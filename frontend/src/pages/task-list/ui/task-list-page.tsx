@@ -1,15 +1,15 @@
 import { Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
 import { useRef } from 'react'
-import { Navigate, useLocation, useSearchParams } from 'react-router'
+import { useLocation, useSearchParams } from 'react-router'
 import { ApiError, listTasks } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
-import { routePaths } from '@/shared/config'
 import {
   CursorPagination,
   ErrorState,
   LoadingState,
   StaleState,
+  UnavailableRedirect,
 } from '@/shared/ui'
 import {
   readPreviousCursors,
@@ -47,7 +47,7 @@ export function TaskListPage({ api }: { api: ApiClient }) {
   const error = query.error instanceof ApiError ? query.error : null
   const correlationId = error?.problem?.correlation_id
   if (error?.kind === 'forbidden' || error?.kind === 'not-found') {
-    return <Navigate to={routePaths.unavailable} replace />
+    return <UnavailableRedirect error={error} />
   }
   const waiting =
     query.isPending || (query.isFetching && !query.isFetchedAfterMount)

@@ -5,7 +5,7 @@ import { ApiError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import type { TeamReportScope } from '@/shared/config'
-import { ErrorState, LoadingState } from '@/shared/ui'
+import { ErrorState, LoadingState, UnavailableRedirect } from '@/shared/ui'
 import { workflowApi } from '../api/workflow-api'
 import { accessLost, WorkflowEditor } from './workflow-editor'
 import './workflow-settings.css'
@@ -53,7 +53,7 @@ function WorkflowSettings({
   })
 
   if (accessLost(query.error))
-    return <Navigate to={routePaths.unavailable} replace />
+    return <UnavailableRedirect error={query.error} />
 
   return (
     <section className="cp-workflow-page">

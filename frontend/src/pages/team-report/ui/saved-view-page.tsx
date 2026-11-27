@@ -1,12 +1,16 @@
 import { Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useOutletContext, useParams } from 'react-router'
-import { allTeamProjects, ApiError, loadRevisionMetadata } from '@/shared/api'
+import {
+  allTeamProjects,
+  isUnavailableError,
+  loadRevisionMetadata,
+} from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
 import { routePaths, writeReportParams } from '@/shared/config'
 import type { ReportParams, TeamReportScope } from '@/shared/config'
-import { ErrorState, LoadingState } from '@/shared/ui'
+import { ErrorState, LoadingState, UnavailableRedirect } from '@/shared/ui'
 import { getSavedView, savedViewKey } from '../api/saved-views'
 import type { OpenedSavedView } from '../api/saved-views'
 import { useReportPointNavigation } from '../model/use-report-point-navigation'
@@ -23,18 +27,15 @@ export function SavedViewPage({ api }: { api: ApiClient }) {
     queryFn: ({ signal }) => getSavedView(api, savedViewId, signal),
     refetchOnMount: 'always',
   })
-  const unavailable =
-    view.error instanceof ApiError &&
-    [403, 404].includes(view.error.problem?.status ?? 0)
+  if (isUnavailableError(view.error))
+    return <UnavailableRedirect error={view.error} />
   return (
     <section className="cp-team-report">
       <Text as="h1" variant="header-1">
         Отчёт команды
       </Text>
       <Link to={routePaths.savedViews}>Сохранённые срезы</Link>
-      {unavailable ? (
-        <p role="alert">Сохранённый срез недоступен</p>
-      ) : view.isError ? (
+      {view.isError ? (
         <ErrorState
           reason="Не удалось открыть срез"
           onRetry={() => void view.refetch()}

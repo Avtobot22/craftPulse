@@ -1,3 +1,5 @@
+import type { CurrentUser } from '@/shared/auth'
+
 export const teamParam = 'team_id'
 export const projectParam = 'project_id'
 
@@ -38,4 +40,21 @@ export function rememberScope(key: string, team: string, project: string) {
   } catch {
     // The address remains the source of truth when browser storage is disabled.
   }
+}
+
+export function outsideAreas(
+  areas: CurrentUser['areas'],
+  params: URLSearchParams,
+  projectId?: string,
+) {
+  const teams = params.getAll(teamParam).filter(Boolean)
+  const projects = [
+    ...params.getAll(projectParam),
+    ...params.getAll('report_project_id'),
+    projectId,
+  ].filter(Boolean)
+  return (
+    teams.some((team) => !areas.teams.some(({ id }) => id === team)) ||
+    projects.some((project) => !areas.projects.some(({ id }) => id === project))
+  )
 }

@@ -1,9 +1,9 @@
 import { Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode, Ref } from 'react'
-import { getPipeline } from '@/shared/api'
+import { getPipeline, isUnavailableError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
-import { ErrorState, LoadingState } from '@/shared/ui'
+import { ErrorState, LoadingState, UnavailableRedirect } from '@/shared/ui'
 import { isAccessError } from '../model/pipeline'
 import type { Pipeline } from '../model/pipeline'
 import './pipeline.css'
@@ -28,6 +28,8 @@ export function PipelineResult({
   ) => ReactNode
 }) {
   const query = useQuery({ ...getPipeline(api, pipelineId), retry: false })
+  if (isUnavailableError(query.error))
+    return <UnavailableRedirect error={query.error} />
   return (
     <article className="cp-ci-result">
       <div className="cp-ci-heading">

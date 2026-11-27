@@ -1,8 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { allTeamProjects, allTeams } from '@/shared/api'
-import type { ApiClient, Team } from '@/shared/api'
-import { projectParam, readLastScope, rememberScope, teamParam } from './scope'
+import type { ApiClient } from '@/shared/api'
+import type { CurrentUser } from '@/shared/auth'
+import {
+  outsideAreas,
+  projectParam,
+  readLastScope,
+  rememberScope,
+  teamParam,
+} from './scope'
 
 export function useScope(
   api: ApiClient,
@@ -10,17 +17,26 @@ export function useScope(
   storageKey: string,
   params: URLSearchParams,
   restore: boolean,
-  standaloneProjects?: Team[],
+  areas: CurrentUser['areas'],
+  standalone: boolean,
+  blocked: boolean,
 ) {
   const remembered = restore ? readLastScope(storageKey) : null
-  const requested = remembered ?? params
+  const requested =
+    remembered && !outsideAreas(areas, remembered) ? remembered : params
   const requestedTeam = requested.get(teamParam) ?? ''
   const requestedProject = requested.get(projectParam) ?? ''
 
-  const teams = useQuery({ ...allTeams(api, storageKey), enabled: hasAreas })
+  const teams = useQuery({
+    ...allTeams(api, storageKey),
+    enabled: hasAreas && !blocked,
+  })
+  const teamChoices = teams.data?.filter(({ id }) =>
+    areas.teams.some((area) => area.id === id),
+  )
   const team =
-    hasAreas && teams.isSuccess
-      ? teams.data.find(({ id }) => id === requestedTeam)
+    !blocked && hasAreas && teams.isSuccess
+      ? teamChoices?.find(({ id }) => id === requestedTeam)
       : undefined
   const projects = useQuery({
     ...allTeamProjects(api, storageKey, team?.id ?? ''),
@@ -28,13 +44,16 @@ export function useScope(
   })
   const projectChoices = requestedTeam
     ? projects.isSuccess
-      ? projects.data
+      ? projects.data.filter(({ id }) =>
+          areas.projects.some((area) => area.id === id),
+        )
       : undefined
-    : standaloneProjects
+    : standalone
+      ? areas.projects
+      : undefined
   const project = projectChoices?.find(({ id }) => id === requestedProject)
-  const standalone = standaloneProjects !== undefined && requestedTeam === ''
   const ready =
-    standalone ||
+    (standalone && requestedTeam === '') ||
     !hasAreas ||
     (teams.isSuccess && (!team || projects.isSuccess))
   const invalid =
@@ -49,6 +68,7 @@ export function useScope(
 
   return {
     teams,
+    teamChoices,
     team,
     projects,
     project,
