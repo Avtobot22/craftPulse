@@ -480,10 +480,11 @@ it('открывает конфликт версии при 412 и перечи�
     name: 'Данные подключения изменились',
   })
   expect(saves).toHaveBeenCalledOnce()
-  expect(jsonBody(saves.mock.calls[0]?.[0])).toEqual({
-    name: 'Локальное имя',
-  })
+  const request = saves.mock.calls[0]?.[0]
+  expect(new Headers(request?.headers).get('If-Match')).toBe('"1"')
+  expect(jsonBody(request)).toEqual({ name: 'Локальное имя' })
   expect(screen.getByLabelText('Имя подключения')).toHaveValue('Локальное имя')
+  expect(screen.queryByText('Подключение сохранено')).not.toBeInTheDocument()
   readConnection.mockImplementationOnce(() =>
     jsonResponse({ ...draft, name: 'Имя с сервера' }, 200, { ETag: '"3"' }),
   )
