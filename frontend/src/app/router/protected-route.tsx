@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router'
-import { UnavailablePage } from '@/pages/unavailable'
+import { readSourceLinkResult, UnavailablePage } from '@/pages/unavailable'
 import { ApiError, isUnavailableError } from '@/shared/api'
+import { routePaths } from '@/shared/config'
 import { ErrorState, LoadingState } from '@/shared/ui'
 import type { AppRuntime } from '../initialization/runtime'
 import { sessionEndPath } from './session-navigation'
@@ -19,6 +20,7 @@ export function ProtectedRoute({ runtime }: { runtime: AppRuntime }) {
 }
 
 function SessionGate({ runtime }: { runtime: AppRuntime }) {
+  const location = useLocation()
   const query = useQuery(runtime.session.currentUserOptions())
   if (query.isPending) return <LoadingState />
   if (query.error) {
@@ -26,6 +28,7 @@ function SessionGate({ runtime }: { runtime: AppRuntime }) {
     if (isUnavailableError(error)) {
       return (
         <UnavailablePage
+          api={runtime.api}
           correlationId={error.problem?.correlation_id}
           forbidden={error.kind === 'forbidden'}
         />
@@ -43,6 +46,14 @@ function SessionGate({ runtime }: { runtime: AppRuntime }) {
         }}
       />
     )
+  }
+  // A source callback may return to a detail URL. Wait for explicit retry
+  // before mounting the original route and querying its data.
+  if (
+    location.pathname !== routePaths.unavailable &&
+    readSourceLinkResult(location.search)
+  ) {
+    return <UnavailablePage api={runtime.api} currentUser={query.data} />
   }
   return <Outlet context={query.data} />
 }

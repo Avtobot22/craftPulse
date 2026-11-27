@@ -1,7 +1,7 @@
-import type { operations, paths } from './generated/schema'
+import type { components, operations, paths } from './generated/schema'
 import { ApiError, classifyProblem, readProblem } from './problem'
 import { readLink } from './read-fields'
-import { InvalidResponse } from './response'
+import { InvalidResponse, readRecord, readString } from './response'
 
 export type ApiPath = Exclude<keyof paths, `/o/${string}`>
 type ReadPath = {
@@ -91,6 +91,35 @@ export class ApiClient {
     options: VersionedRequestOptions = {},
   ): Promise<ApiResponse<T>> {
     return this.request(method, path, body, decode, options, true)
+  }
+
+  startSourceLink(
+    connectionId: operations['startSourceLink']['parameters']['path']['connection_id'],
+    returnTo: string,
+    signal: AbortSignal,
+  ) {
+    return this.request(
+      'POST',
+      '/me/source-links/{connection_id}/authorization',
+      undefined,
+      (value): components['schemas']['AuthorizationRedirect'] => {
+        const url = new URL(readString(readRecord(value).authorization_url))
+        if (
+          !['https:', 'http:'].includes(url.protocol) ||
+          url.username ||
+          url.password
+        ) {
+          throw new InvalidResponse()
+        }
+        return { authorization_url: url.href }
+      },
+      {
+        pathParams: { connection_id: connectionId },
+        query: { return_to: returnTo },
+        signal,
+      },
+      false,
+    )
   }
 
   createException<T>(

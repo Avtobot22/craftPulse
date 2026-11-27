@@ -53,7 +53,10 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
               path: routePaths.home,
               element: <HomePage api={runtime.api} session={runtime.session} />,
               children: [
-                { path: routePaths.unavailable, element: <UnavailablePage /> },
+                {
+                  path: routePaths.unavailable,
+                  element: <UnavailablePage api={runtime.api} />,
+                },
                 {
                   path: routePaths.installation,
                   element: <InstallationPage />,
@@ -138,7 +141,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 ...adminRoutes,
                 ...technicalRoutes(runtime.api),
-                { path: '*', element: <UnavailablePage /> },
+                { path: '*', element: <UnavailablePage api={runtime.api} /> },
               ],
             },
           ],
