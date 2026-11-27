@@ -25,6 +25,7 @@ export {
 } from './response'
 export {
   allTeams,
+  allProjects,
   allTeamProjects,
   listTeams,
   listProjects,

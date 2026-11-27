@@ -33,12 +33,18 @@ export type ApiErrorKind =
 export class ApiError extends Error {
   readonly kind: ApiErrorKind
   readonly problem: SafeProblem | null
+  readonly status: number | undefined
 
-  constructor(kind: ApiErrorKind, problem: SafeProblem | null = null) {
+  constructor(
+    kind: ApiErrorKind,
+    problem: SafeProblem | null = null,
+    status = problem?.status,
+  ) {
     super('Не удалось выполнить запрос')
     this.name = 'ApiError'
     this.kind = kind
     this.problem = problem
+    this.status = status
   }
 }
 

@@ -136,11 +136,7 @@ export function allTeams(api: ApiClient, identity: string) {
   })
 }
 
-export function allTeamProjects(
-  api: ApiClient,
-  identity: string,
-  teamId: string,
-) {
+export function allProjects(api: ApiClient, identity: string, teamId?: string) {
   return queryOptions({
     queryKey: ['area-picker', identity, 'projects', teamId],
     queryFn: ({ signal }) =>
@@ -148,10 +144,21 @@ export function allTeamProjects(
         async (cursor) =>
           (
             await api.read('/projects', readProjectPage, {
-              query: { team_id: teamId, ...(cursor ? { cursor } : {}) },
+              query: {
+                ...(teamId ? { team_id: teamId } : {}),
+                ...(cursor ? { cursor } : {}),
+              },
               signal,
             })
           ).data,
       ),
   })
+}
+
+export function allTeamProjects(
+  api: ApiClient,
+  identity: string,
+  teamId: string,
+) {
+  return allProjects(api, identity, teamId)
 }

@@ -25,6 +25,8 @@ function withSearch(path: string, params: Record<string, string | undefined>) {
 }
 
 export const adminLinks = {
+  receipt: (id: string) =>
+    routePaths.receipt.replace(':receiptId', encodeURIComponent(id)),
   // UI-11 → UI-13: filter the journal by the selected connection.
   receiptJournal: ({ connection_id, channel }: ReceiptJournalSearch = {}) =>
     withSearch(routePaths.receiptJournal, { connection_id, channel }),
