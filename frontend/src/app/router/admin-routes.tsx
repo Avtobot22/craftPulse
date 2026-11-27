@@ -32,7 +32,10 @@ export const adminRoutes = (api: ApiClient) =>
       path: routePaths.importPackage,
       element: <ImportPackagePage api={api} />,
     },
-    { path: routePaths.receiptJournal, element: <ReceiptJournalPage /> },
+    {
+      path: routePaths.receiptJournal,
+      element: <ReceiptJournalPage api={api} />,
+    },
     { path: routePaths.receipt, element: <ReceiptPage api={api} /> },
     { path: routePaths.sourceAccounts, element: <SourceAccountsPage /> },
   ] satisfies RouteObject[]

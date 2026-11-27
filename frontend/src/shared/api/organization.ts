@@ -1,6 +1,7 @@
 import type { components, operations } from './generated/schema'
 import { queryOptions } from '@tanstack/react-query'
 import type { ApiClient } from './client'
+import { collectCursorItems } from './collect-cursor-items'
 import {
   readArray,
   readBoolean,
@@ -103,28 +104,11 @@ export function listServices(api: ApiClient, params: ServiceParams = {}) {
   })
 }
 
-async function collectAreas(
-  load: (cursor?: string) => Promise<TeamPage>,
-): Promise<Team[]> {
-  const areas = new Map<string, Team>()
-  const cursors = new Set<string>()
-  let cursor: string | undefined
-  do {
-    const page = await load(cursor)
-    for (const area of page.data) areas.set(area.id, area)
-    cursor = page.next_cursor ?? undefined
-    if (cursor && cursors.has(cursor))
-      throw new Error('Повтор курсора списка областей')
-    if (cursor) cursors.add(cursor)
-  } while (cursor)
-  return [...areas.values()]
-}
-
 export function allTeams(api: ApiClient, identity: string) {
   return queryOptions({
     queryKey: ['area-picker', identity, 'teams'],
     queryFn: ({ signal }) =>
-      collectAreas(
+      collectCursorItems(
         async (cursor) =>
           (
             await api.read('/teams', readTeamPage, {
@@ -140,7 +124,7 @@ export function allProjects(api: ApiClient, identity: string, teamId?: string) {
   return queryOptions({
     queryKey: ['area-picker', identity, 'projects', teamId],
     queryFn: ({ signal }) =>
-      collectAreas(
+      collectCursorItems(
         async (cursor) =>
           (
             await api.read('/projects', readProjectPage, {

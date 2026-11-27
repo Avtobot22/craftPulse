@@ -46,3 +46,6 @@ export { DialogFrame } from './settings-dialogs/dialog-frame'
 export { CursorPagination, pageSizes } from './cursor-pagination'
 
 export { UnavailableRedirect } from './unavailable-redirect'
+
+export { DataTable } from './data-table'
+export { useCursorSearch } from './use-cursor-search'

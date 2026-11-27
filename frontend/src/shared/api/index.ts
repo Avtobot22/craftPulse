@@ -150,6 +150,7 @@ export type { MergeRequestSummaryParams } from './merge-request-summary-queries'
 export {
   listAdapters,
   listConnections,
+  allConnections,
   getConnection,
   readConnection,
   getSyncStatus,

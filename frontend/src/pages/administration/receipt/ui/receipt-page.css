@@ -1,0 +1,49 @@
+.cp-receipt,
+.cp-receipt__records {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--g-spacing-4);
+}
+
+.cp-receipt :is(h1, h2, p, dl, dd) {
+  margin: 0;
+}
+
+.cp-receipt [role='status'] p {
+  margin-block-start: var(--g-spacing-2);
+}
+
+.cp-receipt__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: var(--g-spacing-3);
+  overflow-wrap: anywhere;
+}
+
+.cp-receipt__counts > div {
+  padding: var(--g-spacing-3);
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: 8px;
+}
+
+.cp-receipt__fields dt {
+  margin-block-end: var(--g-spacing-1);
+  color: var(--g-color-text-secondary);
+}
+
+.cp-receipt__filter {
+  display: grid;
+  justify-items: start;
+  gap: var(--g-spacing-2);
+}
+
+.cp-receipt__filter select {
+  max-width: 100%;
+  min-height: 44px;
+  padding-inline: 12px;
+  border: 1px solid var(--g-color-line-generic-solid);
+  border-radius: 8px;
+  color: var(--g-color-text-primary);
+  background: var(--g-color-base-background);
+  font: inherit;
+}
