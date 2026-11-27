@@ -4981,6 +4981,11 @@ export interface components {
         FindingDetail: {
             /** Format: uuid */
             id: string;
+            /**
+             * Format: uuid
+             * @description Область находки для оформления исключения.
+             */
+            area_id?: string;
             finding_kind: components["schemas"]["FindingKind"];
             rule_id: string;
             state: components["schemas"]["FindingState"];
@@ -11692,6 +11697,7 @@ export interface operations {
                     /**
                      * @example {
                      *       "id": "0193a5b0-e2e2-7000-8000-000000000002",
+                     *       "area_id": "0193a5b0-8888-7000-8000-000000000001",
                      *       "finding_kind": "secret",
                      *       "rule_id": "generic-api-key",
                      *       "state": "open",

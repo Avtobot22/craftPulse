@@ -29,7 +29,7 @@ export function FindingDetails({ finding }: { finding: FindingDetail }) {
   const locationUrl = gitLabLocationUrl(finding.source_url)
   const secret = finding.finding_kind === 'secret'
   const evidence = secret ? [] : Object.entries(finding.evidence)
-  const exceptionSearch = new URLSearchParams(context.scope)
+  const exceptionSearch = new URLSearchParams(search)
   exceptionSearch.set('finding_id', finding.id)
   exceptionSearch.set('state', 'pending')
 
@@ -82,7 +82,7 @@ export function FindingDetails({ finding }: { finding: FindingDetail }) {
               pathname: generatePath(routePaths.exceptionCreate, {
                 findingId: encodeURIComponent(finding.id),
               }),
-              search: context.scope.toString(),
+              search: search.toString(),
             }}
           >
             Оформить исключение

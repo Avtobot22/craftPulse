@@ -1,5 +1,5 @@
 import type { RefObject } from 'react'
-import type { FieldError, SafeProblem } from '@/shared/api'
+import type { ApiError, FieldError, SafeProblem } from '@/shared/api'
 
 export interface ChangePreview {
   label: string
@@ -39,6 +39,8 @@ export interface ChangeConfirmationDialogProps<Draft, Result> {
   scope: string
   consequences: string
   proposal: ChangeProposal<Draft>
+  initialWrite?: boolean
+  onRejected?: (error: ApiError) => boolean
   dangerous?: boolean
   wide?: boolean
   openerRef?: RefObject<HTMLElement | null>

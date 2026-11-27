@@ -93,6 +93,14 @@ export class ApiClient {
     return this.request(method, path, body, decode, options, true)
   }
 
+  createException<T>(
+    body: MutationBody<'/exceptions', 'POST'>,
+    decode: Decoder<T>,
+    options: { idempotencyKey: string; signal: AbortSignal },
+  ): Promise<ApiResponse<T>> {
+    return this.request('POST', '/exceptions', body, decode, options, false)
+  }
+
   decideLink(
     linkId: operations['decideLink']['parameters']['path']['link_id'],
     body: operations['decideLink']['requestBody']['content']['application/json'],
