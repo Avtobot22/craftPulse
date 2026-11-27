@@ -12,6 +12,13 @@ type FindingDetail struct {
 	State       string
 	Exceptions  []ExceptionVersion
 	Actions     []string
+	SourceURL   *string
+}
+
+type GitLabFindingSource struct {
+	InstanceURL   string
+	RepositoryURL string
+	ProjectPath   string
 }
 
 type FindingQuery struct {

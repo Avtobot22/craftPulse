@@ -28,7 +28,7 @@ import { routePaths } from '@/shared/config'
 export const technicalRoutes = (api: ApiClient) =>
   [
     { path: routePaths.componentOverview, element: <ComponentOverviewPage /> },
-    { path: routePaths.findings, element: <FindingsPage /> },
+    { path: routePaths.findings, element: <FindingsPage api={api} /> },
     {
       path: routePaths.findingDetail,
       element: <FindingDetailPage api={api} />,

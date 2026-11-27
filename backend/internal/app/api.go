@@ -81,12 +81,13 @@ func newAPI(pool *pgxpool.Pool, keyring *crypto.Keyring, idp repo.IdentityProvid
 		Repo: docsrepo.NewRepo(pool), Tenants: platform.NewRepo(pool), Tx: tx,
 		Access: decisions, References: orgs, Areas: m.documentationAreas, Documents: documents, Auditor: auditor, Clock: c, NewID: newID,
 	})
+	changeStore := changerepo.NewRepo(pool)
 	checks := change.New(change.Deps{
-		Repo: changerepo.NewRepo(pool), Reports: m.findingReports, Tenants: platform.NewRepo(pool), Tx: tx, Components: orgs, Roots: documentation,
+		Repo: changeStore, Reports: m.findingReports, Tenants: platform.NewRepo(pool), Tx: tx, Components: orgs, Roots: documentation,
 		Auditor: auditor, Catalog: m.catalog, Clock: c, NewID: newID, Decisions: m.decisions, FindingRights: decisions,
 	})
 	findingViews := view.New(view.Deps{Clock: c, Tx: tx, Findings: view.FindingDeps{
-		Reader: checks, Rights: decisions, Structure: orgs, Repositories: m.findingReports, Calculator: m.componentCalculator,
+		Reader: checks, Rights: decisions, Structure: orgs, Repositories: m.findingReports, Calculator: m.componentCalculator, Sources: changeStore,
 	}})
 	docReports, _ := m.documentationAreas.(view.DocumentationReports)
 	operations := view.New(view.Deps{

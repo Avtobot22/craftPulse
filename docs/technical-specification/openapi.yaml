@@ -7586,6 +7586,10 @@ components:
         severity: {$ref: '#/components/schemas/Severity'}
         confidence: {type: [string, 'null']}
         location: {$ref: '#/components/schemas/CodeLocation'}
+        source_url:
+          type: string
+          format: uri
+          description: Ссылка на место в репозитории GitLab по SHA отчёта. Поле отсутствует, если исходное место или адрес репозитория неизвестны.
         package:
           type: [object, 'null']
           required: [purl, version]

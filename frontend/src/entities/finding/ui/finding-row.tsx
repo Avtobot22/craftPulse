@@ -1,14 +1,20 @@
 import type { components, OpenCodes } from '@/shared/api'
 import { contractLabel, technicalLabels } from '@/shared/config'
+import { formatFindingLocation } from '../lib/finding-location'
 
 type FindingRowData = Pick<
   OpenCodes<components['schemas']['Finding']>,
   'finding_kind' | 'rule_id' | 'location' | 'severity' | 'state' | 'confidence'
 >
 
-export function FindingRow({ finding }: { finding: FindingRowData }) {
+export function FindingRow({
+  finding,
+  locationUrl,
+}: {
+  finding: FindingRowData
+  locationUrl?: string | undefined
+}) {
   const { location, severity } = finding
-  const firstLine = location?.line_start ?? location?.line_end
   return (
     <div>
       <strong>
@@ -19,15 +25,13 @@ export function FindingRow({ finding }: { finding: FindingRowData }) {
       {location && (
         <>
           {' · '}
-          <code>
-            {location.path}
-            {firstLine !== null &&
-              firstLine !== undefined &&
-              `:${String(firstLine)}`}
-            {location.line_end !== null &&
-              location.line_end !== firstLine &&
-              `-${String(location.line_end)}`}
-          </code>
+          {locationUrl ? (
+            <a href={locationUrl}>
+              <code>{formatFindingLocation(location)}</code>
+            </a>
+          ) : (
+            <code>{formatFindingLocation(location)}</code>
+          )}
         </>
       )}
       <div>Исходная серьёзность: {severity.native ?? 'неизвестно'}</div>
@@ -36,6 +40,9 @@ export function FindingRow({ finding }: { finding: FindingRowData }) {
         {severity.mapped === null
           ? 'неизвестно'
           : contractLabel(technicalLabels.severity, severity.mapped)}
+      </div>
+      <div>
+        Версия сопоставления: {severity.mapping_version ?? 'неизвестно'}
       </div>
       <div>Уверенность: {finding.confidence ?? 'неизвестно'}</div>
       <div>

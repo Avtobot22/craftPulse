@@ -4987,6 +4987,11 @@ export interface components {
             severity: components["schemas"]["Severity"];
             confidence: string | null;
             location: components["schemas"]["CodeLocation"];
+            /**
+             * Format: uri
+             * @description Ссылка на место в репозитории GitLab по SHA отчёта. Поле отсутствует, если исходное место или адрес репозитория неизвестны.
+             */
+            source_url?: string;
             package: {
                 purl: string;
                 version: string | null;

@@ -79,6 +79,7 @@ export { getMergeRequestSummary } from './merge-request-summary-queries'
 export {
   getFinding,
   listFindings,
+  findingPages,
   compareTechnicalResults,
 } from './finding-queries'
 export type {

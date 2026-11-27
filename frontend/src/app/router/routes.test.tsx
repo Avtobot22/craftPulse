@@ -27,6 +27,7 @@ import {
   taskTitle,
   taskPage,
 } from '../../../test/task-fixtures'
+import { secretDetail } from '../../../test/finding-fixtures'
 import { emptyAttempts, noReports } from '../../../test/pipeline-fixtures'
 import { AppProviders } from '../initialization/app-providers'
 import { createAppRuntime } from '../initialization/runtime'
@@ -1075,6 +1076,17 @@ function mockTechnicalApi(action: string) {
       return Promise.resolve(jsonResponse({ ...noReports, id: 'pipeline-1' }))
     if (input === '/api/v1/pipelines/pipeline-1/attempts?limit=100')
       return Promise.resolve(jsonResponse(emptyAttempts))
+    if (typeof input === 'string' && input.split('?')[0] === '/api/v1/findings')
+      return Promise.resolve(
+        jsonResponse({
+          data: [],
+          next_cursor: null,
+          access_limited: false,
+          access_notes: [],
+        }),
+      )
+    if (input === '/api/v1/findings/finding-1')
+      return Promise.resolve(jsonResponse({ ...secretDetail, id: 'finding-1' }))
     return fallback(input, init)
   })
 }
@@ -1373,6 +1385,7 @@ describe('MR summary and technical comparison', () => {
     severity: { native: 'high', mapped: 'high', mapping_version: 1 },
     confidence: null,
     location: { path: 'src/handler.ts', line_start: 7, line_end: 7 },
+    source_url: `https://gitlab.example/core/-/blob/${head}/src/handler.ts#L7`,
     package: null,
     component_id: componentId,
     first_seen_at: '2026-11-08T12:00:00Z',
@@ -1575,6 +1588,16 @@ describe('MR summary and technical comparison', () => {
       expect(
         await screen.findByText('Исходная серьёзность: high'),
       ).toBeVisible()
+      expect(
+        await screen.findByRole('link', { name: 'src/handler.ts:7' }),
+      ).toHaveAttribute(
+        'href',
+        `https://gitlab.example/core/-/blob/${head}/src/handler.ts#L7`,
+      )
+      expect(screen.getByRole('link', { name: 'Сводка MR' })).toHaveAttribute(
+        'href',
+        `${summaryPath}?org_slug=example&revision_no=3&head_sha=${head}`,
+      )
       fireEvent.click(screen.getByRole('button', { name: 'Назад' }), {
         detail: 0,
       })

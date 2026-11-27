@@ -2,6 +2,7 @@ package change
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -13,6 +14,29 @@ import (
 
 func (r *Repo) ReadFindingSnapshot(ctx context.Context, org entity.ID, read func(context.Context) error) error {
 	return postgres.InOrgSnapshot(ctx, r.pool, uuid.UUID(org), read)
+}
+
+func (r *Repo) GitLabFindingSource(ctx context.Context, org, area, report entity.ID) (entity.GitLabFindingSource, error) {
+	var source entity.GitLabFindingSource
+	err := postgres.Conn(ctx, r.pool).QueryRow(ctx, `
+		SELECT COALESCE(NULLIF(src.base_url, ''), src.instance_key), COALESCE(repo.web_url, ''),
+		       COALESCE(NULLIF(repo.path, ''), CASE WHEN rec.manifest #>> '{area,native_id}' = area.native_id
+		           THEN rec.manifest #>> '{area,key}' END, '')
+		FROM normalize.report r
+		JOIN normalize.source_object area ON (area.organization_id, area.id) = (r.organization_id, r.area_id)
+		    AND area.object_kind = 'repository' AND area.deleted_at IS NULL
+		JOIN connect.source_instance src ON (src.organization_id, src.id) = (area.organization_id, area.instance_id)
+		    AND src.provider = 'gitlab'
+		LEFT JOIN normalize.repository_version repo ON (repo.organization_id, repo.repository_id) = (area.organization_id, area.id)
+		    AND repo.superseded_seq IS NULL
+		LEFT JOIN ingest.receipt rec ON (rec.organization_id, rec.id) = (r.organization_id, r.receipt_id)
+		    AND rec.source_instance_id = area.instance_id
+		WHERE (r.organization_id, r.area_id, r.id) = ($1, $2, $3)`,
+		uuid.UUID(org), uuid.UUID(area), uuid.UUID(report)).Scan(&source.InstanceURL, &source.RepositoryURL, &source.ProjectPath)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return source, fmt.Errorf("change: read GitLab finding source: %w", err)
+	}
+	return source, nil
 }
 
 // FindingObservations prefers a complete observation within the requested component scope.

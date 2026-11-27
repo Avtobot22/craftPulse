@@ -99,6 +99,10 @@ function SummaryContent({
   comparisonSearch.set('head_sha', s.head_sha)
   if (s.base_sha) comparisonSearch.set('base_sha', s.base_sha)
 
+  const findingSearch = new URLSearchParams(comparisonSearch)
+  findingSearch.set('mr_id', s.merge_request_id)
+  findingSearch.set('revision_no', String(s.revision_no))
+
   const signals = s.items.filter(
     ({ finding_id, analysis_kind, item_kind }) =>
       finding_id !== null &&
@@ -148,6 +152,7 @@ function SummaryContent({
             hasBase={s.base_sha !== null}
             canReadFindings={canReadFindings}
             comparisonSearch={comparisonSearch}
+            findingSearch={findingSearch}
           />
           {(s.not_evaluated.length > 0 ||
             s.redactions.includes('not_evaluated')) && (
