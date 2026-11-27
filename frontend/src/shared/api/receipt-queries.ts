@@ -149,15 +149,56 @@ export function listIngestConflicts(
     queryFn: async ({
       signal,
     }): Promise<OpenCodes<Schema['IngestConflictPage']>> =>
-      (
-        await api.read(
-          '/ingest-conflicts',
-          (value) => readCursorPage(value, readIngestConflict),
-          {
-            query: params,
-            signal,
-          },
-        )
-      ).data,
+      readIngestConflicts(api, params, signal),
   })
+}
+
+async function readIngestConflicts(
+  api: ApiClient,
+  params: IngestConflictListParams,
+  signal: AbortSignal,
+) {
+  return (
+    await api.read(
+      '/ingest-conflicts',
+      (value) => readCursorPage(value, readIngestConflict),
+      { query: params, signal },
+    )
+  ).data
+}
+
+export async function resolveIngestConflict(
+  api: ApiClient,
+  id: string,
+  input: Schema['IngestConflictResolutionInput'],
+  signal: AbortSignal,
+) {
+  return (
+    await api.resolveIngestConflict(id, input, readIngestConflict, signal)
+  ).data
+}
+
+export async function findResolvedIngestConflict(
+  api: ApiClient,
+  id: string,
+  signal: AbortSignal,
+) {
+  // The contract exposes a filtered list, without a read by conflict ID.
+  const visited = new Set<string>()
+  let cursor: string | undefined
+  do {
+    const page = await readIngestConflicts(
+      api,
+      { status: 'resolved', limit: 100, ...(cursor ? { cursor } : {}) },
+      signal,
+    )
+    const conflict = page.data.find(
+      (item) => item.id === id && item.status === 'resolved' && item.resolution,
+    )
+    if (conflict) return conflict
+    cursor = page.next_cursor ?? undefined
+    if (!cursor || visited.has(cursor)) break
+    visited.add(cursor)
+  } while (!signal.aborted)
+  return null
 }

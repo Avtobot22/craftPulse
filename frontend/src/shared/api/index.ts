@@ -162,6 +162,8 @@ export {
   getReceipt,
   listReceiptRecords,
   listIngestConflicts,
+  resolveIngestConflict,
+  findResolvedIngestConflict,
 } from './receipt-queries'
 export type {
   IngestConflictListParams,
