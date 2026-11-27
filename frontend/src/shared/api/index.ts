@@ -162,3 +162,5 @@ export type {
   MetricRevision,
   RevisionMetadata,
 } from './revision-queries'
+export { loadCohort, parseRole } from './revision-cohort'
+export type { CohortItem, CohortQuery, CohortRole } from './revision-cohort'

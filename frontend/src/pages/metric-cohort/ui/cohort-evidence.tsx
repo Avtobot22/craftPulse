@@ -6,7 +6,7 @@ import { RestrictedResults } from '@/entities/result-access'
 import { getTask, taskEventPages } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import { ErrorState, LoadingState } from '@/shared/ui'
-import type { CohortItem } from '../api/cohort-api'
+import type { CohortItem } from '@/shared/api'
 
 export function ContributionInterval({
   interval,

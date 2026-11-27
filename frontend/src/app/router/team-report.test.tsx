@@ -17,6 +17,14 @@ import {
   projects,
   teams,
 } from '../../../test/fixtures'
+import { mergeRequest } from '../../../test/task-changes-fixtures'
+import {
+  taskDetail,
+  taskHistory,
+  taskId,
+  taskReference,
+  taskTitle,
+} from '../../../test/task-fixtures'
 import { AppProviders } from '../initialization/app-providers'
 import { createAppRuntime } from '../initialization/runtime'
 import { createAppRoutes } from './routes'
@@ -1073,7 +1081,7 @@ describe('UI-20: длительности, возраст, целевые сро
       name: 'Возраст задач в работе',
     })
     expect(
-      within(age).getByRole('row', { name: /CORE-1 1 ч 3 ч 150\s*%/ }),
+      within(age).getByRole('row', { name: /CORE-1 .*1 ч 3 ч 150\s*%/ }),
     ).toBeVisible()
     expect(
       within(age).getByRole('row', {
@@ -1436,10 +1444,9 @@ describe('Раскрытие точки отчёта', () => {
     expect(
       within(b).getByRole('cell', { name: 'Исключено' }),
     ).toBeInTheDocument()
-    expect(within(a).getByRole('link')).toHaveAttribute(
-      'href',
-      'https://jira.example.test/browse/A',
-    )
+    expect(
+      within(a).getByRole('link', { name: 'A · Задача A' }),
+    ).toHaveAttribute('href', 'https://jira.example.test/browse/A')
     expect(await screen.findByText(/Числитель: 1/u)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Вернуться к отчёту' }))
     await waitFor(() => {
@@ -1835,5 +1842,314 @@ describe('Раскрытие точки отчёта', () => {
     ).toBeInTheDocument()
     expect(await screen.findByText(/Новая → В работе/u)).toBeVisible()
     expect(screen.queryByText(/Поздний статус/u)).not.toBeInTheDocument()
+  })
+})
+
+const reviewPoint = metric('X01', 0.5, {
+  estimator: 'no_reviewer',
+  value: {
+    state: 'PROVISIONAL',
+    unit: 'ratio',
+    numerator: 1,
+    denominator: 2,
+    n: 5,
+    excluded_count: 2,
+    missing_count: 1,
+  },
+})
+const olderPoint = '2026-10-02T00:00:00Z'
+const matchingTask = {
+  object: taskReference,
+  item_no: 0,
+  basis_deleted: false,
+  role: 'numerator',
+  value: 10800,
+  task_age_seconds: 172800,
+  reason_code: 'no_reviewer',
+  signals: ['awaiting_reviewer', 'ci_failed'],
+  task_type: 'Story',
+  size_label: 'M',
+} satisfies Schemas['CohortItem']
+
+const taskReads = (url: URL): Response | undefined => {
+  if (url.pathname === `/api/v1/tasks/${taskId}`)
+    return jsonResponse(taskDetail)
+  if (url.pathname === `/api/v1/tasks/${taskId}/events`)
+    return jsonResponse(taskHistory)
+  if (url.pathname === `/api/v1/merge-requests/${mergeRequest.id}`)
+    return jsonResponse(mergeRequest)
+  return undefined
+}
+
+describe('UI-20 cross metrics and MR queue', () => {
+  it('shows the revision ratio, WIP, verified linkage gap, and missing states separately', async () => {
+    mount({
+      read: () =>
+        jsonResponse({
+          ...report(),
+          metrics: [
+            reviewPoint,
+            metric('X02', 0.5, {
+              estimator: 'missing_report',
+              value: {
+                state: 'NOT_EVALUATED',
+                unit: 'ratio',
+                value: null,
+                n: null,
+                reason_code: 'expected_report_profile_unavailable',
+              },
+            }),
+          ],
+        } satisfies Schemas['TeamReport']),
+      readCohort: (url) => ({
+        ...cohort,
+        data:
+          url.searchParams.get('role') === 'excluded'
+            ? [
+                {
+                  ...matchingTask,
+                  role: 'excluded',
+                  reason_code: 'no_merge_request',
+                },
+                {
+                  ...matchingTask,
+                  item_no: 1,
+                  role: 'excluded',
+                  reason_code: 'not_applicable',
+                },
+              ]
+            : [matchingTask],
+      }),
+    })
+    const review = within(
+      await screen.findByRole('region', {
+        name: /с ожиданием ревью · Нет ревьюера/u,
+      }),
+    )
+    expect(review.getByRole('button', { name: /50\s*%/u })).toBeInTheDocument()
+    expect(review.getByText('Числитель').nextElementSibling).toHaveTextContent(
+      /^1$/u,
+    )
+    expect(
+      review.getByText('Знаменатель').nextElementSibling,
+    ).toHaveTextContent(/^2$/u)
+    expect(
+      review.getByText('С неизвестным состоянием').nextElementSibling,
+    ).toHaveTextContent(/^1$/u)
+    expect(
+      review.getByText('Всего задач в работе (WIP): 5'),
+    ).toBeInTheDocument()
+    expect(
+      await review.findByText('Без подтверждённого MR: 1'),
+    ).toBeInTheDocument()
+    const row = review.getByRole('row', { name: /CORE-15/u })
+    expect(
+      within(row).getByRole('cell', { name: '2 д 0 ч' }),
+    ).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: '3 ч' })).toBeInTheDocument()
+    expect(
+      within(row).getByText('Нет ревьюера, Ошибка или тайм-аут CI'),
+    ).toBeInTheDocument()
+
+    const missing = within(
+      screen.getByRole('region', { name: /Отсутствует ожидаемый отчёт/u }),
+    )
+    expect(missing.getByText('не проверено')).toBeInTheDocument()
+    expect(
+      missing.getByRole('button', { name: 'Не рассчитано' }),
+    ).toBeInTheDocument()
+    expect(
+      missing.queryByRole('button', { name: /%/u }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('restores the selected cross point and focus after opening a task and tracks the same revision in UI-23 and UI-24', async () => {
+    const point = reviewPoint.points[0]
+    if (!point) throw new Error('Expected an X01 point')
+    const { currentSearch, router } = mount({
+      path: reportUrl + '&task_type=Story&size_label=M',
+      read: () =>
+        jsonResponse({
+          ...report(),
+          metrics: [
+            {
+              ...reviewPoint,
+              points: [
+                {
+                  ...point,
+                  value: {
+                    ...point.value,
+                    numerator: 0,
+                    value: 0,
+                    excluded_count: 0,
+                  },
+                },
+                { ...point, point_start: olderPoint },
+              ],
+            },
+          ],
+        } satisfies Schemas['TeamReport']),
+      readCohort: (url) => {
+        expect(url.pathname).toContain(revisionId)
+        expect(url.searchParams.get('estimator')).toBe('no_reviewer')
+        expect(url.searchParams.get('point_start')).toBe(olderPoint)
+        if (url.searchParams.get('role') === 'excluded')
+          return { ...cohort, data: [] }
+        if (url.searchParams.get('role') === 'numerator') {
+          expect(url.searchParams.get('task_type')).toBe('Story')
+          expect(url.searchParams.get('size_label')).toBe('M')
+          return { ...cohort, data: [matchingTask] }
+        }
+        return url.searchParams.has('cursor')
+          ? { ...cohort, data: [matchingTask] }
+          : { ...cohort, data: [], next_cursor: 'second-page' }
+      },
+      extraRead: taskReads,
+    })
+    fireEvent.change(await screen.findByLabelText('Дата кросс-показателей'), {
+      target: { value: olderPoint },
+    })
+    fireEvent.click(await screen.findByRole('link', { name: taskTitle }))
+    await screen.findByRole('heading', { name: /Перенести отчёт/u })
+    expect(currentSearch().get('revision_id')).toBe(revisionId)
+    fireEvent.click(screen.getByRole('link', { name: 'Назад' }))
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: taskTitle })).toHaveFocus()
+    })
+    expect(currentSearch().get('revision_id')).toBe(revisionId)
+    expect(currentSearch().get('task_type')).toBe('Story')
+    expect(screen.getByLabelText('Дата кросс-показателей')).toHaveValue(
+      olderPoint,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /50\s*%/u }))
+    expect(
+      (
+        await screen.findByRole('link', { name: 'Открыть когорту точки' })
+      ).getAttribute('href'),
+    ).toContain(revisionId)
+    fireEvent.click(screen.getByRole('link', { name: 'Открыть когорту точки' }))
+    const next = await screen.findByRole('button', {
+      name: 'Следующая страница',
+    })
+    await waitFor(() => {
+      expect(next).toBeEnabled()
+    })
+    fireEvent.click(next)
+    const card = await screen.findByRole('link', {
+      name: 'Карточка задачи CORE-15',
+    })
+    expect(screen.getByRole('link', { name: taskTitle })).toHaveAttribute(
+      'href',
+      taskReference.source_url,
+    )
+    card.focus()
+    expect(card).toHaveFocus()
+    fireEvent.click(card, { detail: 0 })
+    await screen.findByRole('heading', { name: /Перенести отчёт/u })
+    await act(() => router.navigate(-1))
+    await waitFor(() => {
+      expect(
+        screen.getByRole('link', { name: 'Карточка задачи CORE-15' }),
+      ).toHaveFocus()
+    })
+    expect(screen.getByText(/Страница 2/u)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Роль в формуле'), {
+      target: { value: 'excluded' },
+    })
+    expect(await screen.findByText(/Страница 1/u)).toBeInTheDocument()
+  })
+
+  it('opens the task card next to Jira Cloud in the work-age table and restores focus', async () => {
+    mount({
+      read: () =>
+        jsonResponse({
+          ...report(),
+          metrics: [metric('T14', 172800, { estimator: 'p50' })],
+        }),
+      readCohort: () => ({
+        ...cohort,
+        data: [{ ...matchingTask, value: 172800 }],
+      }),
+      extraRead: taskReads,
+    })
+    const age = within(
+      await screen.findByRole('table', { name: 'Возраст задач в работе' }),
+    )
+    expect(
+      age.getByRole('link', { name: 'Открыть в Jira Cloud' }),
+    ).toHaveAttribute('href', taskReference.source_url)
+    fireEvent.click(age.getByRole('link', { name: taskReference.display_key }))
+    await screen.findByRole('heading', { name: /Перенести отчёт/u })
+    fireEvent.click(screen.getByRole('link', { name: 'Назад' }))
+    await waitFor(() => {
+      expect(
+        screen.getByRole('link', { name: taskReference.display_key }),
+      ).toHaveFocus()
+    })
+  })
+
+  it('merges both review groups from the first pages of two projects by wait time', async () => {
+    const fetchQueue = vi.fn((url: URL) => {
+      expect(url.searchParams.get('sort')).toBe('-wait')
+      expect(url.searchParams.has('cursor')).toBe(false)
+      const kind = url.searchParams.get('review_wait')
+      if (kind !== 'no_reviewer' && kind !== 'awaiting_first_response')
+        throw new Error('Expected a review group')
+      const isCore = url.searchParams.get('project_id') === project.id
+      const entry: Schemas['MergeRequest'] = {
+        ...mergeRequest,
+        id: isCore ? mergeRequest.id : '0193a5b0-b0b0-7000-8000-000000000002',
+        title: isCore ? 'Короткое ожидание' : 'Долгое ожидание',
+        review_wait: {
+          ...mergeRequest.review_wait,
+          kind,
+          wait_seconds: isCore ? 7200 : 172800,
+        },
+      }
+      return jsonResponse({
+        data: [
+          entry,
+          {
+            ...mergeRequest,
+            id: '0193a5b0-b0b0-7000-8000-000000000003',
+            title: 'Назначение неизвестно',
+          },
+        ],
+        next_cursor: 'ignored',
+        access_limited: false,
+        access_notes: [],
+      } satisfies Schemas['MergeRequestPage'])
+    })
+    mount({
+      user: { ...currentUser, actions: [...currentUser.actions, 'mr.read'] },
+      extraRead: (url) =>
+        url.pathname === '/api/v1/merge-requests' ? fetchQueue(url) : undefined,
+    })
+    const queue = within(
+      await screen.findByRole('region', { name: 'Очередь MR команды' }),
+    )
+    for (const name of ['Нет ревьюера', 'Нет первого ответа человека']) {
+      const table = await queue.findByRole('table', { name })
+      const rows = within(table).getAllByRole('rowheader')
+      expect(rows.map((row) => row.textContent)).toEqual([
+        '!42 · Долгое ожидание',
+        '!42 · Короткое ожидание',
+      ])
+      const delivery = within(table).getByRole('link', {
+        name: otherProject.name,
+      })
+      expect(delivery.getAttribute('href')).toContain(
+        'project_id=' + otherProject.id,
+      )
+      expect(
+        within(table).getAllByRole('link', { name: 'Открыть в GitLab' }),
+      ).toHaveLength(2)
+    }
+    expect(
+      fetchQueue.mock.calls
+        .map(([url]) => url.searchParams.get('project_id'))
+        .sort(),
+    ).toEqual([project.id, project.id, otherProject.id, otherProject.id].sort())
   })
 })
