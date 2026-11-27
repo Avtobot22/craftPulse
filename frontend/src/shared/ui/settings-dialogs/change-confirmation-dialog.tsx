@@ -158,13 +158,15 @@ export function ChangeConfirmationDialog<Draft, Result>(
         <dd>{consequences}</dd>
       </dl>
       <ul className="cp-settings-dialog__changes" aria-label="Изменения">
-        {proposal.changes.map(({ label, before, after }, index) => (
-          <li key={index}>
-            <strong>{label}</strong>
-            <span>Было: {before}</span>
-            <span>Станет: {after}</span>
-          </li>
-        ))}
+        {[...(proposal.referenceChanges ?? []), ...proposal.changes].map(
+          ({ label, before, after }, index) => (
+            <li key={index}>
+              <strong>{label}</strong>
+              <span>Было: {before}</span>
+              <span>Станет: {after}</span>
+            </li>
+          ),
+        )}
       </ul>
     </DialogFrame>
   )

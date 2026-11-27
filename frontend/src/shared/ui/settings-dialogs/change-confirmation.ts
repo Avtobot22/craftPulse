@@ -13,6 +13,8 @@ export interface ChangeProposal<Draft> {
   baseline?: { label: string; value: string }
   /** Display values only. Mask secrets before building the preview. */
   changes: readonly ChangePreview[]
+  /** Changes already present in the server version after a refresh. */
+  referenceChanges?: readonly ChangePreview[]
   /** Immutable payload represented by the preview. */
   draft: Draft
 }

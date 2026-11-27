@@ -592,8 +592,8 @@ func (u *UseCase) CheckDocumentationReferences(ctx context.Context, orgID, servi
 }
 
 // planComponents checks the components of the body: a confirmed or rejected path of a known repository inside a
-// service of the body. A current component may change only by a new version; one missing from the body is an
-// error, as an area is, so a matrix of checks does not lose its component silently.
+// service of the body. A current component may change only by a new version. Undecided proposals
+// stay as they are when omitted. All decided components must be included.
 func (u *UseCase) planComponents(p *structurePlan, verr *entity.ValidationError, cur []entity.Component, in entity.StructureInput,
 	services, repositories map[entity.ID]bool, by entity.Confirmation,
 ) error {
@@ -665,7 +665,7 @@ func (u *UseCase) planComponents(p *structurePlan, verr *entity.ValidationError,
 		p.components = append(p.components, next)
 	}
 	for i := range cur {
-		if !kept[cur[i].ID] {
+		if cur[i].Status != entity.ComponentProposed && !kept[cur[i].ID] {
 			verr.Add("/components", entity.FieldRequired, fmt.Sprintf("component %s is missing; reject it with status rejected", cur[i].ID))
 		}
 	}
