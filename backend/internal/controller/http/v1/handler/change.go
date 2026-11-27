@@ -28,6 +28,37 @@ func (h *checks) GetCheckProfile(ctx context.Context, req openapi.GetCheckProfil
 	return openapi.GetCheckProfile200JSONResponse{Body: checkProfileBody(&v), Headers: openapi.GetCheckProfile200ResponseHeaders{ETag: &tag}}, nil
 }
 
+func (h *checks) GetCheckProfileOptions(ctx context.Context, req openapi.GetCheckProfileOptionsRequestObject) (openapi.GetCheckProfileOptionsResponseObject, error) {
+	s, ok := middleware.SubjectFrom(ctx)
+	if !ok {
+		return nil, entity.ErrAuthRequired
+	}
+	options, err := h.uc.CheckProfileOptions(ctx, s, entity.ID(req.ProjectId))
+	if err != nil {
+		return nil, err
+	}
+	var out openapi.CheckProfileOptions
+	out.Components = emptyOf(out.Components, len(options.Components))
+	for _, c := range options.Components {
+		item := elemOf(out.Components)
+		item.Id, item.PathPrefix = uuid.UUID(c.ID), c.PathPrefix
+		out.Components = append(out.Components, *item)
+	}
+	out.Profiles = emptyOf(out.Profiles, len(options.Profiles))
+	for i := range options.Profiles {
+		p := &options.Profiles[i]
+		item := elemOf(out.Profiles)
+		item.Id, item.Mode, item.AnyLanguage = p.ID, openapi.CheckProfileOptionsProfilesMode(p.Mode), p.AnyLanguage
+		item.Languages = append([]string{}, p.Languages...)
+		item.AnalysisKinds = make([]openapi.AnalysisKind, len(p.AnalysisKinds))
+		for j, kind := range p.AnalysisKinds {
+			item.AnalysisKinds[j] = openapi.AnalysisKind(kind)
+		}
+		out.Profiles = append(out.Profiles, *item)
+	}
+	return openapi.GetCheckProfileOptions200JSONResponse(out), nil
+}
+
 func (h *checks) CreateCheckProfileVersion(ctx context.Context, req openapi.CreateCheckProfileVersionRequestObject) (openapi.CreateCheckProfileVersionResponseObject, error) {
 	s, ok := middleware.SubjectFrom(ctx)
 	if !ok {

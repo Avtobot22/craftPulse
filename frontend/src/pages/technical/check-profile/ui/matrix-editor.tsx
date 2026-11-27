@@ -2,15 +2,23 @@ import { Alert, Button } from '@gravity-ui/uikit'
 import { useQueryClient } from '@tanstack/react-query'
 import { useLayoutEffect, useRef, useState } from 'react'
 import {
+  ApiError,
   createCheckProfileVersion,
   getCheckProfile,
   isStrongETag,
   readCurrentCheckProfile,
 } from '@/shared/api'
-import type { ApiClient, ApiResponse, CheckProfileVersion } from '@/shared/api'
+import type {
+  ApiClient,
+  ApiResponse,
+  CheckProfileOptions,
+  CheckProfileVersion,
+} from '@/shared/api'
 import { ChangeConfirmationDialog, UnsavedChangesDialog } from '@/shared/ui'
 import type { ChangeAttempt, ChangeProposal, ChangeRecheck } from '@/shared/ui'
 import {
+  addInitialRow,
+  catalogProfiles,
   compareDraft,
   draftFrom,
   rebaseDraft,
@@ -18,11 +26,12 @@ import {
   validationMessages,
 } from '../model/matrix'
 import type { ProfileDraft } from '../model/matrix'
+import { InitialRowPicker } from './initial-row-picker'
 import { MatrixTable } from './matrix-table'
 
 type Resource = ApiResponse<CheckProfileVersion>
 interface Edit {
-  base: Resource
+  base: Resource | null
   draft: ProfileDraft
 }
 
@@ -30,10 +39,12 @@ export function MatrixEditor({
   api,
   projectId,
   current,
+  options,
 }: {
   api: ApiClient
   projectId: string
-  current: Resource
+  current: Resource | null
+  options: CheckProfileOptions | undefined
 }) {
   const client = useQueryClient()
   const queryKey = getCheckProfile(api, projectId).queryKey
@@ -48,10 +59,18 @@ export function MatrixEditor({
     if (messages.length) errorRef.current?.focus()
   }, [messages])
 
-  const base = edit?.base ?? current
-  const draft = edit?.draft ?? draftFrom(base.data)
-  const changes = draft ? compareDraft(base.data, draft) : []
+  const base = edit ? edit.base : current
+  const version = base?.data ?? null
+  const etag = base ? base.etag : '"0"'
+  const draft = edit?.draft ?? (version ? draftFrom(version) : { entries: [] })
+  const changes = draft ? compareDraft(version, draft) : []
   const dirty = changes.length > 0
+  const initialOptions = !version ? options : undefined
+
+  function updateDraft(draft: ProfileDraft) {
+    setMessages([])
+    setEdit({ base, draft })
+  }
 
   function adopt(resource: Resource) {
     client.setQueryData(queryKey, resource)
@@ -68,7 +87,19 @@ export function MatrixEditor({
     reason: 'conflict' | 'uncertain',
     signal: AbortSignal,
   ): Promise<ChangeRecheck<ProfileDraft, Resource>> {
-    const latest = await readCurrentCheckProfile(api, projectId, signal)
+    const latest = await readCurrentCheckProfile(api, projectId, signal).catch(
+      (error: unknown) => {
+        if (
+          !base &&
+          reason === 'uncertain' &&
+          error instanceof ApiError &&
+          error.kind === 'not-found'
+        )
+          return null
+        throw error
+      },
+    )
+    if (!latest) return { kind: 'retryable' }
     if (!isStrongETag(latest.etag)) return { kind: 'unknown' }
     if (latest.etag === attempt.etag) {
       return reason === 'uncertain'
@@ -86,7 +117,7 @@ export function MatrixEditor({
     }
 
     // Reload the confirmed matrix, then apply only the choices in the previous preview.
-    const rebased = rebaseDraft(base.data, attempt.draft, currentDraft)
+    const rebased = rebaseDraft(version, attempt.draft, currentDraft)
     const changes = compareDraft(latest.data, rebased.draft)
     if (
       reason === 'uncertain' &&
@@ -108,14 +139,18 @@ export function MatrixEditor({
 
   return (
     <>
-      <p>Подтверждённая версия {base.data.version_no}</p>
+      <p>
+        {version
+          ? `Подтверждённая версия ${String(version.version_no)}`
+          : 'Подтвердите первую матрицу проверок проекта'}
+      </p>
       <form
         ref={formRef}
         onSubmit={(event) => {
           event.preventDefault()
-          if (draft && dirty && isStrongETag(base.etag)) {
+          if (draft && dirty && isStrongETag(etag)) {
             setMessages([])
-            setProposal({ etag: base.etag, changes, draft })
+            setProposal({ etag, changes, draft })
           }
         }}
       >
@@ -144,28 +179,43 @@ export function MatrixEditor({
             В актуальной версии удалены строки: {removed.join('; ')}
           </p>
         )}
+        {initialOptions && draft && (
+          <InitialRowPicker
+            options={initialOptions}
+            entries={draft.entries}
+            onAdd={(row) => {
+              updateDraft(addInitialRow(draft, row, initialOptions))
+            }}
+          />
+        )}
         <MatrixTable
-          version={base.data}
+          version={version}
           draft={draft}
+          initialProfiles={options && catalogProfiles(options)}
+          onRemove={
+            draft
+              ? (index) => {
+                  updateDraft({
+                    entries: draft.entries.filter((_, i) => i !== index),
+                  })
+                }
+              : undefined
+          }
           onChange={(index, selection) => {
             if (!draft) return
-            setMessages([])
-            setEdit({
-              base,
-              draft: {
-                entries: draft.entries.map((row, i) =>
-                  i === index ? { ...row, ...selection } : row,
-                ),
-              },
+            updateDraft({
+              entries: draft.entries.map((row, i) =>
+                i === index ? { ...row, ...selection } : row,
+              ),
             })
           }}
         />
-        {!isStrongETag(base.etag) && (
+        {!isStrongETag(etag) && (
           <p>Версия для сохранения недоступна. Обновите страницу.</p>
         )}
         <Button
           type="submit"
-          disabled={!dirty || !isStrongETag(base.etag)}
+          disabled={!dirty || !isStrongETag(etag)}
           view="action"
         >
           Подтвердить профиль

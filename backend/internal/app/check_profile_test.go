@@ -20,6 +20,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	httpctrl "github.com/Avtobot22/craftPulse/backend/internal/controller/http"
+	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/openapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	"github.com/Avtobot22/craftPulse/backend/internal/repo/oidc"
 	"github.com/Avtobot22/craftPulse/backend/internal/usecase/calc"
@@ -219,6 +220,22 @@ func TestCheckProfiles_MatrixVersionsAndValidation(t *testing.T) {
 	e := newChecksEnv(t)
 	project := uuid.UUID(e.project)
 	assert.Equal(t, http.StatusNotFound, e.call(t, e.lead, "", http.MethodGet, profilePath(project), nil, nil).Code, "no matrix yet")
+	optionsPath := profilePath(project) + "/options"
+	rec := e.call(t, e.lead, "", http.MethodGet, optionsPath, nil, nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	options := decode[openapi.CheckProfileOptions](t, rec)
+	components := make(map[uuid.UUID]string, len(options.Components))
+	for _, c := range options.Components {
+		components[c.Id] = c.PathPrefix
+	}
+	assert.Equal(t, map[uuid.UUID]string{e.goComponent: "services/billing", e.docs: "docs"}, components)
+	profiles := make([]string, 0, len(options.Profiles))
+	for _, p := range options.Profiles {
+		profiles = append(profiles, p.Id)
+	}
+	assert.Contains(t, profiles, "go-default")
+	assert.Contains(t, profiles, "sarif-import")
+	assert.Equal(t, http.StatusForbidden, e.call(t, e.adminBrowser, "", http.MethodGet, optionsPath, nil, nil).Code)
 	v24 := make([]map[string]any, 0, 4)
 	v24 = append(v24,
 		row(e.goComponent, "go", "code", "import", "sarif-import"),
@@ -228,7 +245,7 @@ func TestCheckProfiles_MatrixVersionsAndValidation(t *testing.T) {
 	assert.Equal(t, http.StatusPreconditionRequired, e.confirm(t, project, "", uuid.New(), v24...).Code)
 
 	key := uuid.New()
-	rec := e.confirm(t, project, `"0"`, key, v24...)
+	rec = e.confirm(t, project, `"0"`, key, v24...)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	assert.Equal(t, `"1"`, rec.Header().Get("ETag"))
 	first := decode[profileBody](t, rec)

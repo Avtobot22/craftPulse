@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { generatePath, Link } from 'react-router'
-import { ApiError, getCheckProfile } from '@/shared/api'
+import { ApiError, getCheckProfile, getCheckProfileOptions } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import { ErrorState, InspectionBack, LoadingState } from '@/shared/ui'
@@ -23,8 +23,19 @@ export function CheckProfilePage({
     refetchOnReconnect: false,
   })
 
+  const missing =
+    query.error instanceof ApiError && query.error.kind === 'not-found'
+  const options = useQuery({
+    ...getCheckProfileOptions(api, projectId),
+    enabled: missing,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
   const loading =
-    query.isPending || (query.isFetching && !query.isFetchedAfterMount)
+    query.isPending ||
+    (query.isFetching && !query.isFetchedAfterMount) ||
+    (missing && options.isPending)
+  const canEdit = query.isSuccess || (missing && options.isSuccess)
 
   return (
     <div className="cp-check-matrix">
@@ -41,17 +52,22 @@ export function CheckProfilePage({
       </nav>
       {loading ? (
         <LoadingState />
-      ) : query.isSuccess ? (
-        <MatrixEditor api={api} projectId={projectId} current={query.data} />
+      ) : canEdit ? (
+        <MatrixEditor
+          api={api}
+          projectId={projectId}
+          current={query.isSuccess ? query.data : null}
+          options={options.data}
+        />
       ) : (
         <ErrorState
           reason={
-            query.error instanceof ApiError && query.error.kind === 'not-found'
-              ? 'Подтверждённая матрица проекта недоступна'
+            missing
+              ? 'Не удалось загрузить компоненты и профили проверок'
               : 'Не удалось загрузить матрицу проверок'
           }
-          onRetry={() => void query.refetch()}
-          retrying={query.isFetching}
+          onRetry={() => void (missing ? options.refetch() : query.refetch())}
+          retrying={query.isFetching || options.isFetching}
         />
       )}
     </div>

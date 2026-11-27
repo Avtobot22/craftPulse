@@ -1,5 +1,7 @@
 import { Card } from '@gravity-ui/uikit'
 import { useState } from 'react'
+import { useSearchParams } from 'react-router'
+import { SourceLink } from '@/entities/activity'
 import { formatValue, metricReason } from '@/entities/metric'
 import type { ApiClient } from '@/shared/api'
 import type { TaskContribution } from '../api/metric-details'
@@ -11,6 +13,7 @@ import {
 import type { ReportBlockProps } from '../model/metrics'
 import { DetailPoint, DetailsStatus, StepSelect } from './detail-point'
 import { OutcomePoints } from './outcome-metrics-block'
+import { ReportTaskLink } from './report-task-link'
 
 interface WorkTask {
   task: TaskContribution
@@ -47,10 +50,12 @@ function AgeTable({
   block,
   step,
   tasks,
+  canReadTasks,
 }: {
   block: ReportBlockProps
   step: string
   tasks: WorkTask[]
+  canReadTasks: boolean
 }) {
   return (
     <div className="cp-team-report__table-scroll">
@@ -70,7 +75,31 @@ function AgeTable({
             const targetSeries = taskSeries(block, 'T11', step, task)
             return (
               <tr key={task.id}>
-                <th scope="row">{task.label}</th>
+                <th scope="row">
+                  {canReadTasks ? (
+                    <ReportTaskLink
+                      report={block.report}
+                      taskId={task.id}
+                      point={step}
+                      pointParam="work_age_point"
+                      focusId={`work-age-task-${task.id}`}
+                    >
+                      {task.label}
+                    </ReportTaskLink>
+                  ) : (
+                    task.label
+                  )}
+                  {canReadTasks && task.sourceUrl && (
+                    <>
+                      {' '}
+                      ·{' '}
+                      <SourceLink
+                        url={task.sourceUrl}
+                        sourceName="Jira Cloud"
+                      />
+                    </>
+                  )}
+                </th>
                 <td>
                   <DetailPoint
                     block={block}
@@ -189,14 +218,19 @@ function BlockedTimeTable({
 export function WorkAgeBlock({
   block,
   api,
+  canReadTasks,
 }: {
   block: ReportBlockProps
   api: ApiClient
+  canReadTasks: boolean
 }) {
   const steps = reportSteps(block, ['T14', 'T11', 'T15'])
+  const [search] = useSearchParams()
   const focus = block.focus
   const [selected, setSelected] = useState(
-    focus && /^\["T(14|11|15)"/u.test(focus.seriesId) ? focus.pointStart : '',
+    focus && /^\["T(14|11|15)"/u.test(focus.seriesId)
+      ? focus.pointStart
+      : (search.get('work_age_point') ?? ''),
   )
   const step = (steps.includes(selected) ? selected : steps[0]) ?? ''
   const age = useTaskContributions(api, block, 'T14', step)
@@ -234,7 +268,12 @@ export function WorkAgeBlock({
           reason="Не удалось прочитать отношение возраста к сроку"
         />
         {tasks.length > 0 && (
-          <AgeTable block={block} step={step} tasks={tasks} />
+          <AgeTable
+            block={block}
+            step={step}
+            tasks={tasks}
+            canReadTasks={canReadTasks}
+          />
         )}
         {!tasks.length && age.isSuccess && (
           <p>Нет задач с известным возрастом текущего эпизода.</p>

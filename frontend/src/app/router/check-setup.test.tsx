@@ -322,6 +322,201 @@ it('saves the complete matrix with the previewed ETag and an idempotency key', a
   })
 })
 
+const initialOptions = {
+  components: [{ id: componentId, path_prefix: 'services/billing' }],
+  profiles: [
+    {
+      id: 'go-default',
+      mode: 'builtin',
+      languages: ['go'],
+      any_language: false,
+      analysis_kinds: ['code'],
+    },
+    {
+      id: 'sonar-import',
+      mode: 'import',
+      languages: [],
+      any_language: true,
+      analysis_kinds: ['code'],
+    },
+    {
+      id: 'gitleaks-default',
+      mode: 'builtin',
+      languages: [],
+      any_language: false,
+      analysis_kinds: ['secrets'],
+    },
+    {
+      id: 'trivy-default',
+      mode: 'builtin',
+      languages: [],
+      any_language: false,
+      analysis_kinds: ['sca'],
+    },
+  ],
+} satisfies Schema['CheckProfileOptions']
+
+async function addFirstCodeRow() {
+  const picker = within(
+    await screen.findByRole('group', { name: 'Новая строка матрицы' }),
+  )
+  expect(
+    picker.getByRole('combobox', { name: 'Компонент' }),
+  ).toHaveDisplayValue(/services\/billing/u)
+  fireEvent.change(picker.getByLabelText('Язык'), {
+    target: { value: 'go' },
+  })
+  fireEvent.click(picker.getByRole('button', { name: 'Добавить строку' }))
+  fireEvent.change(screen.getByRole('combobox', { name: codeMode }), {
+    target: { value: 'import' },
+  })
+}
+
+function previewFirstMatrix() {
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить профиль' }))
+  return screen.getByRole('dialog', { name: 'Подтвердить профиль проверок' })
+}
+
+it('creates the first matrix from project options and opens its CI configuration', async () => {
+  let confirmed = false
+  const first = { ...matrix, version_no: 1, base_version_no: null }
+  const { fetcher } = mount({
+    handle: (url, init) => {
+      if (url.pathname === profileEndpoint + '/options')
+        return jsonResponse(initialOptions)
+      if (url.pathname === profileEndpoint) {
+        if (init?.method !== 'POST') return problemResponse('not_found', 404)
+        confirmed = true
+        return jsonResponse(first, 201, { ETag: '"1"' })
+      }
+      if (url.pathname === ciEndpoint)
+        return confirmed
+          ? jsonResponse({ ...configuration, profile_version_no: 1 })
+          : problemResponse('not_found', 404)
+      return undefined
+    },
+  })
+
+  await addFirstCodeRow()
+  const dialog = previewFirstMatrix()
+  expect(within(dialog).getAllByText('Было: Нет строки')).toHaveLength(3)
+  expect(
+    within(dialog).getByText('Станет: Импорт · sonar-import'),
+  ).toBeInTheDocument()
+  expect(fetcher.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(
+    false,
+  )
+  confirm(dialog)
+
+  expect(await screen.findByText('Подтверждённая версия 1')).toBeInTheDocument()
+  const request = fetcher.mock.calls.find(
+    ([, init]) => init?.method === 'POST',
+  )?.[1]
+  const headers = new Headers(request?.headers)
+  expect(headers.get('If-Match')).toBe('"0"')
+  expect(headers.get('Idempotency-Key')).toMatch(/^[a-f0-9-]{36}$/u)
+  expect(body(request)).toEqual({
+    entries: [
+      {
+        component_id: componentId,
+        language: 'go',
+        analysis_kind: 'code',
+        mode: 'import',
+        profile_id: 'sonar-import',
+      },
+      {
+        component_id: componentId,
+        language: '',
+        analysis_kind: 'secrets',
+        mode: 'builtin',
+        profile_id: 'gitleaks-default',
+      },
+      {
+        component_id: componentId,
+        language: '',
+        analysis_kind: 'sca',
+        mode: 'builtin',
+        profile_id: 'trivy-default',
+      },
+    ],
+  })
+
+  fireEvent.click(screen.getByRole('link', { name: 'Инструкция CI' }))
+  expect(await screen.findByText(/allow_failure: true/u)).toBeInTheDocument()
+})
+
+it('previews the first draft against a concurrently confirmed matrix after 412', async () => {
+  let conflict = false
+  const first = {
+    ...matrix,
+    version_no: 1,
+    base_version_no: null,
+    entries: matrix.entries.filter(
+      ({ analysis_kind }) => analysis_kind !== 'code',
+    ),
+  }
+  const { fetcher } = mount({
+    handle: (url, init) => {
+      if (url.pathname === profileEndpoint + '/options')
+        return jsonResponse(initialOptions)
+      if (url.pathname !== profileEndpoint) return
+      if (init?.method !== 'POST')
+        return conflict
+          ? jsonResponse(first, 200, { ETag: '"1"' })
+          : problemResponse('not_found', 404)
+      if (conflict)
+        return jsonResponse(
+          { ...matrix, version_no: 2, base_version_no: 1 },
+          201,
+          { ETag: '"2"' },
+        )
+      conflict = true
+      return problemResponse('version_conflict', 412)
+    },
+  })
+
+  await addFirstCodeRow()
+  const dialog = previewFirstMatrix()
+  confirm(dialog)
+  expect(
+    await within(dialog).findByText(
+      'Данные изменились. Просмотрите актуальную версию',
+    ),
+  ).toBeInTheDocument()
+  expect(
+    within(dialog).getByText('Станет: Импорт · sonar-import'),
+  ).toBeInTheDocument()
+  confirm(dialog)
+  expect(await screen.findByText('Подтверждённая версия 2')).toBeInTheDocument()
+  const headers = fetcher.mock.calls
+    .filter(([, init]) => init?.method === 'POST')
+    .map(([, init]) => new Headers(init?.headers))
+  expect(headers.map((values) => values.get('If-Match'))).toEqual([
+    '"0"',
+    '"1"',
+  ])
+  expect(headers[0]?.get('Idempotency-Key')).not.toBe(
+    headers[1]?.get('Idempotency-Key'),
+  )
+})
+
+it('asks before leaving the first draft', async () => {
+  mount({
+    handle: (url) => {
+      if (url.pathname === profileEndpoint + '/options')
+        return jsonResponse(initialOptions)
+      if (url.pathname === profileEndpoint)
+        return problemResponse('not_found', 404)
+      return undefined
+    },
+  })
+  await addFirstCodeRow()
+  fireEvent.click(screen.getByRole('link', { name: 'Инструкция CI' }))
+  expect(
+    await screen.findByRole('dialog', { name: 'Изменения не сохранены' }),
+  ).toBeInTheDocument()
+})
+
 it('explains a missing secrets row when validation returns 422', async () => {
   mount({
     handle: (url, init) => {

@@ -1,5 +1,6 @@
 import type {
   CheckProfileEntry,
+  CheckProfileOptions,
   CheckProfileVersion,
   components,
 } from '@/shared/api'
@@ -9,7 +10,7 @@ export type ProfileDraft = components['schemas']['CheckProfileDraft']
 export type ProfileRow = ProfileDraft['entries'][number]
 export type ProfileMode = ProfileRow['mode']
 
-const analysisKinds: readonly ProfileRow['analysis_kind'][] = [
+export const analysisKinds: readonly ProfileRow['analysis_kind'][] = [
   'code',
   'sast',
   'sca',
@@ -48,6 +49,70 @@ const m0Profiles = [
   ['import', 'sca', '', 'sca-import'],
 ] as const
 
+interface ProfileScope {
+  language: string
+  analysis_kind: string
+}
+
+function supportsLanguage(
+  profile: CheckProfileOptions['profiles'][number],
+  language: string,
+) {
+  if (profile.any_language) return language !== ''
+  return profile.languages.length
+    ? profile.languages.includes(language)
+    : language === ''
+}
+
+export function catalogProfiles(options: CheckProfileOptions) {
+  return ({ language, analysis_kind }: ProfileScope, mode: ProfileMode) =>
+    options.profiles
+      .filter(
+        (profile) =>
+          profile.mode === mode &&
+          profile.analysis_kinds.includes(analysis_kind) &&
+          supportsLanguage(profile, language),
+      )
+      .map(({ id }) => id)
+}
+
+export function addInitialRow(
+  draft: ProfileDraft,
+  row: ProfileRow,
+  options: CheckProfileOptions,
+): ProfileDraft {
+  const entries = [...draft.entries, row]
+  if (
+    row.language &&
+    options.profiles.some(
+      (profile) =>
+        profile.mode === 'builtin' && profile.languages.includes(row.language),
+    )
+  ) {
+    const profilesFor = catalogProfiles(options)
+    for (const analysis_kind of ['secrets', 'sca'] as const) {
+      if (
+        entries.some(
+          (entry) =>
+            entry.component_id === row.component_id &&
+            entry.analysis_kind === analysis_kind,
+        )
+      )
+        continue
+      const scope = { analysis_kind, language: '' }
+      const profile_id = profilesFor(scope, 'builtin')[0]
+      if (profile_id)
+        entries.push({
+          ...scope,
+          component_id: row.component_id,
+          mode: 'builtin',
+          profile_id,
+        })
+    }
+  }
+  return { entries }
+}
+
 export function profileOptions(entries: readonly CheckProfileEntry[]) {
   const key = (mode: string, kind: string, language: string) =>
     JSON.stringify([mode, kind, language])
@@ -59,7 +124,7 @@ export function profileOptions(entries: readonly CheckProfileEntry[]) {
     installed.set(scope, profiles)
   }
 
-  return (row: CheckProfileEntry, mode: ProfileMode) => {
+  return (row: ProfileScope, mode: ProfileMode) => {
     const ids = new Set(
       installed.get(key(mode, row.analysis_kind, row.language)),
     )
@@ -118,19 +183,19 @@ function selection(row: { mode: string; profile_id: string }) {
   return `${mode === 'builtin' || mode === 'import' ? modeLabels[mode] : mode} · ${row.profile_id}`
 }
 
-export function changedRows(base: CheckProfileVersion, draft: ProfileDraft) {
-  const previous = new Map(base.entries.map((row) => [rowKey(row), row]))
+function changedRows(base: CheckProfileVersion | null, draft: ProfileDraft) {
+  const previous = new Map(base?.entries.map((row) => [rowKey(row), row]))
   return draft.entries.filter((row) => {
     const old = previous.get(rowKey(row))
-    return old && (old.mode !== row.mode || old.profile_id !== row.profile_id)
+    return old?.mode !== row.mode || old.profile_id !== row.profile_id
   })
 }
 
 export function compareDraft(
-  base: CheckProfileVersion,
+  base: CheckProfileVersion | null,
   draft: ProfileDraft,
 ): ChangePreview[] {
-  const previous = new Map(base.entries.map((row) => [rowKey(row), row]))
+  const previous = new Map(base?.entries.map((row) => [rowKey(row), row]))
   return changedRows(base, draft).map((row) => {
     const old = previous.get(rowKey(row))
     return {
@@ -142,7 +207,7 @@ export function compareDraft(
 }
 
 export function rebaseDraft(
-  base: CheckProfileVersion,
+  base: CheckProfileVersion | null,
   draft: ProfileDraft,
   current: ProfileDraft,
 ) {
@@ -155,7 +220,13 @@ export function rebaseDraft(
     changes.delete(key)
     return change ?? row
   })
-  return { draft: { entries }, removed: [...changes.values()] }
+  const previous = new Set(base?.entries.map(rowKey))
+  const removed: ProfileRow[] = []
+  for (const [key, row] of changes) {
+    if (previous.has(key)) removed.push(row)
+    else entries.push(row)
+  }
+  return { draft: { entries }, removed }
 }
 
 const fieldReasons = {

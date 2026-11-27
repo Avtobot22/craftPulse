@@ -29,6 +29,12 @@ export type CheckProfileVersion = Omit<
 > & {
   entries: CheckProfileEntry[]
 }
+export type CheckProfileOptions = Omit<
+  Schema['CheckProfileOptions'],
+  'profiles'
+> & {
+  profiles: OpenCodes<Schema['CheckProfileOptions']['profiles'][number]>[]
+}
 export type UploadToken = Schema['UploadToken'] & {
   last_used_at?: string | null
 }
@@ -184,6 +190,41 @@ export function getCheckProfile(
   return queryOptions({
     queryKey: ['check-profiles', 'current', projectId],
     queryFn: ({ signal }) => readCurrentCheckProfile(api, projectId, signal),
+  })
+}
+
+export function getCheckProfileOptions(api: ApiClient, projectId: string) {
+  return queryOptions({
+    queryKey: ['check-profiles', 'options', projectId],
+    queryFn: async ({ signal }) =>
+      (
+        await api.read(
+          '/projects/{project_id}/check-profiles/options',
+          (value): CheckProfileOptions => {
+            const raw = readRecord(value)
+            return {
+              components: readArray(raw.components, (value) => {
+                const component = readRecord(value)
+                return {
+                  id: readString(component.id),
+                  path_prefix: readString(component.path_prefix),
+                }
+              }),
+              profiles: readArray(raw.profiles, (value) => {
+                const profile = readRecord(value)
+                return {
+                  id: readString(profile.id),
+                  mode: readString(profile.mode),
+                  languages: readArray(profile.languages, readString),
+                  any_language: readBoolean(profile.any_language),
+                  analysis_kinds: readArray(profile.analysis_kinds, readString),
+                }
+              }),
+            }
+          },
+          { pathParams: { project_id: projectId }, signal },
+        )
+      ).data,
   })
 }
 

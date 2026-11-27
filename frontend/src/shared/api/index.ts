@@ -84,6 +84,7 @@ export {
 } from './finding-queries'
 export type {
   FindingListParams,
+  FindingDetail,
   TechnicalComparisonParams,
 } from './finding-queries'
 export {
@@ -107,6 +108,7 @@ export {
   createCheckProfileVersion,
   createUploadToken,
   getCheckProfile,
+  getCheckProfileOptions,
   readCurrentCheckProfile,
   getCiConfiguration,
   listBaselines,
@@ -114,6 +116,7 @@ export {
 } from './check-profile-queries'
 export type {
   CheckProfileEntry,
+  CheckProfileOptions,
   CheckProfileVersion,
   CiConfigurationParams,
   UploadToken,
@@ -122,8 +125,20 @@ export type {
 export {
   listDocumentationRoots,
   listServiceDocuments,
+  serviceDocumentPages,
+  readDocumentationRoots,
+  replaceDocumentationRoots,
+  requestDocumentationCheck,
+  getDocumentationCheck,
+  repositoryAreas,
 } from './documentation-queries'
-export type { ServiceDocumentListParams } from './documentation-queries'
+export type {
+  DocumentationRoot,
+  DocumentationRoots,
+  DocumentationRootInput,
+  ServiceDocument,
+  ServiceDocumentListParams,
+} from './documentation-queries'
 export { listTestExecutions, testExecutionPages } from './pipeline-queries'
 export type { TestExecutionListParams } from './pipeline-queries'
 export type { MergeRequestSummaryParams } from './merge-request-summary-queries'
@@ -168,3 +183,5 @@ export type {
   MetricRevision,
   RevisionMetadata,
 } from './revision-queries'
+export { loadCohort, parseRole } from './revision-cohort'
+export type { CohortItem, CohortQuery, CohortRole } from './revision-cohort'

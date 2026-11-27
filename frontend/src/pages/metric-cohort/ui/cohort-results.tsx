@@ -1,7 +1,7 @@
 import { Button } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { Navigate } from 'react-router'
+import { Navigate, useLocation } from 'react-router'
 import { isRevisionAccessDenied, useMetricPoint } from '@/entities/metric'
 import type { MetricInspection } from '@/entities/metric'
 import { RestrictedResults } from '@/entities/result-access'
@@ -9,7 +9,8 @@ import { ApiError } from '@/shared/api'
 import type { ApiClient, MetricRevision } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import { ErrorState, LoadingState } from '@/shared/ui'
-import { loadCohort, parseRole } from '../api/cohort-api'
+import { loadCohort, parseRole } from '@/shared/api'
+import { readCohortPagination } from '../model/pagination'
 import { matchesReportSlice } from '../model/scope'
 import { CohortTable } from './cohort-table'
 
@@ -22,9 +23,11 @@ export function CohortResults({
   selection: MetricInspection
   revision: MetricRevision
 }) {
-  const [limit, setLimit] = useState<25 | 50 | 100>(25)
-  const [cursors, setCursors] = useState<string[]>([])
-  const [page, setPage] = useState(0)
+  const returnState: unknown = useLocation().state
+  const [pagination, setPagination] = useState(() =>
+    readCohortPagination(returnState),
+  )
+  const { limit, cursors, page } = pagination
   const focusPage = useRef(false)
   const heading = useRef<HTMLHeadingElement>(null)
   const role = parseRole(selection.search.get('role'))
@@ -62,7 +65,7 @@ export function CohortResults({
   const value = point.isError ? undefined : point.data?.value
   const metricUnit = value?.unit ?? definition?.unit ?? ''
   const contributionUnit =
-    selection.metricId === 'T15'
+    selection.metricId === 'T15' || selection.metricId === 'X01'
       ? 'seconds'
       : selection.metricId === 'T11'
         ? 'ratio'
@@ -107,8 +110,7 @@ export function CohortResults({
               size="xl"
               onClick={() => {
                 focusPage.current = true
-                setPage(0)
-                setCursors([])
+                setPagination({ limit, page: 0, cursors: [] })
               }}
             >
               Загрузить когорту с начала
@@ -132,6 +134,15 @@ export function CohortResults({
               unit={contributionUnit}
               asOf={revision.as_of}
               publishedAt={revision.published_at}
+              taskParams={{
+                revision_id: revision.id,
+                as_of: revision.as_of,
+                from: selection.search.get('from') ?? revision.window.from,
+                to: selection.search.get('to') ?? revision.window.to,
+                ...(selection.teamId ? { team_id: selection.teamId } : {}),
+                ...(selection.project ? { project_id: selection.project } : {}),
+              }}
+              pagination={pagination}
             />
           ) : (
             <p role="status">
@@ -161,9 +172,7 @@ export function CohortResults({
             onChange={(event) => {
               const size = Number(event.currentTarget.value)
               if (size !== 25 && size !== 50 && size !== 100) return
-              setLimit(size)
-              setPage(0)
-              setCursors([])
+              setPagination({ limit: size, page: 0, cursors: [] })
               focusPage.current = true
             }}
           >
@@ -176,7 +185,7 @@ export function CohortResults({
           size="xl"
           disabled={page === 0 || result.isPending}
           onClick={() => {
-            setPage(page - 1)
+            setPagination({ ...pagination, page: page - 1 })
             focusPage.current = true
           }}
         >
@@ -191,8 +200,11 @@ export function CohortResults({
           disabled={!next || result.isPending}
           onClick={() => {
             if (!next) return
-            setCursors([...cursors.slice(0, page), next])
-            setPage(page + 1)
+            setPagination({
+              limit,
+              page: page + 1,
+              cursors: [...cursors.slice(0, page), next],
+            })
             focusPage.current = true
           }}
         >

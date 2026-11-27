@@ -10,7 +10,8 @@ import {
 } from 'react-router'
 import { ApiError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
-import { routePaths } from '@/shared/config'
+import type { CurrentUser } from '@/shared/auth'
+import { readTaskReturnFocus, routePaths } from '@/shared/config'
 import type { TeamReportScope } from '@/shared/config'
 import { EmptyState, ErrorState, LoadingState, StaleState } from '@/shared/ui'
 import {
@@ -109,7 +110,7 @@ function availability(report: TeamReport, groupedWithoutMapping: boolean) {
 }
 
 export function TeamReportPage({ api }: { api: ApiClient }) {
-  const scope = useOutletContext<TeamReportScope>()
+  const scope = useOutletContext<TeamReportScope & CurrentUser>()
   const [search] = useSearchParams()
   const params = readReportParams(search)
   params.revision ||= scope.focus?.revisionId ?? ''
@@ -153,7 +154,7 @@ function TeamReportContent({
   search,
 }: {
   api: ApiClient
-  scope: TeamReportScope
+  scope: TeamReportScope & CurrentUser
   teamId: string
   params: ReportParams
   search: URLSearchParams
@@ -204,7 +205,8 @@ function TeamReportContent({
   const visible =
     Boolean(snapshot) && !readingMetadata && !unsafeMetadata && !invalidPeriod
   const returnState: unknown = location.state
-  const focus =
+  const taskReturn = readTaskReturnFocus(returnState)
+  const metricFocus =
     scope.focus ??
     (returnState &&
     typeof returnState === 'object' &&
@@ -226,6 +228,7 @@ function TeamReportContent({
             : {}),
         }
       : undefined)
+  const focus = taskReturn ? undefined : metricFocus
   const focusedPoint = focus?.targetId
 
   const denial = useRef<HTMLDivElement>(null)
@@ -275,7 +278,8 @@ function TeamReportContent({
     apply({ ...params, projects: [], taskType: '', size: '', groupBy: '' })
   }
 
-  const hasProjectFilter = (query.project_id?.length ?? 0) > 0
+  const projectIds = query.project_id
+  const hasProjectFilter = (projectIds?.length ?? 0) > 0
   const hasFilters =
     hasProjectFilter ||
     Boolean(query.task_type ?? query.size_label ?? query.group_by)
@@ -439,6 +443,14 @@ function TeamReportContent({
         block={block}
         api={api}
         canReadVersions={scope.canManageProcess}
+        canReadTasks={scope.actions.includes('tasks.read')}
+        queueProjects={
+          scope.actions.includes('mr.read')
+            ? scope.projects.filter(
+                ({ id }) => !projectIds || projectIds.includes(id),
+              )
+            : []
+        }
       />
     </>
   )

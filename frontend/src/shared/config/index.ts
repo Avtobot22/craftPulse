@@ -39,3 +39,9 @@ export {
   technicalIdPattern,
   technicalScope,
 } from './technical-context'
+
+export {
+  documentationCorpus,
+  documentationRoots,
+  documentationFinding,
+} from './documentation'

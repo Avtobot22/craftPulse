@@ -27,6 +27,11 @@ import {
   taskTitle,
   taskPage,
 } from '../../../test/task-fixtures'
+import {
+  anchorDetail,
+  emptyCorpus,
+  service,
+} from '../../../test/documentation-fixtures'
 import { secretDetail } from '../../../test/finding-fixtures'
 import { emptyAttempts, noReports } from '../../../test/pipeline-fixtures'
 import { AppProviders } from '../initialization/app-providers'
@@ -1069,10 +1074,10 @@ const summaryFixture = {
   not_evaluated: [],
 } satisfies components['schemas']['MergeRequestSummary']
 
-function mockTechnicalApi(action: string) {
+function mockTechnicalApi(action: string, additionalActions: string[] = []) {
   const fallback = mockApi({
     ...currentUser,
-    actions: ['session.read', action],
+    actions: ['session.read', action, ...additionalActions],
   })
   return vi.fn<typeof fetch>().mockImplementation((input, init) => {
     if (input === '/api/v1' + summaryURL)
@@ -1090,6 +1095,12 @@ function mockTechnicalApi(action: string) {
           access_notes: [],
         }),
       )
+    if (input === '/api/v1/findings/' + anchorDetail.id)
+      return Promise.resolve(jsonResponse(anchorDetail))
+    if (input === `/api/v1/services/${service.id}/documents`)
+      return Promise.resolve(jsonResponse(emptyCorpus))
+    if (input === `/api/v1/services/${service.id}/documentation-roots`)
+      return Promise.resolve(jsonResponse({ data: [] }, 200, { ETag: '"0"' }))
     if (input === '/api/v1/findings/finding-1')
       return Promise.resolve(jsonResponse({ ...secretDetail, id: 'finding-1' }))
     return fallback(input, init)
@@ -1148,10 +1159,14 @@ describe('technical screen routes', () => {
       'Подключение шага CI',
       'check_profiles.manage',
     ],
-    ['/documentation/roots/service-1', 'Корни документации', 'docs.read'],
-    ['/documentation/services/service-1', 'Документация сервиса', 'docs.read'],
+    [`/documentation/roots/${service.id}`, 'Корни документации', 'docs.read'],
     [
-      '/documentation/findings/finding-1',
+      `/documentation/services/${service.id}`,
+      'Документация сервиса',
+      'docs.read',
+    ],
+    [
+      `/documentation/findings/${anchorDetail.id}?service_id=${service.id}`,
       'Нарушение документации',
       'findings.read',
     ],
@@ -1165,7 +1180,12 @@ describe('technical screen routes', () => {
       })
 
       for (let load = 0; load < 2; load += 1) {
-        const runtime = createAppRuntime(mockTechnicalApi(action))
+        const additionalActions = path.startsWith('/documentation/findings/')
+          ? ['docs.read']
+          : []
+        const runtime = createAppRuntime(
+          mockTechnicalApi(action, additionalActions),
+        )
         const router = createBrowserRouter(createAppRoutes(runtime))
         const { dispose } = renderRouter(router, runtime)
         expect(

@@ -19,6 +19,8 @@ const titles: Readonly<Record<string, string>> = {
   T40: 'Свежесть данных',
   T41: 'Покрытие сопоставления',
   T42: 'Расхождения при сверке',
+  X01: 'Задачи в работе с ожиданием ревью',
+  X02: 'Задачи в работе с оговорками CI',
 }
 
 export const outcomeReasons: Readonly<Record<string, string>> = {
@@ -39,6 +41,11 @@ const estimators: Readonly<Record<string, string>> = {
   'T41:transitions': 'Переходы',
   'T42:missing': 'Пропущены',
   'T42:changed': 'Изменены',
+  'X01:no_reviewer': 'Нет ревьюера',
+  'X01:no_first_response': 'Нет первого ответа человека',
+  'X02:failed': 'Ошибка или тайм-аут CI',
+  'X02:passed_after_retry': 'Fail → pass',
+  'X02:missing_report': 'Отсутствует ожидаемый отчёт',
 }
 
 export function seriesTitle(series: ReportSeries, groupBy: string) {

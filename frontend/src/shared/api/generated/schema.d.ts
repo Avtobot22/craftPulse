@@ -1752,11 +1752,32 @@ export interface paths {
          * @description Новая версия матрицы (FR-035). Законченный внешний отчёт заменяет только совпадающую
          *     область; внешний анализатор не выключает проверку секретов и зависимостей (FR-035 A1).
          *     Неподдержанный язык или вид анализа - `422`. Правила версии как у `createMappingVersion`.
+         *     Для первой версии отправляется `If-Match: "0"`.
          *
          *     Если содержимое равно действующей версии, возвращается 200 без создания версии.
          *     Повтор Idempotency-Key возвращает исходный статус и ответ до проверки If-Match.
          */
         post: operations["createCheckProfileVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/check-profiles/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Компоненты и профили для первой матрицы проверок
+         * @description Подтверждённые компоненты проекта и доступные профили из каталога поставки. Данные доступны до подтверждения матрицы.
+         */
+        get: operations["getCheckProfileOptions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4854,6 +4875,23 @@ export interface components {
             /** @enum {string} */
             mode: "import" | "builtin";
             profile_id: string;
+        };
+        CheckProfileOptions: {
+            components: {
+                /** Format: uuid */
+                id: string;
+                path_prefix: string;
+            }[];
+            profiles: {
+                id: string;
+                /** @enum {string} */
+                mode: "import" | "builtin";
+                /** @description Пустой список без any_language означает проверку без языка. */
+                languages: string[];
+                /** @description Принимает любой непустой язык. */
+                any_language: boolean;
+                analysis_kinds: components["schemas"]["AnalysisKind"][];
+            }[];
         };
         CheckProfileDraft: {
             entries: components["schemas"]["ProfileEntryInput"][];
@@ -11433,6 +11471,54 @@ export interface operations {
             412: components["responses"]["PreconditionFailed"];
             422: components["responses"]["ValidationFailed"];
             428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    getCheckProfileOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Варианты для черновика. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "components": [
+                     *         {
+                     *           "id": "0193a5b0-7777-7000-8000-000000000001",
+                     *           "path_prefix": "services/billing"
+                     *         }
+                     *       ],
+                     *       "profiles": [
+                     *         {
+                     *           "id": "go-default",
+                     *           "mode": "builtin",
+                     *           "languages": [
+                     *             "go"
+                     *           ],
+                     *           "any_language": false,
+                     *           "analysis_kinds": [
+                     *             "code"
+                     *           ]
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CheckProfileOptions"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getCiConfiguration: {

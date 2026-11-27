@@ -96,11 +96,14 @@ export const technicalRoutes = (api: ApiClient) =>
     },
     {
       path: routePaths.documentationRoots,
-      element: <DocumentationRootsPage />,
+      element: <DocumentationRootsPage api={api} />,
     },
-    { path: routePaths.serviceDocuments, element: <ServiceDocumentsPage /> },
+    {
+      path: routePaths.serviceDocuments,
+      element: <ServiceDocumentsPage api={api} />,
+    },
     {
       path: routePaths.documentationFinding,
-      element: <DocumentationFindingPage />,
+      element: <DocumentationFindingPage api={api} />,
     },
   ] satisfies RouteObject[]

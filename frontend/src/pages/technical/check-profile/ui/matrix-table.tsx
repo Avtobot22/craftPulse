@@ -1,3 +1,4 @@
+import { Button } from '@gravity-ui/uikit'
 import type { CheckProfileVersion } from '@/shared/api'
 import { ContractReason } from '@/shared/ui'
 import { modeLabels, profileOptions, rowKey, rowLabel } from '../model/matrix'
@@ -12,23 +13,30 @@ const uncoveredReasons = {
 export function MatrixTable({
   version,
   draft,
+  initialProfiles,
+  onRemove,
   onChange,
 }: {
-  version: CheckProfileVersion
+  version: CheckProfileVersion | null
   draft: ProfileDraft | null
+  initialProfiles: ReturnType<typeof profileOptions> | undefined
+  onRemove: ((index: number) => void) | undefined
   onChange: (
     index: number,
     selection: Pick<ProfileRow, 'mode' | 'profile_id'>,
   ) => void
 }) {
-  const profilesFor = profileOptions(version.entries)
+  const confirmedProfiles = profileOptions(version?.entries ?? [])
+  const rows = draft?.entries ?? version?.entries ?? []
+  const confirmed = new Map(version?.entries.map((row) => [rowKey(row), row]))
+  const hasNewRows = rows.some((row) => !confirmed.has(rowKey(row)))
   return (
     <>
       <p>
         Импорт одного вида анализа не отключает проверки секретов (secrets) и
         зависимостей (sca).
       </p>
-      {version.entries.length ? (
+      {rows.length ? (
         <div
           className="cp-check-matrix__scroll"
           role="region"
@@ -49,6 +57,7 @@ export function MatrixTable({
                   'Профиль',
                   'Версии инструментов',
                   'Хэш правил',
+                  ...(hasNewRows ? ['Действия'] : []),
                 ].map((label) => (
                   <th key={label} scope="col">
                     {label}
@@ -57,7 +66,12 @@ export function MatrixTable({
               </tr>
             </thead>
             <tbody>
-              {version.entries.map((row, index) => {
+              {rows.map((row, index) => {
+                const original = confirmed.get(rowKey(row))
+                const profilesFor =
+                  !original && initialProfiles
+                    ? initialProfiles
+                    : confirmedProfiles
                 const choice = draft?.entries[index]
                 const label = rowLabel(row)
                 const modes: readonly ProfileMode[] = ['builtin', 'import']
@@ -73,9 +87,9 @@ export function MatrixTable({
                 }
                 const changed =
                   choice &&
-                  (choice.mode !== row.mode ||
-                    choice.profile_id !== row.profile_id)
-                const tools = Object.entries(row.tool_versions)
+                  (choice.mode !== original?.mode ||
+                    choice.profile_id !== original.profile_id)
+                const tools = Object.entries(original?.tool_versions ?? {})
                   .map(([name, version]) => `${name} ${version}`)
                   .join(', ')
                 return (
@@ -94,8 +108,8 @@ export function MatrixTable({
                             const mode = event.currentTarget.value
                             if (mode !== 'builtin' && mode !== 'import') return
                             const profile_id =
-                              mode === row.mode
-                                ? row.profile_id
+                              mode === original?.mode
+                                ? original.profile_id
                                 : profiles[mode][0]
                             if (profile_id)
                               onChange(index, { mode, profile_id })
@@ -143,8 +157,23 @@ export function MatrixTable({
                     <td data-label="Хэш правил">
                       {changed
                         ? 'После подтверждения'
-                        : (row.rules_hash ?? 'Нет данных')}
+                        : (original?.rules_hash ?? 'Нет данных')}
                     </td>
+                    {hasNewRows && (
+                      <td data-label="Действия">
+                        {!original && onRemove && (
+                          <Button
+                            type="button"
+                            aria-label={`Удалить строку · ${label}`}
+                            onClick={() => {
+                              onRemove(index)
+                            }}
+                          >
+                            Удалить
+                          </Button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 )
               })}
@@ -154,26 +183,28 @@ export function MatrixTable({
       ) : (
         <p>В матрице пока нет строк.</p>
       )}
-      <section aria-label="Непокрытые области">
-        <h2>Непокрытые области</h2>
-        {version.uncovered.length ? (
-          <ul>
-            {version.uncovered.map(
-              ({ component_id, language, reason_code }, index) => (
-                <li key={index}>
-                  {component_id} · {language || 'Без языка'} ·{' '}
-                  <ContractReason
-                    code={reason_code}
-                    labels={uncoveredReasons}
-                  />
-                </li>
-              ),
-            )}
-          </ul>
-        ) : (
-          <p>Непокрытых областей нет.</p>
-        )}
-      </section>
+      {version && (
+        <section aria-label="Непокрытые области">
+          <h2>Непокрытые области</h2>
+          {version.uncovered.length ? (
+            <ul>
+              {version.uncovered.map(
+                ({ component_id, language, reason_code }, index) => (
+                  <li key={index}>
+                    {component_id} · {language || 'Без языка'} ·{' '}
+                    <ContractReason
+                      code={reason_code}
+                      labels={uncoveredReasons}
+                    />
+                  </li>
+                ),
+              )}
+            </ul>
+          ) : (
+            <p>Непокрытых областей нет.</p>
+          )}
+        </section>
+      )}
     </>
   )
 }

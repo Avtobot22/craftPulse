@@ -2,25 +2,22 @@ import {
   InvalidResponse,
   readArray,
   readBoolean,
-  readNullableNumber,
   readNullableString,
-  readNumber,
-  readObjectRef,
   readRecord,
   readString,
-} from '@/shared/api'
-import type { ApiClient, operations } from '@/shared/api'
+} from './response'
+import type { ApiClient } from './client'
+import type { operations } from './generated/schema'
+import {
+  readAccessNotes,
+  readNullableNumber,
+  readNumber,
+  readObjectRef,
+} from './read-fields'
 
 export type CohortQuery =
   operations['listRevisionCohort']['parameters']['query']
 export type CohortRole = NonNullable<CohortQuery['role']>
-
-export const roleLabels: Record<CohortRole, string> = {
-  numerator: 'Числитель',
-  denominator: 'Знаменатель',
-  excluded: 'Исключено',
-  missing: 'Пропущено',
-}
 
 export function parseRole(role: string | null) {
   switch (role) {
@@ -51,6 +48,9 @@ function readCohortItem(value: unknown) {
     value: readNullableNumber(raw.value),
     reason: readNullableString(raw.reason_code),
     object: readObjectRef(raw.object),
+    taskAge: readNullableNumber(raw.task_age_seconds ?? null),
+    signals:
+      raw.signals === undefined ? [] : readArray(raw.signals, readString),
     taskType:
       raw.task_type === undefined
         ? undefined
@@ -82,6 +82,7 @@ export async function loadCohort(
         items: readArray(raw.data, readCohortItem),
         next: readNullableString(raw.next_cursor),
         accessLimited: readBoolean(raw.access_limited),
+        accessNotes: readAccessNotes(raw.access_notes),
       }
     },
     { pathParams: { revision_id: revisionId }, query, signal },
