@@ -2,10 +2,21 @@ import { Alert, Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
 import { generatePath, useParams, useSearchParams } from 'react-router'
 import { exceptionOrigin } from '@/entities/exception'
-import { ApiError, getException, getFinding, isStrongETag } from '@/shared/api'
+import {
+  ApiError,
+  getException,
+  getFinding,
+  isStrongETag,
+  isUnavailableError,
+} from '@/shared/api'
 import type { ApiClient, ExceptionScope } from '@/shared/api'
 import { routePaths } from '@/shared/config'
-import { ErrorState, InspectionBack, LoadingState } from '@/shared/ui'
+import {
+  ErrorState,
+  InspectionBack,
+  LoadingState,
+  UnavailableRedirect,
+} from '@/shared/ui'
 import { scopeOptions } from '../model/exception-draft'
 import { ExceptionEditor } from './exception-editor'
 import './exception-form.css'
@@ -64,6 +75,9 @@ export function ExceptionFormPage({ api }: { api: ApiClient }) {
   const canEdit = exceptionId
     ? !existing.isError && isStrongETag(existing.data?.etag)
     : source?.actions.includes('create_exception')
+
+  if (isUnavailableError(query.error))
+    return <UnavailableRedirect error={query.error} />
 
   return (
     <article className="cp-exception-form">

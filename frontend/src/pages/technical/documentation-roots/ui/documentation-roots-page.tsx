@@ -22,7 +22,7 @@ import {
   readTechnicalId,
   routePaths,
 } from '@/shared/config'
-import { ErrorState, LoadingState } from '@/shared/ui'
+import { ErrorState, LoadingState, UnavailableRedirect } from '@/shared/ui'
 import { audienceLabel, noOwner } from '../model/root-set'
 import { RootEditor } from './root-editor'
 import './documentation-roots.css'
@@ -75,7 +75,7 @@ function ServiceRoots({
     query.error instanceof ApiError &&
     ['forbidden', 'not-found'].includes(query.error.kind)
   ) {
-    return <Navigate to={routePaths.unavailable} replace />
+    return <UnavailableRedirect error={query.error} />
   }
 
   const rootSet = query.data?.data

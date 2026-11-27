@@ -1,6 +1,6 @@
 import { Card, Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
-import { Link, Navigate, useLocation } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import {
   InspectionReturn,
   isRevisionAccessDenied,
@@ -18,8 +18,7 @@ import {
   loadRevisionSeries,
 } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
-import { routePaths } from '@/shared/config'
-import { ErrorState, LoadingState } from '@/shared/ui'
+import { ErrorState, LoadingState, UnavailableRedirect } from '@/shared/ui'
 import { catalogHref, metricFormula } from '../model/definition'
 import { RevisionInputs } from './revision-inputs'
 import './metric-passport-page.css'
@@ -93,7 +92,13 @@ export function MetricPassportPage({ api }: { api: ApiClient }) {
     isRevisionAccessDenied(revision.error) ||
     isRevisionAccessDenied(point.error)
   )
-    return <Navigate to={routePaths.unavailable} replace />
+    return (
+      <UnavailableRedirect
+        error={
+          isRevisionAccessDenied(revision.error) ? revision.error : point.error
+        }
+      />
+    )
 
   return (
     <section className="cp-metric-passport">

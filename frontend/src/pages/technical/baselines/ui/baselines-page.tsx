@@ -8,7 +8,7 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router'
-import { ApiError, listBaselines } from '@/shared/api'
+import { isUnavailableError, listBaselines } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
 import {
@@ -22,6 +22,7 @@ import {
   InspectionBack,
   InspectionLink,
   LoadingState,
+  UnavailableRedirect,
   useInspectionReturn,
 } from '@/shared/ui'
 import { BaselineMatrix, BaselineReport } from './baseline-matrix'
@@ -130,11 +131,8 @@ function BaselineContent({
 
   if (waiting) return <LoadingState />
   if (query.isError) {
-    if (
-      query.error instanceof ApiError &&
-      (query.error.kind === 'not-found' || query.error.kind === 'forbidden')
-    )
-      return <p role="status">Базовые линии проекта недоступны.</p>
+    if (isUnavailableError(query.error))
+      return <UnavailableRedirect error={query.error} />
     return (
       <ErrorState
         reason="Не удалось загрузить базовые линии"

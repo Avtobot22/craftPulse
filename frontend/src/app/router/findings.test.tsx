@@ -372,7 +372,9 @@ it('заменяет карточку находки с ответом 404 на 
   expect(router.state.location.pathname).toBe('/access-denied')
   expect(screen.queryByText(acceptedFinding.rule_id)).toBeNull()
   expect(screen.queryByText(/billing\/repo\.go/u)).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Назад' }), { detail: 0 })
+  fireEvent.click(screen.getByRole('button', { name: 'К списку' }), {
+    detail: 0,
+  })
   const restored = await screen.findByRole('link', {
     name: acceptedFinding.rule_id,
   })

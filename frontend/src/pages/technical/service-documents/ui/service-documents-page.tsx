@@ -18,7 +18,12 @@ import {
   readTechnicalId,
   routePaths,
 } from '@/shared/config'
-import { DataStateBadge, ErrorState, LoadingState } from '@/shared/ui'
+import {
+  DataStateBadge,
+  ErrorState,
+  LoadingState,
+  UnavailableRedirect,
+} from '@/shared/ui'
 import type { DataState } from '@/shared/ui'
 import { DocumentList } from './document-list'
 import { DocumentationViolations } from './documentation-violations'
@@ -120,7 +125,7 @@ function ServiceCorpus({
     query.error instanceof ApiError &&
     ['forbidden', 'not-found'].includes(query.error.kind)
   ) {
-    return <Navigate to={routePaths.unavailable} replace />
+    return <UnavailableRedirect error={query.error} />
   }
 
   const loadMore = () => void query.fetchNextPage({ cancelRefetch: false })

@@ -6,7 +6,7 @@ import {
   useSearchParams,
 } from 'react-router'
 import { RestrictedResults } from '@/entities/result-access'
-import { ApiError } from '@/shared/api'
+import { isUnavailableError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
 import {
@@ -23,6 +23,7 @@ import {
   InspectionLink,
   LoadingState,
   useInspectionReturn,
+  UnavailableRedirect,
 } from '@/shared/ui'
 import { getSummaryQuery } from '../model/summary'
 import { summaryComparisonLink } from '../model/comparison-link'
@@ -82,17 +83,11 @@ function SummaryContent({
   useInspectionReturn(query.isSuccess)
   if (query.isPending) return <LoadingState />
   if (query.isError) {
-    const kind = query.error instanceof ApiError ? query.error.kind : null
-    let reason = 'Не удалось загрузить сводку MR'
-    if (kind === 'not-found' || kind === 'forbidden') {
-      reason =
-        kind === 'not-found' && head && revision === undefined
-          ? 'Для выбранного head пока нет сводки'
-          : 'Ревизия сводки недоступна'
-    }
+    if (isUnavailableError(query.error))
+      return <UnavailableRedirect error={query.error} />
     return (
       <ErrorState
-        reason={reason}
+        reason="Не удалось загрузить сводку MR"
         retrying={query.isFetching}
         onRetry={() => {
           void query.refetch()

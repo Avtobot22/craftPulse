@@ -8,12 +8,18 @@ import {
   useOutletContext,
   useSearchParams,
 } from 'react-router'
-import { ApiError } from '@/shared/api'
+import { ApiError, isUnavailableError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
 import { readTaskReturnFocus, routePaths } from '@/shared/config'
 import type { TeamReportScope } from '@/shared/config'
-import { EmptyState, ErrorState, LoadingState, StaleState } from '@/shared/ui'
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  StaleState,
+  UnavailableRedirect,
+} from '@/shared/ui'
 import {
   loadReport,
   loadRevisionMetadata,
@@ -309,6 +315,9 @@ function TeamReportContent({
     />
   )
   const retry = () => void report.refetch()
+  const deniedRead = [report.error, revision.error].find(isUnavailableError)
+  if (deniedRead) return <UnavailableRedirect error={deniedRead} />
+
   const error = report.error instanceof ApiError ? report.error : undefined
   const diagnostic = error?.problem?.correlation_id
   const readFailure = (

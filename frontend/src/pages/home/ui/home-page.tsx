@@ -7,6 +7,7 @@ import {
   Navigate,
   useLocation,
   useNavigate,
+  useMatches,
   useOutlet,
   useOutletContext,
 } from 'react-router'
@@ -15,15 +16,16 @@ import type { CurrentUser, SessionController } from '@/shared/auth'
 import {
   contentGridProps,
   layoutSizes,
-  readTaskOrigin,
   readTaskReturnFocus,
   routePaths,
 } from '@/shared/config'
 import type { ReportPointFocus, TeamReportScope } from '@/shared/config'
-import { ErrorState, LoadingState } from '@/shared/ui'
+import { isUnavailableError } from '@/shared/api'
+import { ErrorState, LoadingState, UnavailableRedirect } from '@/shared/ui'
 import { adminDetailRoutes, adminNavigation } from '../model/admin-navigation'
 import {
   changeScope,
+  outsideAreas,
   projectParam,
   rememberScope,
   teamParam,
@@ -36,6 +38,7 @@ import {
   technicalNavigation,
   technicalRouteAction,
 } from '../model/technical-navigation'
+import { useUnavailableReturn } from '../model/unavailable-return'
 import { useScope } from '../model/use-scope'
 import './home-page.css'
 
@@ -111,7 +114,10 @@ export function HomePage({
     (areas) => areas.length > 0,
   )
   const storageKey = `craftpulse.scope.${current.organization.id}.${current.user.id}`
-  const params = new URLSearchParams(location.search)
+  const isUnavailable = location.pathname === routePaths.unavailable
+  const params = new URLSearchParams(isUnavailable ? '' : location.search)
+  const projectId = useMatches().at(-1)?.params.projectId
+  const areaDenied = outsideAreas(current.areas, params, projectId)
   const isHome = location.pathname === routePaths.home
   const state: unknown = location.state
   const skipScopeRestore =
@@ -138,7 +144,9 @@ export function HomePage({
     storageKey,
     params,
     restore,
-    analysisSection || technicalAction ? current.areas.projects : undefined,
+    current.areas,
+    Boolean(analysisSection ?? technicalAction),
+    areaDenied || isUnavailable,
   )
   const active = settingRoutes.find(
     ({ path }) =>
@@ -157,16 +165,6 @@ export function HomePage({
     current.actions.includes(action) &&
     (action !== 'process.manage' || ownsProcess)
   const allowed = settings.filter(canOpenSetting)
-  const outlet = useOutlet({
-    ...current,
-    teams: scope.teams.data,
-    ...(scope.team ? { team: scope.team } : {}),
-    ...(scope.project ? { project: scope.project } : {}),
-    projects: scope.projectChoices ?? [],
-    canManageProcess: allowed.some(({ action }) => action === 'process.manage'),
-    focus: reportFocus?.locationKey === location.key ? reportFocus : undefined,
-    rememberPoint: setReportFocus,
-  } satisfies CurrentUser & TeamReportScope & { teams: Team[] | undefined })
   const currentSetting = active && canOpenSetting(active) ? active : undefined
   const isProcessSetting = active?.action === 'process.manage'
   const isReport = reportPaths.some((path) =>
@@ -203,19 +201,42 @@ export function HomePage({
         current.actions.includes(action),
       )
     : []
-  const missing =
+  const forbidden =
     Boolean(active && !currentSetting) ||
-    ((isReport || currentSetting?.action === 'process.manage') &&
-      scope.invalid) ||
     (isReport && !canReadReport) ||
     (technicalAction !== undefined &&
       !current.actions.includes(technicalAction)) ||
-    Boolean(analysisSection && (!canReadAnalysis || scope.invalid))
+    Boolean(analysisSection && !canReadAnalysis)
+  const scopeFailure = [scope.teams.error, scope.projects.error].find(
+    isUnavailableError,
+  )
+  const missing = areaDenied || (!restore && scope.invalid)
   const noArea =
     !hasAreas &&
     !currentSetting &&
     location.pathname !== routePaths.welcome &&
-    location.pathname !== routePaths.unavailable
+    !isUnavailable
+  const unavailableReturn = useUnavailableReturn(
+    current,
+    storageKey,
+    location,
+    !missing && !forbidden && !noArea && !checkingScope && !scopeFailure,
+  )
+  const outlet = useOutlet({
+    ...current,
+    teams: scope.teamChoices,
+    ...(scope.team ? { team: scope.team } : {}),
+    ...(scope.project ? { project: scope.project } : {}),
+    projects: scope.projectChoices ?? [],
+    canManageProcess: allowed.some(({ action }) => action === 'process.manage'),
+    focus: reportFocus?.locationKey === location.key ? reportFocus : undefined,
+    rememberPoint: setReportFocus,
+    unavailableReturn,
+  } satisfies CurrentUser &
+    TeamReportScope & {
+      teams: Team[] | undefined
+      unavailableReturn: typeof unavailableReturn
+    })
   const areaMessage =
     state &&
     typeof state === 'object' &&
@@ -296,6 +317,13 @@ export function HomePage({
     return { pathname, search: next.toString() }
   }
 
+  if (!isUnavailable) {
+    if (missing || (isTaskDetail && noArea)) return <UnavailableRedirect />
+    if (forbidden && !checkingScope) return <UnavailableRedirect forbidden />
+    if (scopeFailure && (checkingScope || isHome))
+      return <UnavailableRedirect error={scopeFailure} />
+  }
+
   if (setup) return <Navigate to={routePaths.organization} replace />
 
   if (restoring && scope.team) {
@@ -347,7 +375,7 @@ export function HomePage({
       </a>
       <header className="cp-shell__header">
         <Text variant="subheader-2">{current.organization.name}</Text>
-        {hasAreas && (
+        {hasAreas && !isUnavailable && (
           <div
             className="cp-shell__controls"
             role="group"
@@ -368,7 +396,7 @@ export function HomePage({
                     : 'Выберите команду'}
                 </option>
                 {!teamError &&
-                  scope.teams.data?.map(({ id, name }) => (
+                  scope.teamChoices?.map(({ id, name }) => (
                     <option key={id} value={id}>
                       {name}
                     </option>
@@ -399,7 +427,7 @@ export function HomePage({
             </label>
           </div>
         )}
-        {hasAreas && availableViews.length > 0 && (
+        {hasAreas && !isUnavailable && availableViews.length > 0 && (
           <label>
             Вид панели
             <select
@@ -587,12 +615,7 @@ export function HomePage({
                 </p>
               )}
               {areaMessage && <p role="status">{areaMessage}</p>}
-              {scope.invalid && !restore && !noArea && (
-                <p role="status">
-                  Объект или область недоступны. Выберите доступную область.
-                </p>
-              )}
-              {(teamError || projectError) && (
+              {!isUnavailable && (teamError || projectError) && (
                 <ErrorState
                   reason={
                     teamError
@@ -618,20 +641,10 @@ export function HomePage({
                   </ol>
                 </nav>
               )}
-              {isTaskDetail && (missing || noArea) ? (
-                <Navigate
-                  to={routePaths.unavailable}
-                  replace
-                  state={{ taskOrigin: readTaskOrigin(state) }}
-                />
-              ) : checkingScope ? (
+              {checkingScope ? (
                 teamError || projectError ? null : (
                   <LoadingState />
                 )
-              ) : missing ? (
-                <Text as="h1" variant="header-1">
-                  Объект или область недоступны
-                </Text>
               ) : noArea ? (
                 <section>
                   <Text as="h1" variant="header-1">
@@ -645,7 +658,7 @@ export function HomePage({
                     <Text as="h1" variant="header-1">
                       Обзор
                     </Text>
-                    {scope.teams.data?.length === 0 ? (
+                    {scope.teamChoices?.length === 0 ? (
                       <p>Нет доступных команд. Обратитесь к администратору.</p>
                     ) : !scope.team && !teamError ? (
                       <p>Выберите команду и проект.</p>

@@ -1,18 +1,17 @@
 import { Button } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { Navigate, useLocation } from 'react-router'
+import { useLocation } from 'react-router'
 import { isRevisionAccessDenied, useMetricPoint } from '@/entities/metric'
 import type { MetricInspection } from '@/entities/metric'
 import { RestrictedResults } from '@/entities/result-access'
 import { ApiError } from '@/shared/api'
 import type { ApiClient, MetricRevision } from '@/shared/api'
 import {
-  routePaths,
   technicalCohortTaskType,
   technicalReportFilters,
 } from '@/shared/config'
-import { ErrorState, LoadingState } from '@/shared/ui'
+import { ErrorState, LoadingState, UnavailableRedirect } from '@/shared/ui'
 import { loadCohort, parseRole } from '@/shared/api'
 import { readCohortPagination } from '../model/pagination'
 import { matchesReportSlice } from '../model/scope'
@@ -101,7 +100,13 @@ export function CohortResults({
     isRevisionAccessDenied(result.error) ||
     isRevisionAccessDenied(point.error)
   )
-    return <Navigate to={routePaths.unavailable} replace />
+    return (
+      <UnavailableRedirect
+        error={
+          isRevisionAccessDenied(result.error) ? result.error : point.error
+        }
+      />
+    )
 
   const diagnostic =
     result.error instanceof ApiError

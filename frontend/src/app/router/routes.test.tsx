@@ -549,10 +549,20 @@ describe('UI-01', () => {
         respond = resolve
       })
       const requestProjects = vi.fn(() => pendingProjects)
-      const foreignProject = '0193a5b0-4444-7000-8000-000000000002'
+      const differentProject = {
+        ...project,
+        id: '0193a5b0-4444-7000-8000-000000000002',
+      }
       mount(
-        `${path}?team_id=${team.id}&project_id=${foreignProject}`,
-        mockApi(admin, teams.data, requestProjects),
+        `${path}?team_id=${team.id}&project_id=${differentProject.id}`,
+        mockApi(
+          {
+            ...admin,
+            areas: { ...admin.areas, projects: [project, differentProject] },
+          },
+          teams.data,
+          requestProjects,
+        ),
       )
 
       await waitFor(() => {
@@ -652,9 +662,10 @@ describe('UI-01', () => {
         `${path}?team_id=${secondTeam.id}`,
         mockApi(scopedProcessOwner, [team, secondTeam]),
       )
-      await screen.findByRole('link', { name: 'Отчёт команды' })
       expect(
-        screen.getByRole('heading', { name: 'Объект или область недоступны' }),
+        await screen.findByRole('heading', {
+          name: 'Объект или область недоступны',
+        }),
       ).toBeInTheDocument()
       expect(screen.queryByRole('heading', { name: heading })).toBeNull()
     },
@@ -748,7 +759,13 @@ describe('UI-01', () => {
   it('preserves view and period but drops the previous project, revision and object on scope change', async () => {
     const { router } = mount(
       `/users/123?team_id=${team.id}&project_id=${project.id}&view=overview&from=2026-10-01&revision_id=r1#form`,
-      mockApi(admin, [...teams.data, secondTeam]),
+      mockApi(
+        {
+          ...admin,
+          areas: { ...admin.areas, teams: [team, secondTeam] },
+        },
+        [team, secondTeam],
+      ),
     )
     const teamSelect = await screen.findByRole('combobox', { name: 'Команда' })
     await waitFor(() => {
@@ -797,20 +814,41 @@ describe('UI-01', () => {
     })
   })
 
-  it('does not request projects for a team absent from the API response', async () => {
-    const fetcher = mockApi()
-    mount('/?team_id=unknown&project_id=unknown', fetcher)
-    await screen.findByText(
-      'Объект или область недоступны. Выберите доступную область.',
+  it.each([
+    [`/tasks?team_id=${secondTeam.id}`, secondTeam.id],
+    [`/tasks?team_id=${team.id}&project_id=foreign-project`, 'foreign-project'],
+    ['/checks/profile/foreign-project', 'foreign-project'],
+  ])('rejects the area in %s before querying its data', async (path, id) => {
+    const fetcher = mockApi(
+      {
+        ...currentUser,
+        actions: [...currentUser.actions, 'check_profiles.manage'],
+      },
+      [team, secondTeam],
     )
-    expect(screen.getByRole('combobox', { name: 'Команда' })).toHaveValue('')
-    expect(screen.getByRole('combobox', { name: 'Проект' })).toBeDisabled()
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    const { router } = mount(path, fetcher)
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Объект или область недоступны',
+      }),
+    ).toHaveFocus()
+    expect(screen.getByRole('main').outerHTML).not.toContain(id)
+    expect(screen.queryByText(secondTeam.name)).not.toBeInTheDocument()
+    expect(fetcher.mock.calls.map(([input]) => input)).toEqual(['/api/v1/me'])
+    const back = screen.getByRole('button', { name: 'К списку' })
+    back.focus()
+    expect(back).toHaveFocus()
+    fireEvent.click(back, { detail: 0 })
+    expect(
+      await screen.findByRole('heading', { name: 'Обзор', level: 1 }),
+    ).toBeVisible()
+    expect(router.state.location.pathname).toBe('/')
   })
 
   it('reloads the area lists when another organization replaces the session', async () => {
     const nextUser = {
       ...currentUser,
+      areas: { ...currentUser.areas, teams: [secondTeam] },
       organization: {
         ...currentUser.organization,
         id: '0193a5b0-3333-7000-8000-000000000003',
@@ -831,6 +869,9 @@ describe('UI-01', () => {
     })
     await screen.findByText(nextUser.organization.name)
     expect(screen.queryByRole('option', { name: team.name })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'К списку' }), {
+      detail: 0,
+    })
     await screen.findByRole('option', { name: secondTeam.name })
     expect(screen.getByRole('combobox', { name: 'Проект' })).toBeDisabled()
     expect(
@@ -1152,10 +1193,14 @@ describe('technical screen routes', () => {
       'Технический обзор компонента',
       'findings.read',
     ],
-    ['/checks/profile/project-1', 'Матрица проверок', 'check_profiles.manage'],
-    ['/checks/baselines/project-1', 'Базовые линии', 'ci.read'],
     [
-      '/checks/setup/project-1?ci_system=gitlab_ci',
+      `/checks/profile/${project.id}`,
+      'Матрица проверок',
+      'check_profiles.manage',
+    ],
+    [`/checks/baselines/${project.id}`, 'Базовые линии', 'ci.read'],
+    [
+      `/checks/setup/${project.id}?ci_system=gitlab_ci`,
       'Подключение шага CI',
       'check_profiles.manage',
     ],

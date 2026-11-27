@@ -1,6 +1,6 @@
 import { Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
-import { Navigate, useLocation, useParams } from 'react-router'
+import { useParams } from 'react-router'
 import { ApiError, getFinding, InvalidResponse } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import { routePaths } from '@/shared/config'
@@ -9,13 +9,13 @@ import {
   InspectionBack,
   LoadingState,
   useInspectionReturn,
+  UnavailableRedirect,
 } from '@/shared/ui'
 import { FindingDetails } from './finding-details'
 import './finding-detail-page.css'
 
 export function FindingDetailPage({ api }: { api: ApiClient }) {
   const { findingId = '' } = useParams()
-  const state: unknown = useLocation().state
   const id = findingId.toLowerCase()
   const query = useQuery({
     ...getFinding(api, id),
@@ -36,18 +36,7 @@ export function FindingDetailPage({ api }: { api: ApiClient }) {
       query.error.kind === 'forbidden' ||
       query.error.problem?.status === 404)
   ) {
-    const fromInspection =
-      state !== null &&
-      typeof state === 'object' &&
-      'fromInspection' in state &&
-      state.fromInspection === true
-    return (
-      <Navigate
-        to={routePaths.unavailable}
-        replace
-        state={{ fromInspection }}
-      />
-    )
+    return <UnavailableRedirect error={query.error} />
   }
 
   return (

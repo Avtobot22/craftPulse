@@ -188,10 +188,14 @@ const cohort = {
   access_notes: [],
 } satisfies Schemas['CohortPage']
 
+const multiProjectUser: Schemas['CurrentUser'] = {
+  ...currentUser,
+  areas: { ...currentUser.areas, projects: [project, otherProject] },
+}
 const disposers: (() => void)[] = []
 function mount({
   path = reportUrl,
-  user = currentUser,
+  user = multiProjectUser,
   read = (url: URL) =>
     jsonResponse(
       report(
@@ -751,7 +755,9 @@ describe('UI-20', () => {
     await reportReady()
     fireEvent.click(screen.getByRole('button', { name: 'Перечитать отчёт' }))
     expect(
-      await screen.findByText('Отчёт или ревизия недоступны'),
+      await screen.findByRole('heading', {
+        name: 'Объект или область недоступны',
+      }),
     ).toBeVisible()
     expect(
       screen.queryByRole('region', { name: 'Ревизия отчёта' }),
@@ -2122,7 +2128,10 @@ describe('UI-20 cross metrics and MR queue', () => {
       } satisfies Schemas['MergeRequestPage'])
     })
     mount({
-      user: { ...currentUser, actions: [...currentUser.actions, 'mr.read'] },
+      user: {
+        ...multiProjectUser,
+        actions: [...currentUser.actions, 'mr.read'],
+      },
       extraRead: (url) =>
         url.pathname === '/api/v1/merge-requests' ? fetchQueue(url) : undefined,
     })

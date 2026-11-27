@@ -1,16 +1,15 @@
 import { Button } from '@gravity-ui/uikit'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
-import { Navigate } from 'react-router'
 import { RestrictedResults } from '@/entities/result-access'
 import { ApiError, findingPages } from '@/shared/api'
 import type { ApiClient, FindingListParams } from '@/shared/api'
-import { routePaths } from '@/shared/config'
 import {
   ErrorState,
   LoadingState,
   useInspectionPageCount,
   useInspectionReturn,
+  UnavailableRedirect,
 } from '@/shared/ui'
 import { FindingTable } from './finding-table'
 
@@ -51,7 +50,7 @@ export function FindingResults({
     query.error instanceof ApiError &&
     (query.error.kind === 'forbidden' || query.error.kind === 'not-found')
   ) {
-    return <Navigate to={routePaths.unavailable} replace />
+    return <UnavailableRedirect error={query.error} />
   }
   if (waiting) return <LoadingState />
 

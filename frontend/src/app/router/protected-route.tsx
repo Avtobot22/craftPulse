@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router'
 import { UnavailablePage } from '@/pages/unavailable'
-import { ApiError } from '@/shared/api'
+import { ApiError, isUnavailableError } from '@/shared/api'
 import { ErrorState, LoadingState } from '@/shared/ui'
 import type { AppRuntime } from '../initialization/runtime'
 import { sessionEndPath } from './session-navigation'
@@ -23,11 +23,13 @@ function SessionGate({ runtime }: { runtime: AppRuntime }) {
   if (query.isPending) return <LoadingState />
   if (query.error) {
     const error = query.error
-    if (
-      error instanceof ApiError &&
-      (error.kind === 'not-found' || error.kind === 'forbidden')
-    ) {
-      return <UnavailablePage correlationId={error.problem?.correlation_id} />
+    if (isUnavailableError(error)) {
+      return (
+        <UnavailablePage
+          correlationId={error.problem?.correlation_id}
+          forbidden={error.kind === 'forbidden'}
+        />
+      )
     }
     return (
       <ErrorState

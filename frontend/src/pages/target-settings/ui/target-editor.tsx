@@ -2,14 +2,14 @@ import { Text } from '@gravity-ui/uikit'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { Link, Navigate } from 'react-router'
+import { Link } from 'react-router'
 import type { ApiClient } from '@/shared/api'
-import { routePaths } from '@/shared/config'
 import {
   ChangeConfirmationDialog,
   LoadingState,
   SuccessState,
   UnsavedChangesDialog,
+  UnavailableRedirect,
 } from '@/shared/ui'
 import type {
   ChangeAttempt,
@@ -174,7 +174,7 @@ export function TargetEditor({
   }
 
   if (isAccessError(history.error))
-    return <Navigate to={routePaths.unavailable} replace />
+    return <UnavailableRedirect error={history.error} />
 
   return (
     <section

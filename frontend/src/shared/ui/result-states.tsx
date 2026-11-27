@@ -75,23 +75,30 @@ export interface ErrorStateProps {
   /** A caller-authored safe message. Never pass Problem.detail or response bodies. */
   reason: string
   correlationId?: string
-  onRetry: () => void
+  title?: ReactNode
+  action?: { label: string; onClick: () => void }
+  onRetry?: () => void
   retrying?: boolean
   lastSuccess?: string
 }
 export function ErrorState({
   reason,
   correlationId,
+  title = 'Не удалось выполнить операцию',
+  action,
   onRetry,
   retrying = false,
   lastSuccess,
 }: ErrorStateProps) {
+  const onAction = action?.onClick ?? onRetry
+  const actionLabel =
+    action?.label ?? (retrying ? 'Повтор выполняется' : 'Повторить')
   return (
     <Box as="section" role="alert" aria-label="Ошибка">
       <Alert
         className="cp-error-state"
         theme="danger"
-        title="Не удалось выполнить операцию"
+        title={title}
         icon={
           <Icon
             data={CircleXmark}
@@ -127,16 +134,18 @@ export function ErrorState({
           </Flex>
         }
         actions={
-          <Alert.Actions>
-            <Alert.Action
-              size="xl"
-              view="outlined"
-              disabled={retrying}
-              onClick={onRetry}
-            >
-              {retrying ? 'Повтор выполняется' : 'Повторить'}
-            </Alert.Action>
-          </Alert.Actions>
+          onAction && (
+            <Alert.Actions>
+              <Alert.Action
+                size="xl"
+                view="outlined"
+                disabled={!action && retrying}
+                onClick={onAction}
+              >
+                {actionLabel}
+              </Alert.Action>
+            </Alert.Actions>
+          )
         }
       />
     </Box>

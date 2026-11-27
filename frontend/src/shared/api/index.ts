@@ -185,3 +185,5 @@ export type {
 } from './revision-queries'
 export { loadCohort, parseRole } from './revision-cohort'
 export type { CohortItem, CohortQuery, CohortRole } from './revision-cohort'
+
+export { isUnavailableError } from './problem'

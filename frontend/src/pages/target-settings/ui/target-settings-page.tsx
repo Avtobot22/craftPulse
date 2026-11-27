@@ -1,11 +1,11 @@
 import { Text } from '@gravity-ui/uikit'
 import { useQuery } from '@tanstack/react-query'
-import { Link, Navigate, useOutletContext, useSearchParams } from 'react-router'
+import { Link, useOutletContext, useSearchParams } from 'react-router'
 import { ApiError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import type { TeamReportScope } from '@/shared/config'
-import { EmptyState, LoadingState } from '@/shared/ui'
+import { EmptyState, LoadingState, UnavailableRedirect } from '@/shared/ui'
 import { baselineQuery, mappingQuery } from '../api/target-api'
 import type { TargetGroup } from '../api/target-api'
 import {
@@ -67,7 +67,11 @@ function TargetSettings({
     enabled: mapping.data === true && period !== null,
   })
   if (isAccessError(mapping.error) || isAccessError(baselines.error)) {
-    return <Navigate to={routePaths.unavailable} replace />
+    return (
+      <UnavailableRedirect
+        error={isAccessError(mapping.error) ? mapping.error : baselines.error}
+      />
+    )
   }
 
   const row =
