@@ -1,3 +1,4 @@
+export { listSourceLinks } from './source-link-queries'
 export { ApiClient, isStrongETag } from './client'
 export type {
   ApiPath,

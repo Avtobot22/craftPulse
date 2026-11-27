@@ -105,6 +105,8 @@ function mockApi(
     switch (url.pathname) {
       case '/api/v1/me':
         return Promise.resolve(jsonResponse(user))
+      case '/api/v1/me/source-links':
+        return Promise.resolve(jsonResponse({ data: [] }))
       case '/api/v1/installation/protocols/latest':
         return Promise.resolve(problemResponse('not_found', 404))
       case '/api/v1/teams':
@@ -835,7 +837,12 @@ describe('UI-01', () => {
     ).toHaveFocus()
     expect(screen.getByRole('main').outerHTML).not.toContain(id)
     expect(screen.queryByText(secondTeam.name)).not.toBeInTheDocument()
-    expect(fetcher.mock.calls.map(([input]) => input)).toEqual(['/api/v1/me'])
+    await waitFor(() => {
+      expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
+        '/api/v1/me',
+        '/api/v1/me/source-links',
+      ])
+    })
     const back = screen.getByRole('button', { name: 'К списку' })
     back.focus()
     expect(back).toHaveFocus()
