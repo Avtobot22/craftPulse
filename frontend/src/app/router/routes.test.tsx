@@ -142,6 +142,7 @@ function mockApi(
       case `/api/v1/connections/${syncStatusExample.connection_id}/sync-status`:
         return Promise.resolve(jsonResponse(syncStatusExample))
       case '/api/v1/connections':
+      case '/api/v1/ingest-conflicts':
       case '/api/v1/saved-views':
         return Promise.resolve(jsonResponse({ data: [], next_cursor: null }))
       case '/api/v1/saved-views/view-1':
@@ -1444,6 +1445,17 @@ describe('administration routes', () => {
       cleanups.splice(cleanups.lastIndexOf(dispose), 1)
       dispose()
     }
+  })
+
+  it.each([
+    `/settings/connections/${syncStatusExample.connection_id}/sync`,
+    '/settings/receipts/r1',
+  ])('links from %s to the organization conflicts', async (path) => {
+    mount(path, mockApi(settingsAdmin))
+    const link = await screen.findByRole('link', {
+      name: 'Конфликты приёма организации',
+    })
+    expect(link).toHaveAttribute('href', '/settings/ingest-conflicts')
   })
 
   it('shows all five settings links to the administrator', async () => {

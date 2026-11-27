@@ -26,10 +26,14 @@ export interface ChangeAttempt<Draft> extends ChangeProposal<Draft> {
 
 export type RecheckReason = 'conflict' | 'uncertain'
 
+export type ReconciledChange<Result> =
+  | { kind: 'applied'; result: Result }
+  | { kind: 'different-result'; result: Result; title: string; message: string }
+
 export type ChangeRecheck<Draft, Result> =
   | { kind: 'not-applied'; proposal: ChangeProposal<Draft> }
   | { kind: 'retryable' }
-  | { kind: 'applied'; result: Result }
+  | ReconciledChange<Result>
   | { kind: 'unknown' }
 
 export interface ChangeValidation {
