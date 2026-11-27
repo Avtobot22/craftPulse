@@ -163,7 +163,7 @@ export {
   listReceiptRecords,
   listIngestConflicts,
   resolveIngestConflict,
-  findResolvedIngestConflict,
+  findIngestConflict,
 } from './receipt-queries'
 export type {
   IngestConflictListParams,

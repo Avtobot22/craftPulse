@@ -178,9 +178,10 @@ export async function resolveIngestConflict(
   ).data
 }
 
-export async function findResolvedIngestConflict(
+export async function findIngestConflict(
   api: ApiClient,
   id: string,
+  status: NonNullable<IngestConflictListParams['status']>,
   signal: AbortSignal,
 ) {
   // The contract exposes a filtered list, without a read by conflict ID.
@@ -189,11 +190,14 @@ export async function findResolvedIngestConflict(
   do {
     const page = await readIngestConflicts(
       api,
-      { status: 'resolved', limit: 100, ...(cursor ? { cursor } : {}) },
+      { status, limit: 100, ...(cursor ? { cursor } : {}) },
       signal,
     )
     const conflict = page.data.find(
-      (item) => item.id === id && item.status === 'resolved' && item.resolution,
+      (item) =>
+        item.id === id &&
+        item.status === status &&
+        (status === 'open' || item.resolution),
     )
     if (conflict) return conflict
     cursor = page.next_cursor ?? undefined

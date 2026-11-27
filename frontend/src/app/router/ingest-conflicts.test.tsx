@@ -35,7 +35,13 @@ const conflict = {
   status: 'open',
   resolution: null,
 } satisfies Schema['IngestConflict']
+const secondConflict = {
+  ...conflict,
+  id: '0193a5b0-5959-7000-8000-000000000002',
+  receipt_id: '0193a5b0-5858-7000-8000-000000000004',
+} satisfies Schema['IngestConflict']
 const postPath = apiPath + '/' + conflict.id + '/resolution'
+const secondPostPath = apiPath + '/' + secondConflict.id + '/resolution'
 const writeActions = [
   'session.read',
   'sync.read',
@@ -67,7 +73,7 @@ function mount({
   at?: string
   actions?: string[]
   list?: (search: URLSearchParams) => Response
-  submit?: (init: RequestInit) => Response
+  submit?: (init: RequestInit, path: string) => Response
 } = {}) {
   const fetcher = vi
     .fn<typeof fetch>()
@@ -81,8 +87,11 @@ function mount({
           actions,
         } satisfies Schema['CurrentUser'])
       if (url.pathname === apiPath) return list(url.searchParams)
-      if (url.pathname === postPath && init?.method === 'POST')
-        return submit(init)
+      if (
+        (url.pathname === postPath || url.pathname === secondPostPath) &&
+        init?.method === 'POST'
+      )
+        return submit(init, url.pathname)
       throw new Error(`Unexpected request: ${input}`)
     })
   vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
@@ -129,13 +138,25 @@ afterEach(() => {
   for (const dispose of disposers.splice(0)) dispose()
 })
 
-async function choose(resolution: Resolution) {
-  const open = await screen.findByRole('button', { name: /^Решить конфликт /u })
+async function choose(
+  resolution: Resolution,
+  scope: Pick<typeof screen, 'getByRole' | 'findByRole'> = screen,
+) {
+  const open = await scope.findByRole('button', { name: /^Решить конфликт /u })
   open.focus()
   fireEvent.click(open)
-  const select = screen.getByRole('combobox', { name: 'Решение конфликта' })
-  expect(select).toHaveFocus()
-  const preview = screen.getByRole('button', {
+  expect(
+    scope.getByRole('combobox', { name: 'Решение конфликта' }),
+  ).toHaveFocus()
+  return previewResolution(resolution, scope)
+}
+
+function previewResolution(
+  resolution: Resolution,
+  scope: Pick<typeof screen, 'getByRole' | 'findByRole'> = screen,
+) {
+  const select = scope.getByRole('combobox', { name: 'Решение конфликта' })
+  const preview = scope.getByRole('button', {
     name: 'Применить решение конфликта',
   })
   expect(preview).toBeDisabled()
@@ -293,6 +314,104 @@ it('после 409 показывает решение другого админ
   expect(list.mock.calls.at(-1)?.[0].get('cursor')).toBe('resolved-page-two')
 })
 
+it('после 409 оставляет второй конфликт открытым и позволяет подтвердить другой вариант', async () => {
+  const accepted = resolved('accepted_new')
+  let firstResolved = false
+  const { fetcher } = mount({
+    list: (search) => {
+      if (search.get('status') === 'resolved')
+        return page(firstResolved ? [accepted] : [])
+      return page(firstResolved ? [secondConflict] : [conflict, secondConflict])
+    },
+    submit: (init, path) => {
+      if (path === postPath) {
+        firstResolved = true
+        return jsonResponse(accepted)
+      }
+      if (init.body === JSON.stringify({ resolution: 'accepted_new' }))
+        return problemResponse('state_conflict', 409)
+      return jsonResponse({
+        ...secondConflict,
+        status: 'resolved',
+        resolution: 'kept_existing',
+      } satisfies Schema['IngestConflict'])
+    },
+  })
+  const first = within(
+    await screen.findByRole('row', { name: new RegExp(conflict.receipt_id) }),
+  )
+  const second = within(
+    screen.getByRole('row', { name: new RegExp(secondConflict.receipt_id) }),
+  )
+
+  let dialog = await choose('accepted_new', first)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
+  expect(
+    await first.findByText('Принять новую запись', { selector: 'td span' }),
+  ).toBeVisible()
+
+  dialog = await choose('accepted_new', second)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
+
+  expect(
+    await second.findByText(
+      'Конфликт остаётся открытым. Выберите другой вариант.',
+    ),
+  ).toBeVisible()
+  expect(second.getByText('Открыт')).toBeVisible()
+  expect(postRequests(fetcher)).toHaveLength(2)
+  dialog = previewResolution('kept_existing', second)
+  expect(postRequests(fetcher)).toHaveLength(2)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
+  expect(
+    await second.findByText('Оставить принятую запись', {
+      selector: 'td span',
+    }),
+  ).toBeVisible()
+  expect(
+    postRequests(fetcher).map(([path, init]) => [path, init?.body]),
+  ).toEqual([
+    [postPath, JSON.stringify({ resolution: 'accepted_new' })],
+    [secondPostPath, JSON.stringify({ resolution: 'accepted_new' })],
+    [secondPostPath, JSON.stringify({ resolution: 'kept_existing' })],
+  ])
+})
+
+it.each([
+  ['kept_existing', 'Оставить принятую запись', 'Сохранено другое решение'],
+  ['accepted_new', 'Принять новую запись', 'Изменение применилось'],
+] as const)(
+  'после потери ответа показывает фактически сохранённое решение %s',
+  async (resolution, label, notice) => {
+    let responseLost = false
+    const { fetcher } = mount({
+      list: (search) =>
+        search.get('status') === 'resolved' && responseLost
+          ? page([resolved(resolution)])
+          : page(),
+      submit: () => {
+        responseLost = true
+        throw new TypeError('Network error')
+      },
+    })
+    const dialog = within(await choose('accepted_new'))
+    fireEvent.click(dialog.getByRole('button', { name: 'Подтвердить' }))
+
+    expect(await dialog.findByText(notice)).toBeVisible()
+    if (resolution === 'kept_existing') {
+      expect(dialog.getByText(label)).toBeVisible()
+      expect(
+        dialog.queryByText(/Принять новую запись|Изменение применилось/u),
+      ).toBeNull()
+    }
+    fireEvent.click(dialog.getByRole('button', { name: 'Готово' }))
+    expect(
+      await screen.findByText(label, { selector: 'td span' }),
+    ).toBeVisible()
+    expect(postRequests(fetcher)).toHaveLength(1)
+  },
+)
+
 it('при ошибке перечитывания после 409 повторяет только чтение', async () => {
   let attempts = 0
   const { fetcher } = mount({
@@ -308,7 +427,7 @@ it('при ошибке перечитывания после 409 повторя
   const dialog = await choose('accepted_new')
   fireEvent.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
   const retry = await screen.findByRole('button', {
-    name: 'Перечитать решение',
+    name: 'Перечитать конфликт',
   })
   expect(
     screen.queryByRole('button', { name: /^Решить конфликт /u }),

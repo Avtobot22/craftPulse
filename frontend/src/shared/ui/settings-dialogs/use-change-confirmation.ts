@@ -5,6 +5,7 @@ import type {
   ChangeConfirmationDialogProps,
   ChangeProposal,
   RecheckReason,
+  ReconciledChange,
 } from './change-confirmation'
 
 // A lost write response starts reconciliation with a fresh signal.
@@ -22,7 +23,11 @@ type Status<Draft, Result> =
       reason: RecheckReason
     }
   | { kind: 'rejected'; attempt: ChangeAttempt<Draft> }
-  | { kind: 'applied'; attempt: ChangeAttempt<Draft>; result: Result }
+  | {
+      kind: 'reconciled'
+      attempt: ChangeAttempt<Draft>
+      outcome: ReconciledChange<Result>
+    }
 
 export function useChangeConfirmation<Draft, Result>({
   proposal: initialProposal,
@@ -89,8 +94,11 @@ export function useChangeConfirmation<Draft, Result>({
         AbortSignal.timeout(requestTimeoutMs),
       )
       if (!active.current) return
-      if (outcome.kind === 'applied' && reason === 'uncertain') {
-        setStatus({ kind: 'applied', attempt, result: outcome.result })
+      if (
+        reason === 'uncertain' &&
+        (outcome.kind === 'applied' || outcome.kind === 'different-result')
+      ) {
+        setStatus({ kind: 'reconciled', attempt, outcome })
         return
       }
       if (outcome.kind === 'retryable' && reason === 'uncertain') {
@@ -161,7 +169,7 @@ export function useChangeConfirmation<Draft, Result>({
 
   function cancel() {
     if (!active.current || busy.current || uncertain) return
-    if (status.kind === 'applied') finish(status.result)
+    if (status.kind === 'reconciled') finish(status.outcome.result)
     else close()
   }
 

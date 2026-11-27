@@ -1,7 +1,7 @@
 import { Button } from '@gravity-ui/uikit'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useId, useLayoutEffect, useRef, useState } from 'react'
-import { findResolvedIngestConflict, resolveIngestConflict } from '@/shared/api'
+import { findIngestConflict, resolveIngestConflict } from '@/shared/api'
 import type { ApiClient, components } from '@/shared/api'
 import { contractLabel } from '@/shared/config'
 import { ChangeConfirmationDialog } from '@/shared/ui'
@@ -31,27 +31,32 @@ export function ConflictResolution({
   const [proposal, setProposal] = useState<Input | null>(null)
   const [invalid, setInvalid] = useState(false)
   const [saved, setSaved] = useState<IngestConflict | null>(null)
-  const [alreadyResolved, setAlreadyResolved] = useState(false)
+  const [rejected, setRejected] = useState(false)
   const field = useRef<HTMLSelectElement>(null)
   const id = useId()
 
   const actual = useQuery({
     queryKey: ['ingest-conflicts', 'resolution', conflict.id],
     queryFn: async ({ signal }) => {
-      const resolved = await findResolvedIngestConflict(
-        api,
-        conflict.id,
-        AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
-      )
-      if (!resolved) throw new Error('Решение конфликта не найдено')
-      return resolved
+      const deadline = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+      const current =
+        (await findIngestConflict(api, conflict.id, 'resolved', deadline)) ??
+        (await findIngestConflict(api, conflict.id, 'open', deadline))
+      if (!current) throw new Error('Конфликт не найден')
+      return current
     },
-    enabled: alreadyResolved,
-    staleTime: Infinity,
+    enabled: false,
   })
-  const row = saved ?? actual.data ?? conflict
+  const checked =
+    rejected && actual.isSuccess && actual.fetchStatus === 'idle'
+      ? actual.data
+      : undefined
+  const row = saved ?? checked ?? conflict
   const choice = selection ? resolutions[selection] : null
-  const canEdit = canResolve && row.status === 'open' && !alreadyResolved
+  const canEdit =
+    canResolve &&
+    row.status === 'open' &&
+    (!rejected || checked?.status === 'open')
 
   useLayoutEffect(() => {
     if (editing) field.current?.focus()
@@ -68,29 +73,37 @@ export function ConflictResolution({
 
   return (
     <>
-      <td>
-        {contractLabel(statusLabels, alreadyResolved ? 'resolved' : row.status)}
-      </td>
+      <td>{contractLabel(statusLabels, row.status)}</td>
       <td>
         {row.resolution && (
-          <span role={saved || actual.data ? 'status' : undefined}>
+          <span role={saved || checked ? 'status' : undefined}>
             {isResolution(row.resolution)
               ? resolutions[row.resolution].label
               : 'Неизвестное решение'}
           </span>
         )}
-        {alreadyResolved && (
+        {rejected && (
           <div className="cp-ingest-conflicts__editor">
-            <span role="status">
-              {actual.isFetching
-                ? 'Конфликт уже решён. Загружаем решение.'
-                : 'Конфликт уже решён другим администратором.'}
-            </span>
-            {actual.isError && (
+            {checked?.status === 'resolved' && (
+              <span role="status">
+                Конфликт уже решён другим администратором.
+              </span>
+            )}
+            {checked?.status === 'open' && (
+              <span role="status">
+                Конфликт остаётся открытым. Выберите другой вариант.
+              </span>
+            )}
+            {actual.fetchStatus !== 'idle' && (
+              <span role="status">Проверяем состояние конфликта.</span>
+            )}
+            {actual.fetchStatus === 'idle' && actual.isError && (
               <>
-                <span role="alert">Не удалось загрузить решение.</span>
+                <span role="alert">
+                  Не удалось проверить состояние конфликта.
+                </span>
                 <Button size="xl" onClick={() => void actual.refetch()}>
-                  Перечитать решение
+                  Перечитать конфликт
                 </Button>
               </>
             )}
@@ -172,16 +185,28 @@ export function ConflictResolution({
             submit={({ draft }, signal) =>
               resolveIngestConflict(api, conflict.id, draft, signal)
             }
-            recheck={async (_attempt, _reason, signal) => {
-              const result = await findResolvedIngestConflict(
+            recheck={async ({ draft }, _reason, signal) => {
+              const result = await findIngestConflict(
                 api,
                 conflict.id,
+                'resolved',
                 signal,
               )
-              return result ? { kind: 'applied', result } : { kind: 'unknown' }
+              if (!result?.resolution) return { kind: 'unknown' }
+              if (result.resolution === draft.resolution)
+                return { kind: 'applied', result }
+              return {
+                kind: 'different-result',
+                result,
+                title: 'Сохранено другое решение',
+                message: isResolution(result.resolution)
+                  ? resolutions[result.resolution].label
+                  : 'Неизвестное решение',
+              }
             }}
             onSaved={(result) => {
               setSaved(result)
+              setRejected(false)
               markListsStale()
             }}
             onRejected={(error) => {
@@ -189,7 +214,9 @@ export function ConflictResolution({
                 error.problem?.status === 409 &&
                 error.problem.code === 'state_conflict'
               ) {
-                setAlreadyResolved(true)
+                setRejected(true)
+                setSelection('')
+                void actual.refetch()
                 markListsStale()
                 return true
               }
