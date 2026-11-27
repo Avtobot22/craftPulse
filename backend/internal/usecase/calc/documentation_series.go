@@ -28,10 +28,10 @@ type documentationSeriesScope struct {
 	Documentation entity.DocumentationScope `json:"documentation"`
 }
 
-// DocumentationSeries finds or creates a scope at one exact Git commit.
+// DocumentationSeries finds or creates a Git commit or wiki root scope. An empty SHA selects wiki.
 // A zero root ID represents a service without a selected confirmed root.
 func (u *UseCase) DocumentationSeries(ctx context.Context, org entity.ID, scope entity.DocumentationScope) (entity.CalcSeries, error) {
-	if scope.ServiceID.IsZero() || scope.RepositoryID.IsZero() || !_reportSHA.MatchString(scope.SHA) {
+	if scope.ServiceID.IsZero() || scope.RepositoryID.IsZero() || (scope.SHA == "" && scope.RootID.IsZero()) || (scope.SHA != "" && !_reportSHA.MatchString(scope.SHA)) {
 		return entity.CalcSeries{}, &entity.ValidationError{Fields: []entity.FieldError{{Field: "/scope", Code: entity.FieldNotAllowedValue}}}
 	}
 	raw, err := json.Marshal(documentationSeriesScope{Kind: _scopeDocumentation, Documentation: scope})
@@ -49,6 +49,7 @@ type documentationSource struct {
 	inventory *entity.DocumentationInventory
 	reports   []entity.DocsReport
 	findings  []entity.DocsFinding
+	wiki      entity.WikiCollection
 }
 
 func (u *UseCase) documentationSource(ctx context.Context, org entity.ID, rev *entity.CalcRevision, series *entity.CalcSeries,
@@ -59,7 +60,16 @@ func (u *UseCase) documentationSource(ctx context.Context, org entity.ID, rev *e
 	if err != nil || inv == nil {
 		return src, err
 	}
+	if (scope.SHA == "") != (inv.Root.ProfileID == entity.WikiInventoryProfile) {
+		return src, nil
+	}
 	src.inventory = inv
+	if scope.SHA == "" {
+		if u.d.Wiki != nil {
+			src.wiki, err = u.d.Wiki.WikiCollectionAt(ctx, org, inv.Root.AreaID, rev.KnowledgeSeq, rev.AsOf)
+		}
+		return src, err
+	}
 	src.reports, src.findings, err = u.d.DocReports.DocumentationReportsAt(ctx, org, &inv.Root, scope.SHA, rev.KnowledgeSeq)
 	return src, err
 }
@@ -74,8 +84,12 @@ func (s *documentationSource) hash(from, to time.Time) []byte {
 	d.bytes(s.series.ScopeHash)
 	d.time(from)
 	d.time(to)
-	for i := range _documentationDefinitions {
-		def := &_documentationDefinitions[i]
+	defs := _documentationDefinitions
+	if s.sha == "" {
+		defs = []Definition{_wikiDefinition}
+	}
+	for i := range defs {
+		def := &defs[i]
 		d.text(def.ID)
 		d.int(int64(def.Version))
 	}
@@ -93,6 +107,16 @@ func (s *documentationSource) factsHash() []byte {
 	}
 	d.id(s.inventory.Root.ID)
 	d.int(s.inventory.Root.KnownSeq)
+	if s.sha == "" {
+		d.id(s.wiki.RunID)
+		d.int(s.wiki.KnownSeq)
+		for _, at := range []*time.Time{s.wiki.LastSuccess, s.wiki.EarliestVersion} {
+			if at != nil {
+				d.time(*at)
+			}
+		}
+		return d.sum()
+	}
 	for i := range s.inventory.Documents {
 		d.id(s.inventory.Documents[i].ID)
 	}
@@ -122,6 +146,9 @@ func (s *documentationSource) inputs() []entity.RevisionInput {
 		return nil
 	}
 	out := []entity.RevisionInput{{Kind: _inputDocsRoot, ID: s.inventory.Root.ID.String()}}
+	if !s.wiki.RunID.IsZero() {
+		out = append(out, entity.RevisionInput{Kind: entity.InputKindWatermark, ID: s.wiki.RunID.String()})
+	}
 	for i := range s.reports {
 		r := &s.reports[i]
 		out = append(out, entity.RevisionInput{Kind: _inputDocsReport, ID: r.ID.String(), Completeness: r.Completeness})
@@ -194,10 +221,32 @@ func (u *UseCase) againDocumentation(ctx context.Context, job entity.CalcSliceJo
 	if err != nil || seq <= rev.KnowledgeSeq {
 		return err
 	}
-	latest, err := u.documentationSource(ctx, org, &entity.CalcRevision{KnowledgeSeq: seq}, series, scope)
+	latest, err := u.documentationSource(ctx, org, &entity.CalcRevision{KnowledgeSeq: seq, AsOf: u.d.Clock.Now()}, series, scope)
 	if err != nil || bytes.Equal(previous.factsHash(), latest.factsHash()) {
 		return err
 	}
 	job.RevisionID, job.PartNo, job.AsOf = entity.ID{}, 0, u.d.Clock.Now()
 	return u.d.Queue.Enqueue(ctx, job, entity.QueueBulk)
+}
+
+func (u *UseCase) planWikiRoots(ctx context.Context, job entity.CalcRecountJob, at time.Time) ([]due, error) {
+	org := job.OrganizationID
+	roots, err := u.d.Docs.AreaRoots(ctx, org, []entity.ID{job.AreaID})
+	if err != nil {
+		return nil, err
+	}
+	var plans []due
+	for i := range roots {
+		root := &roots[i]
+		if root.ProfileID != entity.WikiInventoryProfile {
+			continue
+		}
+		scope := entity.DocumentationScope{ServiceID: root.ServiceID, RootID: root.ID, RepositoryID: root.AreaID}
+		series, err := u.DocumentationSeries(ctx, org, scope)
+		if err != nil {
+			return nil, err
+		}
+		plans = append(plans, analysisPlan(org, series.ID, job.CorrelationID, at))
+	}
+	return plans, nil
 }

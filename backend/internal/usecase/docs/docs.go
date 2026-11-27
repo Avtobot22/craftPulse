@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,9 +25,9 @@ type References interface {
 	CheckDocumentationReferences(ctx context.Context, orgID, serviceID entity.ID, persons []entity.ID) error
 }
 
-// Areas is normalize: only collected repository areas may be Git documentation roots.
+// Areas is normalize: a documentation root must match the kind of its collected area.
 type Areas interface {
-	RepositoryAreas(ctx context.Context, orgID entity.ID, ids []entity.ID) ([]entity.ID, error)
+	DocumentationAreaKinds(ctx context.Context, orgID entity.ID, ids []entity.ID) (map[entity.ID]entity.ScopeKind, error)
 }
 
 type Auditor interface {
@@ -139,13 +140,13 @@ func (u *UseCase) ReplaceRoots(ctx context.Context, s entity.Subject, serviceID 
 		if err := u.d.References.CheckDocumentationReferences(ctx, s.OrganizationID, serviceID, persons); err != nil {
 			return err
 		}
-		repositories, err := u.d.Areas.RepositoryAreas(ctx, s.OrganizationID, areas)
+		kinds, err := u.d.Areas.DocumentationAreaKinds(ctx, s.OrganizationID, areas)
 		if err != nil {
 			return err
 		}
 		for i := range roots {
 			r := &roots[i]
-			if !slices.Contains(repositories, r.AreaID) {
+			if kinds[r.AreaID] != profileArea(r.ProfileID) {
 				return invalid(i, "area_id", entity.FieldOutsideScope)
 			}
 		}
@@ -218,14 +219,14 @@ func validate(in []entity.DocumentationRoot) ([]entity.DocumentationRoot, []byte
 		if r.AreaID.IsZero() {
 			return nil, nil, invalid(i, "area_id", entity.FieldRequired)
 		}
-		if r.ProfileID != "git-markdown-openapi" {
+		if profileArea(r.ProfileID) == "" {
 			return nil, nil, invalid(i, "profile_id", entity.FieldNotAllowedValue)
 		}
 		if r.Audience != "team" && r.Audience != "organization" && r.Audience != "external" {
 			return nil, nil, invalid(i, "audience", entity.FieldNotAllowedValue)
 		}
 		p := r.PathPrefix
-		if len(p) > 1024 || strings.ContainsAny(p, "\\\x00") || (p != "" && (path.Clean(p) != p || path.IsAbs(p) || p == "." || p == ".." || strings.HasPrefix(p, "../"))) {
+		if !validPrefix(r.ProfileID, p) {
 			return nil, nil, invalid(i, "path_prefix", entity.FieldInvalidFormat)
 		}
 		for j := range roots[:i] {
@@ -260,6 +261,29 @@ func validate(in []entity.DocumentationRoot) ([]entity.DocumentationRoot, []byte
 	}
 	digest := sha256.Sum256(encoded)
 	return roots, digest[:], nil
+}
+
+var _wikiPrefix = regexp.MustCompile(`^\d{1,255}$`)
+
+func profileArea(profile string) entity.ScopeKind {
+	switch profile {
+	case entity.GitDocsProfile:
+		return entity.ScopeRepository
+	case entity.WikiInventoryProfile:
+		return entity.ScopeWikiSpace
+	default:
+		return ""
+	}
+}
+
+func validPrefix(profile, p string) bool {
+	if profile == entity.WikiInventoryProfile {
+		return p == "" || _wikiPrefix.MatchString(p)
+	}
+	if len(p) > 1024 || strings.ContainsAny(p, "\\\x00") {
+		return false
+	}
+	return p == "" || (path.Clean(p) == p && !path.IsAbs(p) && p != "." && p != ".." && !strings.HasPrefix(p, "../"))
 }
 
 func invalid(i int, field string, code string) error {

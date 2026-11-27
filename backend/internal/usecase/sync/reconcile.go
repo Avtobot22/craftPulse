@@ -25,7 +25,7 @@ const (
 )
 
 // _manifestSchemas are the schemas whose objects a reconciliation compares; normalize keeps their versions.
-var _manifestSchemas = map[string]string{"tasks": "tasks", "merge_requests": "merge_requests", "ci": "ci_runs"}
+var _manifestSchemas = map[string]string{"tasks": "tasks", "merge_requests": "merge_requests", "ci": "ci_runs", "documents": "documents"}
 
 // queueReconcile writes a running reconciliation of a data kind and queues its job in the caller's
 // transaction; one already running absorbs the request.
@@ -43,6 +43,8 @@ type tally struct {
 	expected, observed, missing, changed int
 	dirty                                []entity.DirtyKey
 	checks                               []entity.ActivityHistoryCheck
+	wiki                                 []entity.WikiReconcileScope
+	wikiSeen                             map[entity.ObjectKey]bool
 }
 
 // RunReconcile compares the identities and versions of the manifest of the source with the current versions
@@ -84,16 +86,36 @@ func (u *UseCase) RunReconcile(ctx context.Context, job entity.SyncReconcileJob,
 	}
 	t := &tally{}
 	for i := range scopes {
-		if !scopes[i].Active {
+		if !scopes[i].Active || (job.DataKind == "documents" && scopes[i].Kind != entity.ScopeWikiSpace) {
 			continue
 		}
-		f, err := u.compare(ctx, org, conn, &scopes[i], job.DataKind, schema, t)
+		scope := &scopes[i]
+		expected, read := t.expected, t.observed-t.changed
+		if job.DataKind == "documents" {
+			t.wikiSeen = make(map[entity.ObjectKey]bool)
+		}
+		f, err := u.compare(ctx, org, conn, scope, job.DataKind, schema, t)
 		if err != nil {
 			return err
 		}
 		if f != nil {
-			return u.closeRun(ctx, job, run, nil, f, holder, complete)
+			var failed *tally
+			if job.DataKind == "documents" {
+				failed = &tally{}
+				for j := range scopes {
+					if scopes[j].Active && scopes[j].Kind == entity.ScopeWikiSpace {
+						failed.wiki = append(failed.wiki, entity.WikiReconcileScope{ScopeID: scopes[j].ID, Failed: true})
+					}
+				}
+			}
+			return u.closeRun(ctx, job, run, failed, f, holder, complete)
 		}
+		if job.DataKind == "documents" {
+			t.wiki = append(t.wiki, entity.WikiReconcileScope{ScopeID: scope.ID, Expected: t.expected - expected, Read: t.observed - t.changed - read})
+		}
+	}
+	if job.DataKind == "documents" && len(t.wiki) == 0 {
+		return u.closeRun(ctx, job, run, nil, &failure{code: "not_supported", stop: true}, holder, complete)
 	}
 	return u.closeRun(ctx, job, run, t, nil, holder, complete)
 }
@@ -115,6 +137,10 @@ func (u *UseCase) compare(ctx context.Context, org, conn entity.ID, scope *entit
 		SchemaID: schema, Scope: entity.ScopeRef{Kind: scope.Kind, NativeScopeID: scope.NativeScopeID},
 		Period: entity.Period{From: scope.HistoryFrom}, Limit: _manifestPage,
 	}
+	if dataKind == "documents" {
+		in.Period = entity.Period{} // The corpus includes pages last edited before a history cutoff.
+	}
+	var total *int
 	for {
 		page, err := u.d.Connect.Manifest(ctx, org, conn, in)
 		if err != nil {
@@ -123,6 +149,12 @@ func (u *UseCase) compare(ctx context.Context, org, conn entity.ID, scope *entit
 			}
 			return nil, err
 		}
+		if dataKind == "documents" && page.TotalCount != nil {
+			if total != nil && *total != *page.TotalCount {
+				return &failure{code: "invalid_response", stop: true}, nil
+			}
+			total = page.TotalCount
+		}
 		for start := 0; start < len(page.Items); start += _compareBatch {
 			batch := page.Items[start:min(start+_compareBatch, len(page.Items))]
 			if err := u.compareBatch(ctx, org, area, scope.ID, dataKind, batch, t); err != nil {
@@ -130,6 +162,14 @@ func (u *UseCase) compare(ctx context.Context, org, conn entity.ID, scope *entit
 			}
 		}
 		if page.NextCursor == "" {
+			if total != nil {
+				missing := *total - len(t.wikiSeen)
+				if missing < 0 {
+					return &failure{code: "invalid_response", stop: true}, nil
+				}
+				t.expected += missing
+				t.missing += missing
+			}
 			return nil, nil
 		}
 		in.Cursor = page.NextCursor
@@ -157,7 +197,11 @@ func (u *UseCase) compareBatch(ctx context.Context, org, area, scope entity.ID, 
 			}
 		} else {
 			var err error
-			current, err = u.d.Normalize.CurrentSyncVersions(ctx, org, area, ids)
+			if dataKind == "documents" {
+				current, err = u.d.Normalize.CurrentWikiVersions(ctx, org, area, ids)
+			} else {
+				current, err = u.d.Normalize.CurrentSyncVersions(ctx, org, area, ids)
+			}
 			if err != nil {
 				return err
 			}
@@ -165,8 +209,14 @@ func (u *UseCase) compareBatch(ctx context.Context, org, area, scope entity.ID, 
 	}
 	for i := range items {
 		it := &items[i]
-		t.expected++
 		key := entity.ObjectKey{ObjectKind: it.RecordKind, NativeNS: it.NativeNS, NativeID: it.NativeID}
+		if dataKind == "documents" {
+			if key.ObjectKind != string(entity.ObjectDocument) || t.wikiSeen[key] {
+				continue
+			}
+			t.wikiSeen[key] = true
+		}
+		t.expected++
 		cur, ok := current[key]
 		matches := ok && (it.Version != "" && it.Version == cur.Revision ||
 			it.Version == "" && (it.UpdatedAt == nil || cur.UpdatedAt != nil && it.UpdatedAt.Equal(*cur.UpdatedAt)))
@@ -234,7 +284,7 @@ func (u *UseCase) closeRun(ctx context.Context, job entity.SyncReconcileJob, run
 		default:
 			run.Outcome, st.Completeness, recheck = entity.ReconcileIncomplete, completePartial, true
 		}
-		if t != nil {
+		if f == nil {
 			run.ExpectedCount, run.ObservedCount, run.MissingCount, run.ChangedCount = &t.expected, &t.observed, &t.missing, &t.changed
 			if err := u.d.Repo.SaveActivityChecks(ctx, org, run.ID, t.checks); err != nil {
 				return err
@@ -242,6 +292,15 @@ func (u *UseCase) closeRun(ctx context.Context, job entity.SyncReconcileJob, run
 		}
 		if err := u.d.Repo.FinishReconcile(ctx, org, run); err != nil {
 			return err
+		}
+		if t != nil && len(t.wiki) > 0 {
+			seq, err := u.d.Tenants.NextSeq(ctx, org)
+			if err != nil {
+				return err
+			}
+			if err := u.d.Repo.SaveWikiReconcile(ctx, org, run.ID, seq, t.wiki); err != nil {
+				return err
+			}
 		}
 		if err := u.d.Repo.SaveState(ctx, org, st); err != nil {
 			return err
@@ -269,7 +328,7 @@ func (u *UseCase) closeRun(ctx context.Context, job entity.SyncReconcileJob, run
 // reconciledAreas are the areas whose completeness of tasks a finished reconciliation decides: calc recounts their
 // series, since the completeness of a collection is an input of T39-T42 (TZ 10.3, rule 6).
 func (u *UseCase) reconciledAreas(ctx context.Context, org, conn entity.ID, dataKind string) ([]entity.ID, error) {
-	if dataKind != _dataTasks && dataKind != "ci" && dataKind != "merge_requests" {
+	if dataKind != _dataTasks && dataKind != "ci" && dataKind != "merge_requests" && dataKind != "documents" {
 		return nil, nil
 	}
 	scopes, err := u.d.Connect.Scopes(ctx, org, conn)
@@ -278,7 +337,7 @@ func (u *UseCase) reconciledAreas(ctx context.Context, org, conn entity.ID, data
 	}
 	var out []entity.ID
 	for i := range scopes {
-		if a := scopes[i].AreaID; scopes[i].Active && a != nil && !slices.Contains(out, *a) {
+		if a := scopes[i].AreaID; scopes[i].Active && (dataKind != "documents" || scopes[i].Kind == entity.ScopeWikiSpace) && a != nil && !slices.Contains(out, *a) {
 			out = append(out, *a)
 		}
 	}

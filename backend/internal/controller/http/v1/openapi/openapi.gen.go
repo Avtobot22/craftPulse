@@ -2558,6 +2558,7 @@ func (e ProjectOverviewSourcesCompleteness) Valid() bool {
 const (
 	ProviderClient          Provider = "client"
 	ProviderConfluenceCloud Provider = "confluence_cloud"
+	ProviderConfluenceDc    Provider = "confluence_dc"
 	ProviderGit             Provider = "git"
 	ProviderGithub          Provider = "github"
 	ProviderGitlab          Provider = "gitlab"
@@ -2573,6 +2574,8 @@ func (e Provider) Valid() bool {
 	case ProviderClient:
 		return true
 	case ProviderConfluenceCloud:
+		return true
+	case ProviderConfluenceDc:
 		return true
 	case ProviderGit:
 		return true
@@ -5974,8 +5977,12 @@ type DocumentationRootListInput struct {
 		AreaId        openapi_types.UUID                     `json:"area_id"`
 		Audience      DocumentationRootListInputDataAudience `json:"audience"`
 		OwnerPersonId *openapi_types.UUID                    `json:"owner_person_id"`
-		PathPrefix    string                                 `json:"path_prefix"`
-		ProfileId     string                                 `json:"profile_id"`
+
+		// PathPrefix Путь Git или ID страницы Confluence. Пустая строка выбирает всю область.
+		PathPrefix string `json:"path_prefix"`
+
+		// ProfileId Wiki-инвентарь использует профиль wiki-inventory.
+		ProfileId string `json:"profile_id"`
 	} `json:"data"`
 }
 

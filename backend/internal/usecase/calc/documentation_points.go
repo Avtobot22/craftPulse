@@ -27,6 +27,9 @@ type documentationPoints struct {
 }
 
 func (s *documentationSource) points(p period) []entity.SeriesPoint {
+	if s.sha == "" {
+		return wikiPoints(p, s.wiki)
+	}
 	unknown := entity.Point{Start: p.start, End: p.end, State: entity.StateUnknown, ReasonCode: _reasonDocsRootMissing}
 	if s.inventory != nil {
 		unknown.ReasonCode = _reasonDocsReportMissing

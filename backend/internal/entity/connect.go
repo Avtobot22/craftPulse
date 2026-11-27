@@ -22,6 +22,7 @@ const (
 	ProviderJenkins         Provider = "jenkins"
 	ProviderSonarQube       Provider = "sonarqube"
 	ProviderConfluenceCloud Provider = "confluence_cloud"
+	ProviderConfluenceDC    Provider = "confluence_dc"
 	ProviderGit             Provider = "git"
 	ProviderUniversal       Provider = "universal"
 	ProviderClient          Provider = "client"

@@ -142,6 +142,9 @@ func (u *UseCase) start(ctx context.Context, job entity.CalcSliceJob, complete C
 	if scope.Kind == _scopeCode {
 		defs = codeDefinitions(scope.Format)
 	}
+	if scope.Kind == _scopeDocumentation && scope.Documentation.SHA == "" {
+		defs = []Definition{_wikiDefinition}
+	}
 	inputs := definitionInputs(defs)
 	if scope.Kind == _scopeCode {
 		report, err := u.d.Code.CodeReportAt(ctx, org, scope.CodeScope, seq)

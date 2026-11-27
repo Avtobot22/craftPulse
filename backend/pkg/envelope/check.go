@@ -104,7 +104,7 @@ type Result struct {
 	Envelope          *Rejection
 	Records           []RecordResult
 	// ContentHash is set by Clean: the SHA-256 of the cleaned package with created_at of the manifest
-	// left out, so a page read again or a file sent again gives the same one.
+	// left out, except for wiki observations that can recur after a change in permissions.
 	ContentHash []byte
 	Redactions  int64
 }

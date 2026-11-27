@@ -56,7 +56,7 @@ func (u *UseCase) ciSource(ctx context.Context, job entity.CalcSliceJob, rev *en
 		if err != nil {
 			return nil, err
 		}
-		if facts.Provider == entity.ProviderJiraCloud || facts.Provider == entity.ProviderConfluenceCloud || facts.Provider == entity.ProviderGit || facts.Provider == entity.ProviderSonarQube {
+		if facts.Provider == entity.ProviderJiraCloud || facts.Provider == entity.ProviderConfluenceCloud || facts.Provider == entity.ProviderConfluenceDC || facts.Provider == entity.ProviderGit || facts.Provider == entity.ProviderSonarQube {
 			continue
 		}
 		facts.Attempts = slices.DeleteFunc(facts.Attempts, func(a entity.CIAttemptVersion) bool {
