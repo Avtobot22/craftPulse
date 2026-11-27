@@ -12,6 +12,8 @@ export function TaskDetailLink({
   preserveHistoryFocus = false,
   returnFocusId = focusId,
   returnPageCount,
+  returnSearch,
+  returnState,
 }: {
   taskId: string
   params?: TaskDetailSearch
@@ -20,6 +22,8 @@ export function TaskDetailLink({
   preserveHistoryFocus?: boolean
   returnFocusId?: string
   returnPageCount?: number
+  returnSearch?: string
+  returnState?: Readonly<Record<string, unknown>>
 }) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -27,7 +31,7 @@ export function TaskDetailLink({
   const to = taskAnalysisLinks.taskDetail(taskId, params)
   const taskOrigin: TaskOrigin = {
     pathname,
-    search,
+    search: returnSearch ?? search,
     hash,
     focusId: returnFocusId,
   }
@@ -54,12 +58,13 @@ export function TaskDetailLink({
       const state: unknown = location.state
       // Save the opener on the list entry so both the Back link and browser Back restore it.
       await navigate(
-        { pathname, search, hash },
+        { pathname, search: taskOrigin.search, hash },
         {
           replace: true,
           preventScrollReset: true,
           state: {
             ...(typeof state === 'object' && state !== null ? state : {}),
+            ...returnState,
             taskReturnFocus: returnFocusId,
             ...(returnFocusId !== focusId
               ? {

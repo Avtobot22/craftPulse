@@ -42,10 +42,7 @@ export function readTaskOrigin(state: unknown): TaskOrigin | null {
         search,
         hash,
         focusId,
-        ...((matchPath(routePaths.taskList, pathname) ||
-          matchPath(routePaths.projectTimeline, pathname)) &&
-        'returnViaHistory' in origin &&
-        origin.returnViaHistory === true
+        ...('returnViaHistory' in origin && origin.returnViaHistory === true
           ? { returnViaHistory: true }
           : {}),
       }

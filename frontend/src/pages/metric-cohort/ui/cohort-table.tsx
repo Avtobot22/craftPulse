@@ -1,10 +1,15 @@
 import { Fragment, useId, useState } from 'react'
 import { Button } from '@gravity-ui/uikit'
+import { useOutletContext } from 'react-router'
 import { SourceLink } from '@/entities/activity'
 import { formatValue, metricReason } from '@/entities/metric'
 import type { ApiClient } from '@/shared/api'
-import { roleLabels } from '../api/cohort-api'
-import type { CohortItem } from '../api/cohort-api'
+import type { CurrentUser } from '@/shared/auth'
+import type { TaskDetailSearch } from '@/shared/config'
+import { TaskDetailLink } from '@/shared/ui'
+import type { CohortPagination } from '../model/pagination'
+import { roleLabels } from '../model/cohort-roles'
+import type { CohortItem } from '@/shared/api'
 import { CohortEvidence, ContributionInterval } from './cohort-evidence'
 
 const exclusionReasons: Readonly<Record<string, string>> = {
@@ -33,12 +38,16 @@ export function CohortTable({
   unit,
   asOf,
   publishedAt,
+  taskParams,
+  pagination,
 }: {
   api: ApiClient
   items: CohortItem[]
   unit: string
   asOf: string
   publishedAt: string | null
+  taskParams: TaskDetailSearch
+  pagination: CohortPagination
 }) {
   return (
     <div
@@ -71,6 +80,8 @@ export function CohortTable({
                 unit={unit}
                 asOf={asOf}
                 publishedAt={publishedAt}
+                taskParams={taskParams}
+                pagination={pagination}
               />
             ),
           )}
@@ -86,16 +97,22 @@ function CohortRow({
   unit,
   asOf,
   publishedAt,
+  taskParams,
+  pagination,
 }: {
   api: ApiClient
   item: Extract<CohortItem, { deleted: false }>
   unit: string
   asOf: string
   publishedAt: string | null
+  taskParams: TaskDetailSearch
+  pagination: CohortPagination
 }) {
   const [open, setOpen] = useState(false)
   const { object, role, value, reason, interval } = item
+  const user = useOutletContext<Pick<CurrentUser, 'actions'> | undefined>()
   const isTask = object.kind === 'task'
+  const canReadTask = isTask && user?.actions.includes('tasks.read')
   const objectName = [object.display_key, object.title].filter(Boolean)
   const label = objectName.length ? objectName.join(' · ') : 'Объект'
   const detailId = useId()
@@ -104,6 +121,20 @@ function CohortRow({
       <tr>
         <td>
           <SourceLink url={object.source_url}>{label}</SourceLink>
+          {canReadTask && (
+            <>
+              {' · '}
+              <TaskDetailLink
+                taskId={object.id}
+                params={taskParams}
+                focusId={`cohort-task-${object.id}-${String(item.itemNo)}`}
+                preserveHistoryFocus
+                returnState={{ cohortPagination: pagination }}
+              >
+                Карточка задачи {object.display_key ?? object.title}
+              </TaskDetailLink>
+            </>
+          )}
         </td>
         <td>{roleLabels[role]}</td>
         <td>{contribution(value, unit)}</td>

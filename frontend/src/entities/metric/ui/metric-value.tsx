@@ -11,6 +11,8 @@ export interface MetricValueProps {
   showCompleteness?: boolean
   showBreakdown?: boolean
   excludedLabel?: string
+  missingLabel?: string
+  sampleLabel?: string
   renderValue?: (display: string) => ReactNode
 }
 
@@ -119,6 +121,8 @@ export function MetricValue({
   showCompleteness = false,
   showBreakdown = false,
   excludedLabel = 'Исключено',
+  missingLabel = 'Пропущено',
+  sampleLabel = 'n',
 }: MetricValueProps) {
   const { unit, numerator, denominator, n, bound, low_sample, reason_code } =
     value
@@ -157,7 +161,13 @@ export function MetricValue({
       {!display && !reason && !missingDenominator && (
         <Text>Причина отсутствия значения не указана</Text>
       )}
-      {n !== null && <Text>n = {number.format(n)}</Text>}
+      {n !== null && (
+        <Text>
+          {sampleLabel}
+          {sampleLabel === 'n' ? ' = ' : ': '}
+          {number.format(n)}
+        </Text>
+      )}
       {showCoverage && numerator !== null && hasDenominator && (
         <Text>
           Охват: {number.format(numerator)} из {number.format(denominator)}
@@ -173,7 +183,7 @@ export function MetricValue({
           <dd>
             {denominator === null ? 'Нет данных' : number.format(denominator)}
           </dd>
-          <dt>Пропущено</dt>
+          <dt>{missingLabel}</dt>
           <dd>{number.format(value.missing_count)}</dd>
           <dt>{excludedLabel}</dt>
           <dd>{number.format(value.excluded_count)}</dd>

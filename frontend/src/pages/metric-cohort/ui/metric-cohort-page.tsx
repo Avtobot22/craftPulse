@@ -17,7 +17,8 @@ import {
 import type { ApiClient } from '@/shared/api'
 import { routePaths } from '@/shared/config'
 import { ErrorState, LoadingState } from '@/shared/ui'
-import { parseRole, roleLabels } from '../api/cohort-api'
+import { parseRole } from '@/shared/api'
+import { roleLabels } from '../model/cohort-roles'
 import { CohortResults } from './cohort-results'
 import './metric-cohort-page.css'
 
@@ -88,7 +89,14 @@ export function MetricCohortPage({ api }: { api: ApiClient }) {
                       else search.delete('role')
                       setSearch(search, {
                         replace: true,
-                        state: navigationState,
+                        state: {
+                          ...(navigationState &&
+                          typeof navigationState === 'object'
+                            ? navigationState
+                            : {}),
+                          taskReturnFocus: undefined,
+                          cohortPagination: undefined,
+                        },
                       })
                     }}
                   >

@@ -1,5 +1,5 @@
 import type { MetricInspection } from '@/entities/metric'
-import type { CohortItem } from '../api/cohort-api'
+import type { CohortItem } from '@/shared/api'
 
 export function matchesReportSlice(
   item: CohortItem,
