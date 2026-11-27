@@ -1,13 +1,25 @@
 import { useQuery } from '@tanstack/react-query'
-import { useOutletContext, useParams, useSearchParams } from 'react-router'
+import {
+  generatePath,
+  useOutletContext,
+  useParams,
+  useSearchParams,
+} from 'react-router'
 import { RestrictedResults } from '@/entities/result-access'
 import { ApiError } from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
-import { contractLabel, technicalLabels } from '@/shared/config'
+import {
+  baselineContext,
+  contractLabel,
+  readTechnicalId,
+  routePaths,
+  technicalLabels,
+} from '@/shared/config'
 import {
   DataStateBadge,
   ErrorState,
+  InspectionBack,
   InspectionLink,
   LoadingState,
   useInspectionReturn,
@@ -131,6 +143,20 @@ function SummaryContent({
         summary={s}
         refresh={() => void query.refetch()}
       />
+      <InspectionBack />
+      {canReadCI && (
+        <InspectionLink
+          id="summary-baselines"
+          to={{
+            pathname: generatePath(routePaths.baselines, {
+              projectId: readTechnicalId(params.get('project_id')) ?? null,
+            }),
+            search: baselineContext(findingSearch).toString(),
+          }}
+        >
+          Базовые линии
+        </InspectionLink>
+      )}
       <div className="cp-summary-columns">
         <section>
           <h2>Находки</h2>

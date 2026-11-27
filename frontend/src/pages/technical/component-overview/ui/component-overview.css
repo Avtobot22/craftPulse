@@ -1,0 +1,68 @@
+.cp-component-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  overflow-wrap: anywhere;
+}
+
+.cp-component-overview :is(h1, h2, h3, p) {
+  margin: 0;
+}
+
+.cp-component-overview__context,
+.cp-component-overview__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cp-component-overview__context dd {
+  margin: 4px 0 0;
+}
+
+.cp-component-overview__card {
+  display: grid;
+  gap: 8px;
+  height: 100%;
+  padding: 12px;
+}
+
+.cp-component-overview__selector,
+.cp-component-overview__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.cp-component-overview__selector label {
+  display: grid;
+  gap: 4px;
+}
+
+.cp-component-overview a {
+  color: var(--g-color-text-link);
+}
+
+.cp-component-overview__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.cp-component-overview__selector input {
+  box-sizing: border-box;
+  min-height: 44px;
+  max-width: 100%;
+  border: 1px solid var(--g-color-line-generic-solid);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--g-color-text-primary);
+  background: var(--g-color-base-background);
+  font: inherit;
+}
