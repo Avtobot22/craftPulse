@@ -20,32 +20,40 @@ function formatLag(seconds: number | null) {
 
 export function SyncDataKind({
   data,
+  summary = false,
 }: {
   data: OpenCodes<components['schemas']['SyncDataKindStatus']>
+  summary?: boolean
 }) {
   return (
     <section>
-      <Text as="h2" variant="subheader-2">
+      <Text as="h2" variant={summary ? 'subheader-1' : 'subheader-2'}>
         {contractLabel(adminLabels.dataKind, data.data_kind)}
       </Text>
       <dl className="cp-sync-data-kind">
         <dt>Фаза</dt>
         <dd>{contractLabel(adminLabels.syncPhase, data.phase)}</dd>
-        <dt>Последняя попытка</dt>
-        <dd>
-          <StatusTime value={data.last_attempt_at} />
-        </dd>
-        <dt>Исход попытки</dt>
-        <dd>
-          {data.last_outcome === null
-            ? 'Нет данных'
-            : contractLabel(adminLabels.syncOutcome, data.last_outcome)}
-        </dd>
+        {!summary && (
+          <>
+            <dt>Последняя попытка</dt>
+            <dd>
+              <StatusTime value={data.last_attempt_at} />
+            </dd>
+            <dt>Исход попытки</dt>
+            <dd>
+              {data.last_outcome === null
+                ? 'Нет данных'
+                : contractLabel(adminLabels.syncOutcome, data.last_outcome)}
+            </dd>
+          </>
+        )}
         <dt>Ошибка</dt>
         <dd>
           {data.last_error_code === null ? (
             data.last_outcome === 'error' ? (
               'Причина не указана'
+            ) : summary && data.last_outcome === 'success' ? (
+              'Нет ошибок'
             ) : (
               'Нет данных'
             )
@@ -57,21 +65,35 @@ export function SyncDataKind({
           )}
         </dd>
         <dt>Страница с ошибкой</dt>
-        <dd>{data.failed_page_present ? 'Есть' : 'Нет'}</dd>
+        <dd>
+          {data.failed_page_present
+            ? summary
+              ? 'Сбор остановился на странице, повтор продолжит с неё'
+              : 'Есть'
+            : 'Нет'}
+        </dd>
         <dt>Последний успешный сбор</dt>
         <dd>
           <StatusTime value={data.last_success_at} />
         </dd>
-        <dt>Данные сверены до</dt>
-        <dd>
-          <StatusTime value={data.watermark} />
-        </dd>
+        {!summary && (
+          <>
+            <dt>Данные сверены до</dt>
+            <dd>
+              <StatusTime value={data.watermark} />
+            </dd>
+          </>
+        )}
         <dt>Отставание</dt>
         <dd>{formatLag(data.lag_seconds)}</dd>
-        <dt>История с</dt>
-        <dd>
-          <StatusTime value={data.history_from} />
-        </dd>
+        {!summary && (
+          <>
+            <dt>История с</dt>
+            <dd>
+              <StatusTime value={data.history_from} />
+            </dd>
+          </>
+        )}
         <dt>Полнота</dt>
         <dd>
           {data.completeness === 'partial' ? (
@@ -82,13 +104,13 @@ export function SyncDataKind({
             contractLabel(adminLabels.syncCompleteness, data.completeness)
           )}
         </dd>
-        {data.unknown_fields.length > 0 && (
+        {!summary && data.unknown_fields.length > 0 && (
           <>
             <dt>Поля с неизвестными значениями</dt>
             <dd>{data.unknown_fields.join(', ')}</dd>
           </>
         )}
-        {data.affected_metrics.length > 0 && (
+        {!summary && data.affected_metrics.length > 0 && (
           <>
             <dt>Затронутые показатели</dt>
             <dd>{data.affected_metrics.join(', ')}</dd>

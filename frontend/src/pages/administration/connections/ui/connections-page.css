@@ -1,0 +1,108 @@
+.cp-connections {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--g-spacing-4);
+}
+
+.cp-connections h1 {
+  margin: 0;
+}
+
+.cp-connections__header,
+.cp-connections__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--g-spacing-4);
+}
+
+.cp-connections__header {
+  justify-content: space-between;
+}
+
+.cp-connections__actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.cp-connections__filter {
+  display: grid;
+  justify-self: start;
+  gap: var(--g-spacing-1);
+  font-size: 14px;
+}
+
+.cp-connections__filter select {
+  min-height: 44px;
+  padding-inline: 12px;
+  border: 1px solid var(--g-color-line-generic-solid);
+  border-radius: 8px;
+  color: var(--g-color-text-primary);
+  background: var(--g-color-base-background);
+  font: inherit;
+}
+
+.cp-connections :is(a, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--g-color-line-focus);
+  outline-offset: 2px;
+}
+
+.cp-connections__scroll {
+  overflow-x: auto;
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: 8px;
+}
+
+.cp-connections__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.cp-connections__table :is(th, td) {
+  min-width: 120px;
+  padding: 12px;
+  border-bottom: 1px solid var(--g-color-line-generic);
+  overflow-wrap: anywhere;
+  text-align: start;
+  vertical-align: top;
+  box-sizing: border-box;
+}
+
+.cp-connections__table th:first-child {
+  min-width: 240px;
+}
+
+.cp-connections__table thead th {
+  height: 44px;
+  background: var(--g-color-base-generic);
+}
+
+.cp-connections__table tbody :is(th, td) {
+  height: 48px;
+}
+
+.cp-connections__table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.cp-connections__table tbody tr:is(:hover, :focus-within) {
+  background: var(--g-color-base-simple-hover);
+}
+
+.cp-connections__table td:last-child {
+  min-width: 320px;
+}
+
+.cp-connections__summary {
+  display: grid;
+  gap: var(--g-spacing-2);
+}
+
+@media (max-width: 768px) {
+  .cp-connections__table th:first-child {
+    min-width: 144px;
+  }
+}
