@@ -312,7 +312,7 @@ test('[04] UI-07, UI-17, UI-18: validation, concurrence and unsaved changes', as
     ).toBeVisible()
     await noPageOverflow(page)
     await activate(page, confirm)
-    await activate(page, button(dialog, 'Готово'))
+    await expect(dialog).toBeHidden()
     await expect(
       page.getByText('Сохранённая версия структуры: ' + (version + 2), {
         exact: true,
