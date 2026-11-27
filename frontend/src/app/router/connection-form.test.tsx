@@ -323,10 +323,13 @@ it('убирает учётные данные после ответа, сохр
   ).not.toContain(token)
   respond(jsonResponse(draft, 201, { ETag: '"2"' }))
 
-  expect(
-    await screen.findByText('Учётные данные заданы.', { exact: false }),
-  ).toBeVisible()
-  expect(document.querySelector('time')).toHaveAttribute(
+  // Both forms can show the credentials status after the create response.
+  await screen.findByRole('heading', { name: 'Настройки подключения' })
+  const credentialsStatus = await screen.findByText('Учётные данные заданы.', {
+    exact: false,
+  })
+  expect(credentialsStatus).toBeVisible()
+  expect(credentialsStatus.querySelector('time')).toHaveAttribute(
     'datetime',
     draft.credentials_set_at,
   )

@@ -19,6 +19,8 @@ export function ChangeConfirmationDialog<Draft, Result>(
   } = props
   const { status, proposal, working, uncertain, confirm, cancel, retryCheck } =
     useChangeConfirmation(props)
+  const outcome = status.kind === 'reconciled' ? status.outcome : undefined
+  const showAttempt = outcome?.kind !== 'different-result'
   const unchanged = status.kind === 'preview' && proposal.changes.length === 0
   const missingVersion = !initialWrite && !isStrongETag(proposal.etag)
   const retryable = status.kind === 'retryable'
@@ -39,13 +41,17 @@ export function ChangeConfirmationDialog<Draft, Result>(
   return (
     <DialogFrame
       title={title}
-      description="Проверьте изменения перед сохранением."
+      description={
+        outcome
+          ? 'Результат проверки сохранения.'
+          : 'Проверьте изменения перед сохранением.'
+      }
       wide={wide}
       focusSafeAction={dangerous}
       onCancel={cancel}
       openerRef={openerRef}
       actions={
-        status.kind === 'applied' ? (
+        outcome ? (
           <Button view="action" size="xl" onClick={cancel}>
             Готово
           </Button>
@@ -132,21 +138,29 @@ export function ChangeConfirmationDialog<Draft, Result>(
           />
         </div>
       )}
-      {status.kind === 'applied' && (
+      {outcome && (
         <div role="status">
-          <Alert theme="success" title="Изменение применилось" />
+          {outcome.kind === 'applied' ? (
+            <Alert theme="success" title="Изменение применилось" />
+          ) : (
+            <Alert
+              theme="warning"
+              title={outcome.title}
+              message={outcome.message}
+            />
+          )}
         </div>
       )}
       <dl className="cp-settings-dialog__details">
         <dt>Область</dt>
         <dd>{scope}</dd>
-        {!initialWrite && (
+        {showAttempt && !initialWrite && (
           <>
             <dt>Версия для сравнения</dt>
             <dd>{proposal.etag}</dd>
           </>
         )}
-        {proposal.baseline && (
+        {showAttempt && proposal.baseline && (
           <>
             <dt>{proposal.baseline.label}</dt>
             <dd className="cp-settings-dialog__baseline">
@@ -154,20 +168,26 @@ export function ChangeConfirmationDialog<Draft, Result>(
             </dd>
           </>
         )}
-        <dt>Последствия</dt>
-        <dd>{consequences}</dd>
-      </dl>
-      <ul className="cp-settings-dialog__changes" aria-label="Изменения">
-        {[...(proposal.referenceChanges ?? []), ...proposal.changes].map(
-          ({ label, before, after }, index) => (
-            <li key={index}>
-              <strong>{label}</strong>
-              <span>Было: {before}</span>
-              <span>Станет: {after}</span>
-            </li>
-          ),
+        {showAttempt && (
+          <>
+            <dt>Последствия</dt>
+            <dd>{consequences}</dd>
+          </>
         )}
-      </ul>
+      </dl>
+      {showAttempt && (
+        <ul className="cp-settings-dialog__changes" aria-label="Изменения">
+          {[...(proposal.referenceChanges ?? []), ...proposal.changes].map(
+            ({ label, before, after }, index) => (
+              <li key={index}>
+                <strong>{label}</strong>
+                <span>Было: {before}</span>
+                <span>Станет: {after}</span>
+              </li>
+            ),
+          )}
+        </ul>
+      )}
     </DialogFrame>
   )
 }

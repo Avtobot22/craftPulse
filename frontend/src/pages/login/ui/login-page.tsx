@@ -9,7 +9,7 @@ import {
   Link,
   Text,
 } from '@gravity-ui/uikit'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   createLoginPageUrl,
@@ -25,6 +25,7 @@ export function LoginPage({ session }: { session: SessionController }) {
   const { orgSlug: routeSlug } = useParams<'orgSlug'>()
   const [params] = useSearchParams()
   const navigate = useNavigate()
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const started = useRef(false)
   const [redirecting, setRedirecting] = useState(false)
   const organization =
@@ -36,6 +37,9 @@ export function LoginPage({ session }: { session: SessionController }) {
   const returnTo = safeReturnTo(params.get('return_to'))
   const errorCode = params.get('login_error')
   const error = errorCode === null ? null : loginErrorMessage(errorCode)
+  useLayoutEffect(() => {
+    headingRef.current?.focus()
+  }, [errorCode, routeSlug])
   useEffect(() => {
     started.current = false
   }, [errorCode, routeSlug])
@@ -75,7 +79,13 @@ export function LoginPage({ session }: { session: SessionController }) {
       >
         <Card view="outlined" style={{ width: '100%', maxWidth: 560 }}>
           <Flex direction="column" padding="spacing-6" gap="spacing-4">
-            <Text as="h1" variant="header-1" style={{ margin: 0 }}>
+            <Text
+              ref={headingRef}
+              as="h1"
+              tabIndex={-1}
+              variant="header-1"
+              style={{ margin: 0 }}
+            >
               {error ? 'Не удалось войти' : 'Вход'}
             </Text>
             {error ? (

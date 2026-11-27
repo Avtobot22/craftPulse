@@ -15,12 +15,14 @@ export function RoleTable({
   assigned,
   catalog,
   issues,
+  rowIdPrefix,
   onRemove,
 }: {
   draft: RoleInput[]
   assigned: ReadonlyMap<string, string>
   catalog: AreaCatalog
   issues: ReadonlyMap<string, string>
+  rowIdPrefix: string
   onRemove: (role: RoleInput) => void
 }) {
   if (!draft.length) return <p>Нет назначений ролей</p>
@@ -52,18 +54,33 @@ export function RoleTable({
             const date = assigned.get(key)
             const label = roleLabel(item.role)
             const area = areaLabel(item, catalog)
+            const rowId = rowIdPrefix + String(index)
+            const roleErrorId = roleIssue ? rowId + '-role-error' : undefined
+            const areaErrorId = areaIssues.length
+              ? rowId + '-area-error'
+              : undefined
+            const description = [roleErrorId, areaErrorId]
+              .filter(Boolean)
+              .join(' ')
             return (
-              <tr key={key}>
+              <tr
+                key={key}
+                id={rowId}
+                tabIndex={description ? -1 : undefined}
+                aria-describedby={description || undefined}
+              >
                 <th scope="row">
                   {label}
                   {roleIssue && (
-                    <p className="cp-users__error">Ошибка роли. {roleIssue}</p>
+                    <p id={roleErrorId} className="cp-users__error">
+                      Ошибка роли. {roleIssue}
+                    </p>
                   )}
                 </th>
                 <td>
                   {area}
                   {areaIssues.length > 0 && (
-                    <p className="cp-users__error">
+                    <p id={areaErrorId} className="cp-users__error">
                       Ошибка назначения. {areaIssues.join(' ')}
                     </p>
                   )}

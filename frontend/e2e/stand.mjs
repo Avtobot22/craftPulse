@@ -16,11 +16,19 @@ export function fixtureNames(org) {
   return { team: `AC-01 ${org} team`, project: `AC-01 ${org} project` }
 }
 
-export async function gitlabFlow(page, run, account) {
+export async function gitlabFlow(
+  page,
+  run,
+  account,
+  {
+    activate = (control) => control.click(),
+    type = (control, value) => control.fill(value),
+  } = {},
+) {
   const button = page.getByRole('button', { name: 'Войти через GitLab' })
   await expect(button).toBeVisible()
   const entry = page.url()
-  await button.click()
+  await activate(button)
   const signIn = (url) =>
     url.origin === run.gitlab && url.pathname === '/users/sign_in'
   const consent = (url) =>
@@ -45,9 +53,9 @@ export async function gitlabFlow(page, run, account) {
       signIn(action) && method?.toLowerCase() === 'post',
       'GitLab sign-in form action',
     ).toBe(true)
-    await form.locator('input[name="user[login]"]').fill(accounts[account])
-    await form.locator('input[name="user[password]"]').fill(password(account))
-    await form.locator('button[type="submit"], input[type="submit"]').click()
+    await type(form.locator('input[name="user[login]"]'), accounts[account])
+    await type(form.locator('input[name="user[password]"]'), password(account))
+    await activate(form.locator('button[type="submit"], input[type="submit"]'))
     await page.waitForURL((url) => consent(url) || returned(url))
   }
 
@@ -61,14 +69,14 @@ export async function gitlabFlow(page, run, account) {
       authorize.waitFor().then(() => 'consent'),
       page.waitForURL(returned).then(() => 'returned'),
     ])
-    if (action === 'consent') await authorize.click()
+    if (action === 'consent') await activate(authorize)
   }
   await page.waitForURL(returned)
 }
 
-export async function login(page, run, account, org) {
+export async function login(page, run, account, org, controls) {
   await page.goto('/o/' + org)
-  await gitlabFlow(page, run, account)
+  await gitlabFlow(page, run, account, controls)
 }
 
 export async function me(page, run, org) {
@@ -107,7 +115,7 @@ export async function readStructure(page, run) {
   return state
 }
 
-async function replaceStructure(page, run, state, changes) {
+export async function replaceStructure(page, run, state, changes) {
   const body = Object.fromEntries(
     collections.map((key) => [key, state.data[key]]),
   )

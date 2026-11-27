@@ -229,9 +229,11 @@ function SyncStatusContent({
               </Link>
             </li>
           )}
-          {canManage && (
+          {(canReadSync || canManage) && (
             <li>
-              <Link to={adminLinks.ingestConflicts()}>Конфликты приёма</Link>
+              <Link to={adminLinks.ingestConflicts()}>
+                Конфликты приёма организации
+              </Link>
             </li>
           )}
         </ul>

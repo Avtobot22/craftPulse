@@ -514,6 +514,18 @@ it('focuses the safe disconnect action, cancels without DELETE, and returns to t
   )
 })
 
+it('links to organization conflicts with only sync.read', async () => {
+  mount({ actions: ['sync.read'] })
+  const diagnostics = await screen.findByRole('navigation', {
+    name: 'Диагностика приёма',
+  })
+  expect(
+    within(diagnostics).getByRole('link', {
+      name: 'Конфликты приёма организации',
+    }),
+  ).toHaveAttribute('href', routePaths.ingestConflicts)
+})
+
 it('keeps sync data and its journal private without sync.read', async () => {
   const sync = vi.fn(() => jsonResponse(syncStatusExample))
   mount({ sync, actions: ['connections.manage'] })
@@ -527,7 +539,7 @@ it('keeps sync data and its journal private without sync.read', async () => {
   expect(
     within(
       screen.getByRole('navigation', { name: 'Диагностика приёма' }),
-    ).getByRole('link', { name: 'Конфликты приёма' }),
+    ).getByRole('link', { name: 'Конфликты приёма организации' }),
   ).toBeVisible()
   expect(sync).not.toHaveBeenCalled()
 })

@@ -197,6 +197,22 @@ export class ApiClient {
     )
   }
 
+  resolveIngestConflict<T>(
+    conflictId: operations['resolveIngestConflict']['parameters']['path']['conflict_id'],
+    body: MutationBody<'/ingest-conflicts/{conflict_id}/resolution', 'POST'>,
+    decode: Decoder<T>,
+    signal: AbortSignal,
+  ): Promise<ApiResponse<T>> {
+    return this.request(
+      'POST',
+      '/ingest-conflicts/{conflict_id}/resolution',
+      body,
+      decode,
+      { pathParams: { conflict_id: conflictId }, signal },
+      false,
+    )
+  }
+
   createConnection<T>(
     body: MutationBody<'/connections', 'POST'>,
     decode: Decoder<T>,

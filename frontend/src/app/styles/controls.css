@@ -26,3 +26,9 @@ th,
 td {
   font-variant-numeric: tabular-nums;
 }
+
+/* Include native controls and programmatic entry points outside the shell. */
+.g-root :is(a[href], button, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--g-color-line-focus);
+  outline-offset: 2px;
+}

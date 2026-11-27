@@ -1,6 +1,7 @@
-import { Button } from '@gravity-ui/uikit'
+import { CircleCheck, CircleXmark } from '@gravity-ui/icons'
+import { Button, Icon } from '@gravity-ui/uikit'
 import { useQueries, useQueryClient } from '@tanstack/react-query'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { isStrongETag, isUnavailableError } from '@/shared/api'
 import type { ApiClient, ApiResponse } from '@/shared/api'
 import {
@@ -16,7 +17,7 @@ import type {
 } from '@/shared/ui'
 import { fetchRoles, putRoles, roleAreas, userRoles } from '../api/users-api'
 import type { Assignment, RoleInput, User } from '../api/users-api'
-import { roleIssues } from '../model/role-errors'
+import { roleIssueRowIndex, roleIssues } from '../model/role-errors'
 import {
   areaFields,
   describeRole,
@@ -57,6 +58,7 @@ export function RoleEditor({
   const openerRef = useRef<HTMLButtonElement>(null)
   const roleRef = useRef<HTMLSelectElement>(null)
   const errorRef = useRef<HTMLDivElement>(null)
+  const rowIdPrefix = useId() + '-role-row-'
 
   const [teams, projects, services] = useQueries({
     queries: areaFields.map((field) => ({
@@ -177,10 +179,16 @@ export function RoleEditor({
       <p>Версия набора ролей: {snapshot.etag ?? 'Недоступна'}</p>
       {!versionAvailable && (
         <p role="alert">
-          Версия недоступна. Откройте карточку заново перед сохранением.
+          <Icon data={CircleXmark} size={16} aria-hidden="true" /> Версия
+          недоступна. Откройте карточку заново перед сохранением.
         </p>
       )}
-      {saved && <p role="status">Роли сохранены</p>}
+      {saved && (
+        <p role="status">
+          <Icon data={CircleCheck} size={16} aria-hidden="true" /> Роли
+          сохранены
+        </p>
+      )}
       {issues.size > 0 && (
         <div
           ref={errorRef}
@@ -188,17 +196,36 @@ export function RoleEditor({
           tabIndex={-1}
           className="cp-users__error"
         >
-          Проверьте назначения ролей.
-          {[...issues]
-            .filter(
-              ([path]) =>
-                !/^\/data\/\d+(\/(role|team_id|project_id|service_id))?$/u.test(
-                  path,
-                ),
-            )
-            .map(([path, message]) => (
-              <p key={path}>{message}</p>
-            ))}
+          <strong>
+            <Icon data={CircleXmark} size={16} aria-hidden="true" /> Проверьте
+            назначения ролей.
+          </strong>
+          <ul>
+            {[...issues].map(([path, message]) => {
+              const index = roleIssueRowIndex(path)
+              const target =
+                index !== undefined && draft[index]
+                  ? rowIdPrefix + String(index)
+                  : null
+              return (
+                <li key={path}>
+                  {target && index !== undefined ? (
+                    <a
+                      href={'#' + target}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        document.getElementById(target)?.focus()
+                      }}
+                    >
+                      Назначение {index + 1}: {message}
+                    </a>
+                  ) : (
+                    message
+                  )}
+                </li>
+              )
+            })}
+          </ul>
         </div>
       )}
       <RoleTable
@@ -210,6 +237,7 @@ export function RoleEditor({
         }
         catalog={catalog}
         issues={issues}
+        rowIdPrefix={rowIdPrefix}
         onRemove={(role) => {
           edit(draft.filter((item) => roleKey(item) !== roleKey(role)))
           roleRef.current?.focus()
