@@ -44,6 +44,10 @@
   margin: 0 0 8px;
 }
 
+.cp-settings-dialog__baseline {
+  white-space: pre-wrap;
+}
+
 .cp-settings-dialog__changes {
   display: grid;
   gap: 12px;

@@ -146,6 +146,14 @@ export function ChangeConfirmationDialog<Draft, Result>(
             <dd>{proposal.etag}</dd>
           </>
         )}
+        {proposal.baseline && (
+          <>
+            <dt>{proposal.baseline.label}</dt>
+            <dd className="cp-settings-dialog__baseline">
+              {proposal.baseline.value}
+            </dd>
+          </>
+        )}
         <dt>Последствия</dt>
         <dd>{consequences}</dd>
       </dl>
