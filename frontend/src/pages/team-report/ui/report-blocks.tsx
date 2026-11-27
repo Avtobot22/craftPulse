@@ -8,6 +8,7 @@ import { ReopeningsBlock, TargetComplianceBlock } from './outcome-metrics-block'
 import { ThroughputBlock } from './throughput-block'
 import { CrossMetricsBlock } from './cross-metrics-block'
 import { TeamMRQueue } from './team-mr-queue'
+import { TechnicalChecksBlock } from './technical-checks-block'
 import { WorkAgeBlock } from './work-age-block'
 
 export function ReportBlocks({
@@ -15,12 +16,14 @@ export function ReportBlocks({
   api,
   canReadVersions,
   canReadTasks,
+  canReadMRs = false,
   queueProjects,
 }: {
   block: ReportBlockProps
   api: ApiClient
   canReadVersions: boolean
   canReadTasks?: boolean
+  canReadMRs?: boolean
   queueProjects?: TeamReportScope['projects']
 }) {
   return (
@@ -30,6 +33,14 @@ export function ReportBlocks({
           block={block}
           api={api}
           canReadTasks={canReadTasks}
+        />
+      )}
+      {canReadTasks !== undefined && (
+        <TechnicalChecksBlock
+          block={block}
+          api={api}
+          canReadTasks={canReadTasks}
+          canReadMRs={canReadMRs}
         />
       )}
       {queueProjects && (

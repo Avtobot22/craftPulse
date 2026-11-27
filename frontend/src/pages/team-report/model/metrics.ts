@@ -56,13 +56,19 @@ export function seriesTitle(series: ReportSeries, groupBy: string) {
     (estimators[`${metric_id}:${estimator}`] ??
       (metric_id === 'T07' ? outcomeReasons[estimator] : undefined) ??
       estimator)
-  const groupLabel =
-    groupBy === 'size_label'
-      ? (group?.size_label ?? 'Без размера')
-      : (group?.task_type ?? 'Тип неизвестен')
-  return [title, label, group ? groupLabel : undefined]
+  return [title, label, seriesGroupLabel(group, groupBy)]
     .filter(Boolean)
     .join(' · ')
+}
+
+export function seriesGroupLabel(
+  group: ReportSeries['group'],
+  groupBy: string,
+) {
+  if (!group || !groupBy) return undefined
+  return groupBy === 'size_label'
+    ? (group.size_label ?? 'Без размера')
+    : (group.task_type ?? 'Тип неизвестен')
 }
 
 export function seriesKey(series: ReportSeries) {
@@ -94,6 +100,7 @@ export interface ReportBlockProps {
     targetId: string,
     chartSeries?: string,
     cohort?: { taskType: string | null | undefined; size: string | null },
+    destination?: 'metricCohort',
   ) => void
 }
 

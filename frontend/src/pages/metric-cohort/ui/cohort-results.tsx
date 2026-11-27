@@ -7,7 +7,11 @@ import type { MetricInspection } from '@/entities/metric'
 import { RestrictedResults } from '@/entities/result-access'
 import { ApiError } from '@/shared/api'
 import type { ApiClient, MetricRevision } from '@/shared/api'
-import { routePaths } from '@/shared/config'
+import {
+  routePaths,
+  technicalCohortLimitMessage,
+  technicalReportFilters,
+} from '@/shared/config'
 import { ErrorState, LoadingState } from '@/shared/ui'
 import { loadCohort, parseRole } from '@/shared/api'
 import { readCohortPagination } from '../model/pagination'
@@ -34,6 +38,19 @@ export function CohortResults({
   const projectIds = selection.project
     ? [selection.project]
     : selection.params.projects
+  const { params, group } = selection
+  const taskType =
+    params.groupBy === 'task_type' && group !== null ? group : params.taskType
+  const size =
+    params.groupBy === 'size_label' && group !== null
+      ? group || 'unknown'
+      : params.size
+  const limitMessage = technicalCohortLimitMessage(
+    selection.metricId,
+    params.groupBy,
+    group,
+  )
+  const technical = /^X0[3-6]$/u.test(selection.metricId)
   const cursor = cursors[page - 1]
   const query = {
     metric_id: selection.metricId,
@@ -41,11 +58,15 @@ export function CohortResults({
     ...(selection.estimator ? { estimator: selection.estimator } : {}),
     ...(role ? { role } : {}),
     ...(projectIds.length ? { project_id: projectIds } : {}),
+    ...(technical && taskType ? { task_type: taskType } : {}),
+    ...(technical && size ? { size_label: size } : {}),
+    ...(selection.metricId === 'X03' ? technicalReportFilters(params) : {}),
     limit,
     ...(cursor ? { cursor } : {}),
   }
   const result = useQuery({
     queryKey: ['revision-cohort', revision.id, query],
+    enabled: limitMessage === undefined,
     queryFn: ({ signal }) => loadCohort(api, revision.id, query, signal),
     gcTime: 0,
   })
@@ -95,7 +116,9 @@ export function CohortResults({
       <h2 id="cohort-results" tabIndex={-1} ref={heading}>
         Объекты точки
       </h2>
-      {result.isPending ? (
+      {limitMessage ? (
+        <p role="status">{limitMessage}</p>
+      ) : result.isPending ? (
         <LoadingState />
       ) : result.isError ? (
         <>

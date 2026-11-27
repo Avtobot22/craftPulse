@@ -275,14 +275,24 @@ function TeamReportContent({
     if (updated.toString() !== search.toString()) setSearch(updated)
   }
   function reset() {
-    apply({ ...params, projects: [], taskType: '', size: '', groupBy: '' })
+    apply({
+      ...params,
+      projects: [],
+      taskType: '',
+      size: '',
+      groupBy: '',
+      minTaskAgeSeconds: undefined,
+      overTarget: undefined,
+    })
   }
 
   const projectIds = query.project_id
   const hasProjectFilter = (projectIds?.length ?? 0) > 0
   const hasFilters =
     hasProjectFilter ||
-    Boolean(query.task_type ?? query.size_label ?? query.group_by)
+    Boolean(query.task_type ?? query.size_label ?? query.group_by) ||
+    query.min_task_age_seconds !== undefined ||
+    query.over_target !== undefined
   const controls = (
     <ReportControls
       key={JSON.stringify([teamId, scope.project?.id])}
@@ -444,6 +454,7 @@ function TeamReportContent({
         api={api}
         canReadVersions={scope.canManageProcess}
         canReadTasks={scope.actions.includes('tasks.read')}
+        canReadMRs={scope.actions.includes('mr.read')}
         queueProjects={
           scope.actions.includes('mr.read')
             ? scope.projects.filter(

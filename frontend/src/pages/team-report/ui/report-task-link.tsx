@@ -14,7 +14,7 @@ export function ReportTaskLink({
   report: TeamReport
   taskId: string
   point: string
-  pointParam: 'work_age_point' | 'cross_point'
+  pointParam: 'work_age_point' | 'cross_point' | 'technical_point'
   focusId: string
   children: ReactNode
 }) {
