@@ -1486,7 +1486,7 @@ type DocumentV1 struct {
 	PageNativeId *string             `json:"page_native_id,omitempty"`
 	Path         *string             `json:"path,omitempty"`
 
-	// Restriction Действующее ограничение документа у источника
+	// Restriction Действующее ограничение документа у источника, включая унаследованное от предка.
 	Restriction *string `json:"restriction,omitempty"`
 
 	// SourceUrl Абсолютный URL страницы Confluence.

@@ -684,7 +684,7 @@ components:
           description: ID предков страницы Confluence от корня до родителя.
         source_url: {type: [string, 'null'], maxLength: 4096, format: uri, description: Абсолютный URL страницы Confluence.}
         title: {type: [string, 'null'], maxLength: 1024}
-        restriction: {type: [string, 'null'], maxLength: 255, description: Действующее ограничение документа у источника, включая унаследованное от предка.}
+        restriction: {type: [string, 'null'], maxLength: 255, description: 'Действующее ограничение документа у источника, включая унаследованное от предка.'}
         acl_state: {type: string, enum: [known, unknown]}
         content_sha256: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
         content_path: {type: [string, 'null'], pattern: '^files/[A-Za-z0-9._/-]+$', description: Содержимое документа в пакете.}
