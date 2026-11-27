@@ -1,0 +1,37 @@
+.cp-service-docs {
+  display: grid;
+  gap: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.cp-service-docs nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.cp-service-docs__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.cp-service-docs__cards li {
+  padding: 1rem;
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: 0.5rem;
+}
+
+.cp-service-docs__cards h3 {
+  margin: 0;
+}
+
+.cp-service-docs__cards dt {
+  font-weight: 600;
+}
+
+.cp-service-docs__cards dd {
+  margin: 0 0 0.35rem;
+}

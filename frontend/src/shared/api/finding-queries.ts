@@ -54,7 +54,9 @@ function readFindingPage(value: unknown): OpenCodes<Schema['FindingPage']> {
   return { ...readScopedPage(raw), data: readArray(raw.data, readFinding) }
 }
 
-function readFindingDetail(value: unknown): OpenCodes<Schema['FindingDetail']> {
+export type FindingDetail = OpenCodes<Schema['FindingDetail']>
+
+function readFindingDetail(value: unknown): FindingDetail {
   const raw = readRecord(value)
   const report = readRecord(raw.report)
   const finding = readFinding(raw)

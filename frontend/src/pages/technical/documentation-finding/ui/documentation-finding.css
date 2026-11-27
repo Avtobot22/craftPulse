@@ -1,0 +1,15 @@
+.cp-doc-finding {
+  display: grid;
+  gap: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.cp-doc-finding__evidence {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 1rem;
+}
+
+.cp-doc-finding dl dd {
+  margin: 0 0 0.5rem;
+}
