@@ -1,5 +1,5 @@
 import type { RouteObject } from 'react-router'
-import { PipelinePage } from '@/pages/ci-result'
+import { PipelineJobPage, PipelinePage } from '@/pages/ci-result'
 import { HomePage } from '@/pages/home'
 import { MergeRequestSummaryPage } from '@/pages/merge-request-summary'
 import { LoginPage } from '@/pages/login'
@@ -73,6 +73,10 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 {
                   path: routePaths.pipeline,
                   element: <PipelinePage api={runtime.api} />,
+                },
+                {
+                  path: routePaths.pipelineJob,
+                  element: <PipelineJobPage api={runtime.api} />,
                 },
                 {
                   path: routePaths.workflowSettings,

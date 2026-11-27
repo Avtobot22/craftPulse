@@ -103,7 +103,7 @@ export {
   listServiceDocuments,
 } from './documentation-queries'
 export type { ServiceDocumentListParams } from './documentation-queries'
-export { listTestExecutions } from './pipeline-queries'
+export { listTestExecutions, testExecutionPages } from './pipeline-queries'
 export type { TestExecutionListParams } from './pipeline-queries'
 export type { MergeRequestSummaryParams } from './merge-request-summary-queries'
 

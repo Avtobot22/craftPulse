@@ -1703,7 +1703,7 @@ export interface paths {
         };
         /**
          * Jobs и все известные попытки
-         * @description Попытки с конфигурацией матрицы, первым и итоговым исходом и длительностью (FR-039, UI-56). Одноимённые jobs разных конфигураций различаются отпечатком. Неполная история даёт нижнюю границу расхода.
+         * @description Попытки с конфигурацией матрицы, первым и итоговым исходом и длительностью (FR-039, UI-56). Задание определяется сочетанием pipeline_id, job_key и config_fingerprint. Неполная история даёт нижнюю границу расхода.
          */
         get: operations["listPipelineAttempts"];
         put?: never;
@@ -4800,6 +4800,11 @@ export interface components {
         Attempt: {
             /** Format: uuid */
             id: string;
+            /**
+             * Format: uuid
+             * @description ID запуска задания. Для попытки дочернего запуска отличается от ID в пути запроса.
+             */
+            pipeline_id?: string;
             job_key: string;
             config_fingerprint: string;
             attempt_no: number;
@@ -11127,6 +11132,7 @@ export interface operations {
                      *       "data": [
                      *         {
                      *           "id": "0193a5b0-d2d2-7000-8000-000000000001",
+                     *           "pipeline_id": "0193a5b0-d1d1-7000-8000-000000000001",
                      *           "job_key": "test-linux",
                      *           "config_fingerprint": "4f1c0d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d",
                      *           "attempt_no": 1,
@@ -11142,6 +11148,7 @@ export interface operations {
                      *         },
                      *         {
                      *           "id": "0193a5b0-d2d2-7000-8000-000000000002",
+                     *           "pipeline_id": "0193a5b0-d1d1-7000-8000-000000000001",
                      *           "job_key": "test-linux",
                      *           "config_fingerprint": "4f1c0d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d",
                      *           "attempt_no": 2,
