@@ -48,6 +48,7 @@ function readCohortItem(value: unknown) {
     value: readNullableNumber(raw.value),
     reason: readNullableString(raw.reason_code),
     object: readObjectRef(raw.object),
+    basis: raw.basis === undefined ? [] : readArray(raw.basis, readObjectRef),
     taskAge: readNullableNumber(raw.task_age_seconds ?? null),
     signals:
       raw.signals === undefined ? [] : readArray(raw.signals, readString),

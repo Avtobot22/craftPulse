@@ -82,6 +82,9 @@ export function readReportSeries(value: unknown): ReportSeries {
       ? {}
       : {
           group: {
+            ...(group.signal === undefined
+              ? {}
+              : { signal: readString(group.signal) }),
             ...(group.task_type === undefined
               ? {}
               : { task_type: readNullableString(group.task_type) }),

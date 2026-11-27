@@ -10076,7 +10076,7 @@ export interface operations {
                 role?: "numerator" | "denominator" | "excluded" | "missing";
                 /** @description Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport. */
                 project_id?: string[];
-                /** @description Тип задачи по сопоставлению. */
+                /** @description Тип задачи по сопоставлению. Для X04 и X06 пустое значение (`task_type=`) выбирает группу «Тип неизвестен». Отсутствие параметра отключает фильтр по типу. */
                 task_type?: string;
                 /** @description Размер задачи; `unknown` - группа «без размера». */
                 size_label?: string;

@@ -10,6 +10,8 @@ export interface ReportParams {
   size: string
   groupBy: 'task_type' | 'size_label' | ''
   revision: string
+  minTaskAgeSeconds?: number | undefined
+  overTarget?: boolean | undefined
 }
 
 export function readReportParams(search: URLSearchParams): ReportParams {
@@ -18,6 +20,8 @@ export function readReportParams(search: URLSearchParams): ReportParams {
   const start = new Date(end)
   start.setUTCDate(start.getUTCDate() - 28)
   const grouping = search.get('group_by')
+  const age = search.get('min_task_age_seconds')
+  const target = search.get('over_target')
   return {
     from: search.get('from') ?? start.toISOString(),
     to: search.get('to') ?? end.toISOString(),
@@ -28,6 +32,12 @@ export function readReportParams(search: URLSearchParams): ReportParams {
     groupBy:
       grouping === 'task_type' || grouping === 'size_label' ? grouping : '',
     revision: search.get('revision_id') ?? '',
+    minTaskAgeSeconds:
+      age && /^\d+$/u.test(age) && Number.isSafeInteger(Number(age))
+        ? Number(age)
+        : undefined,
+    overTarget:
+      target === 'true' ? true : target === 'false' ? false : undefined,
   }
 }
 
@@ -46,6 +56,8 @@ export function writeReportParams(
     ['size_label', params.size],
     ['group_by', params.groupBy],
     ['revision_id', params.revision],
+    ['min_task_age_seconds', params.minTaskAgeSeconds?.toString()],
+    ['over_target', params.overTarget?.toString()],
   ] as const) {
     if (value) next.set(key, value)
     else next.delete(key)
@@ -67,7 +79,28 @@ export function reportQuery(
     ...(params.size ? { size_label: params.size } : {}),
     ...(params.groupBy ? { group_by: params.groupBy } : {}),
     ...(params.revision ? { revision_id: params.revision } : {}),
+    ...technicalReportFilters(params),
   }
+}
+
+export function technicalReportFilters(params: ReportParams) {
+  return {
+    ...(params.minTaskAgeSeconds === undefined
+      ? {}
+      : { min_task_age_seconds: params.minTaskAgeSeconds }),
+    ...(params.overTarget === undefined
+      ? {}
+      : { over_target: params.overTarget }),
+  }
+}
+
+export function technicalCohortTaskType(
+  metricId: string,
+  taskType: string | null | undefined,
+) {
+  if (taskType === null && (metricId === 'X04' || metricId === 'X06'))
+    return { task_type: '' }
+  return taskType ? { task_type: taskType } : {}
 }
 
 export function periodError({ from, to }: ReportParams) {

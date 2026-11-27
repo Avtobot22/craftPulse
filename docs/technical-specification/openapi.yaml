@@ -2397,7 +2397,7 @@ paths:
         - { name: estimator, in: query, description: 'Оценка точки показателя с несколькими рядами, как `MetricSeries.estimator`; без параметра - первая оценка показателя.', schema: { type: string, maxLength: 32 } }
         - { name: role, in: query, schema: { type: string, enum: [ numerator, denominator, excluded, missing ] } }
         - { name: project_id, in: query, description: 'Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport.', schema: { type: array, maxItems: 50, items: { type: string, format: uuid } } }
-        - {name: task_type, in: query, description: Тип задачи по сопоставлению., schema: {type: string, maxLength: 200}}
+        - {name: task_type, in: query, description: 'Тип задачи по сопоставлению. Для X04 и X06 пустое значение (`task_type=`) выбирает группу «Тип неизвестен». Отсутствие параметра отключает фильтр по типу.', schema: {type: string, maxLength: 200}}
         - {name: size_label, in: query, description: 'Размер задачи; `unknown` - группа «без размера».', schema: {type: string, maxLength: 200}}
         - {name: min_task_age_seconds, in: query, description: Минимальный возраст текущего эпизода задачи в X03., schema: {type: integer, format: int64, minimum: 0}}
         - {name: over_target, in: query, description: Фильтр X03 по превышению срока. Задачи без известного срока исключаются при заданном фильтре., schema: {type: boolean}}

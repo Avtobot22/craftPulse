@@ -212,7 +212,7 @@ function mount({
   readTargets?: (url: URL) => Schemas['TargetVersionPage']
   readRevision?: (id: string) => Schemas['Revision'] | Response
   readCohort?: (url: URL) => Schemas['CohortPage']
-  extraRead?: (url: URL) => Response | undefined
+  extraRead?: (url: URL) => Response | Promise<Response> | undefined
 } = {}) {
   const fetcher = vi
     .fn<typeof fetch>()
@@ -2151,5 +2151,506 @@ describe('UI-20 cross metrics and MR queue', () => {
         .map(([url]) => url.searchParams.get('project_id'))
         .sort(),
     ).toEqual([project.id, project.id, otherProject.id, otherProject.id].sort())
+  })
+})
+
+const technicalRatio = {
+  unit: 'ratio',
+  numerator: 1,
+  denominator: 4,
+  n: 6,
+  missing_count: 2,
+} satisfies Partial<Schemas['MetricValue']>
+
+function technicalMetric(
+  id: string,
+  signal: string,
+  overrides: Partial<Schemas['MetricValue']> = {},
+): Schemas['MetricSeries'] {
+  return {
+    ...metric(id, 0.25, {
+      estimator: signal,
+      value: { ...technicalRatio, ...overrides },
+    }),
+    group: { signal },
+  }
+}
+
+const mrReference = {
+  kind: 'merge_request',
+  id: mergeRequest.id,
+  display_key: '!42',
+  title: 'Проверки текущего head',
+  source_url: null,
+} satisfies Schemas['ObjectRef']
+
+const technicalMatch = {
+  ...matchingTask,
+  value: null,
+  reason_code: 'warning',
+  signals: ['new_code', 'docs_violation'],
+  basis: [mrReference],
+} satisfies Schemas['CohortItem']
+
+const technicalWarningTitle =
+  'Задачи с актуальными техническими предупреждениями'
+const technicalWarning = () =>
+  screen.findByRole('region', { name: technicalWarningTitle })
+const technicalReport = (...metrics: Schemas['MetricSeries'][]) =>
+  jsonResponse({ ...report(), metrics } satisfies Schemas['TeamReport'])
+
+const summary = {
+  id: '0193a5b0-d0d0-7000-8000-000000000003',
+  merge_request_id: mergeRequest.id,
+  revision_no: 3,
+  head_sha: 'a'.repeat(40),
+  base_sha: null,
+  built_at: null,
+  status: 'ready',
+  pipeline_state: 'complete',
+  stale_reason: null,
+  access_limited: false,
+  access_notes: [],
+  redactions: [],
+  publication: {
+    status: 'failed',
+    error_code: 'write_permission_missing',
+    published_at: null,
+    external_id: null,
+  },
+  coverage_changed_lines: {
+    state: 'NOT_EVALUATED',
+    reason_code: 'report_missing',
+    value: null,
+    unit: 'ratio',
+    numerator: null,
+    denominator: null,
+    n: null,
+    bound: null,
+    low_sample: false,
+    excluded_count: 0,
+    missing_count: 0,
+  },
+  ci: null,
+  items: [],
+  not_evaluated: [],
+} satisfies Schemas['MergeRequestSummary']
+
+describe('UI-20 technical checks', () => {
+  it('reads the revision ratio with unknowns and opens the same point in UI-23', async () => {
+    const { router, fetcher } = mount({
+      path: reportUrl + '&min_task_age_seconds=86400&over_target=true',
+      read: () => technicalReport(technicalMetric('X03', 'warning')),
+      readCohort: () => ({ ...cohort, data: [technicalMatch] }),
+    })
+    const card = within(await technicalWarning())
+    const value = card.getByRole('button', { name: /25\s*%/u })
+    expect(card.getByText('Числитель').nextElementSibling).toHaveTextContent(
+      /^1$/u,
+    )
+    expect(card.getByText('Знаменатель').nextElementSibling).toHaveTextContent(
+      /^4$/u,
+    )
+    expect(
+      card.getByText('С неизвестным состоянием').nextElementSibling,
+    ).toHaveTextContent(/^2$/u)
+
+    value.focus()
+    fireEvent.click(value, { detail: 0 })
+    await screen.findByRole('heading', { name: 'Когорта точки' })
+    expect(router.state.location.pathname).toContain(
+      `/${revisionId}/metrics/X03/points/`,
+    )
+    await waitFor(() => {
+      expect(fetcher).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /\/cohort\?.*estimator=warning.*min_task_age_seconds=86400.*over_target=true/u,
+        ),
+        expect.anything(),
+      )
+    })
+    expect(
+      await screen.findByText(/Числитель: 1. Знаменатель: 4/u),
+    ).toBeVisible()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Вернуться к отчёту' }),
+      { detail: 0 },
+    )
+    await waitFor(async () => {
+      expect(
+        within(await technicalWarning()).getByRole('button', {
+          name: /25\s*%/u,
+        }),
+      ).toHaveFocus()
+    })
+  })
+
+  it('shows an empty cohort and suppresses percentages with no denominator', async () => {
+    mount({
+      read: () =>
+        technicalReport(
+          technicalMetric('X03', 'warning', {
+            numerator: null,
+            denominator: 0,
+          }),
+        ),
+      readCohort: () => ({ ...cohort, data: [] }),
+    })
+    const card = within(await technicalWarning())
+    expect(card.queryByRole('button', { name: /%/u })).not.toBeInTheDocument()
+    expect(card.getByRole('button', { name: 'Не рассчитано' })).toBeVisible()
+    fireEvent.click(card.getByRole('button', { name: 'Задачи когорты' }))
+    expect(
+      await screen.findByText('В доступной когорте совпадений нет.'),
+    ).toBeVisible()
+  })
+
+  it('keeps the selected missing-report estimator and lists linked tasks for pipeline rows', async () => {
+    const { fetcher } = mount({
+      path: reportUrl + '&task_type=Story&size_label=M',
+      read: () =>
+        technicalReport(
+          technicalMetric('X04', 'caveat'),
+          technicalMetric('X04', 'missing_report'),
+        ),
+      readCohort: () => ({
+        ...cohort,
+        data: [
+          {
+            ...technicalMatch,
+            object: {
+              kind: 'pipeline',
+              id: '0193a5b0-a9a9-7000-8000-000000000003',
+              display_key: '#21',
+              title: null,
+              source_url: null,
+            },
+            signals: [
+              'missing_report',
+              'fail_to_pass',
+              'ci_passed_after_retry',
+            ],
+            basis: [taskReference, mrReference],
+          },
+        ],
+      }),
+    })
+    const card = within(
+      await screen.findByRole('region', {
+        name: 'Успешные pipeline с оговорками',
+      }),
+    )
+    const option = card.getByRole<HTMLOptionElement>('option', {
+      name: 'Пропущен ожидаемый отчёт',
+    })
+    fireEvent.change(card.getByRole('combobox', { name: 'Признак' }), {
+      target: { value: option.value },
+    })
+    fireEvent.click(card.getByRole('button', { name: 'Задачи когорты' }))
+    const row = await screen.findByRole('row', { name: /CORE-15.*!42.*#21/u })
+    expect(
+      within(row).getByText('Пропущен ожидаемый отчёт, Fail → pass'),
+    ).toBeVisible()
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /metric_id=X04.*estimator=missing_report.*task_type=Story.*size_label=M.*role=numerator/u,
+      ),
+      expect.anything(),
+    )
+  })
+
+  it('shows a chain gap from its contribution and shows confirmed fixes as a count', async () => {
+    mount({
+      read: () =>
+        technicalReport(
+          technicalMetric('X05', 'current_head_ci'),
+          technicalMetric('X06', 'code:resolved', { unit: 'count', value: 3 }),
+        ),
+      readCohort: () => ({
+        ...cohort,
+        data: [
+          {
+            ...technicalMatch,
+            role: 'denominator',
+            reason_code: 'current_head_ci_missing',
+          },
+          { ...technicalMatch, item_no: 1 },
+        ],
+      }),
+    })
+    const chain = within(
+      await screen.findByRole('region', {
+        name: 'Полнота цепочки от задачи до проверок',
+      }),
+    )
+    expect(chain.getByText('CI на текущем head')).toBeVisible()
+    fireEvent.click(chain.getByRole('button', { name: 'Задачи с разрывами' }))
+    const table = await screen.findByRole('table', {
+      name: 'Разрывы выбранного шага',
+    })
+    expect(within(table).getByText('Нет CI на текущем head')).toBeVisible()
+    expect(within(table).getAllByRole('row')).toHaveLength(2)
+    const fixes = within(
+      screen.getByRole('region', {
+        name: 'Подтверждённый результат исправления в MR',
+      }),
+    )
+    expect(fixes.getByRole('button', { name: '3 шт.' })).toBeVisible()
+  })
+
+  it.each(['task', 'MR'] as const)(
+    'restores the pinned report, cohort and focus after opening %s',
+    async (destination) => {
+      vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+      const row = technicalMetric('X03', 'warning')
+      const point = row.points[0]
+      if (!point) throw new Error('Expected a technical warning point')
+      const { router, currentSearch } = mount({
+        path: reportUrl + '&task_type=Story&size_label=M',
+        user: {
+          ...currentUser,
+          actions: [...new Set([...currentUser.actions, 'mr.read'])],
+        },
+        read: (url) =>
+          jsonResponse({
+            ...report(url.searchParams.get('revision_id') ?? revisionId),
+            metrics: [
+              {
+                ...row,
+                points: [point, { ...point, point_start: olderPoint }],
+              },
+            ],
+          } satisfies Schemas['TeamReport']),
+        readCohort: (url) => {
+          expect(url.searchParams.get('point_start')).toBe(olderPoint)
+          return { ...cohort, data: [technicalMatch] }
+        },
+        extraRead: (url) =>
+          url.pathname === `/api/v1/merge-requests/${mergeRequest.id}/summary`
+            ? jsonResponse(summary)
+            : taskReads(url),
+      })
+      const card = within(await technicalWarning())
+      fireEvent.change(
+        screen.getByLabelText('Начало интервала технических показателей'),
+        {
+          target: { value: olderPoint },
+        },
+      )
+      fireEvent.click(card.getByRole('button', { name: 'Задачи когорты' }))
+      const name =
+        destination === 'task' ? taskTitle : '!42 · Проверки текущего head'
+      const opener = await screen.findByRole('link', { name })
+      opener.focus()
+      fireEvent.click(opener, { detail: 0 })
+      if (destination === 'task') {
+        await screen.findByRole('heading', { name: /Перенести отчёт/u })
+        expect(router.state.location.pathname).toBe(`/tasks/${taskId}`)
+        expect(currentSearch().get('revision_id')).toBe(revisionId)
+        fireEvent.click(screen.getByRole('link', { name: 'Назад' }), {
+          detail: 0,
+        })
+      } else {
+        await screen.findByRole('heading', { name: /Сводка MR/u })
+        expect(router.state.location.pathname).toBe(
+          `/merge-requests/${mergeRequest.id}/summary`,
+        )
+        fireEvent.click(await screen.findByRole('button', { name: 'Назад' }), {
+          detail: 0,
+        })
+      }
+      await waitFor(() => {
+        expect(screen.getByRole('link', { name })).toHaveFocus()
+      })
+      expect(currentSearch().get('revision_id')).toBe(revisionId)
+      expect(currentSearch().get('task_type')).toBe('Story')
+      expect(currentSearch().get('size_label')).toBe('M')
+      expect(currentSearch().get('technical_point')).toBe(olderPoint)
+    },
+  )
+
+  it('shows only visible cohort evidence and omits navigation without MR access', async () => {
+    mount({
+      read: () => technicalReport(technicalMetric('X03', 'warning')),
+      readCohort: () => ({
+        ...cohort,
+        access_limited: true,
+        data: [
+          {
+            ...technicalMatch,
+            signals: ['new_code'],
+            basis: [],
+          },
+        ],
+      }),
+    })
+    const card = within(await technicalWarning())
+    fireEvent.click(card.getByRole('button', { name: 'Задачи когорты' }))
+    const row = await screen.findByRole('row', { name: /CORE-15/u })
+    expect(within(row).getByText('Новые находки в коде')).toBeVisible()
+    expect(within(row).getByText('Нет доступных MR')).toBeVisible()
+    expect(within(row).queryByText(/безопасност/u)).not.toBeInTheDocument()
+    expect(within(row).getAllByRole('link')).toHaveLength(1)
+  })
+
+  it.each([
+    [
+      'X04',
+      'missing_report',
+      'Успешные pipeline с оговорками',
+      'pipeline',
+      '#21',
+    ],
+    [
+      'X06',
+      'code:resolved',
+      'Подтверждённый результат исправления в MR',
+      'merge_request',
+      '!42',
+    ],
+  ] as const)(
+    'opens the unknown task type group for %s inline and by value',
+    async (metricId, estimator, title, kind, displayKey) => {
+      vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+      const unknown = technicalMetric(
+        metricId,
+        estimator,
+        kind === 'merge_request' ? { unit: 'count', value: 1 } : {},
+      )
+      const valueName = kind === 'merge_request' ? '1 шт.' : /25\s*%/u
+      const known = {
+        ...unknown,
+        group: { signal: estimator, task_type: 'Story' },
+      }
+      const { currentSearch } = mount({
+        path: reportUrl + '&group_by=task_type&size_label=M',
+        user: {
+          ...currentUser,
+          actions: [...new Set([...currentUser.actions, 'mr.read'])],
+        },
+        read: () => technicalReport(known, unknown),
+        readCohort: (url) => {
+          expect(url.pathname).toBe(`/api/v1/revisions/${revisionId}/cohort`)
+          expect(url.searchParams.get('metric_id')).toBe(metricId)
+          expect(url.searchParams.get('point_start')).toBe(pointStart)
+          expect(url.searchParams.get('estimator')).toBe(estimator)
+          expect(url.searchParams.get('task_type')).toBe('')
+          expect(url.searchParams.get('size_label')).toBe('M')
+          return {
+            ...cohort,
+            data: [
+              {
+                ...technicalMatch,
+                object: { ...mrReference, kind, display_key: displayKey },
+                basis:
+                  kind === 'pipeline'
+                    ? [taskReference, mrReference]
+                    : [taskReference],
+              },
+            ],
+          }
+        },
+      })
+      const card = within(await screen.findByRole('region', { name: title }))
+      const option = card.getByRole<HTMLOptionElement>('option', {
+        name: /Тип неизвестен/u,
+      })
+      const select = card.getByRole('combobox', { name: 'Признак' })
+      fireEvent.change(select, {
+        target: { value: option.value },
+      })
+      await waitFor(() => {
+        expect(currentSearch().get(`technical_series_${metricId}`)).toBe(
+          option.value,
+        )
+      })
+      fireEvent.click(card.getByRole('button', { name: 'Задачи когорты' }), {
+        detail: 0,
+      })
+      const table = within(
+        await screen.findByRole('table', {
+          name: 'Совпадения в когорте точки',
+        }),
+      )
+      expect(table.getByRole('link', { name: taskTitle })).toBeVisible()
+      expect(table.getByRole('link', { name: /!42/u })).toBeVisible()
+
+      const value = within(
+        screen.getByRole('region', { name: title }),
+      ).getByRole('button', { name: valueName })
+      value.focus()
+      fireEvent.click(value, { detail: 0 })
+      const objects = within(
+        await screen.findByRole('region', { name: 'Объекты точки' }),
+      )
+      expect(
+        await objects.findByText(new RegExp(displayKey, 'u')),
+      ).toBeVisible()
+      expect(currentSearch().get('group_by')).toBe('task_type')
+      expect(currentSearch().get('group_value')).toBe('')
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Вернуться к отчёту' }),
+        {
+          detail: 0,
+        },
+      )
+      await waitFor(() => {
+        const restored = within(screen.getByRole('region', { name: title }))
+        expect(restored.getByRole('button', { name: valueName })).toHaveFocus()
+        expect(restored.getByRole('combobox', { name: 'Признак' })).toHaveValue(
+          option.value,
+        )
+      })
+    },
+  )
+
+  it('never combines a late old cohort with values from a new revision', async () => {
+    let releaseOld: ((value: Response) => void) | undefined
+    const pending = new Promise<Response>((resolve) => {
+      releaseOld = resolve
+    })
+    const { router, fetcher } = mount({
+      path: reportUrl + '&revision_id=' + oldRevisionId,
+      read: (url) => {
+        const id = url.searchParams.get('revision_id') ?? revisionId
+        return jsonResponse({
+          ...report(id),
+          metrics: [
+            technicalMetric('X03', 'warning', {
+              value: id === oldRevisionId ? 0.25 : 0.5,
+              numerator: id === oldRevisionId ? 1 : 2,
+            }),
+          ],
+        } satisfies Schemas['TeamReport'])
+      },
+      extraRead: (url) =>
+        url.pathname === `/api/v1/revisions/${oldRevisionId}/cohort`
+          ? pending
+          : undefined,
+      readCohort: () => ({ ...cohort, data: [] }),
+    })
+    fireEvent.click(
+      within(await technicalWarning()).getByRole('button', {
+        name: 'Задачи когорты',
+      }),
+    )
+    await waitFor(() => {
+      expect(fetcher).toHaveBeenCalledWith(
+        expect.stringContaining(`/revisions/${oldRevisionId}/cohort`),
+        expect.anything(),
+      )
+    })
+    const next = new URLSearchParams(router.state.location.search)
+    next.set('revision_id', revisionId)
+    await act(() => router.navigate({ search: next.toString() }))
+    await screen.findByText('В доступной когорте совпадений нет.')
+    await act(() => {
+      releaseOld?.(jsonResponse({ ...cohort, data: [technicalMatch] }))
+      return pending
+    })
+    expect(
+      within(await technicalWarning()).getByRole('button', { name: /50\s*%/u }),
+    ).toBeVisible()
+    expect(screen.queryByText(taskTitle)).not.toBeInTheDocument()
   })
 })

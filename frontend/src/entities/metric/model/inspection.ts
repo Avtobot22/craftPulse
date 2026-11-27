@@ -98,11 +98,15 @@ export function useMetricPoint(
       const matching = metrics.filter(
         (series) =>
           series.metric_id === metricId &&
-          (estimator === undefined || series.estimator === estimator) &&
+          (estimator === undefined ||
+            (series.estimator ?? series.group?.signal) === estimator) &&
           (params.groupBy && group !== null
             ? (series.group?.[params.groupBy] ?? '') === group &&
               series.group !== undefined
-            : !series.group),
+            : !series.group ||
+              (series.group.signal !== undefined &&
+                series.group.task_type === undefined &&
+                series.group.size_label === undefined)),
       )
       const selected = matching[0]
       const value = selected?.points.find(

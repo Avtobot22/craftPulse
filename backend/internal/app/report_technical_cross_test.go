@@ -52,6 +52,9 @@ func TestReport_TechnicalCrossScopesAndCohort(t *testing.T) {
 	mapping, ok, err := e.process.MappingAt(ctx, e.orgID, entity.ID(e.team), seq)
 	require.NoError(t, err)
 	require.True(t, ok)
+	mapping.Rules = slices.DeleteFunc(mapping.Rules, func(rule entity.MappingRule) bool {
+		return rule.Kind == entity.RuleIssueType && rule.NativeRef == "10001"
+	})
 	mapping.Rules = append(mapping.Rules, entity.MappingRule{
 		InstanceID: entity.ID(e.instance), Kind: entity.RuleCodeRequiredType, NativeRef: "10001", Meaning: entity.MeaningCodeRequired,
 	})
@@ -206,6 +209,40 @@ func TestReport_TechnicalCrossScopesAndCohort(t *testing.T) {
 	pipelinePage = decode[openapi.CohortPage](t, pipelineResponse)
 	require.Len(t, pipelinePage.Data, 1)
 	assert.Equal(t, uuid.UUID(laterRunID), pipelinePage.Data[0].Object.Id)
+
+	grouped := decode[openapi.TeamReport](t, e.report(t, e.admin, url.Values{
+		"group_by": {"task_type"}, "size_label": {"M"}, "revision_id": {published.Revision.ID.String()},
+	}))
+	for _, tc := range []struct {
+		metric, estimator string
+		object            entity.ID
+		basis             []entity.ID
+	}{
+		{"X04", "missing_report", laterRunID, []entity.ID{task, mr1}},
+		{"X06", "sast:new", mr1, []entity.ID{task, laterRunID}},
+	} {
+		row := slices.IndexFunc(grouped.Metrics, func(s openapi.MetricSeries) bool {
+			return s.MetricId == tc.metric && s.Estimator != nil && *s.Estimator == tc.estimator &&
+				s.Group != nil && s.Group.TaskType == nil
+		})
+		require.NotEqual(t, -1, row)
+		points := grouped.Metrics[row].Points
+		point := slices.IndexFunc(points, func(p openapi.MetricPoint) bool { return p.PointStart.Equal(e.week) })
+		require.NotEqual(t, -1, point)
+		assert.Equal(t, ptr(float32(1)), points[point].Value.Numerator)
+
+		q := url.Values{
+			"metric_id": {tc.metric}, "estimator": {tc.estimator}, "point_start": {e.week.Format(time.RFC3339)},
+			"role": {"numerator"}, "task_type": {""}, "size_label": {"M"},
+		}
+		response := e.checked(t, e.admin, "/api/v1/revisions/"+published.Revision.ID.String()+"/cohort?"+q.Encode())
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		page := decode[openapi.CohortPage](t, response)
+		require.Len(t, page.Data, 1)
+		assert.Equal(t, uuid.UUID(tc.object), page.Data[0].Object.Id)
+		assert.ElementsMatch(t, tc.basis, crossBasisIDs(&page.Data[0]))
+		assert.Nil(t, page.NextCursor)
+	}
 
 	pipelineQuery.Set("metric_id", "X02")
 	taskResponse := e.checked(t, e.admin, "/api/v1/revisions/"+published.Revision.ID.String()+"/cohort?"+pipelineQuery.Encode())

@@ -129,6 +129,12 @@ func (u *UseCase) VisibleCohort(ctx context.Context, s entity.Subject, scope ent
 	hidden := false
 	filter := q.Filter
 	filter.Projects = q.Projects
+	var group *entity.SeriesGroup
+	if (q.MetricID == "X04" || q.MetricID == "X06") && filter.TaskType != nil && *filter.TaskType == "" {
+		filter.TaskType = nil
+		filter.GroupBy = entity.GroupTaskType
+		group = &entity.SeriesGroup{}
+	}
 	rows := c.rows[key]
 	for i := range rows {
 		row := &rows[i]
@@ -136,14 +142,14 @@ func (u *UseCase) VisibleCohort(ctx context.Context, s entity.Subject, scope ent
 			hidden = true
 			continue
 		}
-		if !selected(row, &filter, nil) {
+		if !selected(row, &filter, group) {
 			continue
 		}
 		contribution := row.Contribution
 		var basis crossEvidence
 		if isCrossMetric(q.MetricID) {
 			var restricted bool
-			basis, restricted = c.crossBasis(row, &v, &filter, nil)
+			basis, restricted = c.crossBasis(row, &v, &filter, group)
 			hidden = hidden || restricted
 			if !crossSelected(row.MetricID, row.Estimator, &basis, &filter) || crossNeedsMR(row) && len(basis.MRs) == 0 {
 				continue

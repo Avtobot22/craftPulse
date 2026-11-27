@@ -11,12 +11,14 @@ export function DetailPoint({
   id,
   children,
   cohort,
+  openCohort = false,
 }: {
   block: ReportBlockProps
   series: ReportSeries | undefined
   step: string
   id: string
   children: ReactNode
+  openCohort?: boolean
   cohort?: { taskType: string | null | undefined; size: string | null }
 }) {
   if (!series) return children
@@ -26,7 +28,14 @@ export function DetailPoint({
       className="cp-team-report__point-link"
       id={id}
       onClick={() => {
-        block.selectPoint(series, step, id, undefined, cohort)
+        block.selectPoint(
+          series,
+          step,
+          id,
+          undefined,
+          cohort,
+          openCohort ? 'metricCohort' : undefined,
+        )
       }}
     >
       {children}

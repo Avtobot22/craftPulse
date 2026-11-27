@@ -9123,7 +9123,7 @@ type ListRevisionCohortParams struct {
 	// ProjectId Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport.
 	ProjectId *[]openapi_types.UUID `form:"project_id,omitempty" json:"project_id,omitempty"`
 
-	// TaskType Тип задачи по сопоставлению.
+	// TaskType Тип задачи по сопоставлению. Для X04 и X06 пустое значение (`task_type=`) выбирает группу «Тип неизвестен». Отсутствие параметра отключает фильтр по типу.
 	TaskType *string `form:"task_type,omitempty" json:"task_type,omitempty"`
 
 	// SizeLabel Размер задачи; `unknown` - группа «без размера».

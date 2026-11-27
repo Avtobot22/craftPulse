@@ -12,7 +12,7 @@ export function useReportPointNavigation(
 ): ReportBlockProps['selectPoint'] {
   const { key } = useLocation()
   const navigate = useNavigate()
-  return (series, pointStart, targetId, chartSeries, cohort) => {
+  return (series, pointStart, targetId, chartSeries, cohort, destination) => {
     rememberPoint({
       locationKey: key,
       targetId,
@@ -29,7 +29,8 @@ export function useReportPointNavigation(
     if (chartSeries) details.set('focus_series', chartSeries)
     details.delete('estimator')
     details.delete('group_value')
-    if (series.estimator) details.set('estimator', series.estimator)
+    const estimator = series.estimator ?? series.group?.signal
+    if (estimator) details.set('estimator', estimator)
     if (series.group && groupBy)
       details.set('group_value', series.group[groupBy] ?? '')
     if (cohort) {
@@ -46,11 +47,13 @@ export function useReportPointNavigation(
         details.delete('group_value')
       }
     }
+    if (destination === 'metricCohort') details.delete('point_start')
     void navigate(
       {
-        pathname: generatePath(routePaths.metricPassport, {
+        pathname: generatePath(routePaths[destination ?? 'metricPassport'], {
           revisionId,
           metricId: series.metric_id,
+          pointStart,
         }),
         search: details.toString(),
       },

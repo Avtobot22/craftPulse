@@ -31,6 +31,8 @@ export {
   readReportParams,
   reportQuery,
   writeReportParams,
+  technicalReportFilters,
+  technicalCohortTaskType,
 } from './report-params'
 export type { ReportParams } from './report-params'
 export {
