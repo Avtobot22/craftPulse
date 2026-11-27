@@ -176,7 +176,13 @@ export type {
   ReceiptListParams,
   ReceiptRecordsParams,
 } from './receipt-queries'
-export { getPersons, listPersons, listSourceAccounts } from './account-queries'
+export {
+  createAccountAssignments,
+  getPersons,
+  getSourceAccounts,
+  listPersons,
+  listSourceAccounts,
+} from './account-queries'
 export type {
   PersonListParams,
   SourceAccountListParams,

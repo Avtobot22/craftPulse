@@ -254,6 +254,21 @@ export class ApiClient {
     )
   }
 
+  createAccountAssignments<T>(
+    body: MutationBody<'/account-assignments', 'POST'>,
+    decode: Decoder<T>,
+    options: { idempotencyKey: string; signal: AbortSignal },
+  ): Promise<ApiResponse<T>> {
+    return this.request(
+      'POST',
+      '/account-assignments',
+      body,
+      decode,
+      options,
+      false,
+    )
+  }
+
   createException<T>(
     body: MutationBody<'/exceptions', 'POST'>,
     decode: Decoder<T>,

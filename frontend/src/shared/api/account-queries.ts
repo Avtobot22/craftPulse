@@ -4,6 +4,7 @@ import type { components, operations } from './generated/schema'
 import type { OpenCodes } from './read-fields'
 import { readCursorPage } from './read-fields'
 import {
+  InvalidResponse,
   readArray,
   readNullableString,
   readRecord,
@@ -74,24 +75,69 @@ export function listPersons(api: ApiClient, params: PersonListParams = {}) {
   })
 }
 
+export async function getSourceAccounts(
+  api: ApiClient,
+  params: SourceAccountListParams,
+  signal: AbortSignal,
+): Promise<OpenCodes<Schema['SourceAccountPage']>> {
+  return (
+    await api.read(
+      '/source-accounts',
+      (value) => readCursorPage(value, readSourceAccount),
+      {
+        query: params,
+        signal,
+      },
+    )
+  ).data
+}
+
 export function listSourceAccounts(
   api: ApiClient,
   params: SourceAccountListParams = {},
 ) {
   return queryOptions({
     queryKey: ['source-accounts', 'list', params],
-    queryFn: async ({
-      signal,
-    }): Promise<OpenCodes<Schema['SourceAccountPage']>> =>
-      (
-        await api.read(
-          '/source-accounts',
-          (value) => readCursorPage(value, readSourceAccount),
-          {
-            query: params,
-            signal,
-          },
-        )
-      ).data,
+    queryFn: ({ signal }) => getSourceAccounts(api, params, signal),
   })
+}
+
+export async function createAccountAssignments(
+  api: ApiClient,
+  body: Schema['AccountAssignmentBatch'],
+  idempotencyKey: string,
+  signal: AbortSignal,
+): Promise<Schema['AccountAssignmentBatchResult']> {
+  const expected = new Set(body.items.map((item) => item.source_account_id))
+  return (
+    await api.createAccountAssignments(
+      body,
+      (value): Schema['AccountAssignmentBatchResult'] => {
+        const items = readArray<
+          Schema['AccountAssignmentBatchResult']['items'][number]
+        >(readRecord(value).items, (value) => {
+          const raw = readRecord(value)
+          const source_account_id = readString(raw.source_account_id)
+          const outcome = readString(raw.outcome)
+          if (
+            !expected.delete(source_account_id) ||
+            (outcome !== 'saved' &&
+              outcome !== 'unchanged' &&
+              outcome !== 'version_conflict' &&
+              outcome !== 'rejected')
+          )
+            throw new InvalidResponse()
+          return {
+            source_account_id,
+            outcome,
+            assignment_id: readNullableString(raw.assignment_id),
+            error_code: readNullableString(raw.error_code),
+          }
+        })
+        if (expected.size) throw new InvalidResponse()
+        return { items }
+      },
+      { idempotencyKey, signal },
+    )
+  ).data
 }

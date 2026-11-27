@@ -1,0 +1,105 @@
+.cp-accounts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--g-spacing-4);
+}
+
+.cp-accounts :is(h1, h2) {
+  margin: 0;
+}
+
+.cp-accounts__bar {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: var(--g-spacing-4);
+}
+
+.cp-accounts__bar > label,
+.cp-account-fields > label,
+.cp-account-fields,
+.cp-accounts__suggestion {
+  display: grid;
+  gap: var(--g-spacing-2);
+  justify-items: start;
+}
+
+.cp-accounts__suggestion + .cp-accounts__suggestion {
+  margin-top: var(--g-spacing-2);
+}
+
+.cp-accounts :is(input[type='search'], select) {
+  max-width: min(100%, 320px);
+  min-height: 44px;
+  padding-inline: 12px;
+  border: 1px solid var(--g-color-line-generic-solid);
+  border-radius: 8px;
+  color: var(--g-color-text-primary);
+  background: var(--g-color-base-background);
+  font: inherit;
+}
+
+.cp-accounts :is(a, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--g-color-line-focus);
+  outline-offset: 2px;
+}
+
+.cp-accounts__scroll {
+  overflow-x: auto;
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: 8px;
+}
+
+.cp-accounts__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.cp-accounts__table :is(th, td) {
+  min-width: 160px;
+  padding: 12px;
+  border-bottom: 1px solid var(--g-color-line-generic);
+  overflow-wrap: anywhere;
+  text-align: start;
+  vertical-align: top;
+  box-sizing: border-box;
+}
+
+.cp-accounts__table th:first-child {
+  min-width: 240px;
+}
+
+.cp-accounts__table thead th {
+  height: 44px;
+  background: var(--g-color-base-generic);
+}
+
+.cp-accounts__table tbody :is(th, td) {
+  height: 48px;
+}
+
+.cp-accounts__table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.cp-accounts__table tbody tr:is(:hover, :focus-within) {
+  background: var(--g-color-base-simple-hover);
+}
+
+.cp-accounts__meta {
+  color: var(--g-color-text-secondary);
+  font-weight: normal;
+}
+
+.cp-accounts__outcomes {
+  margin-block: var(--g-spacing-2) 0;
+  padding-inline-start: var(--g-spacing-5);
+}
+
+@media (max-width: 768px) {
+  .cp-accounts__table th:first-child {
+    min-width: 144px;
+  }
+}
