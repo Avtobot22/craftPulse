@@ -39,10 +39,11 @@ func (u *UseCase) MergeRequestSummary(ctx context.Context, s entity.Subject, sco
 			return err
 		}
 		areas, err = u.d.Summaries.SummarySourceAreas(ctx, s.OrganizationID, out.ID)
-		if err != nil || len(areas) > 0 {
+		if err != nil {
 			return err
 		}
-		return u.readSummaryItems(ctx, s.OrganizationID, &out)
+		out.Items, err = u.d.Summaries.ReadSummaryItems(ctx, s.OrganizationID, out.ID)
+		return err
 	})
 	if err != nil {
 		return entity.SummaryRead{}, err
@@ -52,16 +53,10 @@ func (u *UseCase) MergeRequestSummary(ctx context.Context, s entity.Subject, sco
 		if err != nil {
 			return entity.SummaryRead{}, err
 		}
-		for _, area := range areas {
-			if !scope.Area(area) {
-				return entity.SummaryRead{}, entity.ErrNotFound
-			}
-		}
-		if err := u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
-			return u.readSummaryItems(ctx, s.OrganizationID, &out)
-		}); err != nil {
-			return entity.SummaryRead{}, err
-		}
+		out.SourceRestricted = slices.ContainsFunc(areas, func(area entity.ID) bool { return !scope.Area(area) })
+		out.Items = slices.DeleteFunc(out.Items, func(item entity.SummaryItem) bool {
+			return item.SourceAreaID != nil && !scope.Area(*item.SourceAreaID)
+		})
 	}
 	allowed := slices.Contains(scope.SecurityProjects(), out.ProjectID)
 	if allowed {
@@ -73,11 +68,8 @@ func (u *UseCase) MergeRequestSummary(ctx context.Context, s entity.Subject, sco
 		allowed = rights[target]
 	}
 	out.FilterSecurity(allowed)
+	if out.SourceRestricted && !slices.Contains(out.Redactions, "items") {
+		out.Redactions = append(out.Redactions, "items")
+	}
 	return out, nil
-}
-
-func (u *UseCase) readSummaryItems(ctx context.Context, org entity.ID, out *entity.SummaryRead) error {
-	var err error
-	out.Items, err = u.d.Summaries.ReadSummaryItems(ctx, org, out.ID)
-	return err
 }

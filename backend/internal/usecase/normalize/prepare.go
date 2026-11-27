@@ -36,6 +36,7 @@ type input struct {
 	area          entity.SourceKey
 	truncated     map[string]bool
 	accounts      map[string]entity.SourceAccount
+	wikiPages     []*wikiCandidate
 	tasks         []*taskCandidate
 	events        []*eventCandidate
 	entries       []*entryCandidate
@@ -191,6 +192,14 @@ func prepare(rc entity.Receipt, pkg *envelope.Package, part []entity.IngestRecor
 				return nil, err
 			}
 			in.manifests = append(in.manifests, c)
+		case kind == "document" && in.area.Kind == entity.ObjectKind(entity.ScopeWikiSpace):
+			c, err := in.wikiDocument(rec, m.Source.InstanceKey, base, m.CreatedAt)
+			if err != nil {
+				return nil, err
+			}
+			if c != nil {
+				in.wikiPages = append(in.wikiPages, c)
+			}
 		case kind == "task":
 			c, err := in.task(rec, base, taskNS)
 			if err != nil {

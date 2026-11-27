@@ -188,7 +188,8 @@ func (r *Repo) ReadSummaryItems(ctx context.Context, org, id entity.ID) ([]entit
 		SELECT i.item_kind, i.finding_identity_id, i.occurrence_id, i.required_right, i.component_id,
 		       COALESCE(i.analysis_kind,''), COALESCE(i.reason_code,''), COALESCE(i.severity,''), i.value,
 		       COALESCE(i.mode, orep.mode, p.mode, ''), COALESCE(o.rule_id, f.rule_id, i.value->>'rule', ''),
-		       COALESCE(o.path, i.value->>'path', ''), COALESCE(o.line_start, (i.value->>'line')::integer), o.line_end
+		       COALESCE(o.path, i.value->>'path', ''), COALESCE(o.line_start, (i.value->>'line')::integer), o.line_end,
+		       CASE WHEN orep.area_id <> orep.repository_id THEN orep.area_id END
 		FROM change.summary_item i
 		JOIN change.summary_revision s ON (s.organization_id,s.id) = (i.organization_id,i.summary_revision_id)
 		LEFT JOIN normalize.finding_occurrence o ON (o.organization_id,o.id) = (i.organization_id,i.occurrence_id)
@@ -206,10 +207,11 @@ func (r *Repo) ReadSummaryItems(ctx context.Context, org, id entity.ID) ([]entit
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (entity.SummaryItem, error) {
 		var i entity.SummaryItem
-		var finding, occurrence, component *uuid.UUID
+		var finding, occurrence, component, sourceArea *uuid.UUID
 		err := row.Scan(&i.Kind, &finding, &occurrence, &i.RequiredRight,
 			&component, &i.AnalysisKind, &i.ReasonCode, &i.Severity, &i.Value,
-			&i.Mode, &i.RuleID, &i.Path, &i.LineStart, &i.LineEnd)
+			&i.Mode, &i.RuleID, &i.Path, &i.LineStart, &i.LineEnd, &sourceArea)
+		i.SourceAreaID = (*entity.ID)(sourceArea)
 		i.FindingID, i.OccurrenceID, i.ComponentID = (*entity.ID)(finding), (*entity.ID)(occurrence), (*entity.ID)(component)
 		return i, err
 	})

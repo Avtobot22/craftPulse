@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"net/http"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Avtobot22/craftPulse/backend/internal/controller/http/v1/openapi"
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 	changerepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/change"
 	connectrepo "github.com/Avtobot22/craftPulse/backend/internal/repo/persistent/connect"
@@ -21,29 +23,32 @@ import (
 	pg "github.com/Avtobot22/craftPulse/backend/pkg/postgres"
 )
 
-const _sonarInstance = "sonar.example"
+const (
+	_sonarInstance = "sonar.example"
+	_sonarBaseSHA  = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	_sonarIssues   = `[
+		{"key":"I-1","type":"VULNERABILITY","rule_id":"go:S1","path":"cmd/main.go","line_start":3,"line_end":5,
+		 "severity":"CRITICAL","status":"RESOLVED","resolution":"FALSE-POSITIVE","rule_description":"Validate the input."},
+		{"key":"I-2","type":"BUG","rule_id":"go:S2","path":"cmd/main.go","line_start":7,"severity":"MAJOR","status":"OPEN"},
+		{"key":"I-3","type":"CODE_SMELL","rule_id":"go:S3","path":"cmd/other.go","line_start":8,"severity":"MINOR","status":"OPEN"}
+	]`
+)
 
-func sonarPage(t *testing.T, project, analysis, revision string, at time.Time) []byte {
+func sonarPage(t *testing.T, project, analysis, revision string, at time.Time, issues string) []byte {
 	t.Helper()
 	m := manifestOf(envelope.ManifestSchemaIdFindings, envelope.SourceProviderSonarqube, _sonarInstance, project)
 	m.Area.Kind = envelope.AreaRefKindAnalysisProject
 	var data bytes.Buffer
 	w, err := envelope.NewWriter(&data, m)
 	require.NoError(t, err)
-	ref, err := w.AddFile("files/sonar.json", "application/json", []byte(`{
-		"version":"1",
-		"measures":{"coverage":"87.40","ncloc":"125"},
-		"issues":[
-			{"key":"I-1","type":"VULNERABILITY","rule_id":"go:S1","path":"cmd/main.go","line_start":3,"line_end":5,
-			 "severity":"CRITICAL","status":"RESOLVED","resolution":"FALSE-POSITIVE","rule_description":"Validate the input."},
-			{"key":"I-2","type":"BUG","rule_id":"go:S2","path":"cmd/main.go","line_start":7,"severity":"MAJOR","status":"OPEN"},
-			{"key":"I-3","type":"CODE_SMELL","rule_id":"go:S3","path":"cmd/other.go","line_start":8,"severity":"MINOR","status":"OPEN"}
-		]
-	}`))
+	ref, err := w.AddFile("files/sonar.json", "application/json",
+		[]byte(`{"version":"1","measures":{"coverage":"87.40","ncloc":"125"},"issues":`+issues+`}`))
 	require.NoError(t, err)
 	p := envelope.ReportFileV1{
 		ReportKind: envelope.ReportFileV1ReportKindSonar, ReportFormat: envelope.ReportFileV1ReportFormatEnvelope,
-		Producer: "SonarQube", ProducerVersion: "26.9.0", FinishedAt: &at, Completeness: new(envelope.ReportFileV1Completeness("complete")),
+		Producer: "SonarQube", ProducerVersion: "26.9.0", FinishedAt: &at,
+		RulesHash: new(_rulesHash), ConfigHash: new(_configHash), ExitClass: new(envelope.ReportFileV1ExitClassFindings),
+		Completeness: new(envelope.ReportFileV1Completeness("complete")),
 	}
 	if revision != "" {
 		p.Sha = &revision
@@ -75,7 +80,7 @@ func TestNormalizeSonar_AnalysisReports(t *testing.T) {
 	}))
 
 	at := e.clock.Now()
-	first := sonarPage(t, project, "analysis-1", _reportSHA, at)
+	first := sonarPage(t, project, "analysis-1", _reportSHA, at, _sonarIssues)
 	rc := e.page(t, conn, scope, first)
 	e.drain(t)
 	require.Equal(t, entity.ReceiptAccepted, rc.Status)
@@ -98,15 +103,18 @@ func TestNormalizeSonar_AnalysisReports(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, entity.CapabilityVerified, state.Capabilities[0].State)
 
-	candidate := sonarPage(t, project, "analysis-2", _reportSHA, at.Add(time.Second))
+	candidate := sonarPage(t, project, "analysis-2", _reportSHA, at.Add(time.Second), _sonarIssues)
 	accepted := e.page(t, conn, scope, candidate)
 	e.drain(t)
 	var reportID, repoID uuid.UUID
 	var kind, mode, producer, version, sha, parser, completeness string
 	var finished time.Time
+	var rulesHash, configHash []byte
 	require.NoError(t, e.owner.QueryRow(t.Context(), `SELECT id, repository_id, report_kind, mode, producer, producer_version, sha,
-		parser_version, finished_at, completeness FROM normalize.report WHERE receipt_id=$1`, uuid.UUID(accepted.ID)).
-		Scan(&reportID, &repoID, &kind, &mode, &producer, &version, &sha, &parser, &finished, &completeness))
+		parser_version, finished_at, completeness, rules_hash, config_hash FROM normalize.report WHERE receipt_id=$1`, uuid.UUID(accepted.ID)).
+		Scan(&reportID, &repoID, &kind, &mode, &producer, &version, &sha, &parser, &finished, &completeness, &rulesHash, &configHash))
+	assert.Equal(t, _rulesHash, hex.EncodeToString(rulesHash))
+	assert.Equal(t, _configHash, hex.EncodeToString(configHash))
 	assert.Equal(t, repository, entity.ID(repoID))
 	assert.Equal(t, []string{"sonar", "import", "SonarQube", "26.9.0", _reportSHA, "sonar-envelope/1", "complete"},
 		[]string{kind, mode, producer, version, sha, parser, completeness})
@@ -131,7 +139,7 @@ func TestNormalizeSonar_AnalysisReports(t *testing.T) {
 	// Replay both the page and its normalize job, then send an analysis missing revision.
 	e.page(t, conn, scope, candidate)
 	e.normalized.renormalize(t, accepted.ID)
-	broken := e.page(t, conn, scope, sonarPage(t, project, "analysis-3", "", at.Add(2*time.Second)))
+	broken := e.page(t, conn, scope, sonarPage(t, project, "analysis-3", "", at.Add(2*time.Second), _sonarIssues))
 	e.drain(t)
 	records := e.records(t, broken.ID)
 	require.Len(t, records, 1)
@@ -153,6 +161,10 @@ func TestNormalizeSonar_AnalysisReports(t *testing.T) {
 	assert.Equal(t, entity.ID(reportID), facts.Runs[0].Reports[0].ID)
 
 	verifySonarSummaryReports(t, e, repository, component, entity.ID(reportID))
+	const baseIssues = `[{"key":"I-4","type":"BUG","rule_id":"go:S4","path":"cmd/base.go","severity":"MAJOR","status":"OPEN"}]`
+	base := e.page(t, conn, scope, sonarPage(t, project, "analysis-base", _sonarBaseSHA, at, baseIssues))
+	e.drain(t)
+	assert.Equal(t, entity.RecordAccepted, e.records(t, base.ID)[0].Outcome)
 	verifySonarSummaryAudience(t, e)
 
 	capability.State, capability.ReasonCode = entity.CapabilityMissing, "edition_unsupported"
@@ -166,7 +178,7 @@ func TestNormalizeSonar_AnalysisReports(t *testing.T) {
 	empty.Area.Kind = envelope.AreaRefKindAnalysisProject
 	e.page(t, conn, scope, pack(t, empty))
 	e.drain(t)
-	assert.Equal(t, 2, e.normalized.n(t, `SELECT count(*) FROM normalize.report WHERE report_kind='sonar'`))
+	assert.Equal(t, 3, e.normalized.n(t, `SELECT count(*) FROM normalize.report WHERE report_kind='sonar'`))
 }
 
 func verifySonarSummaryReports(t *testing.T, e *identityEnv, repository, component, report entity.ID) {
@@ -184,7 +196,7 @@ func verifySonarSummaryReports(t *testing.T, e *identityEnv, repository, compone
 		require.NoError(t, err)
 		assert.Empty(t, reports, "a Sonar analysis is not an artifact of a CI run")
 
-		mr.HeadSHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		mr.HeadSHA = _sonarBaseSHA
 		reports, err = repo.SummaryReports(ctx, e.orgID, mr, entry, nil)
 		require.NoError(t, err)
 		assert.Empty(t, reports)
@@ -214,12 +226,18 @@ func verifySonarSummaryAudience(t *testing.T, e *identityEnv) {
 	manifest.Source.InstanceKey = _checksInstance
 	const nativeID = "9700"
 	page := pack(t, manifest, mrRecord(t, "merge_request", nativeID, "", "v1", envelope.MergeRequestV1{
-		ProjectNativeId: "43", Iid: new(7), State: "open", HeadSha: _reportSHA,
+		ProjectNativeId: "43", Iid: new(7), State: "open", HeadSha: _reportSHA, BaseSha: new(_sonarBaseSHA),
 		SourceBranch: "feature", TargetBranch: "main", OpenedAt: e.clock.Now(), UpdatedAt: new(e.clock.Now()),
 	}))
 	receipt := e.submit(t, page)
 	require.NotNil(t, receipt.SourceInstanceID)
 	mr := mrID(t, e.normalized, nativeID)
+	pipeline := ciManifest("43")
+	pipeline.Source.InstanceKey = _checksInstance
+	e.submit(t, pack(t, pipeline, mrRecord(t, "ci_run", "5002", "", "v1", envelope.CiRunV1{
+		ProjectNativeId: "43", RefName: "feature", Sha: _reportSHA, MrNativeId: new(nativeID),
+		NativeStatus: "success", Outcome: "success", StartedAt: new(e.clock.Now()), FinishedAt: new(e.clock.Now()),
+	})))
 	source := &summaryTestAdapter{
 		source: entity.AreaSource{
 			InstanceID: *receipt.SourceInstanceID, Kind: entity.ScopeRepository, NativeScopeID: "43",
@@ -238,16 +256,19 @@ func verifySonarSummaryAudience(t *testing.T, e *identityEnv) {
 	summary, err := u.ReadSummary(t.Context(), e.orgID, mr, nil)
 	require.NoError(t, err)
 	var missing []string
-	var observed bool
+	var lifecycle []string
 	for i := range summary.Items {
 		item := &summary.Items[i]
 		if item.Kind == "not_evaluated" {
 			missing = append(missing, item.AnalysisKind)
 		}
-		observed = observed || item.OccurrenceID != nil
+		if item.OccurrenceID != nil {
+			lifecycle = append(lifecycle, item.Kind)
+		}
 	}
 	assert.ElementsMatch(t, []string{"secrets", "sca"}, missing)
-	assert.True(t, observed, "the MR summary includes Sonar occurrences")
+	assert.Equal(t, _sonarBaseSHA, summary.BaseSHA)
+	assert.ElementsMatch(t, []string{entity.FindingNew, entity.FindingNew, entity.FindingNew, entity.FindingResolved}, lifecycle)
 	repo := changerepo.NewRepo(e.app)
 	require.NoError(t, pg.InOrgTx(t.Context(), e.app, uuid.UUID(e.orgID), func(ctx context.Context) error {
 		areas, err := repo.SummarySourceAreas(ctx, e.orgID, summary.ID)
@@ -264,5 +285,18 @@ func verifySonarSummaryAudience(t *testing.T, e *identityEnv) {
 	summaryReadAPI(t, e, *receipt.SourceInstanceID, entity.ID(e.userID(t, e.orgID, _otherSub)))
 	path := "/api/v1/merge-requests/" + mr.String() + "/summary"
 	// The user has repository access but has no linked SonarQube account.
-	require.Equal(t, http.StatusNotFound, e.do(t, e.lead, http.MethodGet, path, nil).Code)
+	response := e.do(t, e.lead, http.MethodGet, path, nil)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	body := decode[openapi.MergeRequestSummary](t, response)
+	assert.True(t, body.AccessLimited)
+	assert.Contains(t, body.Redactions, "items")
+	require.NotNil(t, body.Ci)
+	assert.EqualValues(t, "success", body.Ci.Outcome)
+	require.NotNil(t, body.Expected)
+	assert.EqualValues(t, entity.StateNotEvaluated, body.Expected.MissingReports.State)
+	for _, item := range body.Items {
+		assert.Nil(t, item.FindingId)
+		assert.Nil(t, item.RuleId)
+		assert.Nil(t, item.Location)
+	}
 }

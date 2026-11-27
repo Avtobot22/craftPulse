@@ -34,8 +34,15 @@ func (in *input) sonarReport(c *reportCandidate, rec *envelope.Record, p *envelo
 		sonarTextHasNUL(rec.NativeId, p.Producer, p.ProducerVersion):
 		c.rejected = entity.RecordReportInvalid
 	default:
+		rules, rulesErr := hexHash(p.RulesHash)
+		config, configErr := hexHash(p.ConfigHash)
+		if rulesErr != nil || configErr != nil {
+			c.rejected = entity.RecordReportInvalid
+			return c
+		}
 		c.parser, _ = parserOf(_sonarParserKey)
 		r := &c.report
+		r.RulesHash, r.ConfigHash = rules, config
 		r.SonarAnalysisID = rec.NativeId
 		r.Producer, r.ProducerVersion, r.ProfileID = p.Producer, p.ProducerVersion, _sonarProfile
 		r.ScopeHash = fingerprint("sonar-project/1", in.instance.String(), in.area.NativeID)

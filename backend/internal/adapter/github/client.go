@@ -1,7 +1,9 @@
 package github
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -27,11 +29,18 @@ type source struct {
 }
 
 func (s source) request(ctx context.Context, operation, path string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, _apiOrigin+path, http.NoBody)
+	return s.send(ctx, operation, http.MethodGet, path, http.NoBody)
+}
+
+func (s source) send(ctx context.Context, operation, method, path string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, _apiOrigin+path, body)
 	if err != nil {
 		return nil, adaptersdk.NewError(adaptersdk.AdapterErrorCodeInvalidRequest, "cannot construct GitHub request")
 	}
 	req.Header.Set("Authorization", "Bearer "+s.token)
+	if body != http.NoBody {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", _apiVersion)
 	start := time.Now()
@@ -52,6 +61,18 @@ func (s source) get(ctx context.Context, operation, path string, dst any) error 
 		return err
 	}
 	return adaptersdk.DecodeJSON(resp, dst)
+}
+
+func (s source) sendJSON(ctx context.Context, operation, method, path string, payload, result any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	resp, err := s.send(ctx, operation, method, path, bytes.NewReader(body)) //nolint:bodyclose // DecodeJSON owns the body
+	if err != nil {
+		return err
+	}
+	return adaptersdk.DecodeJSON(resp, result)
 }
 
 func nextPage(links []string, current int) (int, error) {

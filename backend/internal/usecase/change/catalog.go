@@ -81,6 +81,13 @@ func ParseCatalog(raw []byte) (entity.CheckCatalog, error) {
 			errs = append(errs, fmt.Errorf("%s: id %q is invalid or repeated", at, p.ID))
 		}
 		seen[p.ID] = true
+		if p.ID == entity.WikiInventoryProfile {
+			if p.Mode != entity.CheckModeImport || p.AnyLanguage || len(p.Languages)+len(p.AnalysisKinds)+len(p.ToolVersions)+len(p.Script) != 0 ||
+				p.Image != "" || p.Digest != "" || p.RulesHash != "" || p.ReportFormat != "" {
+				errs = append(errs, fmt.Errorf("%s: wiki inventory only accepts import mode without checks", at))
+			}
+			continue // The docs root selects this profile. The CI step cannot select it.
+		}
 		if len(p.AnalysisKinds) == 0 {
 			errs = append(errs, fmt.Errorf("%s: analysis_kinds are required", at))
 		}

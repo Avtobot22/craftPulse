@@ -10,6 +10,7 @@ export const adminLabels = {
     jenkins: 'Jenkins',
     sonarqube: 'SonarQube',
     confluence_cloud: 'Confluence Cloud',
+    confluence_dc: 'Confluence DC',
     git: 'Git',
     universal: 'Универсальный импорт',
     client: 'Адаптер клиента',

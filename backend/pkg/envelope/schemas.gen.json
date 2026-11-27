@@ -146,6 +146,7 @@
                 "enum": [
                   "jira_cloud",
                   "confluence_cloud",
+                  "confluence_dc",
                   "gitlab",
                   "github",
                   "jenkins",
@@ -1710,6 +1711,33 @@
                 "null"
               ],
               "max_length": 255
+            }
+          },
+          {
+            "name": "ancestor_native_ids",
+            "schema": {
+              "types": [
+                "array"
+              ],
+              "max_items": 256,
+              "items": {
+                "types": [
+                  "string"
+                ],
+                "pattern": "^[0-9]+$",
+                "max_length": 255
+              }
+            }
+          },
+          {
+            "name": "source_url",
+            "schema": {
+              "types": [
+                "string",
+                "null"
+              ],
+              "format": "uri",
+              "max_length": 4096
             }
           },
           {

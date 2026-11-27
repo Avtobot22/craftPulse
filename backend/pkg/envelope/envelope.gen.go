@@ -1265,6 +1265,7 @@ func (e SonarIssueType) Valid() bool {
 const (
 	SourceProviderClient          SourceProvider = "client"
 	SourceProviderConfluenceCloud SourceProvider = "confluence_cloud"
+	SourceProviderConfluenceDc    SourceProvider = "confluence_dc"
 	SourceProviderGit             SourceProvider = "git"
 	SourceProviderGithub          SourceProvider = "github"
 	SourceProviderGitlab          SourceProvider = "gitlab"
@@ -1280,6 +1281,8 @@ func (e SourceProvider) Valid() bool {
 	case SourceProviderClient:
 		return true
 	case SourceProviderConfluenceCloud:
+		return true
+	case SourceProviderConfluenceDc:
 		return true
 	case SourceProviderGit:
 		return true
@@ -1494,9 +1497,14 @@ type Cursor struct {
 // `native_id` - путь от корня, `version_ref` - SHA blob, `commit_sha` и `updated_at` -
 // последний коммит default branch, изменивший файл. Удалённый из default branch документ
 // приходит с `deleted: true`, его `version_ref` - SHA коммита удаления. Для Confluence
-// `native_id` - ID страницы, `version_ref` - номер версии. Задан путь или страница.
+// `native_id` - ID страницы, `version_ref` - номер версии. Повторные наблюдения той же
+// версии различаются по хэшу записи, так как права, предки и доступность текста меняются
+// независимо от номера версии. Задан путь или страница.
 type DocumentV1 struct {
 	AclState DocumentV1AclState `json:"acl_state"`
+
+	// AncestorNativeIds ID предков страницы Confluence от корня до родителя.
+	AncestorNativeIds *[]string `json:"ancestor_native_ids,omitempty"`
 
 	// CommitSha Последний коммит Git, изменивший документ.
 	CommitSha *string `json:"commit_sha,omitempty"`
@@ -1514,11 +1522,14 @@ type DocumentV1 struct {
 	PageNativeId *string             `json:"page_native_id,omitempty"`
 	Path         *string             `json:"path,omitempty"`
 
-	// Restriction Ограничение страницы или документа у источника.
-	Restriction *string    `json:"restriction,omitempty"`
-	Title       *string    `json:"title,omitempty"`
-	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
-	VersionRef  string     `json:"version_ref"`
+	// Restriction Действующее ограничение документа у источника, включая унаследованное от предка.
+	Restriction *string `json:"restriction,omitempty"`
+
+	// SourceUrl Абсолютный URL страницы Confluence.
+	SourceUrl  *string    `json:"source_url,omitempty"`
+	Title      *string    `json:"title,omitempty"`
+	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
+	VersionRef string     `json:"version_ref"`
 }
 
 // DocumentV1AclState defines model for DocumentV1.AclState.

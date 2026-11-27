@@ -445,6 +445,7 @@ func (e ProbeResultAccessMode) Valid() bool {
 const (
 	ProbeResultProviderClient          ProbeResultProvider = "client"
 	ProbeResultProviderConfluenceCloud ProbeResultProvider = "confluence_cloud"
+	ProbeResultProviderConfluenceDc    ProbeResultProvider = "confluence_dc"
 	ProbeResultProviderGit             ProbeResultProvider = "git"
 	ProbeResultProviderGithub          ProbeResultProvider = "github"
 	ProbeResultProviderGitlab          ProbeResultProvider = "gitlab"
@@ -459,6 +460,8 @@ func (e ProbeResultProvider) Valid() bool {
 	case ProbeResultProviderClient:
 		return true
 	case ProbeResultProviderConfluenceCloud:
+		return true
+	case ProbeResultProviderConfluenceDc:
 		return true
 	case ProbeResultProviderGit:
 		return true

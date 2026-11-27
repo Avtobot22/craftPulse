@@ -92,5 +92,5 @@ func SetDefinitions(set string) []Definition {
 func registry() []Definition {
 	return slices.Concat(_definitions, _reviewDefinitions, _eventDefinitions, _linkDefinitions, _ciDefinitions, _activityDefinitions,
 		_codeDefinitions, _testCoverageDefinitions, _crossDefinitions, _technicalCrossDefinitions, _documentationDefinitions, _findingDefinitions,
-		_securityDefinitions, _mrStructureDefinitions, _analysisDefinitions)
+		_securityDefinitions, _mrStructureDefinitions, _analysisDefinitions, []Definition{_wikiDefinition})
 }

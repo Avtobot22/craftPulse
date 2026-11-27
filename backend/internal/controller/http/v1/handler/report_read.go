@@ -151,7 +151,9 @@ func (h *reports) ListMetricDefinitions(ctx context.Context, req openapi.ListMet
 	start := 0
 	if req.Params.Cursor != nil {
 		c, ok := decodeCursor(*req.Params.Cursor)
-		i := slices.IndexFunc(defs, func(d entity.MetricDefinition) bool { return d.ID == c.Name })
+		i := slices.IndexFunc(defs, func(d entity.MetricDefinition) bool {
+			return d.ID == c.Name && (c.DefinitionVersion == 0 || d.Version == c.DefinitionVersion)
+		})
 		if !ok || c.Kind != _definitionCursor || i < 0 {
 			return nil, errMalformedPage
 		}
@@ -163,7 +165,7 @@ func (h *reports) ListMetricDefinitions(ctx context.Context, req openapi.ListMet
 		out.Data = append(out.Data, metricDefinition(&defs[i]))
 	}
 	if end < len(defs) {
-		c := encodeCursor(cursorData{Kind: _definitionCursor, Name: defs[end-1].ID})
+		c := encodeCursor(cursorData{Kind: _definitionCursor, Name: defs[end-1].ID, DefinitionVersion: defs[end-1].Version})
 		out.NextCursor = &c
 	}
 	return openapi.ListMetricDefinitions200JSONResponse(out), nil

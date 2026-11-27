@@ -46,6 +46,7 @@ type SummaryItem struct {
 	Kind               string
 	FindingID          *ID
 	OccurrenceID       *ID
+	SourceAreaID       *ID
 	RequiredRight      string
 	Rank               *int
 	ComponentID        *ID
@@ -132,6 +133,7 @@ type SummaryRead struct {
 	Items                                                []SummaryItem
 	Redactions                                           []string
 	SecurityAllowed                                      bool
+	SourceRestricted                                     bool
 }
 
 // SummaryCheckpoint identifies the last complete revision at the requested cut.

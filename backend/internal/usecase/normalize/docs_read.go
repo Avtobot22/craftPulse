@@ -59,3 +59,43 @@ func (u *UseCase) DocumentationCheckCompleted(ctx context.Context, org entity.ID
 	})
 	return complete, err
 }
+
+func (u *UseCase) WikiDocumentsAt(ctx context.Context, org, area entity.ID, prefix string, seq int64) ([]entity.DocumentVersion, error) {
+	var out []entity.DocumentVersion
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.WikiDocumentsAt(ctx, org, area, prefix, seq)
+		return err
+	})
+	return out, err
+}
+
+func (u *UseCase) DocumentationAreaKinds(ctx context.Context, org entity.ID, ids []entity.ID) (map[entity.ID]entity.ScopeKind, error) {
+	var out map[entity.ID]entity.ScopeKind
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.DocumentationAreaKinds(ctx, org, ids)
+		return err
+	})
+	return out, err
+}
+
+func (u *UseCase) CurrentWikiVersions(ctx context.Context, org, area entity.ID, ids []string) (map[entity.ObjectKey]entity.SyncObjectVersion, error) {
+	var out map[entity.ObjectKey]entity.SyncObjectVersion
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.CurrentWikiVersions(ctx, org, area, ids)
+		return err
+	})
+	return out, err
+}
+
+func (u *UseCase) WikiVersionBoundary(ctx context.Context, org, area entity.ID, seq int64, asOf time.Time) (*time.Time, error) {
+	var out *time.Time
+	err := u.d.Tx.JoinOrgTx(ctx, org, func(ctx context.Context) error {
+		var err error
+		out, err = u.d.Repo.WikiVersionBoundary(ctx, org, area, seq, asOf)
+		return err
+	})
+	return out, err
+}

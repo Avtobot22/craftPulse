@@ -74,6 +74,8 @@ type Ingest interface {
 
 // Normalize is the normalize module: the current versions a manifest of the source is compared with.
 type Normalize interface {
+	CurrentWikiVersions(context.Context, entity.ID, entity.ID, []string) (map[entity.ObjectKey]entity.SyncObjectVersion, error)
+	WikiVersionBoundary(context.Context, entity.ID, entity.ID, int64, time.Time) (*time.Time, error)
 	WebhookTargets(context.Context, entity.ID, entity.ID, []entity.ObjectKey) (map[entity.ObjectKey]entity.WebhookMRTarget, error)
 	CurrentSyncVersions(context.Context, entity.ID, entity.ID, []string) (map[entity.ObjectKey]entity.SyncObjectVersion, error)
 	AreaOf(ctx context.Context, orgID, instanceID entity.ID, kind entity.ObjectKind, nativeID string) (entity.ID, error)

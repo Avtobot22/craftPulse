@@ -3382,7 +3382,7 @@ export interface components {
          * @description Вид источника. Клиент показывает неизвестное значение как «другой источник».
          * @enum {string}
          */
-        Provider: "jira_cloud" | "gitlab" | "github" | "jenkins" | "sonarqube" | "confluence_cloud" | "git" | "universal" | "client";
+        Provider: "jira_cloud" | "gitlab" | "github" | "jenkins" | "sonarqube" | "confluence_cloud" | "confluence_dc" | "git" | "universal" | "client";
         SourceAccount: {
             /** Format: uuid */
             id: string;
@@ -5217,7 +5217,9 @@ export interface components {
             data: {
                 /** Format: uuid */
                 area_id: string;
+                /** @description Путь Git или ID страницы Confluence. Пустая строка выбирает всю область. */
                 path_prefix: string;
+                /** @description Wiki-инвентарь использует профиль wiki-inventory. */
                 profile_id: string;
                 /** Format: uuid */
                 owner_person_id: string | null;

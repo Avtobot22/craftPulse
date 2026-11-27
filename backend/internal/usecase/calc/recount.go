@@ -75,6 +75,13 @@ func (u *UseCase) RunRecount(ctx context.Context, job entity.CalcRecountJob, com
 	}
 	at := u.d.Clock.Now().Add(_recountDelay)
 	var plans []due
+	if u.d.Wiki != nil && u.d.Docs != nil && !job.AreaID.IsZero() {
+		wiki, err := u.planWikiRoots(ctx, job, at)
+		if err != nil {
+			return err
+		}
+		plans = append(plans, wiki...)
+	}
 	for i := range all {
 		s := &all[i]
 		if s.MetricSet == entity.MetricSetCode || s.MetricSet == entity.MetricSetDocumentation ||

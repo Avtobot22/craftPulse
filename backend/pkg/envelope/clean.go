@@ -44,7 +44,9 @@ func cleanPackage(r io.Reader, limits Limits, w io.Writer, redactor Redactor, pa
 		return nil, err
 	}
 	timeless := *c.result.Manifest
-	timeless.CreatedAt = time.Time{}
+	if timeless.SchemaId != ManifestSchemaIdDocuments || timeless.Area.Kind != AreaRefKindWikiSpace {
+		timeless.CreatedAt = time.Time{}
+	}
 	h := sha256.New()
 	if err := c.write(data, &timeless, h); err != nil {
 		return nil, err

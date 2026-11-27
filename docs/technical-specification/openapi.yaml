@@ -5981,7 +5981,7 @@ components:
     Provider:
       type: string
       description: Вид источника. Клиент показывает неизвестное значение как «другой источник».
-      enum: [jira_cloud, gitlab, github, jenkins, sonarqube, confluence_cloud, git, universal, client]
+      enum: [jira_cloud, gitlab, github, jenkins, sonarqube, confluence_cloud, confluence_dc, git, universal, client]
     SourceAccount:
       type: object
       required: [id, instance_id, provider, native_account_id, login, display_name, proposed_kind, assignment, proposals]
@@ -7837,8 +7837,8 @@ components:
             required: [area_id, path_prefix, profile_id, owner_person_id, audience]
             properties:
               area_id: {type: string, format: uuid}
-              path_prefix: {type: string, maxLength: 1024}
-              profile_id: {type: string, maxLength: 64}
+              path_prefix: {type: string, maxLength: 1024, description: Путь Git или ID страницы Confluence. Пустая строка выбирает всю область.}
+              profile_id: {type: string, maxLength: 64, description: Wiki-инвентарь использует профиль wiki-inventory.}
               owner_person_id: {type: [string, 'null'], format: uuid}
               audience: {type: string, enum: [team, organization, external]}
     Document:
