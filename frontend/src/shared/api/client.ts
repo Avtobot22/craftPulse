@@ -101,6 +101,27 @@ export class ApiClient {
     return this.request('POST', '/exceptions', body, decode, options, false)
   }
 
+  createUploadToken<T>(
+    body: MutationBody<'/upload-tokens', 'POST'>,
+    decode: Decoder<T>,
+    options: { idempotencyKey: string; signal: AbortSignal },
+  ): Promise<ApiResponse<T>> {
+    return this.request('POST', '/upload-tokens', body, decode, options, false)
+  }
+
+  revokeUploadToken(tokenId: string, signal: AbortSignal) {
+    return this.request(
+      'DELETE',
+      '/upload-tokens/{upload_token_id}',
+      undefined,
+      (value) => {
+        if (value !== undefined) throw new InvalidResponse()
+      },
+      { pathParams: { upload_token_id: tokenId }, signal },
+      false,
+    )
+  }
+
   decideLink(
     linkId: operations['decideLink']['parameters']['path']['link_id'],
     body: operations['decideLink']['requestBody']['content']['application/json'],

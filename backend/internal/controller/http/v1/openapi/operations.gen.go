@@ -62,6 +62,7 @@ var Operations = map[string]Operation{
 	"GET /projects/:project_id/baselines":                          {ID: "listBaselines", Action: "ci.read", Query: []string{}, IfMatch: false},
 	"GET /projects/:project_id/check-policies":                     {ID: "listCheckPolicyVersions", Action: "findings.read", Query: []string{"cursor", "limit"}, IfMatch: false},
 	"GET /projects/:project_id/check-profiles":                     {ID: "getCheckProfile", Action: "check_profiles.manage", Query: []string{}, IfMatch: false},
+	"GET /projects/:project_id/check-profiles/options":             {ID: "getCheckProfileOptions", Action: "check_profiles.manage", Query: []string{}, IfMatch: false},
 	"GET /projects/:project_id/ci-configuration":                   {ID: "getCiConfiguration", Action: "check_profiles.manage", Query: []string{"ci_system"}, IfMatch: false},
 	"GET /projects/:project_id/handover":                           {ID: "getHandoverPackage", Action: "docs.read", Query: []string{}, IfMatch: false},
 	"GET /projects/:project_id/mirror-candidates":                  {ID: "listMirrorCandidates", Action: "mirrors.manage", Query: []string{"cursor", "limit"}, IfMatch: false},

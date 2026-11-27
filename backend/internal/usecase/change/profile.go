@@ -24,6 +24,16 @@ const (
 // not turn off the checks of secrets and dependencies (FR-035 A1).
 var _required = []string{entity.AnalysisSecrets, entity.AnalysisSCA}
 
+func (u *UseCase) CheckProfileOptions(ctx context.Context, s entity.Subject, projectID entity.ID) (entity.CheckProfileOptions, error) {
+	out := entity.CheckProfileOptions{Profiles: u.d.Catalog.Profiles}
+	err := u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
+		var err error
+		out.Components, err = u.d.Components.ProjectComponents(ctx, s.OrganizationID, projectID, u.d.Clock.Now())
+		return err
+	})
+	return out, err
+}
+
 // CheckProfile is the matrix of checks of a project in force with the components no profile covers; a project
 // without a confirmed matrix is not found.
 func (u *UseCase) CheckProfile(ctx context.Context, s entity.Subject, projectID entity.ID) (entity.CheckProfileVersion, error) {

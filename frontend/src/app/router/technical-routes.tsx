@@ -13,6 +13,7 @@ import { DocumentationRootsPage } from '@/pages/technical/documentation-roots'
 import { ServiceDocumentsPage } from '@/pages/technical/service-documents'
 import { DocumentationFindingPage } from '@/pages/technical/documentation-finding'
 import { routePaths } from '@/shared/config'
+import { CheckProjectRoute } from './check-project-route'
 
 // UI-44: componentId. UI-45: component_id, project_id, service_id,
 // finding_kind, state, severity, sort, limit and cursor in the search string.
@@ -46,8 +47,43 @@ export const technicalRoutes = (api: ApiClient) =>
       element: <ExceptionFormPage api={api} />,
     },
     { path: routePaths.exceptions, element: <ExceptionsPage api={api} /> },
-    { path: routePaths.checkProfile, element: <CheckProfilePage /> },
-    { path: routePaths.ciConfiguration, element: <CiConfigurationPage /> },
+    {
+      path: routePaths.checkProfile,
+      element: (
+        <CheckProjectRoute
+          title="Матрица проверок"
+          path={routePaths.checkProfile}
+        >
+          {(projectId, actions) => (
+            <CheckProfilePage
+              key={projectId}
+              api={api}
+              projectId={projectId}
+              canReadBaselines={actions.includes('ci.read')}
+            />
+          )}
+        </CheckProjectRoute>
+      ),
+    },
+    {
+      path: routePaths.ciConfiguration,
+      element: (
+        <CheckProjectRoute
+          title="Подключение шага CI"
+          path={routePaths.ciConfiguration}
+        >
+          {(projectId, actions) => (
+            <CiConfigurationPage
+              key={projectId}
+              api={api}
+              projectId={projectId}
+              canManageTokens={actions.includes('upload_tokens.manage')}
+              canReadBaselines={actions.includes('ci.read')}
+            />
+          )}
+        </CheckProjectRoute>
+      ),
+    },
     { path: routePaths.baselines, element: <BaselinesPage api={api} /> },
     { path: routePaths.baselineReport, element: <BaselinesPage api={api} /> },
     {

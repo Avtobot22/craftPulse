@@ -344,6 +344,10 @@ func (Unimplemented) CreateCheckProfileVersion(context.Context, CreateCheckProfi
 	return nil, ErrNotImplemented
 }
 
+func (Unimplemented) GetCheckProfileOptions(context.Context, GetCheckProfileOptionsRequestObject) (GetCheckProfileOptionsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 func (Unimplemented) GetCiConfiguration(context.Context, GetCiConfigurationRequestObject) (GetCiConfigurationResponseObject, error) {
 	return nil, ErrNotImplemented
 }
