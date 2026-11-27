@@ -510,7 +510,7 @@ groups:
                   query: {params: [B]}
                   reducer: {type: last, params: []}
       - uid: cp-jira-cert-expiry
-        title: Сертификат адаптера Jira Cloud истекает меньше чем через 30 дней
+        title: Сертификат адаптера истекает меньше чем через 30 дней
         condition: B
         for: 0s
         noDataState: OK

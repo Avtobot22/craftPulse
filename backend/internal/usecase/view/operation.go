@@ -46,6 +46,8 @@ type Authorizer interface {
 }
 
 type Deps struct {
+	Documentation    DocumentationDeps
+	Findings         FindingDeps
 	Summaries        Summaries
 	Tasks            TaskDeps
 	ReviewCalculator ReviewCalculator
@@ -234,12 +236,19 @@ func (u *UseCase) Operation(ctx context.Context, s entity.Subject, id entity.ID)
 	if err != nil {
 		return entity.Operation{}, err
 	}
-	_, err = u.d.Access.Authorize(ctx, s, entity.AccessRequest{Operation: "getBackgroundOperation", Action: op.Action})
+	request := entity.AccessRequest{Operation: "getBackgroundOperation", Action: op.Action}
+	if op.Kind == entity.OperationDocumentationCheck {
+		request.Area = entity.AreaRef{Kind: entity.AreaService, ID: op.ResourceID}
+	}
+	scope, err := u.d.Access.Authorize(ctx, s, request)
 	if errors.Is(err, entity.ErrForbidden) || errors.Is(err, entity.ErrNotFound) {
 		return entity.Operation{}, entity.ErrNotFound
 	}
 	if err != nil || op.Done() {
 		return op, err
+	}
+	if op.Kind == entity.OperationDocumentationCheck {
+		return u.pollDocumentationCheck(ctx, s, scope, op)
 	}
 	// The module reads the status in its own transaction, so this one does not hold a connection while it waits
 	// for another: polls of a full pool would block each other until the idle transactions are cut.

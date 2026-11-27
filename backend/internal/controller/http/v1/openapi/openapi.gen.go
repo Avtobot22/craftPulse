@@ -3571,6 +3571,24 @@ func (e TaskDodObligationsState) Valid() bool {
 	}
 }
 
+// Defines values for TaskPageEmptyReason.
+const (
+	HistoryNotReceived  TaskPageEmptyReason = "history_not_received"
+	SourceNotConfigured TaskPageEmptyReason = "source_not_configured"
+)
+
+// Valid indicates whether the value is a known member of the TaskPageEmptyReason enum.
+func (e TaskPageEmptyReason) Valid() bool {
+	switch e {
+	case HistoryNotReceived:
+		return true
+	case SourceNotConfigured:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TaskStatusMeaning.
 const (
 	TaskStatusMeaningActive    TaskStatusMeaning = "active"
@@ -5069,9 +5087,12 @@ type Attempt struct {
 	JobKey       string             `json:"job_key"`
 	NativeStatus string             `json:"native_status"`
 	Outcome      AttemptOutcome     `json:"outcome"`
-	RunnerClass  *string            `json:"runner_class"`
-	SourceUrl    *string            `json:"source_url"`
-	StartedAt    *time.Time         `json:"started_at"`
+
+	// PipelineId ID запуска задания. Для попытки дочернего запуска отличается от ID в пути запроса.
+	PipelineId  *openapi_types.UUID `json:"pipeline_id,omitempty"`
+	RunnerClass *string             `json:"runner_class"`
+	SourceUrl   *string             `json:"source_url"`
+	StartedAt   *time.Time          `json:"started_at"`
 }
 
 // AttemptOutcome defines model for Attempt.Outcome.
@@ -5445,7 +5466,7 @@ type CodeLocation struct {
 
 // CohortItem defines model for CohortItem.
 type CohortItem struct {
-	// Basis Доступные MR и текущие pipelines, проверенные для вклада задачи в X01 или X02.
+	// Basis Доступные связанные задачи, MR и pipeline, на которых основан вклад в X01-X06.
 	Basis *[]ObjectRef `json:"basis,omitempty"`
 
 	// BasisDeleted Основание удалено по запросу или сроку; содержимое объекта не выдаётся.
@@ -5465,12 +5486,15 @@ type CohortItem struct {
 	// Object Ссылка на объект craftPulse с данными для показа и адресом в источнике.
 	Object ObjectRef `json:"object"`
 
+	// OverTarget Превышает ли возраст задачи установленный срок. Передаётся при известном сроке.
+	OverTarget *bool `json:"over_target,omitempty"`
+
 	// PipelineId Для attempt-оснований I18 передаётся ID доступного pipeline для UI-55/UI-56; закрытый pipeline и его вклад не выдаются.
 	PipelineId *openapi_types.UUID `json:"pipeline_id,omitempty"`
 	ReasonCode *string             `json:"reason_code"`
 	Role       CohortItemRole      `json:"role"`
 
-	// Signals Признаки ожидания ревью и состояния CI, найденные среди доступных оснований X01 или X02.
+	// Signals Совпавшие признаки кросс-показателя среди доступных оснований.
 	Signals *[]string `json:"signals,omitempty"`
 
 	// SizeLabel Размер задачи на начало эпизода; `null` - группа «без размера». Передаётся для когорт задач.
@@ -6147,9 +6171,12 @@ type Finding struct {
 // FindingDetail defines model for FindingDetail.
 type FindingDetail struct {
 	// Actions Действия, доступные субъекту.
-	Actions     []FindingDetailActions `json:"actions"`
-	ComponentId *openapi_types.UUID    `json:"component_id"`
-	Confidence  *string                `json:"confidence"`
+	Actions []FindingDetailActions `json:"actions"`
+
+	// AreaId Область находки для оформления исключения.
+	AreaId      *openapi_types.UUID `json:"area_id,omitempty"`
+	ComponentId *openapi_types.UUID `json:"component_id"`
+	Confidence  *string             `json:"confidence"`
 
 	// Evidence Очищенное основание. Значение секрета и его фрагменты отсутствуют на всех путях (BR-017).
 	Evidence   map[string]string `json:"evidence"`
@@ -6189,6 +6216,9 @@ type FindingDetail struct {
 	} `json:"report"`
 	RuleId   string   `json:"rule_id"`
 	Severity Severity `json:"severity"`
+
+	// SourceUrl Ссылка на место в репозитории GitLab по SHA отчёта. Поле отсутствует, если исходное место или адрес репозитория неизвестны.
+	SourceUrl *string `json:"source_url,omitempty"`
 
 	// State `accepted_risk` не равно исправлению: находка остаётся открытой в истории (BR-012).
 	State FindingState `json:"state"`
@@ -6787,10 +6817,13 @@ type MetricSeries struct {
 	// Estimator Оценка показателя с несколькими рядами: `p50` и `p85` у T08 и T14, поле у T38 (`size`, `type`, `team`, `start`), вид у T40 (`lag`, `last_success_age`), T41 (`tasks`, `transitions`) и T42 (`missing`, `changed`). X01 использует `no_reviewer` и `no_first_response`, X02 - `failed`, `passed_after_retry` и `missing_report`. У A22 ключ `actor_kind:event_kind` выбирает когорту группы. Отсутствует у показателя с одним рядом.
 	Estimator *string `json:"estimator,omitempty"`
 
-	// Group Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для отчёта команды - тип или размер задачи.
+	// Group Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для технических кросс-показателей - признак, для отчёта команды - также тип или размер задачи.
 	Group *struct {
 		ActorKind *ActorKind `json:"actor_kind,omitempty"`
 		EventKind *string    `json:"event_kind,omitempty"`
+
+		// Signal Признак технического кросс-показателя.
+		Signal *string `json:"signal,omitempty"`
 
 		// SizeLabel `null` - группа «без размера».
 		SizeLabel *string `json:"size_label,omitempty"`
@@ -7961,8 +7994,14 @@ type TaskPage struct {
 	AccessLimited bool          `json:"access_limited"`
 	AccessNotes   []AccessNote  `json:"access_notes"`
 	Data          []TaskSummary `json:"data"`
-	NextCursor    *string       `json:"next_cursor"`
+
+	// EmptyReason Причина пустой выдачи на первой странице, если она известна. При ограничении доступа не передаётся. Отсутствие поля не подтверждает состояние источника.
+	EmptyReason *TaskPageEmptyReason `json:"empty_reason,omitempty"`
+	NextCursor  *string              `json:"next_cursor"`
 }
+
+// TaskPageEmptyReason Причина пустой выдачи на первой странице, если она известна. При ограничении доступа не передаётся. Отсутствие поля не подтверждает состояние источника.
+type TaskPageEmptyReason string
 
 // TaskStatus defines model for TaskStatus.
 type TaskStatus struct {
@@ -7981,7 +8020,7 @@ type TaskSummary struct {
 	Id         openapi_types.UUID `json:"id"`
 	Key        *string            `json:"key"`
 
-	// OverTarget `null` - срок для группы не задан.
+	// OverTarget `null` - превышение срока не определено.
 	OverTarget *bool               `json:"over_target"`
 	ProjectId  *openapi_types.UUID `json:"project_id"`
 
@@ -7989,7 +8028,10 @@ type TaskSummary struct {
 	SizeLabel *string    `json:"size_label"`
 	SourceUrl *string    `json:"source_url"`
 	Status    TaskStatus `json:"status"`
-	TaskType  *string    `json:"task_type"`
+
+	// TargetConfigured Есть ли целевой срок для группы задачи. Позволяет отличить отсутствие срока от неизвестного превышения при неизвестном начале эпизода.
+	TargetConfigured *bool   `json:"target_configured,omitempty"`
+	TaskType         *string `json:"task_type"`
 
 	// TeamId `null` - команда не определена правилами сопоставления.
 	TeamId    *openapi_types.UUID `json:"team_id"`
@@ -9041,6 +9083,18 @@ type ListRevisionCohortParams struct {
 	// ProjectId Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport.
 	ProjectId *[]openapi_types.UUID `form:"project_id,omitempty" json:"project_id,omitempty"`
 
+	// TaskType Тип задачи по сопоставлению.
+	TaskType *string `form:"task_type,omitempty" json:"task_type,omitempty"`
+
+	// SizeLabel Размер задачи; `unknown` - группа «без размера».
+	SizeLabel *string `form:"size_label,omitempty" json:"size_label,omitempty"`
+
+	// MinTaskAgeSeconds Минимальный возраст текущего эпизода задачи в X03.
+	MinTaskAgeSeconds *int64 `form:"min_task_age_seconds,omitempty" json:"min_task_age_seconds,omitempty"`
+
+	// OverTarget Фильтр X03 по превышению срока. Задачи без известного срока исключаются при заданном фильтре.
+	OverTarget *bool `form:"over_target,omitempty" json:"over_target,omitempty"`
+
 	// Limit Размер страницы.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 
@@ -9283,6 +9337,12 @@ type GetTeamReportParams struct {
 
 	// GroupBy Разбить ряды по типу или размеру: каждая группа - отдельный элемент `metrics` с заполненным `group`.
 	GroupBy *GetTeamReportParamsGroupBy `form:"group_by,omitempty" json:"group_by,omitempty"`
+
+	// MinTaskAgeSeconds Минимальный возраст текущего эпизода задачи в X03.
+	MinTaskAgeSeconds *int64 `form:"min_task_age_seconds,omitempty" json:"min_task_age_seconds,omitempty"`
+
+	// OverTarget Фильтр X03 по превышению срока. Задачи без известного срока исключаются при заданном фильтре.
+	OverTarget *bool `form:"over_target,omitempty" json:"over_target,omitempty"`
 }
 
 // GetTeamReportParamsStep defines parameters for GetTeamReport.
@@ -13707,6 +13767,38 @@ func (siw *ServerInterfaceWrapper) ListRevisionCohort(c *gin.Context) {
 		return
 	}
 
+	// ------------- Optional query parameter "task_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "task_type", c.Request.URL.Query(), &params.TaskType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter task_type: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "size_label" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "size_label", c.Request.URL.Query(), &params.SizeLabel, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter size_label: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "min_task_age_seconds" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "min_task_age_seconds", c.Request.URL.Query(), &params.MinTaskAgeSeconds, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter min_task_age_seconds: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "over_target" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "over_target", c.Request.URL.Query(), &params.OverTarget, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter over_target: %w", err), http.StatusBadRequest)
+		return
+	}
+
 	// ------------- Optional query parameter "limit" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
@@ -15159,6 +15251,22 @@ func (siw *ServerInterfaceWrapper) GetTeamReport(c *gin.Context) {
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "group_by", c.Request.URL.Query(), &params.GroupBy, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
 	if err != nil {
 		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter group_by: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "min_task_age_seconds" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "min_task_age_seconds", c.Request.URL.Query(), &params.MinTaskAgeSeconds, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter min_task_age_seconds: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "over_target" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "over_target", c.Request.URL.Query(), &params.OverTarget, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter over_target: %w", err), http.StatusBadRequest)
 		return
 	}
 

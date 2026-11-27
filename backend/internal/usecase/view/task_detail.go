@@ -49,11 +49,30 @@ func (u *UseCase) GetTask(ctx context.Context, s entity.Subject, scope entity.Sc
 	if err := read.linkedFacts(ctx, s, scope, facts, &out); err != nil {
 		return entity.TaskDetail{}, err
 	}
+	if err := u.taskObservations(ctx, s, scope, facts, &out); err != nil {
+		return entity.TaskDetail{}, err
+	}
+	return out, nil
+}
+
+func (u *UseCase) taskObservations(ctx context.Context, s entity.Subject, scope entity.Scope, facts *entity.TaskObservationFacts, out *entity.TaskDetail) error {
 	for _, provider := range u.d.Tasks.Observations {
-		out.Observations = append(out.Observations, provider(facts)...)
+		rows, hidden, err := provider(ctx, s, scope, facts)
+		if err != nil {
+			return err
+		}
+		out.Observations = append(out.Observations, rows...)
+		if hidden && !slices.Contains(out.Redactions, "observations") {
+			out.Redactions = append(out.Redactions, "observations")
+		}
+	}
+	if len(out.Observations) > 1 {
+		out.Observations = slices.DeleteFunc(out.Observations, func(o entity.TaskObservation) bool {
+			return o.Kind == entity.ObservationUnknown && o.Question == entity.QuestionDelayReason
+		})
 	}
 	u.d.Tasks.Calculator.SortTaskObservations(out.Observations)
-	return out, nil
+	return nil
 }
 
 type taskMRLinks struct {
@@ -176,10 +195,7 @@ func (r *taskRead) taskMRRef(ctx context.Context, scope entity.Scope, end entity
 	}
 	key := "!" + strconv.Itoa(*mr.IID)
 	ref.DisplayKey = &key
-	repo, err := r.uc.d.Code.Repository(ctx, scope, r.org, end.AreaID)
-	if errors.Is(err, entity.ErrNotFound) {
-		return ref, nil
-	}
+	repo, err := r.repository(ctx, scope, end.AreaID)
 	if err != nil {
 		return ref, err
 	}
@@ -192,6 +208,21 @@ func (r *taskRead) taskMRRef(ctx context.Context, scope entity.Scope, end entity
 	}
 	ref.SourceURL = mergeRequestURL(repo.WebURL, src.Provider, *mr.IID)
 	return ref, nil
+}
+
+func (r *taskRead) repository(ctx context.Context, scope entity.Scope, area entity.ID) (entity.RepositoryVersion, error) {
+	if v, ok := r.repositories[area]; ok {
+		return v, nil
+	}
+	v, err := r.uc.d.Code.Repository(ctx, scope, r.org, area)
+	if err != nil && !errors.Is(err, entity.ErrNotFound) {
+		return v, err
+	}
+	if r.repositories == nil {
+		r.repositories = make(map[entity.ID]entity.RepositoryVersion)
+	}
+	r.repositories[area] = v
+	return v, nil
 }
 
 func pipelineEdges(edges []entity.LinkEdge, mrs []entity.ID) []entity.LinkEdge {

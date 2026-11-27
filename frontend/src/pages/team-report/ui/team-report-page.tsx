@@ -20,9 +20,13 @@ import {
 } from '@/shared/api'
 import type { TeamReport } from '@/shared/api'
 import type { ReportBlockProps } from '../model/metrics'
-import { periodError, readReportParams, reportQuery } from '@/shared/config'
+import {
+  periodError,
+  readReportParams,
+  reportQuery,
+  writeReportParams,
+} from '@/shared/config'
 import type { ReportParams } from '@/shared/config'
-import { writeReportParams } from '../model/report-params'
 import { useReportPointNavigation } from '../model/use-report-point-navigation'
 import { ReportBlocks } from './report-blocks'
 import { ReportControls } from './report-controls'
@@ -199,7 +203,30 @@ function TeamReportContent({
       : undefined
   const visible =
     Boolean(snapshot) && !readingMetadata && !unsafeMetadata && !invalidPeriod
-  const focusedPoint = scope.focus?.targetId
+  const returnState: unknown = location.state
+  const focus =
+    scope.focus ??
+    (returnState &&
+    typeof returnState === 'object' &&
+    'focusTarget' in returnState &&
+    typeof returnState.focusTarget === 'string' &&
+    'pointStart' in returnState &&
+    typeof returnState.pointStart === 'string' &&
+    'seriesId' in returnState &&
+    typeof returnState.seriesId === 'string'
+      ? {
+          locationKey: location.key,
+          revisionId: params.revision,
+          targetId: returnState.focusTarget,
+          pointStart: returnState.pointStart,
+          seriesId: returnState.seriesId,
+          ...('focusSeries' in returnState &&
+          typeof returnState.focusSeries === 'string'
+            ? { chartSeries: returnState.focusSeries }
+            : {}),
+        }
+      : undefined)
+  const focusedPoint = focus?.targetId
 
   const denial = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -324,7 +351,12 @@ function TeamReportContent({
         ) : (
           <ReportLoading />
         )}
-        <SaveReportActions api={api} current={undefined} />
+        {/* Preserve a draft while the next revision's metadata loads. */}
+        <SaveReportActions
+          key={readingMetadata ? teamId : undefined}
+          api={api}
+          current={undefined}
+        />
       </>
     )
 
@@ -332,7 +364,7 @@ function TeamReportContent({
     report: snapshot,
     metadata,
     groupBy: params.groupBy,
-    focus: scope.focus,
+    focus,
     projectIds: query.project_id,
     taskType: query.task_type,
     size: query.size_label,

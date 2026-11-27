@@ -1,3 +1,7 @@
+import { isDateTime } from '@/shared/lib/date-time'
+import type { ApiClient } from './client'
+import type { components, operations } from './generated/schema'
+import { readNumber, readNullableNumber } from './read-fields'
 import {
   InvalidResponse,
   readArray,
@@ -7,29 +11,20 @@ import {
   readRecord,
   readString,
 } from './response'
-import type { ApiClient } from './client'
-import type { components, operations } from './generated/schema'
-import { readNullableNumber, readNumber } from './read-fields'
+
+export type ReportQuery = operations['getTeamReport']['parameters']['query']
 
 type Schemas = components['schemas']
-export type ReportQuery = operations['getTeamReport']['parameters']['query']
 export type ReportSeries = Schemas['MetricSeries']
 type MetricValue = Schemas['MetricValue']
 
-const dateTime =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u
-
-export function isDateTime(value: string) {
-  return dateTime.test(value) && Number.isFinite(Date.parse(value))
-}
-
-function readDate(raw: unknown) {
+export function readDate(raw: unknown) {
   const value = readString(raw)
   if (!isDateTime(value)) throw new InvalidResponse()
   return value
 }
 
-function nullableDate(raw: unknown) {
+export function nullableDate(raw: unknown) {
   return raw === null ? null : readDate(raw)
 }
 
@@ -66,7 +61,7 @@ function readMetricValue(value: unknown): MetricValue {
   }
 }
 
-function readSeries(value: unknown): ReportSeries {
+export function readReportSeries(value: unknown): ReportSeries {
   const raw = readRecord(value)
   const group = raw.group === undefined ? undefined : readRecord(raw.group)
   return {
@@ -119,7 +114,7 @@ export function readReport(value: unknown) {
       'current_structure',
       'structure_at_date',
     ]),
-    metrics: readArray(raw.metrics, readSeries),
+    metrics: readArray(raw.metrics, readReportSeries),
     access_limited: readBoolean(raw.access_limited),
     sourceAccessLost: readArray(raw.access_notes, (note) =>
       readString(readRecord(note).code),
@@ -127,61 +122,7 @@ export function readReport(value: unknown) {
   }
 }
 
-function readRevisionMetadata(value: unknown) {
-  const raw = readRecord(value)
-  const timeZone = readString(raw.timezone)
-  // Intl throws for an unsupported time zone; ApiClient converts it to a read error.
-  new Intl.DateTimeFormat('ru-RU', { timeZone })
-  const inputs = readArray(raw.inputs, (item) => {
-    const input = readRecord(item)
-    return {
-      kind: readString(input.input_kind),
-      id: readString(input.input_id),
-      version: readNullableString(input.version),
-    }
-  })
-  const definitions = readArray(raw.definitions, (item) => {
-    const definition = readRecord(item)
-    const metricId = readString(definition.metric_id)
-    const version = readNumber(definition.definition_version)
-    const days =
-      metricId === 'T23' && definition.parameters !== undefined
-        ? readRecord(definition.parameters).follow_up_days
-        : undefined
-    return {
-      metricId,
-      version,
-      name: readString(definition.name),
-      followUpDays:
-        typeof days === 'number' && Number.isInteger(days) && days > 0
-          ? days
-          : undefined,
-    }
-  })
-  const window = readRecord(raw.window)
-  return {
-    id: readString(raw.id),
-    number: readNumber(raw.revision_no),
-    asOf: readDate(raw.as_of),
-    window: { from: readDate(window.from), to: readDate(window.to) },
-    timeZone,
-    definitions,
-    inputs,
-    irreproducibleReason: readNullableString(raw.irreproducible_reason),
-    reopenWindows: Object.fromEntries(
-      definitions.flatMap(({ version, followUpDays }) =>
-        followUpDays === undefined ? [] : [[version, followUpDays] as const],
-      ),
-    ),
-    hasMapping: inputs.some(({ kind }) => kind === 'mapping'),
-    watermarks: readArray(raw.source_watermarks, (item) =>
-      nullableDate(readRecord(item).watermark),
-    ),
-  }
-}
-
 export type TeamReport = ReturnType<typeof readReport>
-export type RevisionMetadata = ReturnType<typeof readRevisionMetadata>
 
 export class RevisionNotPublished extends Error {}
 
@@ -202,22 +143,5 @@ export async function loadReport(
   )
     throw new InvalidResponse()
   if (!data.revision.published_at) throw new RevisionNotPublished()
-  return data
-}
-
-export async function loadRevisionMetadata(
-  api: ApiClient,
-  revisionId: string,
-  signal: AbortSignal,
-) {
-  const { data } = await api.read(
-    '/revisions/{revision_id}',
-    readRevisionMetadata,
-    {
-      pathParams: { revision_id: revisionId },
-      signal,
-    },
-  )
-  if (data.id !== revisionId) throw new InvalidResponse()
   return data
 }

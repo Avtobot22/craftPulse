@@ -123,7 +123,11 @@ type viewModules struct {
 func newView(pool *pgxpool.Pool, m viewModules, c clock.Clock) *view.UseCase {
 	tx := persistent.NewTransactor(pool)
 	changeRepo := changerepo.NewRepo(pool)
-	changes := change.New(change.Deps{Repo: changeRepo, Tx: tx, Summary: change.SummaryDeps{Publication: changeRepo}})
+	changes := change.New(change.Deps{
+		Repo: changeRepo, Tx: tx, Summary: change.SummaryDeps{Publication: changeRepo},
+		TaskSummaries: changeRepo, FindingRights: m.rights,
+	})
+	m.tasks.Observations = append(m.tasks.Observations, changes.TaskObservations)
 	return view.New(view.Deps{
 		Summaries: changeRepo,
 		Tasks:     m.tasks,

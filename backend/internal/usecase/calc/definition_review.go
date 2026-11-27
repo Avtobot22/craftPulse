@@ -60,7 +60,7 @@ var _eventDefinitions = []Definition{
 func definitionsOf(set string) []Definition {
 	switch set {
 	case entity.MetricSetFlow:
-		return slices.Concat(_definitions, _reviewDefinitions, _eventDefinitions, _crossDefinitions)
+		return slices.Concat(_definitions, _reviewDefinitions, _eventDefinitions, _crossDefinitions, _technicalCrossDefinitions)
 	case entity.MetricSetReview:
 		return _reviewDefinitions
 	case entity.MetricSetEvents:
@@ -91,6 +91,6 @@ func SetDefinitions(set string) []Definition {
 // registry is every definition in force.
 func registry() []Definition {
 	return slices.Concat(_definitions, _reviewDefinitions, _eventDefinitions, _linkDefinitions, _ciDefinitions, _activityDefinitions,
-		_codeDefinitions, _testCoverageDefinitions, _crossDefinitions, _documentationDefinitions, _findingDefinitions,
+		_codeDefinitions, _testCoverageDefinitions, _crossDefinitions, _technicalCrossDefinitions, _documentationDefinitions, _findingDefinitions,
 		_securityDefinitions, _mrStructureDefinitions, _analysisDefinitions)
 }

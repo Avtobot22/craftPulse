@@ -3,6 +3,11 @@ import { defineConfig } from 'steiger'
 
 export default defineConfig([
   ...fsd.configs.recommended,
+  {
+    // Candidate decisions are a feature in the UI-25 requirements.
+    files: ['./src/features/decide-link/**'],
+    rules: { 'fsd/insignificant-slice': 'off' },
+  },
   { ignores: ['src/shared/api/generated/**'] },
   {
     // Report, task analysis, technical and administration screens consume these public APIs as they land.

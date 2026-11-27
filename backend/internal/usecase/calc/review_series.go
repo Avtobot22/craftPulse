@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
@@ -154,6 +155,17 @@ func (f *flowSource) stored(c []period, hash []byte, from, to time.Time) *entity
 	f.prepare()
 	part := storedPart(f.pr.calculate(c), hash, from, to)
 	f.signals.points(part, f.pr, c)
+	if f.signals.technical != nil {
+		seen := make(map[entity.ID]bool, len(part.Tasks))
+		for i := range part.Tasks {
+			seen[part.Tasks[i].TaskID] = true
+		}
+		for _, tl := range f.pr.tls {
+			if !seen[tl.slice.TaskID] && slices.ContainsFunc(c, func(p period) bool { return taskInPeriod(tl, p) != memberOut }) {
+				part.Tasks = append(part.Tasks, tl.slice)
+			}
+		}
+	}
 	return part
 }
 

@@ -5,8 +5,8 @@
   "backup_recipient": "<public age recipient>",
   "installation_networks": "172.31.84.0/27",
   "source_private_networks": "",
-  "required_adapters": ["jiracloud"],
-  "adapter_master_key_versions": {"jiracloud": 1},
+  "required_adapters": ["gitlab", "jiracloud"],
+  "adapter_master_key_versions": {"gitlab": 1, "jiracloud": 1},
   "install": {
     "INSTALL_ORGANIZATIONS": "org-a,org-b",
     "ORG_ORG_A_NAME": "Организация A",

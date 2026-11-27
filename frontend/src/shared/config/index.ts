@@ -1,5 +1,6 @@
 export { routePaths } from './routes'
 export { readTaskOrigin, readTaskReturnFocus } from './task-detail-navigation'
+export type { TaskOrigin } from './task-detail-navigation'
 
 export { layoutTheme, contentGridProps, layoutSizes } from './layout'
 
@@ -25,5 +26,10 @@ export type {
 } from './admin-routes'
 export { adminLabels, providerLabel } from './admin-labels'
 
-export { periodError, readReportParams, reportQuery } from './report-params'
+export {
+  periodError,
+  readReportParams,
+  reportQuery,
+  writeReportParams,
+} from './report-params'
 export type { ReportParams } from './report-params'

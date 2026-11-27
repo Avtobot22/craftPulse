@@ -23,7 +23,9 @@ func (u *UseCase) summarizeReports(ctx context.Context, org entity.ID, mr entity
 	}
 	for i := range entries {
 		e := &entries[i]
-		v.ExpectedReports = append(v.ExpectedReports, entity.ExpectedReport{ComponentID: e.ComponentID, Kind: e.AnalysisKind, Language: e.Language})
+		expected := entity.ExpectedReport{ComponentID: e.ComponentID, Kind: e.AnalysisKind, Language: e.Language}
+		v.ExpectedReports = append(v.ExpectedReports, expected)
+		v.Technical.Streams = append(v.Technical.Streams, entity.TechnicalStream{ExpectedReport: expected})
 		at, err := u.summarizeRow(ctx, org, mr, e, versions, v)
 		if err != nil {
 			return latest, err
@@ -38,7 +40,7 @@ func (u *UseCase) summarizeReports(ctx context.Context, org entity.ID, mr entity
 func (u *UseCase) summarizeRow(ctx context.Context, org entity.ID, mr entity.SummaryMR, e *entity.ProfileEntry, versions []entity.ExceptionVersion,
 	v *entity.SummaryRevision,
 ) (time.Time, error) {
-	rs, err := u.d.Summary.Facts.SummaryReports(ctx, org, mr, *e)
+	rs, err := u.d.Summary.Facts.SummaryReports(ctx, org, mr, *e, nil)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -56,8 +58,13 @@ func (u *UseCase) summarizeRow(ctx context.Context, org entity.ID, mr entity.Sum
 		failed := findTechnicalReport(rs, func(r *entity.TechnicalReport) bool {
 			return r.SHA == mr.HeadSHA && !summaryCodeAuxiliary(r)
 		})
+		if failed != nil {
+			advanceTechnicalTime(v, failed.EventAt)
+		}
 		return time.Time{}, u.summaryMissing(ctx, org, mr, e, failed, v)
 	}
+	advanceTechnicalTime(v, head.EventAt)
+	v.Technical.Streams[len(v.Technical.Streams)-1].Complete = true
 	v.CompleteReports = append(v.CompleteReports, entity.SummaryReportEvidence{
 		ExpectedReport: entity.ExpectedReport{ComponentID: e.ComponentID, Kind: e.AnalysisKind, Language: e.Language},
 		ReportID:       head.ID,
@@ -68,6 +75,7 @@ func (u *UseCase) summarizeRow(ctx context.Context, org entity.ID, mr entity.Sum
 		return u.summarizeMeasurementReports(ctx, org, mr.HeadSHA, rs, v)
 	}
 	if base != nil {
+		advanceTechnicalTime(v, base.EventAt)
 		v.Inputs = append(v.Inputs, entity.SummaryInput{Kind: "report", ID: base.ID})
 		baselines, err := u.d.Repo.CurrentBaselines(ctx, org, []entity.ID{e.ComponentID})
 		if err != nil {
@@ -92,6 +100,12 @@ func (u *UseCase) summarizeRow(ctx context.Context, org entity.ID, mr entity.Sum
 		return time.Time{}, err
 	}
 	return u.d.Summary.Facts.SummaryReportReadyAt(ctx, org, head.ID)
+}
+
+func advanceTechnicalTime(v *entity.SummaryRevision, at time.Time) {
+	if at.After(v.Technical.EffectiveAt) {
+		v.Technical.EffectiveAt = at
+	}
 }
 
 func (u *UseCase) summaryMissing(ctx context.Context, org entity.ID, mr entity.SummaryMR, e *entity.ProfileEntry,
@@ -213,12 +227,22 @@ func (u *UseCase) summaryFindings(ctx context.Context, org entity.ID, mr entity.
 			}
 			f.Lifecycle = entity.FindingNewlyObserved
 		case entity.FindingOpen:
-			continue
+			if e.AnalysisKind != entity.AnalysisDocs && e.AnalysisKind != entity.AnalysisOpenAPI {
+				continue
+			}
 		}
 		summaryFinding(&calculation, report, f, os, versions, severities, v)
 	}
 	for i := start; i < len(v.Items); i++ {
 		v.Items[i].Mode = e.Mode
+	}
+	stream := &v.Technical.Streams[len(v.Technical.Streams)-1]
+	stream.Comparable = result.Comparable && !slices.ContainsFunc(result.Findings, func(f entity.TechnicalFinding) bool {
+		return f.Lifecycle == entity.FindingUncertain
+	})
+	stream.Findings = calculation.Findings
+	if e.AnalysisKind == entity.AnalysisDocs || e.AnalysisKind == entity.AnalysisOpenAPI {
+		stream.DocumentationKey = documentationComparisonKey(head, identities)
 	}
 	values, definitions := u.d.Summary.Calculations.SummarizeFindings(calculation, versions)
 	v.FindingValues = append(v.FindingValues, values...)
@@ -282,6 +306,9 @@ func summaryFinding(calculation *entity.SummaryFindingComparison, report entity.
 		if *best == nil || entity.CompareSummarySignals(&item, *best) < 0 {
 			*best = &item
 		}
+	}
+	if f.Lifecycle == entity.FindingOpen {
+		return
 	}
 	if accepted != nil {
 		v.Items = append(v.Items, *accepted)

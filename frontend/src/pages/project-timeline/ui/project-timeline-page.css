@@ -1,0 +1,155 @@
+.cp-timeline,
+.cp-timeline__results {
+  display: grid;
+  gap: var(--g-spacing-4);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cp-timeline :is(h1, h2, h3, h4, p, dl, dd) {
+  margin: 0;
+}
+
+.cp-timeline__controls,
+.cp-timeline__coverage,
+.cp-timeline__details {
+  min-width: 0;
+  padding: var(--g-spacing-4);
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-l);
+  background: var(--g-color-base-background);
+}
+
+.cp-timeline__controls {
+  display: grid;
+  gap: var(--g-spacing-3);
+}
+
+.cp-timeline__fields,
+.cp-timeline__applied,
+.cp-timeline__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--g-spacing-3);
+}
+
+.cp-timeline__fields label {
+  display: grid;
+  gap: var(--g-spacing-2);
+  min-width: 0;
+  font-weight: 600;
+}
+
+.cp-timeline__controls :is(input, select) {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 0 var(--g-spacing-3);
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-m);
+  background: var(--g-color-base-background);
+  color: var(--g-color-text-primary);
+  font: inherit;
+  font-weight: 400;
+}
+
+.cp-timeline :is(input, select, button, summary, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--g-color-line-focus);
+  outline-offset: 2px;
+}
+
+.cp-timeline summary {
+  min-height: 44px;
+  align-content: center;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.cp-timeline__coverage ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--g-spacing-4);
+  list-style: none;
+  padding: 0;
+  margin-bottom: 0;
+}
+
+.cp-timeline__groups,
+.cp-timeline__groups ol {
+  display: grid;
+  gap: var(--g-spacing-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cp-timeline__group > h3 {
+  margin-bottom: var(--g-spacing-2);
+}
+
+.cp-timeline__event {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--g-spacing-3);
+  align-items: start;
+}
+
+.cp-timeline__row {
+  padding: var(--g-spacing-3);
+  border-inline-start: 3px solid var(--g-color-line-generic);
+  background: var(--g-color-base-generic);
+  border-radius: var(--g-border-radius-m);
+}
+
+.cp-timeline__event[data-open='true'] .cp-timeline__row {
+  border-inline-start-color: var(--g-color-line-brand);
+}
+
+.cp-timeline__event-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--g-spacing-2);
+  background: var(--g-color-base-background);
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: var(--g-border-radius-m);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.cp-timeline__event-button:hover {
+  background: var(--g-color-base-generic-hover);
+}
+
+.cp-timeline__details dl {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: var(--g-spacing-2);
+  margin-block: var(--g-spacing-3);
+}
+
+.cp-timeline__details dt {
+  color: var(--g-color-text-secondary);
+}
+
+.cp-timeline__actions a,
+.cp-timeline__row a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  text-decoration: underline;
+}
+
+.cp-timeline__results > button {
+  justify-self: start;
+}
+
+@media (min-width: 1280px) {
+  .cp-timeline__event {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}

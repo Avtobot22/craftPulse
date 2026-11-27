@@ -88,6 +88,7 @@ type AccessRequest struct {
 	Operation string
 	Action    string
 	Area      AreaRef
+	Optional  bool // A UI capability probe does not attempt the action.
 }
 
 type CurrentUser struct {

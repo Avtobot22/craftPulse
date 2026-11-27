@@ -2,7 +2,6 @@ package change
 
 import (
 	"context"
-	"slices"
 
 	"github.com/Avtobot22/craftPulse/backend/internal/entity"
 )
@@ -19,56 +18,57 @@ func (u *UseCase) CurrentFindingState(ctx context.Context, org, component, findi
 		if err != nil {
 			return err
 		}
-		scope := entity.TechnicalReportScope{AreaID: c.RepositoryAreaID, ComponentID: c.ID, Kind: kind, ReportIDs: []entity.ID{id}}
-		observations, err := u.d.Reports.TechnicalReports(ctx, org, scope)
-		if err != nil {
-			return err
+		states, initial, err := u.findingStates(ctx, org, c.RepositoryAreaID, c.ID, id, kind)
+		state = states[finding]
+		if state == "" {
+			state = initial
 		}
-		if len(observations) == 0 {
-			return entity.ErrNotFound
-		}
-		seen := &observations[0]
-		scope.Latest, scope.ReportIDs = true, nil
-		scope.Language, scope.ProfileID = &seen.Language, &seen.ProfileID
-		scope.ReferenceReportID = &seen.ID
-		latest, err := u.d.Reports.TechnicalReports(ctx, org, scope)
-		if err != nil {
-			return err
-		}
-		state, err = u.stateFromReports(ctx, org, &scope, seen, latest, finding)
 		return err
 	})
 	return state, err
 }
 
-func (u *UseCase) stateFromReports(ctx context.Context, org entity.ID, scope *entity.TechnicalReportScope, seen *entity.TechnicalReport,
-	latest []entity.TechnicalReport, finding entity.ID,
-) (string, error) {
-	if len(latest) == 0 || !seen.Complete() {
-		return entity.FindingNewlyObserved, nil
+// findingStates compares a report once for all its canonical findings.
+func (u *UseCase) findingStates(ctx context.Context, org, area, component, report entity.ID, kind string) (byID map[entity.ID]string, fallback string, err error) {
+	scope := entity.TechnicalReportScope{AreaID: area, ComponentID: component, Kind: kind, ReportIDs: []entity.ID{report}}
+	observations, err := u.d.Reports.TechnicalReports(ctx, org, scope)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(observations) == 0 || !observations[0].Complete() {
+		return nil, entity.FindingNewlyObserved, nil
+	}
+	seen := &observations[0]
+	scope.Latest, scope.ReportIDs = true, nil
+	scope.Language, scope.ProfileID = &seen.Language, &seen.ProfileID
+	scope.ReferenceReportID = &seen.ID
+	latest, err := u.d.Reports.TechnicalReports(ctx, org, scope)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(latest) == 0 {
+		return nil, entity.FindingNewlyObserved, nil
 	}
 	base, head := seen, &latest[0]
 	if base.ID == head.ID {
 		if len(latest) == 1 {
-			return entity.FindingNewlyObserved, nil
+			return nil, entity.FindingNewlyObserved, nil
 		}
 		base = &latest[1]
 	}
 	q := entity.TechnicalComparisonQuery{ComponentID: scope.ComponentID, Kind: scope.Kind, BaseSHA: base.SHA, HeadSHA: head.SHA}
 	result, err := u.compareLoadedReports(ctx, org, q, base, head, true)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
-	i := slices.IndexFunc(result.Findings, func(f entity.TechnicalFinding) bool { return f.ID == finding })
-	if i < 0 {
-		return entity.FindingOpen, nil
+	states := make(map[entity.ID]string, len(result.Findings))
+	for _, f := range result.Findings {
+		switch f.Lifecycle {
+		case entity.FindingResolved, entity.FindingNewlyObserved:
+			states[f.ID] = f.Lifecycle
+		default:
+			states[f.ID] = entity.FindingOpen
+		}
 	}
-	switch result.Findings[i].Lifecycle {
-	case entity.FindingResolved:
-		return entity.FindingResolved, nil
-	case entity.FindingNewlyObserved:
-		return entity.FindingNewlyObserved, nil
-	default:
-		return entity.FindingOpen, nil
-	}
+	return states, entity.FindingOpen, nil
 }

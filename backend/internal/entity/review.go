@@ -43,6 +43,7 @@ type ReviewWait struct {
 // that acted in them, all at one knowledge number. ReviewsGiven tells whether the source of the area gives reviews
 // or approvals at all; without them the first external comment is the response.
 type ReviewFacts struct {
+	InstanceID   ID
 	AreaID       ID
 	MRs          []MRVersion
 	MREvents     []MREvent

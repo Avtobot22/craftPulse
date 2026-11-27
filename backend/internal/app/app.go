@@ -120,7 +120,7 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, check
 	if err != nil {
 		return err
 	}
-	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights, decisions: exceptions},
+	calculator, err := newCalc(pool, calcModules{catalog: catalog, structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights, decisions: exceptions},
 		clock.System{}, reg)
 	if err != nil {
 		return err
@@ -128,8 +128,8 @@ func RunAPI(cfg config.Config, site config.Site, adapters config.Adapters, check
 	views := newView(pool, viewModules{tasks: taskViews(normalizer, orgs, settings, collection, calculator), code: normalizer, reviewCalculator: calculator, projectAreas: orgs, runCalculator: calculator, collection: collection, series: calculator, reports: calculator, instances: connections, rights: rights}, clock.System{})
 	modules := apiModules{
 		orgs: orgs, access: rights, connections: connections, intake: intake, sync: collection, webhooks: collection,
-		operations: views, reports: views, code: views, tasks: views, process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
-		findingReports: normalizer, catalog: catalog, decisions: exceptions,
+		collection: collection, series: calculator, reports: views, code: views, tasks: views, process: settings, previews: calculator, targets: calculator, documentationAreas: normalizer, links: normalizer,
+		findingReports: normalizer, componentCalculator: calculator, catalog: catalog, decisions: exceptions,
 	}
 	api := newAPI(pool, keyring, idp, clock.System{}, site.URL, reg, modules)
 	api.RunnerNetwork, api.TrustedProxies = cfg.RunnerNetwork, cfg.TrustedProxies
@@ -209,7 +209,7 @@ func RunWorker(cfg config.Config, adapters config.Adapters, checks config.Checks
 	if err != nil {
 		return err
 	}
-	calculator, err := newCalc(pool, calcModules{structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights, decisions: exceptions},
+	calculator, err := newCalc(pool, calcModules{catalog: catalog, structure: orgs, facts: normalizer, testCoverage: normalizer, security: normalizer, settings: settings, collection: collection, activity: collection, rights: rights, decisions: exceptions},
 		clock.System{}, reg)
 	if err != nil {
 		return err

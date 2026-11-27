@@ -12,6 +12,9 @@ var _connectionMetrics = map[string]bool{"T40": true, "T42": true}
 // item 1 is the task itself, item 2 its second contribution.
 func regather(sp *entity.SeriesPoint, cs []entity.Contribution) entity.Point {
 	p := period{start: sp.Start, end: sp.End}
+	if isTechnicalCross(sp.MetricID, sp.Estimator) {
+		return technicalPoint(sp.MetricID, p, cs)
+	}
 	if isCrossMetric(sp.MetricID) {
 		return crossRatio(p, cs)
 	}

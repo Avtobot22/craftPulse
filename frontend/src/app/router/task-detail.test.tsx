@@ -19,6 +19,7 @@ import {
   problemResponse,
   teams,
 } from '../../../test/fixtures'
+import { mergeRequest } from '../../../test/task-changes-fixtures'
 import {
   mrReference,
   pipelineReference,
@@ -43,6 +44,8 @@ const cleanups: (() => void)[] = []
 function addSourceOpener(routes: RouteObject[], path: string): void {
   for (const route of routes) {
     if (route.path === path) {
+      // The test supplies the source element, so no lazy route module is needed.
+      delete route.lazy
       route.element = (
         <TaskDetailLink taskId={taskId}>
           Открыть задачу из источника
@@ -80,6 +83,8 @@ function mount({
         return Promise.resolve(jsonResponse(taskPage))
       case `/api/v1/tasks/${taskId}`:
         return Promise.resolve(loadTask())
+      case `/api/v1/merge-requests/${mrReference.id}`:
+        return Promise.resolve(jsonResponse(mergeRequest))
       case `/api/v1/tasks/${taskId}/events`:
         return Promise.resolve(loadHistory(url))
       default:
@@ -112,7 +117,11 @@ afterEach(() => {
 
 it('shows the ready MR, the original ready event, and the GitLab reviewer action', async () => {
   mount()
-  const observations = await screen.findByRole('region', { name: 'Наблюдения' })
+  const observations = await screen.findByRole(
+    'region',
+    { name: 'Наблюдения' },
+    { timeout: 3_000 },
+  )
   const facts = within(observations)
   expect(
     facts.getByRole('heading', {

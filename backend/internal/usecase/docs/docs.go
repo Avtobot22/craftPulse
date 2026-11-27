@@ -55,7 +55,7 @@ func (u *UseCase) ListRoots(ctx context.Context, s entity.Subject, scope entity.
 		return entity.DocumentationRootSet{}, entity.ErrNotFound
 	}
 	var out entity.DocumentationRootSet
-	err := u.d.Tx.InOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
+	err := u.d.Tx.JoinOrgTx(ctx, s.OrganizationID, func(ctx context.Context) error {
 		if err := u.d.References.CheckDocumentationReferences(ctx, s.OrganizationID, serviceID, nil); err != nil {
 			return err
 		}

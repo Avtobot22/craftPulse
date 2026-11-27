@@ -1,0 +1,116 @@
+.cp-findings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.cp-findings h1 {
+  margin: 0;
+}
+
+.cp-findings__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.cp-findings__filters label {
+  display: grid;
+  flex: 1 1 170px;
+  min-width: 0;
+  gap: 4px;
+}
+
+.cp-findings__filters :is(input, select) {
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--g-color-line-generic-solid);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--g-color-text-primary);
+  background: var(--g-color-base-background);
+  font: inherit;
+}
+
+.cp-findings :is(a, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--g-color-line-focus);
+  outline-offset: 2px;
+}
+
+.cp-findings__scroll {
+  overflow: auto;
+  border: 1px solid var(--g-color-line-generic);
+  border-radius: 8px;
+}
+
+.cp-findings table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cp-findings :is(th, td) {
+  padding: 12px;
+  border-bottom: 1px solid var(--g-color-line-generic);
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.cp-findings th {
+  background: var(--g-color-base-generic);
+}
+
+.cp-findings tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.cp-findings tbody tr:is(:hover, :focus-within) {
+  background: var(--g-color-base-simple-hover);
+}
+
+.cp-findings a {
+  color: var(--g-color-text-link);
+}
+
+.cp-findings__secondary,
+.cp-findings__mobile-label {
+  color: var(--g-color-text-secondary);
+}
+
+.cp-findings__mobile-label {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .cp-findings :is(table, tbody, tr, td) {
+    display: block;
+  }
+
+  .cp-findings thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .cp-findings tbody tr {
+    padding: 12px;
+    border-bottom: 1px solid var(--g-color-line-generic);
+  }
+
+  .cp-findings tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .cp-findings tbody td {
+    padding: 4px 0;
+    border: 0;
+  }
+
+  .cp-findings__mobile-label {
+    display: block;
+    font-size: 12px;
+  }
+}

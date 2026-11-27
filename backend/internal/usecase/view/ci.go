@@ -24,6 +24,7 @@ type CodeFacts interface {
 	CurrentObjects(context.Context, entity.ID, []entity.ID) ([]entity.LinkEnd, error)
 	Repository(context.Context, entity.Scope, entity.ID, entity.ID) (entity.RepositoryVersion, error)
 	RunAt(context.Context, entity.Scope, entity.ID, entity.ID, int64) (entity.CIRun, error)
+	GitLabCISources(context.Context, entity.Scope, entity.ID, []entity.ID) ([]entity.GitLabCISource, error)
 }
 
 type SourceRights interface {
@@ -194,7 +195,11 @@ func (u *UseCase) Pipeline(ctx context.Context, s entity.Subject, scope entity.S
 		return entity.PipelineDetail{}, err
 	}
 	out.Reports = pipelineReports(expected, out.Metrics.Reports)
-	return out, nil
+	urls, err := u.gitLabCISourceURLs(ctx, allowed, s.OrganizationID, []entity.ID{r.ID})
+	if link, ok := urls[r.RunID]; ok {
+		out.SourceURL = &link
+	}
+	return out, err
 }
 
 func (u *UseCase) readPipeline(ctx context.Context, s entity.Subject, scope entity.Scope, id entity.ID, op string, seq int64) (entity.PipelineDetail, entity.Scope, error) {
@@ -232,7 +237,7 @@ func (u *UseCase) PipelineAttempts(ctx context.Context, s entity.Subject, scope 
 			return entity.AttemptList{}, entity.ErrInvalidCursor
 		}
 	}
-	detail, _, err := u.readPipeline(ctx, s, scope, id, "listPipelineAttempts", math.MaxInt64)
+	detail, allowed, err := u.readPipeline(ctx, s, scope, id, "listPipelineAttempts", math.MaxInt64)
 	if err != nil {
 		return entity.AttemptList{}, err
 	}
@@ -251,5 +256,34 @@ func (u *UseCase) PipelineAttempts(ctx context.Context, s entity.Subject, scope 
 		}
 		out.Items = append(out.Items, *attempt)
 	}
-	return out, nil
+	versions := make([]entity.ID, len(out.Items))
+	for i := range out.Items {
+		versions[i] = out.Items[i].ID
+	}
+	out.SourceURLs, err = u.gitLabCISourceURLs(ctx, allowed, s.OrganizationID, versions)
+	return out, err
+}
+
+func (u *UseCase) gitLabCISourceURLs(ctx context.Context, scope entity.Scope, org entity.ID, versions []entity.ID) (map[entity.ID]string, error) {
+	sources, err := u.d.Code.GitLabCISources(ctx, scope, org, versions)
+	if err != nil {
+		return nil, err
+	}
+	urls := make(map[entity.ID]string, len(sources))
+	for _, source := range sources {
+		id, err := strconv.ParseUint(source.NativeID, 10, 64)
+		if err != nil || id == 0 {
+			continue
+		}
+		route := "/-/pipelines/"
+		if source.Kind == entity.ObjectCIAttempt {
+			route = "/-/jobs/"
+		}
+		instance := entity.SourceInstance{BaseURL: source.InstanceURL}
+		repository := entity.RepositoryVersion{WebURL: source.RepositoryURL, Path: source.RepositoryPath}
+		if link := gitLabCIURL(instance, repository, source.ManifestPath, route+strconv.FormatUint(id, 10)); link != nil {
+			urls[source.ObjectID] = *link
+		}
+	}
+	return urls, nil
 }

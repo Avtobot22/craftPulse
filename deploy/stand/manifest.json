@@ -160,6 +160,22 @@
           ]
         }
       ],
+      "craftpulse_webhook": {
+        "events": [
+          "merge_requests_events",
+          "pipeline_events",
+          "job_events",
+          "note_events"
+        ],
+        "project_ids": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "secret_rotation": "Заменить webhook_secret через учётные данные подключения craftPulse, обновить Secret token в каждом webhook этого подключения и проверить доставку.",
+        "url_template": "https://craftpulse.defects.team/api/v1/webhooks/{route_id}"
+      },
       "edition": "Community Edition",
       "image": "gitlab/gitlab-ce:19.6.1-ce.0@sha256:d3727f8b1a1ee6de44916bb9113f3dc40339dba2d6a6ad6ef331d0f239004056",
       "projects": [

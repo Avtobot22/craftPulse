@@ -56,3 +56,17 @@ func (u *UseCase) TaskMRFacts(ctx context.Context, scope entity.Scope, org entit
 	err = u.reviewActors(ctx, org, seq, &out, false)
 	return out, err
 }
+
+// TimelineMRFacts supplies visible MR history together with the area source instance.
+func (u *UseCase) TimelineMRFacts(ctx context.Context, scope entity.Scope, org, area entity.ID, seq int64) (entity.ReviewFacts, error) {
+	out, err := u.MRReviewFactsAt(ctx, scope, org, area, seq)
+	if err != nil || len(out.MREvents) == 0 {
+		return out, err
+	}
+	err = u.d.Tx.InOrgTx(ctx, org, func(ctx context.Context) error {
+		instances, err := u.d.Repo.AreaInstances(ctx, org, []entity.ID{area})
+		out.InstanceID = instances[area]
+		return err
+	})
+	return out, err
+}

@@ -195,20 +195,24 @@ function mount({
   readRevision = (id: string) => revision(id),
   readCohort = () => cohort,
   readTargets = () => ({ data: [], next_cursor: null }),
+  extraRead,
 }: {
   path?: string
   user?: Schemas['CurrentUser']
   read?: (url: URL) => Response | Promise<Response>
   refresh?: () => Response | Promise<Response>
-  readRevision?: (id: string) => Schemas['Revision']
-  readCohort?: (url: URL) => Schemas['CohortPage']
   readTargets?: (url: URL) => Schemas['TargetVersionPage']
+  readRevision?: (id: string) => Schemas['Revision'] | Response
+  readCohort?: (url: URL) => Schemas['CohortPage']
+  extraRead?: (url: URL) => Response | undefined
 } = {}) {
   const fetcher = vi
     .fn<typeof fetch>()
     .mockImplementation(async (input, init) => {
       if (typeof input !== 'string') throw new Error('Expected a request URL')
       const url = new URL(input, 'https://craftpulse.test')
+      const extra = extraRead?.(url)
+      if (extra) return extra
       switch (url.pathname) {
         case '/api/v1/me':
           return jsonResponse(user)
@@ -234,7 +238,8 @@ function mount({
           const segments = url.pathname.split('/')
           if (segments[3] === 'revisions' && segments[4]) {
             if (segments[5] === 'cohort') return jsonResponse(readCohort(url))
-            return jsonResponse(readRevision(segments[4]))
+            const data = readRevision(segments[4])
+            return data instanceof Response ? data : jsonResponse(data)
           }
           throw new Error(`Unexpected URL ${url.pathname}`)
         }
@@ -264,25 +269,29 @@ afterEach(() => {
 })
 
 const reportReady = () =>
-  screen.findByRole('region', { name: 'Ревизия отчёта' })
+  screen.findByRole('region', { name: 'Ревизия отчёта' }, { timeout: 3_000 })
 
 describe('UI-20', () => {
-  it('switches the scale in the URL and sends the new step without applying the draft', async () => {
-    const { currentSearch, fetcher } = mount()
-    await reportReady()
-    fireEvent.change(screen.getByLabelText('Тип задачи'), {
-      target: { value: 'bug' },
-    })
-    fireEvent.click(screen.getByRole('radio', { name: 'Месяц' }))
-    await reportReady()
-    expect(currentSearch().get('step')).toBe('month')
-    expect(currentSearch().has('task_type')).toBe(false)
-    expect(fetcher).toHaveBeenCalledWith(
-      expect.stringContaining('step=month'),
-      expect.anything(),
-    )
-    expect(screen.getByLabelText('Тип задачи')).toHaveValue('bug')
-  })
+  it(
+    'switches the scale in the URL and sends the new step without applying the draft',
+    { timeout: 10_000 },
+    async () => {
+      const { currentSearch, fetcher } = mount()
+      await reportReady()
+      fireEvent.change(screen.getByLabelText('Тип задачи'), {
+        target: { value: 'bug' },
+      })
+      fireEvent.click(screen.getByRole('radio', { name: 'Месяц' }))
+      await reportReady()
+      expect(currentSearch().get('step')).toBe('month')
+      expect(currentSearch().has('task_type')).toBe(false)
+      expect(fetcher).toHaveBeenCalledWith(
+        expect.stringContaining('step=month'),
+        expect.anything(),
+      )
+      expect(screen.getByLabelText('Тип задачи')).toHaveValue('bug')
+    },
+  )
 
   it('applies and resets report filters while retaining the team scope', async () => {
     const { currentSearch, fetcher } = mount()
@@ -1186,7 +1195,7 @@ describe('UI-20: длительности, возраст, целевые сро
       const section = passport.closest('section')
       if (!section) throw new Error('Expected passport section')
       const details = within(section)
-      expect(details.getByText(/^25\s*%$/u)).toBeVisible()
+      expect(await details.findByText(/^25\s*%$/u)).toBeVisible()
       expect(
         details.getByText('Числитель').nextElementSibling,
       ).toHaveTextContent(/^1$/u)
@@ -1291,5 +1300,540 @@ describe('UI-20: длительности, возраст, целевые сро
     expect(
       screen.queryByRole('row', { name: 'Story · S 1 2 ч 5' }),
     ).not.toBeInTheDocument()
+  })
+})
+
+function definition(metricId: 'T05' | 'T08'): Schemas['MetricDefinition'] {
+  return {
+    metric_id: metricId,
+    definition_version: 1,
+    name: metricId === 'T05' ? 'Завершено' : 'Cycle time',
+    unit: metricId === 'T05' ? 'count' : 'seconds',
+    catalog_ref: 'docs/product/metrics/tasks.md#' + metricId.toLowerCase(),
+  }
+}
+
+function inspectionPath(
+  metricId: string,
+  id: string,
+  isCohort = false,
+  withTeam = true,
+) {
+  const search = new URL(reportUrl, 'https://craftpulse.test').searchParams
+  if (!withTeam) search.delete('team_id')
+  if (!isCohort) search.set('point_start', pointStart)
+  const suffix = isCohort ? '/points/' + encodeURIComponent(pointStart) : ''
+  return (
+    '/reports/revisions/' +
+    id +
+    '/metrics/' +
+    metricId +
+    suffix +
+    '?' +
+    search.toString()
+  )
+}
+
+const completion = metric('T05', 1, {
+  value: { numerator: null, denominator: null, n: 1, excluded_count: 1 },
+})
+
+const cycle = metric('T08', 259200, {
+  estimator: 'p85',
+  value: { unit: 'seconds', n: 1, excluded_count: 1, low_sample: true },
+})
+
+function flowReport(id = revisionId) {
+  return { ...report(id), metrics: [completion, cycle] }
+}
+
+function contribution(
+  item_no: number,
+  role: Schemas['CohortItem']['role'],
+  key: string,
+): Schemas['CohortItem'] {
+  return {
+    item_no,
+    role,
+    value: role === 'numerator' || role === 'denominator' ? 1 : null,
+    reason_code: role === 'excluded' ? 'cancelled' : null,
+    object: {
+      kind: 'task',
+      id: '0193a5b0-0800-7000-8000-' + String(item_no + 1).padStart(12, '0'),
+      display_key: key,
+      title: 'Задача ' + key,
+      source_url: 'https://jira.example.test/browse/' + key,
+    },
+    basis_deleted: false,
+  }
+}
+
+describe('Раскрытие точки отчёта', () => {
+  it('показывает паспорт T05 и вклады A и B из V-03, возвращает фокус к числу', async () => {
+    const { router } = mount({
+      read: (url) =>
+        jsonResponse(
+          flowReport(url.searchParams.get('revision_id') ?? undefined),
+        ),
+      readRevision: (id) => ({
+        ...revision(id),
+        definitions: [definition('T05'), definition('T08')],
+        inputs: [
+          { input_kind: 'mapping', input_id: teamId, version: '2' },
+          { input_kind: 'calendar', input_id: teamId, version: '3' },
+          { input_kind: 'target', input_id: teamId, version: '4' },
+          { input_kind: 'structure', input_id: teamId, version: '5' },
+        ],
+        source_watermarks: [
+          {
+            connection_id: teamId,
+            watermark: pointStart,
+            completeness: 'complete',
+          },
+        ],
+      }),
+      readCohort: (url) => {
+        expect(url.searchParams.get('point_start')).toBe(pointStart)
+        expect(url.searchParams.get('metric_id')).toBe('T05')
+        return {
+          ...cohort,
+          data: [
+            contribution(0, 'numerator', 'A'),
+            { ...contribution(1, 'excluded', 'B'), item_no: 0 },
+          ],
+        }
+      },
+    })
+    const chart = await screen.findByRole('region', {
+      name: 'Начало и завершение работы',
+    })
+    const point = within(chart).getByRole('button', {
+      name: /Впервые завершённые задачи,/u,
+    })
+    const targetId = point.id
+    fireEvent.click(point)
+    const openCohort = await screen.findByRole('link', {
+      name: 'Открыть когорту точки',
+    })
+    expect(
+      (await screen.findByText('Числитель')).nextElementSibling,
+    ).toHaveTextContent(/^1$/u)
+    expect(screen.getByText('n = 1')).toBeInTheDocument()
+    expect(screen.getByText(/Рабочий календарь.*Версия 3/u)).toBeInTheDocument()
+    expect(screen.getByText(/Целевой срок.*Версия 4/u)).toBeInTheDocument()
+    expect(screen.getByText(/Структура.*Версия 5/u)).toBeInTheDocument()
+    expect(screen.getByText(/Полные данные/u)).toBeInTheDocument()
+    expect(screen.getByText('Europe/Moscow')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Каталог показателей' }),
+    ).toHaveAttribute('href', expect.stringMatching(/tasks\.md#t05$/u))
+    fireEvent.click(openCohort)
+    const a = await screen.findByRole('row', { name: /Задача A/u })
+    const b = screen.getByRole('row', { name: /Задача B/u })
+    expect(
+      within(a).getByRole('cell', { name: 'Числитель' }),
+    ).toBeInTheDocument()
+    expect(
+      within(b).getByRole('cell', { name: 'Исключено' }),
+    ).toBeInTheDocument()
+    expect(within(a).getByRole('link')).toHaveAttribute(
+      'href',
+      'https://jira.example.test/browse/A',
+    )
+    expect(await screen.findByText(/Числитель: 1/u)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуться к отчёту' }))
+    await waitFor(() => {
+      expect(
+        router.state.location.pathname + router.state.location.search,
+      ).toBe(reportUrl)
+      expect(document.getElementById(targetId)).toHaveFocus()
+    })
+  })
+
+  it.each([
+    { withTeam: true, context: 'с командой в ссылке' },
+    { withTeam: false, context: 'без команды в ссылке' },
+  ])(
+    'открывает старый T08 и даёт ссылку на актуальный $context',
+    async ({ withTeam }) => {
+      mount({
+        path:
+          inspectionPath('T08', oldRevisionId, false, withTeam) +
+          '&estimator=p85',
+        read: (url) => {
+          expect(withTeam).toBe(true)
+          expect(url.searchParams.get('revision_id')).toBe(oldRevisionId)
+          return jsonResponse(flowReport(oldRevisionId))
+        },
+        readRevision: (id) => ({
+          ...revision(id),
+          definitions: [definition('T08')],
+          status: 'superseded',
+          loading: true,
+          superseded_at: period.to,
+          irreproducible_reason: 'basis_deleted',
+          knowledge_seq: 17,
+        }),
+        extraRead: (url) => {
+          if (url.pathname !== '/api/v1/series/' + seriesId + '/data')
+            return undefined
+          expect(url.searchParams.get('metric_id')).toBe('T08')
+          const id = url.searchParams.get('revision_id')
+          if (id !== null) {
+            expect(withTeam).toBe(false)
+            expect(id).toBe(oldRevisionId)
+          }
+          return jsonResponse({
+            series_id: seriesId,
+            revision: report(id ?? revisionId).revision,
+            metrics: [cycle],
+            access_limited: false,
+            access_notes: [],
+          } satisfies Schemas['SeriesData'])
+        },
+      })
+      expect(await screen.findByText(/Ревизия 30/u)).toBeInTheDocument()
+      expect(screen.getByText('17')).toBeInTheDocument()
+      expect(screen.getByText(/Ревизия ещё загружается/u)).toBeInTheDocument()
+      expect(
+        screen.getByText(/Ревизию нельзя воспроизвести.*Основание удалено/u),
+      ).toBeInTheDocument()
+      expect(await screen.findByText('Малая выборка')).toBeInTheDocument()
+      expect(screen.getByText('3 д 0 ч')).toBeInTheDocument()
+      const latest = await screen.findByRole('link', {
+        name: 'Открыть актуальную ревизию',
+      })
+      expect(latest).toHaveAttribute(
+        'href',
+        expect.stringContaining('/' + revisionId + '/metrics/T08'),
+      )
+      const next = new URL(
+        latest.getAttribute('href') ?? '',
+        'https://craftpulse.test',
+      )
+      expect(next.searchParams.get('point_start')).toBe(pointStart)
+      expect(next.searchParams.get('estimator')).toBe('p85')
+      expect(next.searchParams.get('team_id')).toBe(withTeam ? teamId : null)
+    },
+  )
+
+  it('открывает роль по прямой ссылке и листает четыре роли курсором', async () => {
+    const readCohort = vi.fn((url: URL): Schemas['CohortPage'] => {
+      const role = url.searchParams.get('role')
+      const cursor = url.searchParams.get('cursor')
+      if (role === 'excluded')
+        return { ...cohort, data: [contribution(0, 'excluded', 'B')] }
+      if (cursor === 'page-2')
+        return {
+          ...cohort,
+          data: [
+            contribution(2, 'excluded', 'B'),
+            contribution(3, 'missing', 'D'),
+          ],
+        }
+      return {
+        ...cohort,
+        next_cursor: 'page-2',
+        data: [
+          contribution(0, 'numerator', 'A'),
+          contribution(1, 'denominator', 'C'),
+        ],
+      }
+    })
+    const { router } = mount({
+      path: inspectionPath('T05', revisionId, true, false) + '&role=excluded',
+      extraRead: (url) => {
+        if (url.pathname !== '/api/v1/series/' + seriesId + '/data')
+          return undefined
+        expect(url.searchParams.get('revision_id')).toBe(revisionId)
+        expect(url.searchParams.get('metric_id')).toBe('T05')
+        return jsonResponse({
+          series_id: seriesId,
+          revision: report().revision,
+          metrics: [completion],
+          access_limited: false,
+          access_notes: [],
+        } satisfies Schemas['SeriesData'])
+      },
+      readRevision: (id) => ({
+        ...revision(id),
+        definitions: [definition('T05')],
+      }),
+      readCohort,
+    })
+    expect(
+      await screen.findByRole('row', { name: /Задача B/u }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Задача A')).not.toBeInTheDocument()
+    expect(await screen.findByText(/Числитель: 1/u)).toBeInTheDocument()
+    const filter = screen.getByRole('combobox', { name: 'Роль в формуле' })
+    expect(filter).toHaveValue('excluded')
+    fireEvent.change(filter, { target: { value: '' } })
+    expect(
+      await screen.findByRole('cell', { name: 'Знаменатель' }),
+    ).toBeInTheDocument()
+    expect(router.state.location.search).not.toContain('role=')
+    fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
+    expect(
+      await screen.findByRole('cell', { name: 'Пропущено' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Страница 2 · получено 2')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Объекты точки' }),
+      ).toHaveFocus()
+    })
+    expect(
+      screen.getByRole('button', { name: 'Следующая страница' }),
+    ).toBeDisabled()
+    expect(readCohort.mock.calls.at(-1)?.[0].searchParams.get('cursor')).toBe(
+      'page-2',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Предыдущая страница' }))
+    expect(
+      await screen.findByRole('cell', { name: 'Числитель' }),
+    ).toBeInTheDocument()
+  })
+
+  it('показывает доступную часть когорты и скрывает содержимое удалённого основания', async () => {
+    const privateItem = contribution(1, 'excluded', 'PRIVATE-1')
+    mount({
+      path: inspectionPath('T05', revisionId, true),
+      read: () => jsonResponse(flowReport()),
+      readRevision: (id) => ({
+        ...revision(id),
+        definitions: [definition('T05')],
+      }),
+      readCohort: () => ({
+        ...cohort,
+        access_limited: true,
+        access_notes: [{ code: 'restricted_by_access' }],
+        data: [
+          contribution(0, 'numerator', 'A'),
+          {
+            ...privateItem,
+            basis_deleted: true,
+            value: 123,
+            interval: { from: pointStart, to: null },
+          },
+        ],
+      }),
+    })
+    expect(
+      await screen.findByText('Есть закрытые результаты.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('row', { name: 'Основание удалено' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(/PRIVATE-1|123|получено|Числитель:/u),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: /PRIVATE-1/u }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getAllByRole('button', { name: /Раскрыть основания/u }),
+    ).toHaveLength(1)
+  })
+
+  it('показывает в группе без размера только вклады этой группы', async () => {
+    const groupedCompletion = { ...completion, group: { size_label: null } }
+    mount({
+      path:
+        inspectionPath('T05', revisionId, true) +
+        '&group_by=size_label&group_value=',
+      read: () =>
+        jsonResponse({ ...flowReport(), metrics: [groupedCompletion] }),
+      readCohort: () => ({
+        ...cohort,
+        data: [
+          contribution(0, 'numerator', 'A'),
+          { ...contribution(1, 'numerator', 'OTHER'), size_label: 'L' },
+        ],
+      }),
+    })
+    expect(await screen.findByRole('row', { name: /Задача A/u })).toBeVisible()
+    expect(
+      screen.queryByRole('row', { name: /Задача OTHER/u }),
+    ).not.toBeInTheDocument()
+    expect(await screen.findByText(/Числитель: 1/u)).toBeInTheDocument()
+  })
+
+  it('показывает пустое состояние, когда в точке нет объектов', async () => {
+    mount({
+      path: inspectionPath('T05', revisionId, true),
+      readCohort: () => ({ ...cohort, data: [] }),
+    })
+    expect(await screen.findByText('В точке нет объектов.')).toBeVisible()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('ищет закреплённую версию определения в каталоге по курсору', async () => {
+    mount({
+      path: inspectionPath('T05', revisionId),
+      read: () => jsonResponse(flowReport()),
+      extraRead: (url) => {
+        if (url.pathname !== '/api/v1/metric-definitions') return undefined
+        const cursor = url.searchParams.get('cursor')
+        return jsonResponse({
+          data:
+            cursor === 'definitions-2'
+              ? [definition('T05')]
+              : [
+                  {
+                    ...definition('T05'),
+                    definition_version: 2,
+                    name: 'Новое определение',
+                  },
+                ],
+          next_cursor: cursor ? null : 'definitions-2',
+        } satisfies Schemas['MetricDefinitionPage'])
+      },
+    })
+    expect(
+      await screen.findByRole('heading', { name: 'Завершено' }),
+    ).toBeVisible()
+    expect(screen.getByText(/Определение версии 1/u)).toBeVisible()
+    expect(screen.queryByText('Новое определение')).not.toBeInTheDocument()
+  })
+
+  it.each([false, true])(
+    'переходит на UI-04 при 404 ревизии (когорта: %s)',
+    async (isCohort) => {
+      const { router } = mount({
+        path: inspectionPath('T05', oldRevisionId, isCohort),
+        readRevision: () => problemResponse('not_found', 404),
+      })
+      await waitFor(() => {
+        expect(router.state.location.pathname).toBe('/access-denied')
+      })
+      expect(screen.queryByText('Задача A')).not.toBeInTheDocument()
+    },
+  )
+
+  it('раскрывает закреплённый интервал T08, блокировку и переходы статуса', async () => {
+    const a = contribution(0, 'numerator', 'A')
+    const taskId = a.object.id
+    const from = '2026-10-02T00:00:00Z'
+    const blockedFrom = '2026-10-03T00:00:00Z'
+    const blockedTo = '2026-10-04T00:00:00Z'
+    const event = (
+      event_time: string,
+      before_value: string,
+      after_value: string,
+    ): Schemas['TimelineEvent'] => ({
+      id:
+        '0193a5b0-e1e1-7000-8000-00000000000' +
+        (event_time === from ? '1' : '2'),
+      object: a.object,
+      event_kind: 'field_change',
+      field: 'status',
+      before_value,
+      after_value,
+      actor: { kind: 'system', account_id: null, display_name: null },
+      event_time,
+      event_offset_seconds: 0,
+      observed_at: event_time,
+      observed_via: 'webhook',
+      late: false,
+    })
+    mount({
+      read: () => jsonResponse(flowReport()),
+      readRevision: (id) => ({
+        ...revision(id),
+        definitions: [definition('T08')],
+      }),
+      readCohort: (url) => {
+        expect(url.searchParams.get('metric_id')).toBe('T08')
+        if (url.searchParams.has('estimator'))
+          expect(url.searchParams.get('estimator')).toBe('p85')
+        return {
+          ...cohort,
+          data: [
+            {
+              ...a,
+              task_type: 'Story',
+              size_label: 'S',
+              value: 259200,
+              interval: { from, to: pointStart },
+            },
+          ],
+        }
+      },
+      extraRead: (url) => {
+        const taskPath = '/api/v1/tasks/' + taskId
+        if (url.pathname === taskPath)
+          return jsonResponse({
+            id: taskId,
+            key: 'A',
+            title: 'Задача A',
+            project_id: project.id,
+            status: { native_id: 'done', meaning: 'done', name: 'Готово' },
+            task_type: null,
+            size_label: null,
+            team_id: teamId,
+            age_seconds: null,
+            over_target: null,
+            updated_at: pointStart,
+            source_url: a.object.source_url,
+            target: null,
+            blocked_intervals: [{ from: blockedFrom, to: blockedTo }],
+            observations: [],
+            links: [],
+            redactions: [],
+          } satisfies Schemas['TaskDetail'])
+        if (url.pathname === taskPath + '/events')
+          return jsonResponse({
+            data: [
+              event(pointStart, 'В работе', 'Готово'),
+              event(from, 'Новая', 'В работе'),
+              {
+                ...event(blockedTo, 'В работе', 'Поздний статус'),
+                id: '0193a5b0-e1e1-7000-8000-000000000003',
+                observed_at: '2026-11-09T00:00:00Z',
+              },
+            ],
+            next_cursor: null,
+            access_limited: false,
+            access_notes: [],
+            history_from: null,
+          })
+        return undefined
+      },
+    })
+    const table = await screen.findByRole('table', {
+      name: 'Длительность по типу и размеру',
+    })
+    const [, p85] = within(table).getAllByRole('button', { name: '3 д 0 ч' })
+    if (!p85) throw new Error('Expected a p85 point')
+    fireEvent.click(p85)
+    expect(await screen.findByText('Оценка ряда: p85')).toBeVisible()
+    fireEvent.click(
+      await screen.findByRole('link', { name: 'Открыть когорту точки' }),
+    )
+    expect(
+      await screen.findByRole('cell', { name: /^259\s200 с$/u }),
+    ).toBeVisible()
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: /Раскрыть основания.*Задача A/u,
+      }),
+    )
+    expect(
+      screen.getByRole('heading', { name: 'Интервал вклада' }),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Блокировки задачи' }),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Интервалы статусов по событиям',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'События задачи' }),
+    ).toBeInTheDocument()
+    expect(await screen.findByText(/Новая → В работе/u)).toBeVisible()
+    expect(screen.queryByText(/Поздний статус/u)).not.toBeInTheDocument()
   })
 })

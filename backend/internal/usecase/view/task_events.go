@@ -43,114 +43,134 @@ func (u *UseCase) ListTaskEvents(ctx context.Context, s entity.Subject, scope en
 	}
 
 	reader := taskRead{uc: u, org: org, cut: cut, instances: make(map[entity.ID]entity.SourceInstance)}
-	events, err := reader.trackerEvents(ctx, end, &facts)
-	if err != nil {
-		return entity.TaskEventPage{}, err
-	}
-	collection, err := u.d.Tasks.Collection.AreaCollection(ctx, org, []entity.ID{end.AreaID})
+	events, err := reader.trackerEvents(ctx, &facts)
 	if err != nil {
 		return entity.TaskEventPage{}, err
 	}
 	page := entity.TaskEventPage{Items: events, Notes: visible.Notes()}
-	addHistoryBounds(&page, collection)
-	if err := reader.relatedEvents(ctx, s, scope, id, &page); err != nil {
+	areas, err := reader.relatedEvents(ctx, s, scope, id, &page)
+	if err != nil {
 		return entity.TaskEventPage{}, err
 	}
+	areas = addHistoryArea(areas, end.AreaID)
 	selectTaskEvents(&page, cut, q)
-	return page, nil
+	if err := reader.timelineSources(ctx, areas, &page); err != nil {
+		return entity.TaskEventPage{}, err
+	}
+	structure, err := u.taskStructure(ctx, org, scope, cut.asOf)
+	if err != nil {
+		return entity.TaskEventPage{}, err
+	}
+	return page, reader.markLate(ctx, structure, page.Items)
 }
 
-func (r *taskRead) relatedEvents(ctx context.Context, s entity.Subject, scope entity.Scope, task entity.ID, page *entity.TaskEventPage) error {
+func (r *taskRead) relatedEvents(ctx context.Context, s entity.Subject, scope entity.Scope, task entity.ID, page *entity.TaskEventPage) ([]entity.ID, error) {
 	u := r.uc
 	links, err := u.taskMRs(ctx, s, scope, _listTaskEvents, []entity.ID{task}, r.cut.seq, true)
 	if err != nil || len(links.edges) == 0 {
-		return err
+		return nil, err
 	}
 	noteHiddenHistory(page, links.hidden, links.scope.Notes())
+	byMR := groupHistoryEdges(links.edges)
 	var mrs, areas []entity.ID
-	for _, id := range links.confirmed {
-		if slices.Contains(mrs, id) {
+	for id, edges := range byMR {
+		end := links.ends[id]
+		if end.Kind != entity.ObjectMergeRequest {
 			continue
 		}
-		end := links.ends[id]
 		facts, err := u.d.Tasks.Facts.TaskMRFacts(ctx, links.scope, r.org, end, r.cut.seq)
 		if errors.Is(err, entity.ErrNotFound) {
-			noteHiddenHistory(page, true, nil)
 			continue
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 		events, err := r.mergeRequestEvents(ctx, links.scope, end, &facts)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		page.Items = append(page.Items, events...)
+		for i := range events {
+			if holdsDuring(edges, events[i].EventTime) {
+				page.Items = append(page.Items, events[i])
+			}
+		}
 		mrs = append(mrs, id)
 		areas = addHistoryArea(areas, end.AreaID)
 	}
 	if len(mrs) == 0 {
-		return nil
+		return areas, nil
 	}
-	collection, err := u.d.Tasks.Collection.MRCollection(ctx, r.org, areas)
-	if err != nil {
-		return err
-	}
-	addHistoryBounds(page, collection)
-	return r.relatedPipelineEvents(ctx, s, scope, mrs, page)
+	return r.relatedPipelineEvents(ctx, s, scope, mrs, byMR, areas, page)
 }
 
-func (r *taskRead) relatedPipelineEvents(ctx context.Context, s entity.Subject, scope entity.Scope, mrs []entity.ID, page *entity.TaskEventPage) error {
+func (r *taskRead) relatedPipelineEvents(ctx context.Context, s entity.Subject, scope entity.Scope, mrs []entity.ID, byMR map[entity.ID][]entity.LinkEdge,
+	areas []entity.ID, page *entity.TaskEventPage,
+) ([]entity.ID, error) {
 	u := r.uc
 	edges, err := u.d.CodeLinks.MREdgesAt(ctx, r.org, mrs, r.cut.seq)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	edges = pipelineEdges(edges, mrs)
 	if len(edges) == 0 {
-		return nil
+		return areas, nil
 	}
 	allowed, ends, err := u.taskRunEnds(ctx, s, scope, _listTaskEvents, edges)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	noteHiddenHistory(page, false, allowed.Notes())
-	seen := make(map[entity.ID]bool, len(edges))
-	var areas []entity.ID
-	for i := range edges {
-		id := edges[i].To
-		if seen[id] {
-			continue
-		}
-		seen[id] = true
+	byRun := groupHistoryEdges(edges)
+	runs := make([]entity.ID, 0, len(byRun))
+	var runAreas []entity.ID
+	for id := range byRun {
 		end := ends[id]
 		if end.Kind != entity.ObjectCIRun {
 			noteHiddenHistory(page, true, nil)
 			continue
 		}
-		run, err := u.d.Code.RunAt(ctx, allowed, r.org, id, r.cut.seq)
-		if errors.Is(err, entity.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		events, err := r.pipelineHistory(ctx, allowed, end, &run)
-		if err != nil {
-			return err
-		}
-		page.Items = append(page.Items, events...)
+		runs = append(runs, id)
+		runAreas = addHistoryArea(runAreas, end.AreaID)
 		areas = addHistoryArea(areas, end.AreaID)
 	}
-	if len(areas) == 0 {
-		return nil
-	}
-	collection, err := u.d.Tasks.Collection.CICollection(ctx, r.org, areas)
+	allowed, err = u.timelineObjectScope(ctx, s, allowed, _listTaskEvents, runAreas, entity.ObjectCIRun)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	addHistoryBounds(page, collection)
-	return nil
+	noteHiddenHistory(page, false, allowed.Notes())
+	facts, err := u.d.Tasks.Facts.TimelineFacts(ctx, allowed, r.org, runAreas, entity.TimelineFactQuery{
+		Runs: runs, Kind: entity.ObjectCIRun, Knowledge: r.cut.seq, To: r.cut.asOf.Add(time.Microsecond),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i := range facts {
+		f := &facts[i]
+		if !slices.ContainsFunc(byRun[f.RunID], func(e entity.LinkEdge) bool {
+			return e.Validity.Contains(f.EventTime) && holdsDuring(byMR[e.From], f.EventTime)
+		}) {
+			continue
+		}
+		event, err := r.projectedEvent(ctx, allowed, f)
+		if err != nil {
+			return nil, err
+		}
+		page.Items = append(page.Items, event)
+	}
+	return areas, nil
+}
+
+func groupHistoryEdges(edges []entity.LinkEdge) map[entity.ID][]entity.LinkEdge {
+	out := make(map[entity.ID][]entity.LinkEdge)
+	for i := range edges {
+		to := edges[i].To
+		out[to] = append(out[to], edges[i])
+	}
+	return out
+}
+
+func holdsDuring(edges []entity.LinkEdge, at time.Time) bool {
+	return slices.ContainsFunc(edges, func(e entity.LinkEdge) bool { return e.Validity.Contains(at) })
 }
 
 func addHistoryArea(areas []entity.ID, id entity.ID) []entity.ID {
@@ -158,15 +178,6 @@ func addHistoryArea(areas []entity.ID, id entity.ID) []entity.ID {
 		return append(areas, id)
 	}
 	return areas
-}
-
-func addHistoryBounds(page *entity.TaskEventPage, collection []entity.AreaCollection) {
-	for i := range collection {
-		bound := collection[i].HistoryFrom
-		if bound != nil && (page.HistoryFrom == nil || bound.After(*page.HistoryFrom)) {
-			page.HistoryFrom = bound
-		}
-	}
 }
 
 func noteHiddenHistory(page *entity.TaskEventPage, hidden bool, notes []entity.AccessNote) {

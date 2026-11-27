@@ -11,6 +11,10 @@ const warmup = 5;
 const measured = 20;
 const operations = ['getTeamReport', 'listRevisionCohort', manifest.task_paths ? 'getTask' : 'getRevision'];
 
+if (manifest.project_id) {
+  operations.push('listTaskEvents', 'listProjectTimeline');
+}
+
 const thresholds = {};
 for (const op of operations) {
   thresholds[`http_req_duration{phase:measure,op:${op}}`] = ['p(95)<=2000', 'max<=5000'];
@@ -56,7 +60,12 @@ export default function () {
   const point = pick(manifest.points);
   http.get(`${base}/revisions/${manifest.revision_id}/cohort?${query(point)}`, params('listRevisionCohort'));
   if (manifest.task_paths) {
-    http.get(`${manifest.base_url}${pick(manifest.task_paths)}`, params('getTask'));
+    const task = `${manifest.base_url}${pick(manifest.task_paths)}`;
+    http.get(task, params('getTask'));
+    if (manifest.project_id) {
+      http.get(`${task}/events`, params('listTaskEvents'));
+      http.get(`${base}/projects/${manifest.project_id}/timeline?${query(period)}`, params('listProjectTimeline'));
+    }
   }
 }
 

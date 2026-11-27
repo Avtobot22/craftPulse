@@ -29,6 +29,10 @@ func (h *tasks) ListTasks(ctx context.Context, req openapi.ListTasksRequestObjec
 		return nil, err
 	}
 	out := openapi.TaskPage{Data: make([]openapi.TaskSummary, len(page.Items)), AccessLimited: len(page.Notes) > 0, AccessNotes: accessNotes(page.Notes)}
+	if page.EmptyReason != "" {
+		reason := openapi.TaskPageEmptyReason(page.EmptyReason)
+		out.EmptyReason = &reason
+	}
 	for i := range page.Items {
 		out.Data[i] = taskSummaryBody(&page.Items[i])
 	}
@@ -110,19 +114,76 @@ func (h *tasks) ListTaskEvents(ctx context.Context, req openapi.ListTaskEventsRe
 		return nil, err
 	}
 	binding := strings.Join([]string{s.OrganizationID.String(), s.UserID.String(), s.APIKeyID.String(), req.TaskId.String()}, ":")
-	q := entity.TaskEventQuery{Limit: limit}
-	if req.Params.Cursor != nil {
-		c, ok := decodeCursor(*req.Params.Cursor)
-		if !ok || c.Kind != "task-events" || c.Name != binding || c.At.IsZero() || c.ID == uuid.Nil ||
-			c.Seq == nil || *c.Seq < 0 || c.OpenedAt.IsZero() || c.OpenedAt.After(c.At) {
-			return nil, errMalformedPage
-		}
-		q.After = &entity.TaskEventCursor{AsOf: c.At, Knowledge: *c.Seq, EventTime: c.OpenedAt, ID: entity.ID(c.ID)}
+	after, err := timelineCursor(req.Params.Cursor, "task-events", binding)
+	if err != nil {
+		return nil, err
 	}
+	q := entity.TaskEventQuery{Limit: limit, After: after}
 	page, err := h.uc.ListTaskEvents(ctx, s, scope, entity.ID(req.TaskId), q)
 	if err != nil {
 		return nil, err
 	}
+	return openapi.ListTaskEvents200JSONResponse(timelineBody(&page, "task-events", binding)), nil
+}
+
+func (h *tasks) ListProjectTimeline(ctx context.Context, req openapi.ListProjectTimelineRequestObject) (openapi.ListProjectTimelineResponseObject, error) {
+	s, scope, err := subjectScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p := req.Params
+	limit, err := pageLimit(p.Limit)
+	if err != nil {
+		return nil, err
+	}
+	q := entity.ProjectTimelineQuery{
+		TaskEventQuery: entity.TaskEventQuery{Limit: limit},
+		From:           p.From, To: p.To, RevisionID: (*entity.ID)(p.RevisionId),
+	}
+	if p.ActorKind != nil {
+		if !p.ActorKind.Valid() {
+			return nil, errMalformedPage
+		}
+		q.ActorKind = entity.PersonKind(*p.ActorKind)
+	}
+	if p.ObjectKind != nil {
+		switch *p.ObjectKind {
+		case "task", "merge_request", "document":
+			q.ObjectKind = entity.ObjectKind(*p.ObjectKind)
+		case "pipeline":
+			q.ObjectKind = entity.ObjectCIRun
+		default:
+			return nil, errMalformedPage
+		}
+	}
+	binding := strings.Join([]string{
+		s.OrganizationID.String(), s.UserID.String(), s.APIKeyID.String(), req.ProjectId.String(),
+		q.From.UTC().Format(time.RFC3339Nano), q.To.UTC().Format(time.RFC3339Nano), queueID(q.RevisionID), string(q.ActorKind), string(q.ObjectKind),
+	}, ":")
+	q.After, err = timelineCursor(p.Cursor, "project-timeline", binding)
+	if err != nil {
+		return nil, err
+	}
+	page, err := h.uc.ListProjectTimeline(ctx, s, scope, entity.ID(req.ProjectId), q)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.ListProjectTimeline200JSONResponse(timelineBody(&page, "project-timeline", binding)), nil
+}
+
+func timelineCursor(raw *string, kind, binding string) (*entity.TaskEventCursor, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	c, ok := decodeCursor(*raw)
+	if !ok || c.Kind != kind || c.Name != binding || c.At.IsZero() || c.ID == uuid.Nil ||
+		c.Seq == nil || *c.Seq < 0 || c.OpenedAt.IsZero() || c.OpenedAt.After(c.At) {
+		return nil, errMalformedPage
+	}
+	return &entity.TaskEventCursor{AsOf: c.At, Knowledge: *c.Seq, EventTime: c.OpenedAt, ID: entity.ID(c.ID)}, nil
+}
+
+func timelineBody(page *entity.TaskEventPage, kind, binding string) openapi.TimelinePage {
 	out := openapi.TimelinePage{
 		Data: make([]openapi.TimelineEvent, len(page.Items)), HistoryFrom: page.HistoryFrom,
 		AccessLimited: len(page.Notes) > 0, AccessNotes: accessNotes(page.Notes),
@@ -134,23 +195,40 @@ func (h *tasks) ListTaskEvents(ctx context.Context, req openapi.ListTaskEventsRe
 			Field: event.Field, BeforeValue: event.Before, AfterValue: event.After,
 			Actor:     openapi.ActorRef{AccountId: uuidPtr(event.AccountID), Kind: openapi.ActorRefKind(event.ActorKind)},
 			EventTime: event.EventTime, EventOffsetSeconds: event.EventOffsetS, ObservedAt: event.ObservedAt,
-			ObservedVia: openapi.TimelineEventObservedVia(event.ObservedVia),
+			ObservedVia: openapi.TimelineEventObservedVia(event.ObservedVia), Late: event.Late,
 		}
 	}
 	if n := page.Next; n != nil {
 		cursor := encodeCursor(cursorData{
-			Kind: "task-events", Name: binding, At: n.AsOf, Seq: &n.Knowledge, OpenedAt: n.EventTime, ID: uuid.UUID(n.ID),
+			Kind: kind, Name: binding, At: n.AsOf, Seq: &n.Knowledge, OpenedAt: n.EventTime, ID: uuid.UUID(n.ID),
 		})
 		out.NextCursor = &cursor
 	}
-	return openapi.ListTaskEvents200JSONResponse(out), nil
+	type source = struct {
+		Completeness openapi.TimelinePageSourcesCompleteness `json:"completeness"`
+		ConnectionId uuid.UUID                               `json:"connection_id"` //nolint:revive,staticcheck // Matches the generated OpenAPI field.
+		HistoryFrom  *time.Time                              `json:"history_from"`
+		Provider     openapi.Provider                        `json:"provider"`
+	}
+	if page.Sources != nil {
+		sources := make([]source, len(page.Sources))
+		for i, item := range page.Sources {
+			sources[i] = source{
+				ConnectionId: uuid.UUID(item.ConnectionID), Provider: openapi.Provider(item.Provider),
+				HistoryFrom: item.HistoryFrom, Completeness: openapi.TimelinePageSourcesCompleteness(item.Completeness),
+			}
+		}
+		out.Sources = &sources
+	}
+	return out
 }
 
 func taskSummaryBody(task *entity.TaskSummary) openapi.TaskSummary {
+	targetConfigured := task.Target != nil
 	return openapi.TaskSummary{
 		Id: uuid.UUID(task.Version.TaskID), Key: optional(task.Version.TaskKey), Title: optional(task.Version.Title),
 		ProjectId: uuidPtr(task.ProjectID), TeamId: uuidPtr(task.TeamID), TaskType: task.Type, SizeLabel: task.Size,
-		AgeSeconds: task.AgeSeconds, OverTarget: task.OverTarget, UpdatedAt: task.Version.SourceUpdatedAt, SourceUrl: task.SourceURL,
+		AgeSeconds: task.AgeSeconds, OverTarget: task.OverTarget, TargetConfigured: &targetConfigured, UpdatedAt: task.Version.SourceUpdatedAt, SourceUrl: task.SourceURL,
 		Status: openapi.TaskStatus{NativeId: task.Version.StatusNativeID, Name: task.StatusName, Meaning: openapi.TaskStatusMeaning(task.Meaning)},
 	}
 }

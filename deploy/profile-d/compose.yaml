@@ -31,8 +31,6 @@ x-core-env: &core-env
 
 x-core: &core
   <<: *runtime
-  extra_hosts:
-    - gitlab.defects.team:host-gateway
   networks: [data, edge]
   logging: *logs
   volumes:

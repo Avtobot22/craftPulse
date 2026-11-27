@@ -153,7 +153,15 @@ const disposers: (() => void)[] = []
 function mount(
   path: string,
   saved: (url: URL, init: RequestInit | undefined) => Response,
-  tasks: () => Schemas['CohortPage']['data'] = () => [],
+  {
+    tasks = () => [],
+    readReport = report,
+    readRevision = (id) => jsonResponse(revision(id)),
+  }: {
+    tasks?: () => Schemas['CohortPage']['data']
+    readReport?: () => Schemas['TeamReport']
+    readRevision?: (id: string) => Response | Promise<Response>
+  } = {},
 ) {
   const reads = vi.fn(saved)
   function respond(...[input, init]: Parameters<typeof fetch>) {
@@ -162,7 +170,7 @@ function mount(
     if (url.pathname === '/api/v1/me') return jsonResponse(currentUser)
     if (url.pathname === '/api/v1/teams') return jsonResponse(teams)
     if (url.pathname === '/api/v1/projects') return jsonResponse(projects)
-    if (url.pathname === reportApi) return jsonResponse(report())
+    if (url.pathname === reportApi) return jsonResponse(readReport())
     if (url.pathname.startsWith(savedApi)) return reads(url, init)
     if (url.pathname.endsWith('/cohort')) {
       return jsonResponse({
@@ -174,7 +182,7 @@ function mount(
     }
     const id = url.pathname.split('/').at(-1)
     if (id && url.pathname.startsWith('/api/v1/revisions/'))
-      return jsonResponse(revision(id))
+      return readRevision(id)
     throw new Error(`Unexpected request ${url.pathname}`)
   }
   const fetcher = vi.fn<typeof fetch>((input, init) =>
@@ -201,6 +209,82 @@ function mount(
 afterEach(() => {
   for (const dispose of disposers.splice(0)) dispose()
   localStorage.clear()
+})
+
+it('сохраняет открытый черновик при перечитывании отчёта с новой ревизией', async () => {
+  const waitOptions = { timeout: 3_000 }
+  const input = {
+    name: 'Поставка за октябрь',
+    series_id: seriesId,
+    filters,
+    pinned_revision_id: firstRevision,
+  } satisfies Schemas['SavedViewInput']
+  let publishedRevision = firstRevision
+  let resolveMetadata: (response: Response) => void = () => {
+    throw new Error('Expected a pending metadata response')
+  }
+  const newMetadata = new Promise<Response>((resolve) => {
+    resolveMetadata = resolve
+  })
+  const { reads } = mount(
+    '/reports/team?' + reportSearch.toString(),
+    () => jsonResponse(descriptor(savedId, input), 201),
+    {
+      readReport: () => report(publishedRevision),
+      readRevision: (id) =>
+        id === latestRevision ? newMetadata : jsonResponse(revision(id)),
+    },
+  )
+
+  const opener = await screen.findByRole(
+    'button',
+    { name: 'Сохранить срез' },
+    waitOptions,
+  )
+  fireEvent.click(opener)
+  const dialog = screen.getByRole('dialog', { name: 'Сохранить срез' })
+  const name = within(dialog).getByRole('textbox', { name: 'Название среза' })
+  const pinned = within(dialog).getByRole('radio', {
+    name: 'Закрепить текущую ревизию',
+  })
+  fireEvent.change(name, { target: { value: input.name } })
+  fireEvent.click(pinned)
+  name.focus()
+
+  publishedRevision = latestRevision
+  fireEvent(window, new Event('visibilitychange'))
+
+  await waitFor(() => {
+    expect(opener).not.toBeInTheDocument()
+  }, waitOptions)
+  expect(dialog).toBeVisible()
+  expect(name).toHaveValue(input.name)
+  expect(pinned).toBeChecked()
+  expect(name).toHaveFocus()
+
+  resolveMetadata(jsonResponse(revision(latestRevision)))
+  const summary = await screen.findByRole(
+    'region',
+    { name: 'Ревизия отчёта' },
+    waitOptions,
+  )
+  expect(within(summary).getByText('18')).toBeVisible()
+  expect(dialog).toBeVisible()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }))
+
+  expect(
+    await screen.findByRole(
+      'link',
+      { name: 'Открыть «' + input.name + '»' },
+      waitOptions,
+    ),
+  ).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Сохранить срез' })).toHaveFocus()
+  expect(reads).toHaveBeenCalledTimes(1)
+  const request = reads.mock.calls[0]?.[1]
+  expect(request?.method).toBe('POST')
+  if (typeof request?.body !== 'string') throw new Error('Expected a JSON body')
+  expect(JSON.parse(request.body)).toEqual(input)
 })
 
 it.each([false, true])(
@@ -331,7 +415,7 @@ it('открывает прямую ссылку в сессии получат�
         ...descriptor(),
         report: report(firstRevision, true),
       } satisfies Schemas['SavedView']),
-    () => [allowed],
+    { tasks: () => [allowed] },
   )
   expect(await screen.findByText('Доступ к данным ограничен')).toBeVisible()
   const table = await screen.findByRole('table', {
@@ -378,7 +462,7 @@ it('перечитывает задачи при изменении прав в 
         },
       } satisfies Schemas['SavedView'])
     },
-    () => (limited ? [] : [formerlyVisible]),
+    { tasks: () => (limited ? [] : [formerlyVisible]) },
   )
   expect(await screen.findByText('CORE-2')).toBeVisible()
   limited = true

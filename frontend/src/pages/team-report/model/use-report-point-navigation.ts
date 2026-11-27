@@ -23,12 +23,17 @@ export function useReportPointNavigation(
     })
     const details = new URLSearchParams(search)
     details.set('point_start', pointStart)
+    details.set('focus_target', targetId)
+    details.set('focus_card', seriesKey(series))
+    details.delete('focus_series')
+    if (chartSeries) details.set('focus_series', chartSeries)
     details.delete('estimator')
     details.delete('group_value')
     if (series.estimator) details.set('estimator', series.estimator)
     if (series.group && groupBy)
       details.set('group_value', series.group[groupBy] ?? '')
     if (cohort) {
+      details.set('report_search', search.toString())
       details.set('size_label', cohort.size ?? 'unknown')
       if (cohort.taskType === null) {
         details.delete('task_type')

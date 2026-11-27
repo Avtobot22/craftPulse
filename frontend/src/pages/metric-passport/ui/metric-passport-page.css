@@ -1,0 +1,27 @@
+.cp-metric-passport {
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+
+.cp-metric-passport__value {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  width: 100%;
+}
+
+.cp-metric-passport__value > :is(h2, p) {
+  margin: 0;
+}
+
+.cp-metric-passport__details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 16px;
+  overflow-wrap: anywhere;
+}
+
+.cp-metric-passport__details dd {
+  margin: 0;
+}

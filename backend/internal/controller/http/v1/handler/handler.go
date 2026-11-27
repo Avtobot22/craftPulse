@@ -49,6 +49,7 @@ type Deps struct {
 	SourceLinks     usecase.SourceLinks
 	SiteURL         string
 	Documentation   usecase.Documentation
+	Documents       usecase.ServiceDocumentation
 	Links           usecase.Links
 	UploadTokens    usecase.UploadTokens
 	Logins          usecase.Logins
@@ -80,7 +81,7 @@ func New(d Deps) *Handler {
 	return &Handler{
 		webhooks:       d.Webhooks,
 		sourceLinks:    sourceLinks{uc: d.SourceLinks, callbackURL: d.SiteURL + "/source-links/callback"},
-		documentation:  documentation{uc: d.Documentation},
+		documentation:  documentation{uc: d.Documentation, documents: d.Documents},
 		links:          links{uc: d.Links},
 		uploads:        uploads{tokens: d.UploadTokens},
 		connections:    connections{uc: d.Connections, sync: d.Sync, operations: d.Operations, siteURL: d.SiteURL},

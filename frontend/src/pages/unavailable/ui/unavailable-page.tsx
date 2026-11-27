@@ -1,6 +1,7 @@
 import { Text } from '@gravity-ui/uikit'
-import { Link, useLocation } from 'react-router'
+import { useLocation } from 'react-router'
 import { readTaskOrigin } from '@/shared/config'
+import { InspectionBack, TaskReturnLink } from '@/shared/ui'
 
 export function UnavailablePage({
   correlationId,
@@ -15,11 +16,7 @@ export function UnavailablePage({
         Объект или область недоступны
       </Text>
       {correlationId && <p>Код обращения: {correlationId}</p>}
-      {origin && (
-        <Link to={origin} replace state={{ taskReturnFocus: origin.focusId }}>
-          Назад
-        </Link>
-      )}
+      {origin ? <TaskReturnLink origin={origin} /> : <InspectionBack />}
     </section>
   )
 }

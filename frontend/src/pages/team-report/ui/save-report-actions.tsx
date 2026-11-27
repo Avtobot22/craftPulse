@@ -130,6 +130,7 @@ function SaveViewDialog({
       title="Сохранить срез"
       description="Задайте название среза и выберите ревизию для открытия по ссылке."
       openerRef={opener}
+      returnFocus={() => opener.current}
       onCancel={() => {
         if (!mutation.isPending) onClose()
       }}

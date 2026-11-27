@@ -2149,11 +2149,15 @@ paths:
         соответствуют фильтру (AC-18). Когорта ограничена правами:
         значения строятся по разрешённой части, `access_limited` без числа скрытых (FR-001).
 
-        A05, A06, A07, A10, история событий A22 и показатели X01/X02 входят в ту же ревизию.
+        A05, A06, A07, A10, история событий A22 и показатели X01-X06 входят в ту же ревизию.
         Шаг `day` даёт дневные точки. Для A22 группа содержит вид события и участника.
         В X01/X02 `n` содержит размер доступного WIP, `denominator` - размер оценённой части,
         `excluded_count` учитывает пробелы связи и неприменимые задачи, `missing_count` - неизвестные.
         Задача с совпавшим признаком учитывается в числителе и знаменателе, в когорте имеет роль `numerator`.
+
+        Для технических срезов `group.signal` содержит признак, а `estimator` выбирает его когорту.
+        `min_task_age_seconds` и `over_target` ограничивают X03. X04 считает уникальные pipeline,
+        X05 использует когорту типов с обязательной связью, X06 считает находки по виду проверки.
 
         UC-15 использует этот отчёт и listRevisionCohort: T23 - переоткрытия в M0; T24 и T25
         выдаются отдельно с M1, только при заданном этапе приёмки и подтверждённом production origin.
@@ -2173,6 +2177,8 @@ paths:
         - {name: task_type, in: query, description: Тип задачи по сопоставлению., schema: {type: string, maxLength: 200}}
         - {name: size_label, in: query, description: 'Размер задачи; `unknown` - группа «без размера».', schema: {type: string, maxLength: 200}}
         - {name: group_by, in: query, description: 'Разбить ряды по типу или размеру: каждая группа - отдельный элемент `metrics` с заполненным `group`.', schema: {type: string, enum: [task_type, size_label]}}
+        - {name: min_task_age_seconds, in: query, description: Минимальный возраст текущего эпизода задачи в X03., schema: {type: integer, format: int64, minimum: 0}}
+        - {name: over_target, in: query, description: Фильтр X03 по превышению срока. Задачи без известного срока исключаются при заданном фильтре., schema: {type: boolean}}
       responses:
         '200':
           description: Отчёт.
@@ -2391,6 +2397,10 @@ paths:
         - { name: estimator, in: query, description: 'Оценка точки показателя с несколькими рядами, как `MetricSeries.estimator`; без параметра - первая оценка показателя.', schema: { type: string, maxLength: 32 } }
         - { name: role, in: query, schema: { type: string, enum: [ numerator, denominator, excluded, missing ] } }
         - { name: project_id, in: query, description: 'Ограничить вклады задач проектами на момент расчёта ревизии. Используется тот же фильтр проекта, что в getTeamReport.', schema: { type: array, maxItems: 50, items: { type: string, format: uuid } } }
+        - {name: task_type, in: query, description: Тип задачи по сопоставлению., schema: {type: string, maxLength: 200}}
+        - {name: size_label, in: query, description: 'Размер задачи; `unknown` - группа «без размера».', schema: {type: string, maxLength: 200}}
+        - {name: min_task_age_seconds, in: query, description: Минимальный возраст текущего эпизода задачи в X03., schema: {type: integer, format: int64, minimum: 0}}
+        - {name: over_target, in: query, description: Фильтр X03 по превышению срока. Задачи без известного срока исключаются при заданном фильтре., schema: {type: boolean}}
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
       responses:
@@ -3016,7 +3026,7 @@ paths:
     get:
       operationId: listPipelineAttempts
       summary: Jobs и все известные попытки
-      description: Попытки с конфигурацией матрицы, первым и итоговым исходом и длительностью (FR-039, UI-56). Одноимённые jobs разных конфигураций различаются отпечатком. Неполная история даёт нижнюю границу расхода.
+      description: Попытки с конфигурацией матрицы, первым и итоговым исходом и длительностью (FR-039, UI-56). Задание определяется сочетанием pipeline_id, job_key и config_fingerprint. Неполная история даёт нижнюю границу расхода.
       tags: [changes]
       x-craftpulse-action: ci.read
       x-craftpulse-delivery: M0
@@ -3034,8 +3044,8 @@ paths:
               schema: {$ref: '#/components/schemas/AttemptPage'}
               example:
                 data:
-                  - {id: 0193a5b0-d2d2-7000-8000-000000000001, job_key: test-linux, config_fingerprint: 4f1c0d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d, attempt_no: 1, outcome: failed, native_status: failed, allow_failure: false, failure_kind: null, runner_class: linux-medium, started_at: '2026-11-08T10:51:00Z', finished_at: '2026-11-08T10:52:00Z', duration_seconds: 60, source_url: 'https://gitlab.example/core/-/jobs/99101'}
-                  - {id: 0193a5b0-d2d2-7000-8000-000000000002, job_key: test-linux, config_fingerprint: 4f1c0d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d, attempt_no: 2, outcome: success, native_status: success, allow_failure: false, failure_kind: null, runner_class: linux-medium, started_at: '2026-11-08T10:53:00Z', finished_at: '2026-11-08T10:53:30Z', duration_seconds: 30, source_url: 'https://gitlab.example/core/-/jobs/99107'}
+                  - {id: 0193a5b0-d2d2-7000-8000-000000000001, pipeline_id: 0193a5b0-d1d1-7000-8000-000000000001, job_key: test-linux, config_fingerprint: 4f1c0d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d, attempt_no: 1, outcome: failed, native_status: failed, allow_failure: false, failure_kind: null, runner_class: linux-medium, started_at: '2026-11-08T10:51:00Z', finished_at: '2026-11-08T10:52:00Z', duration_seconds: 60, source_url: 'https://gitlab.example/core/-/jobs/99101'}
+                  - {id: 0193a5b0-d2d2-7000-8000-000000000002, pipeline_id: 0193a5b0-d1d1-7000-8000-000000000001, job_key: test-linux, config_fingerprint: 4f1c0d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d, attempt_no: 2, outcome: success, native_status: success, allow_failure: false, failure_kind: null, runner_class: linux-medium, started_at: '2026-11-08T10:53:00Z', finished_at: '2026-11-08T10:53:30Z', duration_seconds: 30, source_url: 'https://gitlab.example/core/-/jobs/99107'}
                 next_cursor: null
                 usage_seconds: {state: ASSESSED, value: 130, unit: seconds, numerator: null, denominator: null, n: 3, bound: null, low_sample: true, excluded_count: 0, missing_count: 0, reason_code: null}
         '400': {$ref: '#/components/responses/BadRequest'}
@@ -3320,6 +3330,7 @@ paths:
               schema: {$ref: '#/components/schemas/FindingDetail'}
               example:
                 id: 0193a5b0-e2e2-7000-8000-000000000002
+                area_id: 0193a5b0-8888-7000-8000-000000000001
                 finding_kind: secret
                 rule_id: generic-api-key
                 state: open
@@ -6770,10 +6781,11 @@ components:
           description: 'Оценка показателя с несколькими рядами: `p50` и `p85` у T08 и T14, поле у T38 (`size`, `type`, `team`, `start`), вид у T40 (`lag`, `last_success_age`), T41 (`tasks`, `transitions`) и T42 (`missing`, `changed`). X01 использует `no_reviewer` и `no_first_response`, X02 - `failed`, `passed_after_retry` и `missing_report`. У A22 ключ `actor_kind:event_kind` выбирает когорту группы. Отсутствует у показателя с одним рядом.'
         group:
           type: object
-          description: Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для отчёта команды - тип или размер задачи.
+          description: Группа ряда при разбиении; отсутствует у ряда без разбиения. Для A22 - вид события и вид участника, для технических кросс-показателей - признак, для отчёта команды - также тип или размер задачи.
           properties:
             task_type: {type: [string, 'null']}
             size_label: {type: [string, 'null'], description: '`null` - группа «без размера».'}
+            signal: {type: string, description: Признак технического кросс-показателя.}
             event_kind: {type: string}
             actor_kind: {$ref: '#/components/schemas/ActorKind'}
         points: {type: array, items: {$ref: '#/components/schemas/MetricPoint'}}
@@ -6896,14 +6908,15 @@ components:
             from: {type: string, format: date-time}
             to: {type: [string, 'null'], format: date-time, description: '`null` - интервал открыт на as_of.'}
         task_age_seconds: {type: [integer, 'null'], description: Возраст текущего эпизода задачи на as_of; передаётся в срезах ожидания ревью и оговорок CI рядом с ожиданием MR в `value`.}
+        over_target: {type: boolean, description: Превышает ли возраст задачи установленный срок. Передаётся при известном сроке.}
         pipeline_id: {type: string, format: uuid, description: 'Для attempt-оснований I18 передаётся ID доступного pipeline для UI-55/UI-56; закрытый pipeline и его вклад не выдаются.'}
         basis:
           type: array
-          description: Доступные MR и текущие pipelines, проверенные для вклада задачи в X01 или X02.
+          description: Доступные связанные задачи, MR и pipeline, на которых основан вклад в X01-X06.
           items: {$ref: '#/components/schemas/ObjectRef'}
         signals:
           type: array
-          description: Признаки ожидания ревью и состояния CI, найденные среди доступных оснований X01 или X02.
+          description: Совпавшие признаки кросс-показателя среди доступных оснований.
           items: {type: string}
     CohortPage:
       type: object
@@ -7077,7 +7090,8 @@ components:
         size_label: {type: [string, 'null'], description: '`null` - размер неизвестен; задача в группе «без размера».'}
         team_id: {type: [string, 'null'], format: uuid, description: '`null` - команда не определена правилами сопоставления.'}
         age_seconds: {type: [integer, 'null'], description: Возраст текущего эпизода; `null` при неизвестном начале.}
-        over_target: {type: [boolean, 'null'], description: '`null` - срок для группы не задан.'}
+        over_target: {type: [boolean, 'null'], description: '`null` - превышение срока не определено.'}
+        target_configured: {type: boolean, description: Есть ли целевой срок для группы задачи. Позволяет отличить отсутствие срока от неизвестного превышения при неизвестном начале эпизода.}
         updated_at: {type: [string, 'null'], format: date-time}
         source_url: {type: [string, 'null'], format: uri}
     TaskPage:
@@ -7085,6 +7099,10 @@ components:
       required: [data, next_cursor, access_limited, access_notes]
       properties:
         data: {type: array, items: {$ref: '#/components/schemas/TaskSummary'}}
+        empty_reason:
+          type: string
+          enum: [source_not_configured, history_not_received]
+          description: Причина пустой выдачи на первой странице, если она известна. При ограничении доступа не передаётся. Отсутствие поля не подтверждает состояние источника.
         next_cursor: {type: [string, 'null']}
         access_limited: {type: boolean}
         access_notes: {type: array, items: {$ref: '#/components/schemas/AccessNote'}}
@@ -7359,6 +7377,7 @@ components:
       required: [id, job_key, config_fingerprint, attempt_no, outcome, native_status, allow_failure, failure_kind, runner_class, started_at, finished_at, duration_seconds, source_url]
       properties:
         id: {type: string, format: uuid}
+        pipeline_id: {type: string, format: uuid, description: ID запуска задания. Для попытки дочернего запуска отличается от ID в пути запроса.}
         job_key: {type: string}
         config_fingerprint: {type: string, pattern: '^[0-9a-f]{64}$'}
         attempt_no: {type: integer, minimum: 1}
@@ -7562,12 +7581,17 @@ components:
       required: [id, finding_kind, rule_id, state, severity, confidence, location, package, component_id, first_seen_at, evidence, report, external_triage, exceptions, actions, redactions]
       properties:
         id: {type: string, format: uuid}
+        area_id: {type: string, format: uuid, description: Область находки для оформления исключения.}
         finding_kind: {$ref: '#/components/schemas/FindingKind'}
         rule_id: {type: string}
         state: {$ref: '#/components/schemas/FindingState'}
         severity: {$ref: '#/components/schemas/Severity'}
         confidence: {type: [string, 'null']}
         location: {$ref: '#/components/schemas/CodeLocation'}
+        source_url:
+          type: string
+          format: uri
+          description: Ссылка на место в репозитории GitLab по SHA отчёта. Поле отсутствует, если исходное место или адрес репозитория неизвестны.
         package:
           type: [object, 'null']
           required: [purl, version]

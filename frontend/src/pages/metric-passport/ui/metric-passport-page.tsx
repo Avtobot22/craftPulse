@@ -1,90 +1,246 @@
-import { Button, Text } from '@gravity-ui/uikit'
+import { Card, Text } from '@gravity-ui/uikit'
+import { useQuery } from '@tanstack/react-query'
+import { Link, Navigate, useLocation } from 'react-router'
 import {
-  Link,
-  useLocation,
-  useNavigate,
-  useOutletContext,
-  useParams,
-  useSearchParams,
-} from 'react-router'
-import { isDateTime } from '@/shared/api'
+  InspectionReturn,
+  isRevisionAccessDenied,
+  MetricValue,
+  metricDetailsLink,
+  reportHistoryDepth,
+  useMetricInspection,
+  useMetricPoint,
+  useMetricRevision,
+} from '@/entities/metric'
+import { RestrictedResults } from '@/entities/result-access'
+import {
+  findMetricDefinition,
+  followUpDays,
+  loadRevisionSeries,
+} from '@/shared/api'
 import type { ApiClient } from '@/shared/api'
-import {
-  periodError,
-  readReportParams,
-  reportQuery,
-  routePaths,
-} from '@/shared/config'
-import type { TeamReportScope } from '@/shared/config'
-import { ReportPointPassport } from './report-point-passport'
+import { routePaths } from '@/shared/config'
+import { ErrorState, LoadingState } from '@/shared/ui'
+import { catalogHref, metricFormula } from '../model/definition'
+import { RevisionInputs } from './revision-inputs'
+import './metric-passport-page.css'
+
+const reportTitles: Readonly<Record<string, string>> = {
+  T10: 'Соблюдение целевых сроков',
+  T23: 'Переоткрытия workflow',
+}
+
+const irreproducibleReasons: Readonly<Record<string, string>> = {
+  basis_deleted: 'Основание удалено',
+  basis_expired: 'Истёк срок хранения основания',
+  definition_retired: 'Определение снято с использования',
+}
 
 export function MetricPassportPage({ api }: { api: ApiClient }) {
-  const { metricId, revisionId } = useParams()
-  const location = useLocation()
-  const navigate = useNavigate()
-  const [search] = useSearchParams()
-  const state: unknown = location.state
-  const inReportHistory =
-    state &&
-    typeof state === 'object' &&
-    'fromTeamReport' in state &&
-    state.fromTeamReport === true
-  const point = search.get('point_start')
-  const { team, project } = useOutletContext<TeamReportScope>()
-  const params = readReportParams(search)
-  const hasReportPeriod = search.has('from') && search.has('to')
-  const reportSearch = new URLSearchParams(search)
-  reportSearch.delete('point_start')
-  reportSearch.delete('estimator')
-  reportSearch.delete('group_value')
-  if (revisionId) reportSearch.set('revision_id', revisionId)
+  const selection = useMetricInspection()
+  const depth = reportHistoryDepth(useLocation().state)
+  const revision = useMetricRevision(api, selection.revisionId)
+  const data = revision.isError ? undefined : revision.data
+  const point = useMetricPoint(api, selection, data)
+  const definitionVersion = point.data?.definitionVersion
+  const pinned = data?.definitions.find(
+    (entry) =>
+      entry.metric_id === selection.metricId &&
+      (definitionVersion === undefined ||
+        entry.definition_version === definitionVersion),
+  )
+  const catalog = useQuery({
+    queryKey: ['metric-definition', selection.metricId, definitionVersion],
+    queryFn: ({ signal }) =>
+      findMetricDefinition(api, selection.metricId, definitionVersion, signal),
+    enabled: Boolean(data) && !pinned && definitionVersion !== undefined,
+  })
+  const definition = pinned ?? catalog.data
+  const href = definition && catalogHref(definition.catalog_ref)
+  const title =
+    (Object.hasOwn(reportTitles, selection.metricId)
+      ? reportTitles[selection.metricId]
+      : undefined) ??
+    definition?.name ??
+    selection.metricId
+  const version = definition?.definition_version ?? definitionVersion
+  const formula =
+    version === undefined
+      ? undefined
+      : metricFormula(selection.metricId, version)
+  const observationDays = definition && followUpDays(definition)
+  const latest = useQuery({
+    queryKey: ['metric-inspection-latest', data?.series_id, selection.metricId],
+    queryFn: ({ signal }) =>
+      data &&
+      loadRevisionSeries(
+        api,
+        data.series_id,
+        selection.metricId,
+        undefined,
+        signal,
+      ),
+    enabled: data?.status === 'superseded',
+    gcTime: 0,
+  })
+  const current =
+    !latest.isError &&
+    latest.data?.publishedAt &&
+    latest.data.revisionId !== selection.revisionId
+      ? latest.data.revisionId
+      : undefined
+
+  if (
+    isRevisionAccessDenied(revision.error) ||
+    isRevisionAccessDenied(point.error)
+  )
+    return <Navigate to={routePaths.unavailable} replace />
+
   return (
-    <section>
+    <section className="cp-metric-passport">
       <Text as="h1" variant="header-1">
         Паспорт показателя
       </Text>
-      {point && (
-        <p>
-          {metricId} · <time dateTime={point}>{point}</time>
-        </p>
-      )}
-      {point &&
-        revisionId &&
-        metricId &&
-        (team &&
-        hasReportPeriod &&
-        isDateTime(point) &&
-        !periodError(params) ? (
-          <ReportPointPassport
-            api={api}
-            teamId={team.id}
-            revisionId={revisionId}
-            metricId={metricId}
-            pointStart={point}
-            query={reportQuery(
-              { ...params, revision: revisionId },
-              project?.id,
-            )}
-            estimator={search.get('estimator')}
-            groupValue={search.get('group_value')}
-          />
-        ) : (
-          <p role="status">Не удалось определить срез выбранной точки.</p>
-        ))}
-      {inReportHistory ? (
-        <Button size="xl" onClick={() => void navigate(-1)}>
-          Вернуться к отчёту
-        </Button>
+      <InspectionReturn selection={selection} />
+      {revision.isPending ? (
+        <LoadingState />
+      ) : revision.isError ? (
+        <ErrorState
+          reason="Не удалось загрузить паспорт ревизии"
+          onRetry={() => void revision.refetch()}
+          retrying={revision.isFetching}
+        />
       ) : (
-        point && (
-          <Link
-            to={{
-              pathname: routePaths.teamReport,
-              search: reportSearch.toString(),
-            }}
-          >
-            Вернуться к отчёту
-          </Link>
+        data && (
+          <>
+            {data.status === 'superseded' && (
+              <div role="status">
+                Есть более новая ревизия.{' '}
+                {current && (
+                  <Link
+                    replace={depth === 1}
+                    state={depth === 1 ? { fromTeamReport: true } : undefined}
+                    to={metricDetailsLink(selection, 'metricPassport', current)}
+                  >
+                    Открыть актуальную ревизию
+                  </Link>
+                )}
+                {latest.isError && (
+                  <ErrorState
+                    reason="Не удалось найти актуальную ревизию"
+                    onRetry={() => void latest.refetch()}
+                    retrying={latest.isFetching}
+                  />
+                )}
+              </div>
+            )}
+            {(data.loading || data.status === 'building') && (
+              <p role="status">Ревизия ещё загружается.</p>
+            )}
+            {data.status === 'failed' && (
+              <p role="alert">Расчёт ревизии завершился ошибкой.</p>
+            )}
+            {data.irreproducible_reason && (
+              <p role="status">
+                Ревизию нельзя воспроизвести.{' '}
+                {Object.hasOwn(
+                  irreproducibleReasons,
+                  data.irreproducible_reason,
+                )
+                  ? irreproducibleReasons[data.irreproducible_reason]
+                  : 'Описание причины недоступно'}
+                .
+              </p>
+            )}
+            <Card className="cp-metric-passport__value" view="outlined">
+              <h2>{title}</h2>
+              {definition && definition.name !== title && (
+                <p>{definition.name}</p>
+              )}
+              {definition && (
+                <>
+                  <p>
+                    {definition.metric_id} · Определение версии{' '}
+                    {definition.definition_version}
+                    {href && (
+                      <>
+                        {' '}
+                        · <a href={href}>Каталог показателей</a>
+                      </>
+                    )}
+                  </p>
+                  <p>Единица измерения: {definition.unit}</p>
+                </>
+              )}
+              {formula && <p>{formula}</p>}
+              {!formula && href && (
+                <p>Формула приведена в каталоге показателей.</p>
+              )}
+              {observationDays !== undefined && (
+                <p>
+                  Окно наблюдения:{' '}
+                  <span>{observationDays} дн. после первого завершения</span>
+                </p>
+              )}
+              {catalog.isError && (
+                <ErrorState
+                  reason="Не удалось загрузить определение"
+                  onRetry={() => void catalog.refetch()}
+                  retrying={catalog.isFetching}
+                />
+              )}
+              {point.data?.estimator && (
+                <p>Оценка ряда: {point.data.estimator}</p>
+              )}
+              {selection.point && (
+                <p>
+                  Начало точки{' '}
+                  <time dateTime={selection.point}>{selection.point}</time>
+                </p>
+              )}
+              {selection.validPoint &&
+                data.published_at &&
+                (point.isPending ? (
+                  <LoadingState />
+                ) : point.isError ? (
+                  <ErrorState
+                    reason="Не удалось загрузить значение точки"
+                    onRetry={() => void point.refetch()}
+                    retrying={point.isFetching}
+                  />
+                ) : (
+                  <>
+                    <RestrictedResults
+                      access_limited={point.data?.accessLimited ?? false}
+                    />
+                    {point.data?.value ? (
+                      <MetricValue
+                        value={point.data.value}
+                        showBreakdown
+                        {...(selection.metricId === 'T23'
+                          ? { excludedLabel: 'Незрелые задачи' }
+                          : {})}
+                      />
+                    ) : (
+                      <p>Значение точки недоступно.</p>
+                    )}
+                  </>
+                ))}
+              {selection.validPoint &&
+                data.published_at &&
+                !data.irreproducible_reason && (
+                  <Link
+                    to={metricDetailsLink(selection, 'metricCohort')}
+                    state={depth === 1 ? { reportHistoryDepth: 2 } : undefined}
+                  >
+                    Открыть когорту точки
+                  </Link>
+                )}
+            </Card>
+            <RevisionInputs
+              revision={data}
+              step={point.data?.step ?? selection.search.get('step')}
+            />
+          </>
         )
       )}
     </section>

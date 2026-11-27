@@ -56,13 +56,7 @@ func attemptKnownBy(a *entity.CIAttemptVersion, at time.Time) bool {
 }
 
 func (c *taskCI) forMR(mr *entity.MRVersion, rev *entity.MRRevision) *ciRun {
-	head := mr.HeadSHA
-	if !snapshotKnownAt(mr.SourceUpdatedAt, mr.ObservedAt, c.source.asOf) {
-		if rev == nil {
-			return nil
-		}
-		head = rev.HeadSHA
-	}
+	head := observationHead(mr, rev, c.source.asOf)
 	if head == "" {
 		return nil
 	}
@@ -75,6 +69,16 @@ func (c *taskCI) forMR(mr *entity.MRVersion, rev *entity.MRRevision) *ciRun {
 		}
 	}
 	return newest
+}
+
+func observationHead(mr *entity.MRVersion, rev *entity.MRRevision, at time.Time) string {
+	if snapshotKnownAt(mr.SourceUpdatedAt, mr.ObservedAt, at) {
+		return mr.HeadSHA
+	}
+	if rev != nil {
+		return rev.HeadSHA
+	}
+	return ""
 }
 
 func newerRun(a, b *entity.CIRunVersion) bool {

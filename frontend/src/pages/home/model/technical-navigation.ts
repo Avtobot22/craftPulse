@@ -9,6 +9,12 @@ export const technicalNavigation = [
     action: 'findings.read',
   },
   {
+    pattern: routePaths.exceptions,
+    path: generatePath(routePaths.exceptions),
+    label: 'История исключений',
+    action: 'findings.read',
+  },
+  {
     pattern: routePaths.componentOverview,
     path: generatePath(routePaths.componentOverview),
     label: 'Технический обзор компонента',
@@ -38,7 +44,6 @@ const technicalDetails = [
   { pattern: routePaths.findingDetail, action: 'findings.read' },
   { pattern: routePaths.technicalComparisonSetup, action: 'findings.read' },
   { pattern: routePaths.technicalComparison, action: 'findings.read' },
-  { pattern: routePaths.exceptions, action: 'findings.read' },
   { pattern: routePaths.exceptionCreate, action: 'exceptions.manage' },
   { pattern: routePaths.exceptionExtend, action: 'exceptions.manage' },
   { pattern: routePaths.pipeline, action: 'ci.read' },

@@ -20,7 +20,6 @@ export { useNotifications } from './notifications'
 export type { NotificationOptions } from './notifications'
 import './states.css'
 export { ChangeConfirmationDialog } from './settings-dialogs/change-confirmation-dialog'
-export { DialogFrame } from './settings-dialogs/dialog-frame'
 export type {
   ChangeAttempt,
   ChangeConfirmationDialogProps,
@@ -38,6 +37,10 @@ export { StatusTime } from './status-time'
 export {
   InspectionLink,
   InspectionBack,
+  useInspectionPageCount,
   useInspectionReturn,
 } from './inspection-link'
-export { TaskDetailLink } from './task-detail-link'
+export { TaskDetailLink, TaskReturnLink } from './task-detail-link'
+export { DialogFrame } from './settings-dialogs/dialog-frame'
+
+export { CursorPagination, pageSizes } from './cursor-pagination'
