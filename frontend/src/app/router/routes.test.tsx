@@ -120,6 +120,7 @@ function mockApi(
               : { ...projects, data: [] },
           ),
         )
+      case '/api/v1/connections':
       case '/api/v1/saved-views':
         return Promise.resolve(jsonResponse({ data: [], next_cursor: null }))
       case '/api/v1/saved-views/view-1':
