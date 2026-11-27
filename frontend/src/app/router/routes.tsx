@@ -59,7 +59,7 @@ export function createAppRoutes(runtime: AppRuntime): RouteObject[] {
                 },
                 {
                   path: routePaths.installation,
-                  element: <InstallationPage />,
+                  element: <InstallationPage api={runtime.api} />,
                 },
                 { path: routePaths.welcome, element: <WelcomePage /> },
                 {

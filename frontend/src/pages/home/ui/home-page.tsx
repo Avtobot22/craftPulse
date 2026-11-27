@@ -1,4 +1,5 @@
 import { Button, Container, Grid, Text } from '@gravity-ui/uikit'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
@@ -11,6 +12,7 @@ import {
   useOutlet,
   useOutletContext,
 } from 'react-router'
+import { isUnavailableError } from '@/shared/api'
 import type { ApiClient, Team } from '@/shared/api'
 import type { CurrentUser, SessionController } from '@/shared/auth'
 import {
@@ -20,8 +22,8 @@ import {
   routePaths,
 } from '@/shared/config'
 import type { ReportPointFocus, TeamReportScope } from '@/shared/config'
-import { isUnavailableError } from '@/shared/api'
 import { ErrorState, LoadingState, UnavailableRedirect } from '@/shared/ui'
+import { organizationStructureVersion } from '../api/organization-structure'
 import { adminDetailRoutes, adminNavigation } from '../model/admin-navigation'
 import {
   changeScope,
@@ -119,14 +121,30 @@ export function HomePage({
   const projectId = useMatches().at(-1)?.params.projectId
   const areaDenied = outsideAreas(current.areas, params, projectId)
   const isHome = location.pathname === routePaths.home
+  const isWelcome = location.pathname === routePaths.welcome
+  const isDefaultStart = isHome && !location.search && !location.hash
+  const canSetUp =
+    current.roles.some(({ role }) => role === 'administrator') &&
+    current.actions.includes('org.manage')
+  const checkSetup = canSetUp && (isDefaultStart || isWelcome)
+  const structure = useQuery({
+    ...organizationStructureVersion(api, current.organization.id),
+    enabled: checkSetup,
+  })
+  const checkingSetup =
+    checkSetup &&
+    (structure.isPending || (structure.isSuccess && structure.isFetching))
+  const setupError = checkSetup && structure.isError
+  const needsSetup = checkSetup && structure.isSuccess && structure.data === 0
   const state: unknown = location.state
   const skipScopeRestore =
     state && typeof state === 'object' && 'skipScopeRestore' in state
   const restore =
-    isHome &&
-    !location.search &&
-    !location.hash &&
+    isDefaultStart &&
     hasAreas &&
+    !checkingSetup &&
+    !setupError &&
+    !needsSetup &&
     !skipScopeRestore
   const isTaskDetail =
     matchPath(routePaths.taskDetail, location.pathname) !== null
@@ -202,6 +220,7 @@ export function HomePage({
       )
     : []
   const forbidden =
+    (isWelcome && !canSetUp) ||
     Boolean(active && !currentSetting) ||
     (isReport && !canReadReport) ||
     (technicalAction !== undefined &&
@@ -211,11 +230,7 @@ export function HomePage({
     isUnavailableError,
   )
   const missing = areaDenied || (!restore && scope.invalid)
-  const noArea =
-    !hasAreas &&
-    !currentSetting &&
-    location.pathname !== routePaths.welcome &&
-    !isUnavailable
+  const noArea = !hasAreas && !currentSetting && !isWelcome && !isUnavailable
   const unavailableReturn = useUnavailableReturn(
     current,
     storageKey,
@@ -246,14 +261,6 @@ export function HomePage({
       : null
   const hasRememberedTeam = scope.remembered?.has(teamParam) ?? false
   const restoring = Boolean(hasRememberedTeam && scope.ready && scope.team)
-  // An administrator without structure can configure it before any area exists.
-  const setup =
-    isHome &&
-    !location.search &&
-    !location.hash &&
-    !hasAreas &&
-    current.actions.includes('org.manage')
-
   const focusId = readTaskReturnFocus(state)
   useEffect(() => {
     const main = content.current
@@ -262,7 +269,16 @@ export function HomePage({
     const opener = focusId ? document.getElementById(focusId) : null
     const target = opener && main?.contains(opener) ? opener : (heading ?? main)
     target?.focus()
-  }, [location.pathname, focusId, missing, noArea, restoring, checkingScope])
+  }, [
+    location.pathname,
+    focusId,
+    missing,
+    noArea,
+    restoring,
+    checkingScope,
+    checkingSetup,
+    setupError,
+  ])
 
   function updateArea(team: string, project?: string) {
     const nextPath = analysisSection
@@ -324,7 +340,10 @@ export function HomePage({
       return <UnavailableRedirect error={scopeFailure} />
   }
 
-  if (setup) return <Navigate to={routePaths.organization} replace />
+  if (needsSetup && isDefaultStart && !checkingSetup)
+    return <Navigate to={routePaths.welcome} replace />
+  if (isWelcome && structure.isSuccess && !checkingSetup && !needsSetup)
+    return <Navigate to={routePaths.home} replace />
 
   if (restoring && scope.team) {
     const { params: previous } = changeScope(
@@ -641,7 +660,17 @@ export function HomePage({
                   </ol>
                 </nav>
               )}
-              {checkingScope ? (
+              {checkingSetup ? (
+                <LoadingState />
+              ) : setupError ? (
+                <ErrorState
+                  reason="Не удалось проверить структуру организации"
+                  retrying={structure.isFetching}
+                  onRetry={() => {
+                    void structure.refetch()
+                  }}
+                />
+              ) : checkingScope ? (
                 teamError || projectError ? null : (
                   <LoadingState />
                 )

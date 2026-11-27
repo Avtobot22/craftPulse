@@ -107,6 +107,8 @@ function mockApi(
         return Promise.resolve(jsonResponse(user))
       case '/api/v1/me/source-links':
         return Promise.resolve(jsonResponse({ data: [] }))
+      case '/api/v1/installation/protocols/latest':
+        return Promise.resolve(problemResponse('not_found', 404))
       case '/api/v1/teams':
         return Promise.resolve(jsonResponse({ ...teams, data: availableTeams }))
       case '/api/v1/projects':
@@ -183,7 +185,6 @@ describe('application routes', () => {
     ['/session-expired', 'Сессия завершилась'],
     ['/access-denied', 'Объект или область недоступны'],
     ['/installation', 'Диагностика установки'],
-    ['/welcome', 'Результат первого входа'],
     ['/organization/structure', 'Структура организации'],
     ['/users', 'Пользователи и роли'],
     ['/users/123', 'Пользователи и роли'],
@@ -887,15 +888,6 @@ describe('UI-01', () => {
           typeof input === 'string' && input.startsWith('/api/v1/projects'),
       ),
     ).toBe(false)
-  })
-
-  it('opens the organization structure for an administrator without areas', async () => {
-    const fetcher = mockApi(adminWithoutAreas)
-    mount('/', fetcher)
-    expect(
-      await screen.findByRole('heading', { name: 'Структура организации' }),
-    ).toBeInTheDocument()
-    expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
   it('requests only the session for a user without areas', async () => {
