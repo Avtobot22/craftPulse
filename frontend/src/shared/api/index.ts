@@ -30,6 +30,8 @@ export {
   listProjects,
   listServices,
   readTeam,
+  readTeamPage,
+  readProjectPage,
 } from './organization'
 export type {
   Team,
