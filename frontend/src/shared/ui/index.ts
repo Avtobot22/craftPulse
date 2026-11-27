@@ -37,6 +37,7 @@ export { StatusTime } from './status-time'
 export {
   InspectionLink,
   InspectionBack,
+  useInspectionPageCount,
   useInspectionReturn,
 } from './inspection-link'
 export { TaskDetailLink, TaskReturnLink } from './task-detail-link'

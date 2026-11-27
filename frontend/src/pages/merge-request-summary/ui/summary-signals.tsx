@@ -30,11 +30,13 @@ export function SummarySignals({
   hasBase,
   canReadFindings,
   comparisonSearch,
+  findingSearch,
 }: {
   items: Item[]
   hasBase: boolean
   canReadFindings: boolean
   comparisonSearch: URLSearchParams
+  findingSearch: URLSearchParams
 }) {
   const groups = sections.filter(
     ({ kind }) => hasBase || kind === 'accepted' || kind === 'newly_observed',
@@ -54,6 +56,7 @@ export function SummarySignals({
         item={item}
         canReadFindings={canReadFindings}
         comparisonSearch={comparisonSearch}
+        findingSearch={findingSearch}
       />
     )
 
@@ -87,10 +90,12 @@ function SignalItem({
   item,
   canReadFindings,
   comparisonSearch,
+  findingSearch,
 }: {
   item: Item
   canReadFindings: boolean
   comparisonSearch: URLSearchParams
+  findingSearch: URLSearchParams
 }) {
   const {
     finding_id,
@@ -108,6 +113,12 @@ function SignalItem({
     generatePath(routePaths.findingDetail, {
       findingId: encodeURIComponent(finding_id),
     })
+  const context = new URLSearchParams(findingSearch)
+  if (
+    analysis_kind &&
+    Object.hasOwn(technicalLabels.analysisKind, analysis_kind)
+  )
+    context.set('analysis_kind', analysis_kind)
   const rule = rule_id ? <code>{rule_id}</code> : 'Находка'
 
   return (
@@ -120,7 +131,10 @@ function SignalItem({
         <strong>Приоритет {rank} · </strong>
       )}
       {canReadFindings && findingPath ? (
-        <InspectionLink id={`summary-item-${String(item_no)}`} to={findingPath}>
+        <InspectionLink
+          id={`summary-item-${String(item_no)}`}
+          to={{ pathname: findingPath, search: context.toString() }}
+        >
           {rule}
         </InspectionLink>
       ) : (

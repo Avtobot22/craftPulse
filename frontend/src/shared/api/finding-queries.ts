@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 import type { ApiClient } from './client'
 import type { components, operations } from './generated/schema'
 import {
@@ -57,9 +57,11 @@ function readFindingPage(value: unknown): OpenCodes<Schema['FindingPage']> {
 function readFindingDetail(value: unknown): OpenCodes<Schema['FindingDetail']> {
   const raw = readRecord(value)
   const report = readRecord(raw.report)
+  const finding = readFinding(raw)
   return {
-    ...readFinding(raw),
-    evidence: readStringMap(raw.evidence),
+    ...finding,
+    evidence:
+      finding.finding_kind === 'secret' ? {} : readStringMap(raw.evidence),
     report: {
       id: readString(report.id),
       producer: readString(report.producer),
@@ -125,12 +127,37 @@ function readComparison(
   }
 }
 
+async function fetchFindings(
+  api: ApiClient,
+  params: FindingListParams,
+  signal: AbortSignal,
+) {
+  return (
+    await api.read('/findings', readFindingPage, { query: params, signal })
+  ).data
+}
+
 export function listFindings(api: ApiClient, params: FindingListParams = {}) {
   return queryOptions({
     queryKey: ['findings', 'list', params],
-    queryFn: async ({ signal }) =>
-      (await api.read('/findings', readFindingPage, { query: params, signal }))
-        .data,
+    queryFn: ({ signal }) => fetchFindings(api, params, signal),
+  })
+}
+
+export function findingPages(api: ApiClient, params: FindingListParams) {
+  return infiniteQueryOptions({
+    queryKey: ['findings', 'pages', params],
+    initialPageParam: params.cursor ?? '',
+    queryFn: ({ signal, pageParam }) =>
+      fetchFindings(
+        api,
+        pageParam ? { ...params, cursor: pageParam } : params,
+        signal,
+      ),
+    getNextPageParam: ({ next_cursor }, _pages, _param, pageParams) =>
+      next_cursor && !pageParams.includes(next_cursor)
+        ? next_cursor
+        : undefined,
   })
 }
 

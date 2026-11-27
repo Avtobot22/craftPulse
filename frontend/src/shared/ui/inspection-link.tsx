@@ -3,12 +3,16 @@ import type { MouseEvent } from 'react'
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router'
 import type { LinkProps } from 'react-router'
 
-const returnPositions = new Map<string, { id: string; top: number }>()
+const returnPositions = new Map<
+  string,
+  { id: string; top: number; pageCount: number }
+>()
 
 export function InspectionLink({
   id,
+  pageCount = 1,
   ...props
-}: Pick<LinkProps, 'to' | 'children'> & { id: string }) {
+}: Pick<LinkProps, 'to' | 'children'> & { id: string; pageCount?: number }) {
   const { key } = useLocation()
 
   function remember(event: MouseEvent<HTMLAnchorElement>) {
@@ -24,7 +28,7 @@ export function InspectionLink({
       const oldest = returnPositions.keys().next().value
       if (oldest !== undefined) returnPositions.delete(oldest)
     }
-    returnPositions.set(key, { id, top: window.scrollY })
+    returnPositions.set(key, { id, top: window.scrollY, pageCount })
   }
 
   return (
@@ -37,13 +41,21 @@ export function InspectionLink({
   )
 }
 
-export function useInspectionReturn(ready: boolean) {
-  const { key, hash } = useLocation()
+function useHistoryReturnPosition() {
+  const { key } = useLocation()
   const navigationType: string = useNavigationType()
-  const isHistoryNavigation = navigationType === 'POP'
+  return navigationType === 'POP' ? returnPositions.get(key) : undefined
+}
+
+export function useInspectionPageCount() {
+  return useHistoryReturnPosition()?.pageCount ?? 1
+}
+
+export function useInspectionReturn(ready: boolean, fallbackId?: string) {
+  const { hash } = useLocation()
+  const position = useHistoryReturnPosition()
   useEffect(() => {
     if (!ready) return
-    const position = isHistoryNavigation ? returnPositions.get(key) : undefined
     if (!position && !hash) return
 
     const frame = window.requestAnimationFrame(() => {
@@ -51,6 +63,8 @@ export function useInspectionReturn(ready: boolean) {
       if (link) {
         link.focus({ preventScroll: true })
         window.scrollTo({ top: position.top })
+      } else if (position && fallbackId) {
+        document.getElementById(fallbackId)?.focus()
       } else if (hash) {
         document.getElementById(hash.slice(1))?.scrollIntoView()
       }
@@ -58,7 +72,7 @@ export function useInspectionReturn(ready: boolean) {
     return () => {
       window.cancelAnimationFrame(frame)
     }
-  }, [key, hash, isHistoryNavigation, ready])
+  }, [position, hash, ready, fallbackId])
 }
 
 export function InspectionBack({
