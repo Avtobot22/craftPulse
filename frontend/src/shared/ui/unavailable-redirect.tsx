@@ -35,7 +35,7 @@ export function UnavailableRedirect({
         {
           forbidden: forbidden ?? apiError?.kind === 'forbidden',
           correlationId: apiError?.problem?.correlation_id,
-          deniedFrom: location.pathname + location.search,
+          deniedFrom: location.pathname + location.search + location.hash,
           taskOrigin: readTaskOrigin(state),
           inspectionFrom,
         } satisfies UnavailableNavigation
