@@ -130,12 +130,17 @@ export const adminLabels = {
     partial: 'частично',
     unknown: 'неизвестно',
   } satisfies Record<Schema['SyncDataKindStatus']['completeness'], string>,
+  receiptChannel: {
+    sync: 'Сбор',
+    ci: 'CI',
+    import: 'Импорт',
+  } satisfies Record<Schema['Receipt']['channel'], string>,
   receiptStatus: {
-    quarantined: 'Обрабатывается',
+    quarantined: 'Пакет проверяется',
     accepted: 'Принят',
     partial: 'Принят частично',
     rejected: 'Отклонён',
-    duplicate: 'Дубликат',
+    duplicate: 'Повтор доставки',
   } satisfies Record<Schema['Receipt']['status'], string>,
   receiptReason: {
     schema_unsupported: 'Схема или её версия не поддерживается',

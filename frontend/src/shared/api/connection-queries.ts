@@ -1,5 +1,6 @@
 import { queryOptions, skipToken } from '@tanstack/react-query'
 import type { ApiClient } from './client'
+import { collectCursorItems } from './collect-cursor-items'
 import type { components, operations } from './generated/schema'
 import { operationPolling } from './operation-polling'
 import type { OpenCodes } from './read-fields'
@@ -205,17 +206,38 @@ export function listConnections(
 ) {
   return queryOptions({
     queryKey: ['connections', 'list', params],
-    queryFn: async ({ signal }): Promise<OpenCodes<Schema['ConnectionPage']>> =>
-      (
-        await api.read(
-          '/connections',
-          (value) => readCursorPage(value, readConnection),
-          {
-            query: params,
-            signal,
-          },
-        )
-      ).data,
+    queryFn: ({ signal }) => readConnections(api, params, signal),
+  })
+}
+
+async function readConnections(
+  api: ApiClient,
+  params: ConnectionListParams,
+  signal: AbortSignal,
+) {
+  return (
+    await api.read(
+      '/connections',
+      (value) => readCursorPage(value, readConnection),
+      {
+        query: params,
+        signal,
+      },
+    )
+  ).data
+}
+
+export function allConnections(api: ApiClient) {
+  return queryOptions({
+    queryKey: ['connections', 'all'],
+    queryFn: ({ signal }) =>
+      collectCursorItems((cursor) =>
+        readConnections(
+          api,
+          { limit: 100, ...(cursor ? { cursor } : {}) },
+          signal,
+        ),
+      ),
   })
 }
 

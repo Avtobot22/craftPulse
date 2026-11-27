@@ -1,0 +1,37 @@
+.cp-receipt-journal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--g-spacing-4);
+}
+
+.cp-receipt-journal h1 {
+  margin: 0;
+}
+
+.cp-receipt-journal__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: var(--g-spacing-3);
+  align-items: start;
+}
+
+.cp-receipt-journal__filters label {
+  display: grid;
+  gap: var(--g-spacing-2);
+}
+
+.cp-receipt-journal__filters select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding-inline: 12px;
+  border: 1px solid var(--g-color-line-generic-solid);
+  border-radius: 8px;
+  color: var(--g-color-text-primary);
+  background: var(--g-color-base-background);
+  font: inherit;
+}
+
+.cp-receipt-journal th[scope='row'] {
+  min-width: 200px;
+}

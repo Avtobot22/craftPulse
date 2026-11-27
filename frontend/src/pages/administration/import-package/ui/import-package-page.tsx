@@ -1,4 +1,5 @@
 import { Text } from '@gravity-ui/uikit'
+import { useEffect, useRef } from 'react'
 import { useLocation, useOutletContext } from 'react-router'
 import type { ApiClient } from '@/shared/api'
 import type { CurrentUser } from '@/shared/auth'
@@ -12,6 +13,7 @@ import './import-package.css'
 export function ImportPackagePage({ api }: { api: ApiClient }) {
   const current = useOutletContext<CurrentUser>()
   const location = useLocation()
+  const heading = useRef<HTMLHeadingElement>(null)
   const { projects, loading, error, fetching, retry } = useImportProjects(
     api,
     current,
@@ -24,15 +26,32 @@ export function ImportPackagePage({ api }: { api: ApiClient }) {
     typeof origin.returnReceiptId === 'string'
       ? readTechnicalId(origin.returnReceiptId)
       : undefined
+  const receiptSearch =
+    origin &&
+    typeof origin === 'object' &&
+    'returnReceiptSearch' in origin &&
+    typeof origin.returnReceiptSearch === 'string'
+      ? new URLSearchParams(origin.returnReceiptSearch).toString()
+      : ''
+  useEffect(() => {
+    if (receiptId) heading.current?.focus()
+  }, [receiptId, location.key])
+
   const cancelTo = receiptId
-    ? adminLinks.receipt(receiptId)
+    ? adminLinks.receipt(receiptId) + (receiptSearch ? '?' + receiptSearch : '')
     : current.actions.includes('connections.manage')
       ? routePaths.connections
       : routePaths.home
 
   return (
     <section className="cp-import">
-      <Text as="h1" variant="header-1" id="import-heading">
+      <Text
+        as="h1"
+        variant="header-1"
+        id="import-heading"
+        ref={heading}
+        tabIndex={-1}
+      >
         Импорт
       </Text>
       {loading ? (

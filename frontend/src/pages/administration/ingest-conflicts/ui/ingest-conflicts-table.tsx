@@ -1,6 +1,6 @@
-import { generatePath, Link } from 'react-router'
+import { Link } from 'react-router'
 import type { ApiClient } from '@/shared/api'
-import { routePaths } from '@/shared/config'
+import { adminLinks } from '@/shared/config'
 import { StatusTime } from '@/shared/ui'
 import type { IngestConflict } from '../model/conflict-resolution'
 import { ConflictResolution } from './conflict-resolution'
@@ -8,13 +8,7 @@ import { ConflictResolution } from './conflict-resolution'
 function ReceiptLink({ id, recordNo }: { id: string; recordNo: number }) {
   return (
     <>
-      <Link
-        to={generatePath(routePaths.receipt, {
-          receiptId: encodeURIComponent(id),
-        })}
-      >
-        {id}
-      </Link>
+      <Link to={adminLinks.receipt(id)}>{id}</Link>
       <div>Запись № {recordNo}</div>
     </>
   )

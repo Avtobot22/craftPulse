@@ -87,6 +87,11 @@ function mount({
           actions,
         } satisfies Schema['CurrentUser'])
       if (url.pathname === apiPath) return list(url.searchParams)
+      if (url.pathname === '/api/v1/receipts')
+        return jsonResponse({
+          data: [],
+          next_cursor: null,
+        } satisfies Schema['ReceiptPage'])
       if (
         (url.pathname === postPath || url.pathname === secondPostPath) &&
         init?.method === 'POST'

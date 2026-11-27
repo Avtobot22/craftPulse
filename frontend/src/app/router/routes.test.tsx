@@ -15,6 +15,7 @@ import type { components } from '@/shared/api'
 import { routePaths, taskAnalysisLinks } from '@/shared/config'
 import {
   connectionExample,
+  receiptExample,
   syncStatusExample,
 } from '../../../test/admin-fixtures'
 import {
@@ -143,8 +144,14 @@ function mockApi(
         return Promise.resolve(jsonResponse(syncStatusExample))
       case '/api/v1/connections':
       case '/api/v1/ingest-conflicts':
+      case '/api/v1/receipts':
+      case `/api/v1/receipts/${receiptExample.id}/records`:
       case '/api/v1/saved-views':
         return Promise.resolve(jsonResponse({ data: [], next_cursor: null }))
+      case `/api/v1/receipts/${receiptExample.id}`:
+        return Promise.resolve(
+          jsonResponse({ ...receiptExample, conflict_count: 1 }),
+        )
       case '/api/v1/saved-views/view-1':
         return Promise.resolve(problemResponse('not_found', 404))
       case timelineApiPath:
@@ -1422,8 +1429,11 @@ describe('administration routes', () => {
     ],
     ['/settings/ingest-conflicts?status=resolved', 'Конфликты приёма'],
     ['/settings/import?schema_id=tasks&schema_version=1', 'Импорт'],
-    ['/settings/receipts?connection_id=c1', 'Журнал приёма'],
-    ['/settings/receipts/r1', 'Квитанция приёма'],
+    [
+      `/settings/receipts?connection_id=${connectionExample.id}`,
+      'Журнал приёма',
+    ],
+    [`/settings/receipts/${receiptExample.id}`, 'Квитанция приёма'],
     ['/settings/accounts', 'Учётные записи'],
   ])('opens %s directly and again in a fresh router', async (path, heading) => {
     const original = window.location.href
@@ -1449,7 +1459,7 @@ describe('administration routes', () => {
 
   it.each([
     `/settings/connections/${syncStatusExample.connection_id}/sync`,
-    '/settings/receipts/r1',
+    `/settings/receipts/${receiptExample.id}`,
   ])('links from %s to the organization conflicts', async (path) => {
     mount(path, mockApi(settingsAdmin))
     const link = await screen.findByRole('link', {
@@ -1475,7 +1485,7 @@ describe('administration routes', () => {
   })
 
   it('opens a receipt for an importer and shows only the import link', async () => {
-    mount('/settings/receipts/r1', mockApi(importer))
+    mount(`/settings/receipts/${receiptExample.id}`, mockApi(importer))
     expect(
       await screen.findByRole('heading', { name: 'Квитанция приёма' }),
     ).toBeVisible()
@@ -1489,7 +1499,7 @@ describe('administration routes', () => {
 
   it.each([
     ['/settings/receipts', importer],
-    ['/settings/receipts/r1', withoutSettingsActions],
+    [`/settings/receipts/${receiptExample.id}`, withoutSettingsActions],
     ['/settings/connections/c1/sync', importer],
   ] as const)('denies %s without the required action', async (path, user) => {
     mount(path, mockApi(user))
