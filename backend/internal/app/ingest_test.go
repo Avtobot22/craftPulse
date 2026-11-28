@@ -268,6 +268,13 @@ func raw(t *testing.T, entries ...rawEntry) []byte {
 func TestIngest_RefusesUnsafePackagesAtOnce(t *testing.T) {
 	t.Parallel()
 	e := newIngestEnv(t)
+	baseline := e.imported(t, e.admin, pack(t, importManifest("1"), task(t, "IMP-1", "Accepted", "")))
+	require.Equal(t, entity.ReceiptAccepted, baseline.Status)
+	baselineRecords := e.records(t, baseline.ID)
+	require.Len(t, baselineRecords, 1)
+	baselineObjects := e.keys(t, "packages/")
+	require.Len(t, baselineObjects, 1)
+
 	large := make([]byte, envelope.DefaultLimits.MaxPackageBytes+1)
 	_, err := rand.Read(large)
 	require.NoError(t, err)
@@ -295,10 +302,17 @@ func TestIngest_RefusesUnsafePackagesAtOnce(t *testing.T) {
 		require.NoError(t, err, name)
 		assert.Equal(t, entity.ReceiptRejected, rc.Status, name)
 		assert.Equal(t, c.reason, rc.ReasonCode, name)
-		assert.Equal(t, entity.ReceiptRejected, e.receipt(t, rc.ID).Status, "%s: the refusal is in the journal", name)
+		stored := e.receipt(t, rc.ID)
+		assert.Equal(t, entity.ReceiptRejected, stored.Status, "%s: the refusal is in the journal", name)
+		assert.Equal(t, c.reason, stored.ReasonCode, name)
+		assert.Equal(t, &e.project, stored.ProjectID, "%s: the refusal names the affected project", name)
+		assert.Empty(t, e.records(t, rc.ID), name)
 	}
 	assert.Empty(t, e.keys(t, "quarantine/"), "no quarantine object is left")
-	assert.Empty(t, e.keys(t, "packages/"), "nothing refused is stored")
+	assert.Equal(t, baselineObjects, e.keys(t, "packages/"), "only the accepted object is stored")
+	assert.Equal(t, baseline, e.receipt(t, baseline.ID), "the accepted receipt is unchanged")
+	assert.Equal(t, baselineRecords, e.records(t, baseline.ID), "the accepted version is unchanged")
+	assert.Equal(t, 1, e.accepted(t))
 	assert.InDelta(t, 3, gathered(t, e.reg, "craftpulse_ingest_rejected_packages_total", "limit_exceeded"), 0, "rejected packages are counted by reason")
 	assert.InDelta(t, len(cases), gathered(t, e.reg, "craftpulse_ingest_resolved_packages_total", "rejected"), 0)
 }
@@ -543,10 +557,21 @@ func TestIngest_InterruptedJobGivesTheSameJournal(t *testing.T) {
 	for _, r := range recs {
 		outcomes = append(outcomes, r.Outcome)
 	}
-	assert.Equal(t, []entity.RecordOutcome{entity.RecordAccepted, entity.RecordRejected, entity.RecordAccepted}, outcomes,
-		"the journal of one uninterrupted run")
+	assert.Equal(t, []entity.RecordOutcome{entity.RecordAccepted, entity.RecordRejected, entity.RecordAccepted}, outcomes)
 	assert.Equal(t, 1, e.jobs(t, entity.KindNormalizeBatch))
 	assert.Empty(t, e.keys(t, "quarantine/"))
+
+	control := newIngestEnv(t)
+	continuous := control.imported(t, control.admin, data)
+	require.Equal(t, continuous.Status, done.Status)
+	controlRecords := control.records(t, continuous.ID)
+	require.Len(t, recs, len(controlRecords))
+	for i, want := range controlRecords {
+		got := recs[i]
+		// The two organizations have distinct source instances.
+		got.InstanceID = want.InstanceID
+		assert.Equal(t, want, got, "journal record %d", i+1)
+	}
 }
 
 func (e *ingestEnv) jobs(t *testing.T, kind string) int {

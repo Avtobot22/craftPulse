@@ -209,6 +209,34 @@ func (e *syncEnv) accepted(t *testing.T, kind string) []string {
 	return ids
 }
 
+func (e *syncEnv) intakeJournal(t *testing.T) string {
+	t.Helper()
+	var journal string
+	require.NoError(t, e.owner.QueryRow(t.Context(), `
+		SELECT json_build_object(
+			'receipts', (SELECT json_agg(r ORDER BY id) FROM ingest.receipt AS r),
+			'records', (SELECT json_agg(r ORDER BY receipt_id, record_no) FROM ingest.record AS r)
+		)::text
+	`).Scan(&journal))
+	return journal
+}
+
+func (e *syncEnv) currentTaskIDs(t *testing.T) []string {
+	t.Helper()
+	var ids []string
+	require.NoError(t, e.owner.QueryRow(t.Context(), `
+		SELECT ARRAY(
+			SELECT o.native_id
+			FROM normalize.source_object AS o
+			JOIN normalize.task_version AS v
+				ON (v.organization_id, v.task_id) = (o.organization_id, o.id)
+			WHERE o.organization_id = $1 AND v.superseded_seq IS NULL
+			ORDER BY o.native_id
+		)
+	`, e.org).Scan(&ids))
+	return ids
+}
+
 // manifest is the list of IDs the source reports for tasks (V-06).
 func (e *syncEnv) manifest(t *testing.T, conn entity.ID) []string {
 	t.Helper()
@@ -370,8 +398,10 @@ func TestSync_RateLimitHoldsEveryRequest(t *testing.T) {
 	}})
 	conn := e.connection(t, "10000")
 	require.NoError(t, e.run(t, e.next(t, conn), false))
+	journal := e.intakeJournal(t)
 	start := e.clock.Now()
 	require.NoError(t, e.run(t, e.next(t, conn), false))
+	assert.Equal(t, journal, e.intakeJournal(t), "the rate-limited read cannot change the intake journal")
 	retry := e.next(t, conn)
 	assert.True(t, start.Add(30*time.Second).Equal(retry.scheduledAt), "the page waits for the end of the pause: %s", retry.scheduledAt)
 	assert.Equal(t, "rate_limited", e.state(t, conn).LastErrorCode)
@@ -379,28 +409,44 @@ func TestSync_RateLimitHoldsEveryRequest(t *testing.T) {
 	hits := e.adapter.hits.Load()
 	require.NoError(t, e.run(t, retry, false), "a run before the end of the pause")
 	assert.Equal(t, hits, e.adapter.hits.Load(), "no request reaches the adapter during the pause")
-	e.drain(t, conn)
-	assert.Equal(t, e.manifest(t, conn), unique(e.accepted(t, "task")))
+	assert.Equal(t, journal, e.intakeJournal(t), "the deferred attempt cannot change the intake journal")
+	e.runner().settle(t)
+	assert.Equal(t, e.manifest(t, conn), e.currentTaskIDs(t))
 }
 
-func TestSync_TimeoutKeepsTheCursor(t *testing.T) {
+func TestSync_NextPageFailureKeepsTheCursorAndJournal(t *testing.T) {
 	t.Parallel()
-	e := newSyncEnv(t, testadapter.Config{Faults: []testadapter.Fault{
-		{Operation: testadapter.OpFetch, SchemaID: "tasks", Page: 2, Attempts: []int{1}, Kind: testadapter.FaultHang, DelayMS: 10},
-	}})
-	conn := e.connection(t, "10000")
-	require.NoError(t, e.run(t, e.next(t, conn), false))
-	before := e.state(t, conn)
-	require.NoError(t, e.run(t, e.next(t, conn), false))
-	failed := e.state(t, conn)
-	assert.Equal(t, before.Cursor, failed.Cursor, "the cursor stays")
-	assert.Equal(t, before.Cursor, failed.FailedCursor)
-	assert.Equal(t, "timeout", failed.LastErrorCode)
-	assert.Equal(t, "failed", failed.LastOutcome)
-	assert.Equal(t, before.LastSuccessAt, failed.LastSuccessAt)
+	for _, tc := range []struct {
+		kind    string
+		delayMS int
+		code    string
+	}{
+		{kind: testadapter.FaultHang, delayMS: 10, code: "timeout"},
+		{kind: testadapter.FaultUnavailable, code: "unavailable"},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			t.Parallel()
+			e := newSyncEnv(t, testadapter.Config{Faults: []testadapter.Fault{
+				{Operation: testadapter.OpFetch, SchemaID: "tasks", Page: 2, Attempts: []int{1}, Kind: tc.kind, DelayMS: tc.delayMS},
+			}})
+			conn := e.connection(t, "10000")
+			require.NoError(t, e.run(t, e.next(t, conn), false))
+			before := e.state(t, conn)
+			journal := e.intakeJournal(t)
+			require.NoError(t, e.run(t, e.next(t, conn), false))
+			failed := e.state(t, conn)
+			assert.Equal(t, before.Cursor, failed.Cursor)
+			assert.Equal(t, before.Cursor, failed.FailedCursor)
+			assert.Equal(t, tc.code, failed.LastErrorCode)
+			assert.Equal(t, "failed", failed.LastOutcome)
+			assert.Equal(t, before.LastSuccessAt, failed.LastSuccessAt)
+			assert.Equal(t, journal, e.intakeJournal(t), "the failed page cannot change the intake journal")
 
-	e.drain(t, conn)
-	assert.Equal(t, e.manifest(t, conn), unique(e.accepted(t, "task")), "collection goes on from the same cursor")
+			e.runner().settle(t)
+			assert.Equal(t, e.manifest(t, conn), e.currentTaskIDs(t),
+				"collection resumes without missing or duplicate current tasks")
+		})
+	}
 }
 
 func TestSync_AuthStopsCollection(t *testing.T) {

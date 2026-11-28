@@ -177,6 +177,20 @@ func TestConnections_SyncRunsAreBackgroundOperations(t *testing.T) {
 	e.settle(t)
 	_, done := e.operation(t, e.admin, check.Header().Get("Location"))
 	assert.Equal(t, "succeeded", done.Status)
+	require.NotNil(t, done.ResultURI)
+	tasksStatus := func() syncKindBody {
+		t.Helper()
+		rec := e.do(t, e.admin, http.MethodGet, *done.ResultURI, nil)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		status := decode[syncStatusBody](t, rec)
+		require.Equal(t, id, status.ConnectionID)
+		index := slices.IndexFunc(status.DataKinds, func(kind syncKindBody) bool { return kind.DataKind == "tasks" })
+		require.GreaterOrEqual(t, index, 0)
+		return status.DataKinds[index]
+	}
+	beforeFault := tasksStatus()
+	require.NotNil(t, beforeFault.LastSuccessAt)
+	require.NotNil(t, beforeFault.Watermark)
 
 	require.NoError(t, e.adapter.src.SetConfig(testadapter.Config{Faults: []testadapter.Fault{
 		{Operation: testadapter.OpFetch, SchemaID: "tasks", Kind: testadapter.FaultAuth},
@@ -189,6 +203,11 @@ func TestConnections_SyncRunsAreBackgroundOperations(t *testing.T) {
 	require.NotNil(t, op.Error)
 	assert.Equal(t, "access_lost", op.Error.Code, "a safe class, the cause stays in the logs")
 	assert.NotEqual(t, uuid.Nil, op.Error.CorrelationID)
+	afterFault := tasksStatus()
+	assert.Equal(t, new("unauthorized"), afterFault.LastErrorCode)
+	assert.Equal(t, new("error"), afterFault.LastOutcome)
+	assert.Equal(t, beforeFault.LastSuccessAt, afterFault.LastSuccessAt)
+	assert.Equal(t, beforeFault.Watermark, afterFault.Watermark)
 
 	e.clock.Advance(25 * time.Hour)
 	e.admin = e.loginEnv.admin(t, "demo")
