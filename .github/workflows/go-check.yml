@@ -64,7 +64,7 @@ jobs:
         if: inputs.build
         run: go build ./...
 
-      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && steps.go-cache.outputs.hit != 'true'
         continue-on-error: true
         with:
@@ -110,7 +110,7 @@ jobs:
             go test -race -vet=all "${targets[@]}"
           fi
 
-      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && steps.go-cache.outputs.hit != 'true'
         continue-on-error: true
         with:
