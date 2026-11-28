@@ -44,15 +44,21 @@ def save_config(path, config):
         json.dump(config, target)
 
 
-def serve(output, url_file, port=8789):
+def serve(output, url_file, port=8789, *, demo_review=False):
     output = private_output(output)
     state = secrets.token_urlsafe(32)
     origin = f"http://127.0.0.1:{port}"
-    manifest = {"name": "craftpulse-mvp-bot", "url": "https://github.com/" + ORGANIZATION,
-                "description": "Comment identity for craftPulse MVP test pull requests (#89)",
+    name = "craftpulse-demo-review-bot" if demo_review else "craftpulse-mvp-bot"
+    permissions = {"pull_requests": "write"}
+    if not demo_review:
+        permissions["contents"] = "read"
+    description = ("Demo review comments on craftPulse fixture pull requests (#96)" if demo_review
+                   else "Comment identity for craftPulse MVP test pull requests (#89)")
+    manifest = {"name": name, "url": "https://github.com/" + ORGANIZATION,
+                "description": description,
                 "public": False, "redirect_url": origin + "/callback",
                 "hook_attributes": {"url": "https://craftpulse.defects.team/github/webhooks", "active": False},
-                "default_permissions": {"pull_requests": "write", "contents": "read"}, "default_events": []}
+                "default_permissions": permissions, "default_events": []}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -81,8 +87,11 @@ def serve(output, url_file, port=8789):
                     return
                 action = f"https://github.com/organizations/{ORGANIZATION}/settings/apps/new?state={state}"
                 self.send_page(200, '<!doctype html><html lang="ru"><meta charset="utf-8">'
-                               '<title>Регистрация бота craftPulse</title><h1>craftpulse-mvp-bot</h1>'
-                               '<p>Владелец: craftpulse-mvp. Права: Pull requests - write, Contents - read. Webhook выключен.</p>'
+                               f'<title>Регистрация бота craftPulse</title><h1>{escape(name)}</h1>'
+                               '<p>Владелец: craftpulse-mvp. Права: Pull requests - write'
+                               + (', Contents - read' if not demo_review else '') + '. Webhook выключен.</p>'
+                               + ('<p>При установке выбери Only select repositories и cp89-org-a-private.</p>'
+                                  if demo_review else '') +
                                '<form method="post" action="' + escape(action, quote=True) + '">'
                                '<input type="hidden" name="manifest" value="' + escape(json.dumps(manifest), quote=True) + '">'
                                '<button type="submit">Создать GitHub App</button></form></html>')
@@ -109,7 +118,7 @@ def serve(output, url_file, port=8789):
                 # Unexpected permissions/owner still prevent installation and must be reconciled.
                 save_config(output, config)
                 if (config["owner"]["id"] != ORGANIZATION_ID or not config.get("pem")
-                        or config["permissions"] != {"metadata": "read", "pull_requests": "write", "contents": "read"}):
+                        or config["slug"] != name or config["permissions"] != dict(permissions, metadata="read")):
                     raise ValueError("Unexpected app owner/permissions")
                 public = {k: config[k] for k in ("id", "slug", "html_url", "owner", "permissions", "client_id")}
                 output.with_name("app-public.json").write_text(json.dumps(public, indent=2), encoding="utf-8")
@@ -138,5 +147,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--url-file", type=Path, required=True)
+    parser.add_argument("--demo-review", action="store_true", help="Register the separate demo review bot")
     args = parser.parse_args()
-    serve(args.output, args.url_file)
+    serve(args.output, args.url_file, demo_review=args.demo_review)

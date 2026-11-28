@@ -121,10 +121,7 @@ func (s *ChangeSet) buildPlan(repos *RepoFile) {
 		return id
 	}
 	for _, repo := range repos.Repositories {
-		actor := repo.OrganizationID + "/person-03"
-		if repo.OrganizationID == "org-2" {
-			actor = "org-2/person-01"
-		}
+		actor := fixtureWriter(repo.OrganizationID, repo.InstanceID)
 		add(repo.OrganizationID, repo.InstanceID, "push_repository", repo.ID, actor, "head_matches", map[string]string{"ref": repo.DefaultBranch, "sha": repo.Head}, []string{})
 	}
 	branches := map[string]string{}
@@ -149,10 +146,7 @@ func (s *ChangeSet) buildPlan(repos *RepoFile) {
 		}
 	}
 	for _, run := range s.File.Runs {
-		actor := run.OrganizationID + "/person-03"
-		if run.OrganizationID == "org-2" {
-			actor = "org-2/person-01"
-		}
+		actor := fixtureWriter(run.OrganizationID, run.InstanceID)
 		params := map[string]string{"repository_id": run.RepositoryID, "ref": run.Branch, "sha": run.SHA, "definition": ".gitlab-ci.yml"}
 		if run.Provider == "github" {
 			params["definition"] = ".github/workflows/demo.yml"

@@ -31,7 +31,8 @@ func TestGenerateDeterminismAndPeople(t *testing.T) {
 	if first.People[0].DisplayName == other.People[0].DisplayName {
 		t.Fatal("seed must affect generated data, not just metadata")
 	}
-	var team, bots, otherOrg int
+	var team, bots, otherOrg, jiraAccounts, confluenceAccounts int
+	githubPeople := []string{}
 	roles := make(map[string]bool)
 	identities := make(map[string]string)
 	for _, person := range first.People {
@@ -48,6 +49,16 @@ func TestGenerateDeterminismAndPeople(t *testing.T) {
 			roles[role] = true
 		}
 		for _, account := range person.Accounts {
+			switch account.InstanceID {
+			case "jira-cloud-1":
+				jiraAccounts++
+			case "confluence-cloud-1":
+				confluenceAccounts++
+			case "github-1":
+				if !person.Bot {
+					githubPeople = append(githubPeople, person.ID)
+				}
+			}
 			key := person.OrganizationID + "/" + account.InstanceID + "/" + account.Login
 			if _, exists := identities[key]; exists {
 				t.Fatal("duplicate account identity")
@@ -58,10 +69,19 @@ func TestGenerateDeterminismAndPeople(t *testing.T) {
 			}
 		}
 	}
-	if team != 20 || bots != 2 || otherOrg != 1 {
+	if team != 5 || bots != 3 || otherOrg != 1 {
 		t.Fatalf("people counts: %d/%d/%d", team, bots, otherOrg)
 	}
-	for _, role := range []string{"admin", "mapping_owner", "leader", "pm", "tech_lead", "developer", "restricted_user"} {
+	if jiraAccounts != 7 || confluenceAccounts != 7 {
+		t.Fatalf("Atlassian accounts: Jira %d, Confluence %d", jiraAccounts, confluenceAccounts)
+	}
+	if want := []string{"org-1/person-01", "org-1/person-02", "org-1/person-03", "org-2/person-01"}; !slices.Equal(githubPeople, want) {
+		t.Fatalf("GitHub participants: got %v, want %v", githubPeople, want)
+	}
+	if first.People[1].DisplayName != first.People[2].DisplayName {
+		t.Fatal("mapping fixture requires two people with the same display name")
+	}
+	for _, role := range []string{"collector", "admin", "mapping_owner", "leader", "pm", "tech_lead", "developer", "restricted_user"} {
 		if !roles[role] {
 			t.Fatalf("missing role %s", role)
 		}

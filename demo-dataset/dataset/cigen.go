@@ -71,7 +71,7 @@ func GenerateChanges(model *Model, tasks *TaskFile, repos *RepoSet) (*ChangeSet,
 		}
 		run := makeRun(*repo, "github", 1, ciScenarios("github")[0])
 		definition, content := pipelineDefinition(&run, ciScenarios("github")[0])
-		branch, err := repos.addCIBranch(*repo, "main", repo.OrganizationID+"/person-03", people, map[string][]byte{definition: []byte(content)}, definition)
+		branch, err := repos.addCIBranch(*repo, "main", fixtureWriter(repo.OrganizationID, repo.InstanceID), people, map[string][]byte{definition: []byte(content)}, definition)
 		if err != nil {
 			return nil, err
 		}
@@ -101,7 +101,7 @@ func GenerateChanges(model *Model, tasks *TaskFile, repos *RepoSet) (*ChangeSet,
 			if repo.OrganizationID == "org-2" {
 				branch = "demo/SEC-1-private"
 			}
-			mr := makeMR(repo, provider, i, branch, tasks)
+			mr := makeMR(repo, i, branch, tasks)
 			// A branch carries source changes but no CI definition: its head has no scan until an explicit load action runs one.
 			files := map[string][]byte{"demo-change.txt": []byte(fmt.Sprintf("fixture change %s\n", mr.ID))}
 			b, err := repos.addCIBranch(repo, branch, mr.AuthorID, people, files, "")
@@ -228,10 +228,7 @@ func finishRun(model *Model, repos *RepoSet, people map[string]Person, repo Repo
 		return fmt.Errorf("read CI runtime: %w", err)
 	}
 	files := map[string][]byte{definition: []byte(content), ".demo-ci/run.json": append(raw, '\n'), ".demo-ci/main.go": runtime, "demo-target.go": []byte("package demo\nfunc Fixture(a, b int) int {\n if a > 0 { return a + b }\n return b\n}\n")}
-	author := repo.OrganizationID + "/person-03"
-	if repo.OrganizationID == "org-2" {
-		author = "org-2/person-01"
-	}
+	author := fixtureWriter(repo.OrganizationID, repo.InstanceID)
 	if s.name == "report-other-sha" {
 		baseline, err := repos.addCIBranch(repo, run.Branch, author, people, files, definition)
 		if err != nil {
@@ -311,12 +308,18 @@ func (s *RepoSet) addCIBranch(repo Repository, name, authorID string, people map
 	return CIBranch{RepositoryID: repo.ID, Name: name, Commit: Commit{SHA: head, Tree: tree, Parents: []string{parent}, AuthorID: authorID, AuthorTime: sourceTime(at, author.offset), CommitterID: authorID, CommitTime: sourceTime(at, author.offset), Message: message, Files: changed}, DefinitionPath: definition, DefinitionSHA256: digest}, nil
 }
 
-func makeMR(repo Repository, provider string, n int, branch string, tasks *TaskFile) MergeRequest {
+func fixtureWriter(org, instance string) string {
+	if org == "org-2" || instance == "github-1" {
+		return org + "/person-01"
+	}
+	return org + "/person-03"
+}
+
+func makeMR(repo Repository, n int, branch string, tasks *TaskFile) MergeRequest {
 	id := fmt.Sprintf("%s/mr-%02d", repo.ID, n)
-	author := repo.OrganizationID + "/person-03"
+	author := fixtureWriter(repo.OrganizationID, repo.InstanceID)
 	reviewer := repo.OrganizationID + "/person-02"
 	if repo.OrganizationID == "org-2" {
-		author = "org-2/person-01"
 		reviewer = author
 	}
 	mr := MergeRequest{ID: id, OrganizationID: repo.OrganizationID, InstanceID: repo.InstanceID, RepositoryID: repo.ID, Branch: branch,
@@ -375,6 +378,5 @@ func makeMR(repo Repository, provider string, n int, branch string, tasks *TaskF
 		}
 	}
 	mr.TaskLinks = append(mr.TaskLinks, MRTaskLink{Kind: kind, Key: key, TaskIDs: candidates})
-	_ = provider
 	return mr
 }
