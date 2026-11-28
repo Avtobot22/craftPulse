@@ -45,6 +45,9 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
+      tracker-acceptance: >-
+        ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && inputs.target == 'all' && 'true'
+        || steps.filter.outputs.tracker-acceptance || 'false' }}
       openapi: >-
         ${{ github.event_name == 'schedule' && 'true' || github.event_name == 'workflow_dispatch' && ((inputs.target == 'all' || inputs.target == 'openapi') && 'true' || 'false')
         || ((steps.filter.outputs.openapi == 'true') && 'true' || steps.filter.outputs.openapi-build) }}
@@ -94,6 +97,9 @@ jobs:
           base: ${{ github.event_name == 'push' && github.ref || '' }}
           predicate-quantifier: some-with-excludes
           filters: |
+            tracker-acceptance:
+              - 'deploy/tracker-acceptance/**'
+              - '.github/workflows/repository.yml'
             openapi:
               - 'docs/technical-specification/{technical-specification,mvp-scope}.md'
               - 'docs/requirements/{features,use-cases}.md'
@@ -360,11 +366,32 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
         run: python3 scripts/oci_release.py build-ci --sha "$COMMIT_SHA"
 
+  tracker-acceptance:
+    needs: detect
+    if: needs.detect.outputs.tracker-acceptance == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test tracker acceptance scripts
+        run: |
+          python3 - <<'PYTHON'
+          import unittest
+
+          suite = unittest.defaultTestLoader.discover("deploy/tracker-acceptance")
+          if not suite.countTestCases():
+              raise SystemExit("No tracker acceptance tests discovered")
+          raise SystemExit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)
+          PYTHON
+
   ci:
     name: ci
     needs:
       - detect
       - repository-check
+      - tracker-acceptance
       - openapi
       - backend
       - backend-integration

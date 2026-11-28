@@ -250,6 +250,28 @@ func TestAccess_AreaThatCannotBeCheckedIsClosed(t *testing.T) {
 		"listAreas gives only areas of active connections")
 }
 
+func TestAccess_TaskIsHiddenAfterAdapterStops(t *testing.T) {
+	t.Parallel()
+	e := newAccessEnv(t)
+	e.link(t, _otherSub, "demo-person-02")
+	var task uuid.UUID
+	require.NoError(t, e.owner.QueryRow(t.Context(), `
+		SELECT task_id FROM normalize.task_version WHERE area_id = $1 AND superseded_seq IS NULL
+		ORDER BY task_id LIMIT 1
+	`, e.area).Scan(&task))
+
+	target := "/api/v1/tasks/" + task.String()
+	visible := e.do(t, e.member, http.MethodGet, target, nil)
+	require.Equal(t, http.StatusOK, visible.Code, visible.Body.String())
+	assert.Equal(t, task.String(), decode[map[string]any](t, visible)["id"])
+
+	e.adapter.Close()
+	e.clock.Advance(60 * time.Second)
+	hidden := e.do(t, e.member, http.MethodGet, target, nil)
+	require.Equal(t, http.StatusNotFound, hidden.Code, hidden.Body.String())
+	assert.Equal(t, "not_found", decode[problemBody](t, hidden).Code)
+}
+
 func TestAccess_TaskWithItsOwnRestriction(t *testing.T) {
 	t.Parallel()
 	e := newAccessEnv(t)
