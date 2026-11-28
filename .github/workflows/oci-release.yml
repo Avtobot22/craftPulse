@@ -46,7 +46,7 @@ jobs:
           --output build/release/server-version.json
       - name: Preserve scan reports, SBOMs and release manifest
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: oci-release-${{ github.event.workflow_run.head_sha }}-${{ github.run_attempt }}
           path: build/release/
