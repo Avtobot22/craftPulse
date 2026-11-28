@@ -24,6 +24,7 @@ func GenerateTasks(model *Model) (*TaskFile, error) {
 	}
 	g := &taskGen{
 		rng:       rand.New(rand.NewPCG(model.Seed, 95)),
+		actors:    rand.New(rand.NewPCG(model.Seed, 96)),
 		from:      from,
 		asOf:      asOf,
 		people:    map[string][]Person{},
@@ -54,6 +55,7 @@ func GenerateTasks(model *Model) (*TaskFile, error) {
 
 type taskGen struct {
 	rng      *rand.Rand
+	actors   *rand.Rand
 	from     time.Time
 	asOf     time.Time
 	people   map[string][]Person
@@ -331,7 +333,7 @@ func (g *taskGen) buildBackground(p TaskProject, b background) Task {
 func (g *taskGen) colleague(org string, not Person) Person {
 	people := g.people[org]
 	for {
-		if p := people[g.rng.IntN(len(people))]; p.ID != not.ID || len(people) == 1 {
+		if p := people[g.actors.IntN(len(people))]; p.ID != not.ID || len(people) == 1 {
 			return p
 		}
 	}

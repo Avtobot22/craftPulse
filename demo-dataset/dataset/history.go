@@ -32,8 +32,8 @@ func (g *taskGen) newHistory(p TaskProject, key, summary string) *history {
 			InstanceID: p.InstanceID, ProjectID: p.ID, Key: key, Summary: summary, Links: []TaskLink{}, Events: []TaskEvent{},
 		},
 		current:  map[string]string{},
-		reporter: people[g.rng.IntN(len(people))],
-		author:   people[g.rng.IntN(len(people))],
+		reporter: people[g.actors.IntN(len(people))],
+		author:   people[g.actors.IntN(len(people))],
 	}
 	if len(p.Epics) > 0 && g.rng.Float64() < _epicShare {
 		h.task.Epic = p.Epics[g.rng.IntN(len(p.Epics))].Key
